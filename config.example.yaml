@@ -3,6 +3,15 @@
 # Refresh interval in seconds (how often to check feeds)
 refresh_interval: 300 # 5 minutes
 
+# Delay between sending posts to Discord (in seconds)
+# Increase this if you're hitting rate limits (default: 2)
+delay_between_posts: 2
+
+# Maximum age of posts to process (in days)
+# Posts older than this will be ignored (default: 7 days)
+# Set to 0 or omit to process all posts regardless of age
+max_post_age_days: 7
+
 # List of RSS feeds to monitor
 feeds:
   # Example feed 1
@@ -21,7 +30,6 @@ feeds:
 
   # You can add as many feeds as you want
   # Each feed can have its own Discord webhook or share webhooks
-
 # Notes:
 # - name: A friendly name for the feed (optional, will use feed title if not provided)
 # - url: The RSS/Atom feed URL (required)

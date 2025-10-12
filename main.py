@@ -94,6 +94,57 @@ class RSSToDiscord:
 
         return text
 
+    def _send_webhook_request(
+        self,
+        webhook_url: str,
+        payload: dict[str, Any],
+        max_retries: int = 3,
+    ) -> bool:
+        """Send webhook request with retry logic for rate limiting."""
+        base_delay = 2
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    webhook_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=10,
+                )
+
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        wait_time = float(retry_after)
+                    else:
+                        wait_time = base_delay * (2**attempt)
+
+                    logger.warning(
+                        "Rate limited (429), waiting %s seconds before retry %d/%d",
+                        wait_time,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                response.raise_for_status()
+
+            except requests.exceptions.Timeout:
+                logger.warning(
+                    "Timeout sending to Discord, retry %d/%d",
+                    attempt + 1,
+                    max_retries,
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(base_delay * (2**attempt))
+                    continue
+                raise
+            else:
+                return True
+
+        return False
+
     def _send_to_discord(
         self,
         webhook_url: str,
@@ -103,7 +154,7 @@ class RSSToDiscord:
         webhook_avatar: str | None = None,
         embed_color: int | None = None,
     ) -> bool:
-        """Send an RSS entry to Discord webhook."""
+        """Send an RSS entry to Discord webhook with retry logic."""
         try:
             title = entry.get("title", "No Title")
             link = entry.get("link", "")
@@ -136,13 +187,12 @@ class RSSToDiscord:
             if webhook_avatar:
                 payload["avatar_url"] = webhook_avatar
 
-            response = requests.post(
-                webhook_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10,
-            )
-            response.raise_for_status()
+            success = self._send_webhook_request(webhook_url, payload)
+            if success:
+                logger.info("Sent to Discord: %s", title)
+            else:
+                logger.error("Failed to send to Discord: %s", title)
+
         except requests.exceptions.RequestException:
             logger.exception("Error sending to Discord webhook")
             return False
@@ -150,8 +200,7 @@ class RSSToDiscord:
             logger.exception("Unexpected error sending to Discord")
             return False
         else:
-            logger.info("Sent to Discord: %s", title)
-            return True
+            return success
 
     def _get_timestamp(self, entry: Any) -> str:  # noqa: ANN401
         """Get ISO timestamp from entry."""
@@ -176,6 +225,83 @@ class RSSToDiscord:
             return entry.title
         return str(hash(str(entry)))
 
+    def _is_entry_too_old(self, entry: Any, max_age_days: int) -> bool:  # noqa: ANN401
+        """Check if an entry is older than the maximum allowed age."""
+        if max_age_days <= 0:
+            return False
+
+        try:
+            entry_time = None
+            entry_title = getattr(entry, "title", "Unknown")
+
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                entry_time = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
+                logger.debug(
+                    "Entry '%s' published: %s",
+                    entry_title,
+                    entry_time.isoformat(),
+                )
+            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                entry_time = datetime(*entry.updated_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
+                logger.debug(
+                    "Entry '%s' updated: %s",
+                    entry_title,
+                    entry_time.isoformat(),
+                )
+
+            if entry_time:
+                current_time = datetime.now(UTC)
+                age_days = (current_time - entry_time).days
+                age_hours = (current_time - entry_time).total_seconds() / 3600
+                is_old = age_days > max_age_days
+
+                logger.info(
+                    "Entry '%s' age: %.1f hours (%d days) - Max: %d days - Too old: %s",
+                    entry_title,
+                    age_hours,
+                    age_days,
+                    max_age_days,
+                    is_old,
+                )
+                return is_old
+
+        except Exception:
+            logger.exception(
+                "Error determining entry age, treating as too old: %s",
+                getattr(entry, "title", "Unknown"),
+            )
+            return True
+
+        logger.warning(
+            "No timestamp found for entry, treating as too old: %s",
+            getattr(entry, "title", "Unknown"),
+        )
+        return True
+
+    def _filter_new_entries(
+        self,
+        entries: list[Any],
+        processed_ids: list[str],
+        max_age_days: int,
+    ) -> tuple[list[tuple[str, Any]], int]:
+        """Filter entries to find new ones that aren't too old."""
+        new_entries = []
+        skipped_old = 0
+
+        for entry in reversed(entries):
+            entry_id = self._get_entry_id(entry)
+
+            if entry_id not in processed_ids:
+                if self._is_entry_too_old(entry, max_age_days):
+                    skipped_old += 1
+                    processed_ids.append(entry_id)
+                    if len(processed_ids) > 1000:
+                        processed_ids.pop(0)
+                else:
+                    new_entries.append((entry_id, entry))
+
+        return new_entries, skipped_old
+
     def _process_new_entries(
         self,
         new_entries: list[tuple[str, Any]],
@@ -187,6 +313,8 @@ class RSSToDiscord:
         embed_color: int | None = None,
     ) -> None:
         """Process and send new entries to Discord."""
+        delay_between_posts = self.config.get("delay_between_posts", 2)
+
         for entry_id, entry in new_entries:
             if self._send_to_discord(
                 webhook_url,
@@ -199,7 +327,7 @@ class RSSToDiscord:
                 processed_ids.append(entry_id)
                 if len(processed_ids) > 1000:
                     processed_ids.pop(0)
-                time.sleep(1)
+                time.sleep(delay_between_posts)
 
     def process_feed(self, feed_config: dict[str, Any]) -> None:
         """Process a single RSS feed."""
@@ -209,6 +337,7 @@ class RSSToDiscord:
         webhook_name = feed_config.get("webhook_name")
         webhook_avatar = feed_config.get("webhook_avatar")
         embed_color = feed_config.get("embed_color")
+        max_age_days = self.config.get("max_post_age_days", 7)
 
         if not feed_url or not webhook_url:
             logger.warning("Skipping feed %s: missing url or webhook", feed_name)
@@ -234,12 +363,19 @@ class RSSToDiscord:
 
             processed_ids = self.state["feeds"][feed_url]["processed_ids"]
 
-            new_entries = []
-            for entry in reversed(feed.entries):
-                entry_id = self._get_entry_id(entry)
+            new_entries, skipped_old = self._filter_new_entries(
+                feed.entries,
+                processed_ids,
+                max_age_days,
+            )
 
-                if entry_id not in processed_ids:
-                    new_entries.append((entry_id, entry))
+            if skipped_old > 0:
+                logger.info(
+                    "Skipped %d old entries (older than %d days) in %s",
+                    skipped_old,
+                    max_age_days,
+                    feed_name,
+                )
 
             if new_entries:
                 logger.info(
