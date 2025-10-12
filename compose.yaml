@@ -1,0 +1,11 @@
+name: rss2discord
+
+services:
+  rss2discord:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      - CONFIG_PATH=/app/config/config.yaml

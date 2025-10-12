@@ -1,0 +1,40 @@
+name: Linters
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "main.py"
+  pull_request:
+    branches:
+      - "main"
+    paths:
+      - "main.py"
+
+permissions:
+  contents: read
+
+jobs:
+  linters:
+    name: Ruff & MyPy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install Dependencies
+        run: uv sync
+
+      - name: Run Ruff
+        run: uv run --active ruff check .
+
+      - name: Run MyPy
+        run: uv run --active mypy .

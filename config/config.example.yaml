@@ -1,0 +1,28 @@
+# Copy this file to config.yaml and configure your feeds
+
+# Refresh interval in seconds (how often to check feeds)
+refresh_interval: 300 # 5 minutes
+
+# List of RSS feeds to monitor
+feeds:
+  # Example feed 1
+  - name: "Example Tech Blog"
+    url: "https://example.com/feed.xml"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    webhook_name: "RSS Bot" # Optional: Custom name for the webhook
+    webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
+
+  # Example feed 2
+  - name: "Another Feed"
+    url: "https://another-example.com/rss"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    # webhook_name and webhook_avatar are optional
+
+  # You can add as many feeds as you want
+  # Each feed can have its own Discord webhook or share webhooks
+# Notes:
+# - name: A friendly name for the feed (optional, will use feed title if not provided)
+# - url: The RSS/Atom feed URL (required)
+# - webhook: Discord webhook URL for posting updates (required)
+# - webhook_name: Custom name for the webhook bot (optional)
+# - webhook_avatar: URL to custom avatar image for the webhook bot (optional)

@@ -1,0 +1,25 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Application data
+config.yaml
+state.json
+data/
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode/
+.idea/
+
+# CI
+.github/
