@@ -157,9 +157,9 @@ class RSSToDiscord:
         """Get ISO timestamp from entry."""
         try:
             if hasattr(entry, "published_parsed") and entry.published_parsed:
-                dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+                dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
                 return dt.isoformat()
-            if hasattr(entry, "updated_parsed") and entry.updated_parsed:
+            if hasattr(entry, "updated_parsed") and entry.updated_parsed:  # type: ignore[misc]
                 dt = datetime(*entry.updated_parsed[:6], tzinfo=UTC)
                 return dt.isoformat()
         except Exception:
