@@ -159,8 +159,8 @@ class RSSToDiscord:
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
                 return dt.isoformat()
-            if hasattr(entry, "updated_parsed") and entry.updated_parsed:  # type: ignore[misc]
-                dt = datetime(*entry.updated_parsed[:6], tzinfo=UTC)
+            if hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                dt = datetime(*entry.updated_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
                 return dt.isoformat()
         except Exception:
             logger.debug("Could not parse timestamp from entry")
