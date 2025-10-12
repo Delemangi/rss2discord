@@ -101,6 +101,7 @@ class RSSToDiscord:
         feed_title: str,
         webhook_name: str | None = None,
         webhook_avatar: str | None = None,
+        embed_color: int | None = None,
     ) -> bool:
         """Send an RSS entry to Discord webhook."""
         try:
@@ -119,7 +120,7 @@ class RSSToDiscord:
                 "title": title,
                 "url": link,
                 "description": description,
-                "color": 5814783,
+                "color": embed_color if embed_color is not None else 5814783,
                 "timestamp": self._get_timestamp(entry),
                 "footer": {"text": feed_title},
             }
@@ -183,6 +184,7 @@ class RSSToDiscord:
         processed_ids: list[str],
         webhook_name: str | None = None,
         webhook_avatar: str | None = None,
+        embed_color: int | None = None,
     ) -> None:
         """Process and send new entries to Discord."""
         for entry_id, entry in new_entries:
@@ -192,6 +194,7 @@ class RSSToDiscord:
                 feed_title,
                 webhook_name,
                 webhook_avatar,
+                embed_color,
             ):
                 processed_ids.append(entry_id)
                 if len(processed_ids) > 1000:
@@ -205,6 +208,7 @@ class RSSToDiscord:
         feed_name = feed_config.get("name", feed_url)
         webhook_name = feed_config.get("webhook_name")
         webhook_avatar = feed_config.get("webhook_avatar")
+        embed_color = feed_config.get("embed_color")
 
         if not feed_url or not webhook_url:
             logger.warning("Skipping feed %s: missing url or webhook", feed_name)
@@ -250,6 +254,7 @@ class RSSToDiscord:
                     processed_ids,
                     webhook_name,
                     webhook_avatar,
+                    embed_color,
                 )
                 self._save_state()
             else:
