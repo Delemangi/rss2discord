@@ -7,7 +7,12 @@ requires-python = ">=3.12"
 dependencies = ["feedparser>=6.0.12", "pyyaml>=6.0.3", "requests>=2.32.5"]
 
 [dependency-groups]
-dev = ["mypy>=1.18.2", "ruff>=0.14.0"]
+dev = [
+    "mypy>=1.18.2",
+    "ruff>=0.14.0",
+    "types-pyyaml>=6.0.12.20250915",
+    "types-requests>=2.32.4.20250913",
+]
 
 [tool.mypy]
 python_version = "3.12"
