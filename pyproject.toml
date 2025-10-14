@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["feedparser>=6.0.12", "pyyaml>=6.0.3", "requests>=2.32.5"]
+dependencies = [
+    "feedparser>=6.0.12",
+    "forumscraper>=0.1.21",
+    "pyyaml>=6.0.3",
+    "requests>=2.32.5",
+]
 
 [dependency-groups]
 dev = [

@@ -7,6 +7,7 @@ COPY pyproject.toml ./
 RUN uv pip install --system --no-cache -r pyproject.toml
 
 COPY main.py ./
+COPY strategies/ ./strategies/
 
 VOLUME ["/app/config", "/app/data"]
 

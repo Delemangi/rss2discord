@@ -66,6 +66,20 @@ wheels = [
 ]
 
 [[package]]
+name = "forumscraper"
+version = "0.1.21"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "reliq" },
+    { name = "requests" },
+    { name = "treerequests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/e1/39c1ddb424a8a2e18d276e23f40d07c0a8d550b4c30c01ad78e625b3299d/forumscraper-0.1.21.tar.gz", hash = "sha256:77b6bd0a2b0ce714bbccd706087da08a8b142e4e496b02936383948c10a145d6", size = 67726 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/2e/010682ee861a0787060a6c69d944c73135c642aa362c643cc372774a64cb/forumscraper-0.1.21-py3-none-any.whl", hash = "sha256:d27ae8c522440e97e6fec52d94d29bf1da5f7117a2030843e1f17c682ceca497", size = 84642 },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -171,6 +185,28 @@ wheels = [
 ]
 
 [[package]]
+name = "reliq"
+version = "0.0.46"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/5a/649f5fcbb7086fe36460e28c6f4c70f7f5d784dff75ef6e14ba2dffdcb07/reliq-0.0.46.tar.gz", hash = "sha256:a69f4ed444c466fc356c9d4389982c62a3ceeab223bf244240cb3c482605a1a7", size = 2668757 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/73/a38f38385191ba885202a977f6b10c3a82609adf25c5364451ca4034034e/reliq-0.0.46-cp312-cp312-macosx_13_0_x86_64.whl", hash = "sha256:56c1c5ea76ed63d9cdb34971374709e32585c8be63dc62d0fcd77c889947fa4c", size = 120544 },
+    { url = "https://files.pythonhosted.org/packages/08/04/0a196fe6ebc75848ecfb182e41d4965ccc5a9c9a8876a8c5dcac9fc15f23/reliq-0.0.46-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:6a1ff6ee08677e74ae731603c1ec008a1c7227600d18195d511f95970d65fb2d", size = 115246 },
+    { url = "https://files.pythonhosted.org/packages/30/2e/0e7c1f46e244bb980af7439f270d4f02f750f8a65ea501396ae70f6deccf/reliq-0.0.46-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:6daf89c2e29f3b99c8bcae812c58363b514923b496590c1f293993c3da882e78", size = 115911 },
+    { url = "https://files.pythonhosted.org/packages/5f/9d/4c04cdcb4dc093b290944758f33f8e9ccf53b8ca6414384943b02d09d1f9/reliq-0.0.46-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:030efac43f4bd5bae1469eb68c0ac26e041416d7f6f9a41c7d58948114fb5e77", size = 147160 },
+    { url = "https://files.pythonhosted.org/packages/01/01/91f78db2f489297b119ef8ef56ab0a514a5afd679b2212c0c9f9f17e6726/reliq-0.0.46-cp312-cp312-manylinux2014_armv7l.whl", hash = "sha256:8fb30e81c40295e7379f3fdb930ae7a25046ffaf4a3db0d32535cd882b751126", size = 120584 },
+    { url = "https://files.pythonhosted.org/packages/08/26/50631f9e46e21947837a957ba485eae28fc43b9c3473d21c9729c25229f4/reliq-0.0.46-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:0d781720b31846aa997960a1e4b10e07295881fcb089a15e9534714398eee831", size = 151025 },
+    { url = "https://files.pythonhosted.org/packages/7d/ac/25a496ecc5c5f2a71d8a07914bcd11f7fff00066f369ae386a5090162ddb/reliq-0.0.46-cp312-cp312-win_amd64.whl", hash = "sha256:fed8e82f2e34940a2f2ff7f98c65ccc71f61f81a96f41961f43f7cef49383f3b", size = 181047 },
+    { url = "https://files.pythonhosted.org/packages/68/fe/5523d546e89e1f2be8febe29b09876b6e37b3e59dd9c35495df045bd226e/reliq-0.0.46-cp313-cp313-macosx_13_0_x86_64.whl", hash = "sha256:6f232087dd75ddc6ee11e3540087cf478ab401201997c742cc57567e6487d980", size = 120543 },
+    { url = "https://files.pythonhosted.org/packages/6a/73/a22baf1ae7ba2cb6adbd8a13b7078f704818393a215b13a7028c6e3df0a7/reliq-0.0.46-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:07f77384802de069c8379331f6020b25a61561704532714e75d7cf556769e784", size = 115247 },
+    { url = "https://files.pythonhosted.org/packages/eb/e8/261806ee37aa77e05430d1f16eafbef51cfa14b9274110436402b6aa18dc/reliq-0.0.46-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:131e4f7141137294fb3d07b96455e873a518c22de6909c8d13da706716d7d68e", size = 115911 },
+    { url = "https://files.pythonhosted.org/packages/5c/3e/c195d107e0c82c911e16c203f95cd0bee86b6420e2c589a37226c45678f8/reliq-0.0.46-cp313-cp313-manylinux2014_aarch64.whl", hash = "sha256:5afce841aae946872d0e5d8031781f94f381b497105349038eac25d673d5f44d", size = 147160 },
+    { url = "https://files.pythonhosted.org/packages/36/18/a662560a803499bb39c5b42067b66b7593fa84e7bcdda84f8e446cdc1904/reliq-0.0.46-cp313-cp313-manylinux2014_armv7l.whl", hash = "sha256:f74a76187473c70897c73879248bb608aa9745f2772fac0e2124ebde065fe1a5", size = 120584 },
+    { url = "https://files.pythonhosted.org/packages/4c/02/ecebd59277f5bf62dc2d5883256ae495e2b49f97f6db04c75a84685ff56b/reliq-0.0.46-cp313-cp313-manylinux2014_x86_64.whl", hash = "sha256:5e28ecd12f383b3407f827b6af4869d00d8b77fe057973d9af17854b17ae5650", size = 151025 },
+    { url = "https://files.pythonhosted.org/packages/58/21/59c0a97c2e357acf7bc83e93d54310b4bf9969556dbcb2d47111ee5e960c/reliq-0.0.46-cp313-cp313-win_amd64.whl", hash = "sha256:ab6b2d3dcfe5ca1ad295b475d839ef6b1bb092a43e5df4f08c41714dda6989ed", size = 181045 },
+]
+
+[[package]]
 name = "requests"
 version = "2.32.5"
 source = { registry = "https://pypi.org/simple" }
@@ -191,6 +227,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "feedparser" },
+    { name = "forumscraper" },
     { name = "pyyaml" },
     { name = "requests" },
 ]
@@ -206,6 +243,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "feedparser", specifier = ">=6.0.12" },
+    { name = "forumscraper", specifier = ">=0.1.21" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "requests", specifier = ">=2.32.5" },
 ]
@@ -249,6 +287,15 @@ name = "sgmllib3k"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9e/bd/3704a8c3e0942d711c1299ebf7b9091930adae6675d7c8f476a7ce48653c/sgmllib3k-1.0.0.tar.gz", hash = "sha256:7868fb1c8bfa764c1ac563d3cf369c381d1325d36124933a726f29fcdaa812e9", size = 5750 }
+
+[[package]]
+name = "treerequests"
+version = "0.0.15"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/0d/2fe0a44ad0f2af8c850778cedd1eb74971211ade47be927ac1bd76e82eb6/treerequests-0.0.15.tar.gz", hash = "sha256:bf61b96dc65263db90ae1d19f11a8f4b303e916cbaf44aee56804f0d930a0bfa", size = 33243 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/cb/b56a889ae54461c550a5bebfe7c6cb1480e947d5a3b46e7047e24b620978/treerequests-0.0.15-py3-none-any.whl", hash = "sha256:68b3c8d91db4982244a957227966e7702454d44247ad57c20a6584ded9bcdc6d", size = 29136 },
+]
 
 [[package]]
 name = "types-pyyaml"

@@ -1,17 +1,16 @@
 import json
 import logging
 import os
-import re
 import sys
 import time
 from datetime import UTC, datetime
-from html import unescape
 from pathlib import Path
 from typing import Any
 
-import feedparser
 import requests
 import yaml
+
+from strategies import RSSStrategy, ScraperStrategy, XenForoStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +31,10 @@ class RSSToDiscord:
         self.config = self._load_config()
         self.state_file = Path("state.json")
         self.state = self._load_state()
+        self.strategies: dict[str, ScraperStrategy] = {
+            "rss": RSSStrategy(),
+            "xenforo": XenForoStrategy(),
+        }
 
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML file."""
@@ -70,29 +73,16 @@ class RSSToDiscord:
         except Exception:
             logger.exception("Error saving state")
 
-    def _clean_description(self, text: str) -> str:
-        """Clean HTML tags and unwanted content from description."""
-        if not text:
-            return ""
-
-        text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<p>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = unescape(text)
-        text = text.replace("&#32;", " ")
-        text = re.sub(
-            r"\s*submitted by\s*/u/\S+.*$",
-            "",
-            text,
-            flags=re.IGNORECASE | re.MULTILINE,
-        )
-        text = re.sub(r"\[link\]|\[comments\]", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        text = text.strip()
-
-        return text
+    def _get_strategy(self, strategy_name: str) -> ScraperStrategy:
+        """Get the appropriate scraping strategy."""
+        strategy = self.strategies.get(strategy_name.lower())
+        if strategy is None:
+            logger.warning(
+                "Unknown strategy '%s', falling back to RSS",
+                strategy_name,
+            )
+            return self.strategies["rss"]
+        return strategy
 
     def _send_webhook_request(
         self,
@@ -148,31 +138,26 @@ class RSSToDiscord:
     def _send_to_discord(
         self,
         webhook_url: str,
-        entry: Any,  # noqa: ANN401
+        entry_data: dict[str, Any],
         feed_title: str,
         webhook_name: str | None = None,
         webhook_avatar: str | None = None,
         embed_color: int | None = None,
     ) -> bool:
-        """Send an RSS entry to Discord webhook with retry logic."""
+        """Send entry data to Discord webhook with retry logic."""
         try:
-            title = entry.get("title", "No Title")
-            link = entry.get("link", "")
-            description = entry.get("summary", entry.get("description", ""))
-            author = entry.get("author", "")
-
-            title = unescape(title)
-            description = self._clean_description(description)
-
-            if len(description) > 2000:
-                description = description[:1997] + "..."
+            title = entry_data.get("title", "No Title")
+            link = entry_data.get("link", "")
+            description = entry_data.get("description", "")
+            author = entry_data.get("author", "")
+            timestamp = entry_data.get("timestamp", datetime.now(UTC).isoformat())
 
             embed = {
                 "title": title,
                 "url": link,
                 "description": description,
                 "color": embed_color if embed_color is not None else 5814783,
-                "timestamp": self._get_timestamp(entry),
+                "timestamp": timestamp,
                 "footer": {"text": feed_title},
             }
 
@@ -202,109 +187,78 @@ class RSSToDiscord:
         else:
             return success
 
-    def _get_timestamp(self, entry: Any) -> str:  # noqa: ANN401
-        """Get ISO timestamp from entry."""
-        try:
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
-                dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                return dt.isoformat()
-            if hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                dt = datetime(*entry.updated_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                return dt.isoformat()
-        except Exception:
-            logger.debug("Could not parse timestamp from entry")
-        return datetime.now(UTC).isoformat()
-
-    def _get_entry_id(self, entry: Any) -> str:  # noqa: ANN401
-        """Get unique identifier for an entry."""
-        if hasattr(entry, "id"):
-            return entry.id
-        if hasattr(entry, "link"):
-            return entry.link
-        if hasattr(entry, "title"):
-            return entry.title
-        return str(hash(str(entry)))
-
-    def _is_entry_too_old(self, entry: Any, max_age_days: int) -> bool:  # noqa: ANN401
+    def _is_entry_too_old(
+        self,
+        entry_data: dict[str, Any],
+        max_age_days: int,
+    ) -> bool:
         """Check if an entry is older than the maximum allowed age."""
         if max_age_days <= 0:
             return False
 
         try:
-            entry_time = None
-            entry_title = getattr(entry, "title", "Unknown")
+            entry_title = entry_data.get("title", "Unknown")
+            timestamp_str = entry_data.get("timestamp")
 
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
-                entry_time = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                logger.debug(
-                    "Entry '%s' published: %s",
+            if not timestamp_str:
+                logger.warning(
+                    "No timestamp found for entry, treating as too old: %s",
                     entry_title,
-                    entry_time.isoformat(),
                 )
-            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                entry_time = datetime(*entry.updated_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                logger.debug(
-                    "Entry '%s' updated: %s",
-                    entry_title,
-                    entry_time.isoformat(),
-                )
+                return True
 
-            if entry_time:
-                current_time = datetime.now(UTC)
-                age_days = (current_time - entry_time).days
-                age_hours = (current_time - entry_time).total_seconds() / 3600
-                is_old = age_days > max_age_days
+            entry_time = datetime.fromisoformat(timestamp_str)
+            current_time = datetime.now(UTC)
+            age_days = (current_time - entry_time).days
+            age_hours = (current_time - entry_time).total_seconds() / 3600
+            is_old = age_days > max_age_days
 
-                logger.info(
-                    "Entry '%s' age: %.1f hours (%d days) - Max: %d days - Too old: %s",
-                    entry_title,
-                    age_hours,
-                    age_days,
-                    max_age_days,
-                    is_old,
-                )
-                return is_old
-
+            logger.info(
+                "Entry '%s' age: %.1f hours (%d days) - Max: %d days - Too old: %s",
+                entry_title,
+                age_hours,
+                age_days,
+                max_age_days,
+                is_old,
+            )
         except Exception:
             logger.exception(
                 "Error determining entry age, treating as too old: %s",
-                getattr(entry, "title", "Unknown"),
+                entry_data.get("title", "Unknown"),
             )
             return True
-
-        logger.warning(
-            "No timestamp found for entry, treating as too old: %s",
-            getattr(entry, "title", "Unknown"),
-        )
-        return True
+        else:
+            return is_old
 
     def _filter_new_entries(
         self,
         entries: list[Any],
         processed_ids: list[str],
         max_age_days: int,
-    ) -> tuple[list[tuple[str, Any]], int]:
+        strategy: ScraperStrategy,
+    ) -> tuple[list[tuple[str, dict[str, Any]]], int]:
         """Filter entries to find new ones that aren't too old."""
         new_entries = []
         skipped_old = 0
 
-        for entry in reversed(entries):
-            entry_id = self._get_entry_id(entry)
+        for entry in entries:
+            entry_id = strategy.get_entry_id(entry)
 
             if entry_id not in processed_ids:
-                if self._is_entry_too_old(entry, max_age_days):
+                entry_data = strategy.get_entry_data(entry)
+                if self._is_entry_too_old(entry_data, max_age_days):
                     skipped_old += 1
                     processed_ids.append(entry_id)
-                    if len(processed_ids) > 1000:
-                        processed_ids.pop(0)
+                    if len(processed_ids) > 5000:
+                        processed_ids.pop()
                 else:
-                    new_entries.append((entry_id, entry))
+                    new_entries.append((entry_id, entry_data))
 
         return new_entries, skipped_old
 
     def _process_new_entries(
         self,
-        new_entries: list[tuple[str, Any]],
+        new_entries: list[tuple[str, dict[str, Any]]],
         webhook_url: str,
         feed_title: str,
         processed_ids: list[str],
@@ -315,10 +269,10 @@ class RSSToDiscord:
         """Process and send new entries to Discord."""
         delay_between_posts = self.config.get("delay_between_posts", 2)
 
-        for entry_id, entry in new_entries:
+        for entry_id, entry_data in new_entries:
             if self._send_to_discord(
                 webhook_url,
-                entry,
+                entry_data,
                 feed_title,
                 webhook_name,
                 webhook_avatar,
@@ -330,33 +284,27 @@ class RSSToDiscord:
                 time.sleep(delay_between_posts)
 
     def process_feed(self, feed_config: dict[str, Any]) -> None:
-        """Process a single RSS feed."""
+        """Process a single feed using the appropriate strategy."""
         feed_url = feed_config.get("url")
         webhook_url = feed_config.get("webhook")
         feed_name = feed_config.get("name", feed_url)
         webhook_name = feed_config.get("webhook_name")
         webhook_avatar = feed_config.get("webhook_avatar")
         embed_color = feed_config.get("embed_color")
+        strategy_name = feed_config.get("strategy", "rss")
         max_age_days = self.config.get("max_post_age_days", 7)
 
         if not feed_url or not webhook_url:
             logger.warning("Skipping feed %s: missing url or webhook", feed_name)
             return
 
-        logger.info("Processing feed: %s", feed_name)
+        logger.info("Processing feed: %s (strategy: %s)", feed_name, strategy_name)
 
         try:
-            feed = feedparser.parse(feed_url)
+            strategy = self._get_strategy(strategy_name)
+            entries, source_title = strategy.fetch_entries(feed_url)
 
-            if feed.bozo and not feed.entries:
-                logger.error(
-                    "Error parsing feed %s: %s",
-                    feed_name,
-                    feed.bozo_exception,
-                )
-                return
-
-            feed_title = str(getattr(feed.feed, "title", feed_name))
+            feed_title = feed_config.get("name", source_title)
 
             if feed_url not in self.state["feeds"]:
                 self.state["feeds"][feed_url] = {"processed_ids": []}
@@ -364,9 +312,10 @@ class RSSToDiscord:
             processed_ids = self.state["feeds"][feed_url]["processed_ids"]
 
             new_entries, skipped_old = self._filter_new_entries(
-                feed.entries,
+                entries,
                 processed_ids,
                 max_age_days,
+                strategy,
             )
 
             if skipped_old > 0:
