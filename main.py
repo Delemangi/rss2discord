@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from datetime import UTC, datetime
@@ -35,6 +36,32 @@ class RSSToDiscord:
             "rss": RSSStrategy(),
             "xenforo": XenForoStrategy(),
         }
+        self.shutdown_flag = False
+
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+
+    def _handle_shutdown(self, signum: int, frame: Any) -> None:  # noqa: ANN401
+        """Handle shutdown signals gracefully."""
+        logger.info("Received shutdown signal, stopping...")
+        self.shutdown_flag = True
+
+    def _interruptible_sleep(self, seconds: float) -> bool:
+        """
+        Sleep for the specified duration, but check for shutdown signal periodically.
+
+        Args:
+            seconds: Number of seconds to sleep
+
+        Returns:
+            True if sleep completed normally, False if interrupted by shutdown
+        """
+        end_time = time.time() + seconds
+        while time.time() < end_time:
+            if self.shutdown_flag:
+                return False
+            time.sleep(min(0.5, end_time - time.time()))
+        return True
 
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML file."""
@@ -270,6 +297,10 @@ class RSSToDiscord:
         delay_between_posts = self.config.get("delay_between_posts", 2)
 
         for entry_id, entry_data in new_entries:
+            if self.shutdown_flag:
+                logger.info("Shutdown requested, stopping entry processing")
+                break
+
             if self._send_to_discord(
                 webhook_url,
                 entry_data,
@@ -281,7 +312,10 @@ class RSSToDiscord:
                 processed_ids.append(entry_id)
                 if len(processed_ids) > 1000:
                     processed_ids.pop(0)
-                time.sleep(delay_between_posts)
+
+                if not self._interruptible_sleep(delay_between_posts):
+                    logger.info("Shutdown requested during post delay")
+                    break
 
     def process_feed(self, feed_config: dict[str, Any]) -> None:
         """Process a single feed using the appropriate strategy."""
@@ -363,23 +397,33 @@ class RSSToDiscord:
             refresh_interval,
         )
 
-        while True:
+        while not self.shutdown_flag:
             try:
                 for feed_config in feeds:
+                    if self.shutdown_flag:
+                        break
                     self.process_feed(feed_config)
+
+                if self.shutdown_flag:
+                    break
 
                 logger.info(
                     "Waiting %d seconds until next refresh...",
                     refresh_interval,
                 )
-                time.sleep(refresh_interval)
+                if not self._interruptible_sleep(refresh_interval):
+                    break
 
             except KeyboardInterrupt:
-                logger.info("Shutting down...")
-                sys.exit(0)
+                logger.info("Keyboard interrupt received, shutting down...")
+                break
             except Exception:
                 logger.exception("Unexpected error in main loop")
-                time.sleep(60)
+                if not self._interruptible_sleep(60):
+                    break
+
+        logger.info("Shutdown complete")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
