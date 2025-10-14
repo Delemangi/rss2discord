@@ -36,6 +36,9 @@ class XenForoStrategy(ScraperStrategy):
                     os.chdir(tempdir)
                     scraper = xenforo(
                         output=Outputs.data | Outputs.write_by_id,
+                        requests={
+                            "allow_redirects": True,
+                        },
                     )
                     result = scraper.get_thread(url)
                 finally:
