@@ -215,6 +215,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Aplication
+# Application
 config.yaml
 state.json
+data/
