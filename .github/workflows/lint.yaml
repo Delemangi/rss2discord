@@ -2,21 +2,16 @@ name: Linters
 
 on:
   push:
-    branches:
-      - "main"
     paths:
-      - "main.py"
-      - "strategies/**"
-      - "pyproject.toml"
       - ".github/workflows/lint.yaml"
+      - "**/*.py"
+      - "pyproject.toml"
   pull_request:
-    branches:
-      - "main"
     paths:
-      - "main.py"
-      - "strategies/**"
-      - "pyproject.toml"
       - ".github/workflows/lint.yaml"
+      - "**/*.py"
+      - "pyproject.toml"
+  workflow_dispatch:
 
 permissions:
   contents: read

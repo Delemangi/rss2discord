@@ -1,15 +1,14 @@
-name: Build
+name: Docker
 
 on:
   push:
-    branches:
-      - "main"
     paths:
-      - ".github/workflows/ci.yaml"
-      - "Dockerfile"
-      - "main.py"
-      - "strategies/**"
+      - ".github/workflows/lint.yaml"
+      - "**/*.py"
       - "pyproject.toml"
+      - "Dockerfile"
+      - ".dockerignore"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,4 +39,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/delemangi/rss2discord:latest
+            ghcr.io/delemangi/rss2discord:${{ github.sha }}
+            ghcr.io/delemangi/rss2discord:${{ github.ref_name }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/delemangi/rss2discord:latest' || '' }}
