@@ -6,11 +6,17 @@ on:
       - "main"
     paths:
       - "main.py"
+      - "strategies/**"
+      - "pyproject.toml"
+      - ".github/workflows/lint.yaml"
   pull_request:
     branches:
       - "main"
     paths:
       - "main.py"
+      - "strategies/**"
+      - "pyproject.toml"
+      - ".github/workflows/lint.yaml"
 
 permissions:
   contents: read

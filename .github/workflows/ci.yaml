@@ -8,6 +8,8 @@ on:
       - ".github/workflows/ci.yaml"
       - "Dockerfile"
       - "main.py"
+      - "strategies/**"
+      - "pyproject.toml"
 
 permissions:
   contents: read
