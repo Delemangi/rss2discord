@@ -7,6 +7,7 @@ from html import unescape
 from typing import Any
 
 import feedparser
+import requests
 
 from .base import ScraperStrategy
 
@@ -26,7 +27,13 @@ class RSSStrategy(ScraperStrategy):
         Returns:
             A tuple of (entries list, feed title)
         """
-        feed = feedparser.parse(url)
+        response = requests.get(
+            url,
+            headers={"User-Agent": feedparser.USER_AGENT},
+            timeout=30,
+        )
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
 
         if feed.bozo and not feed.entries:
             error_msg = f"Error parsing RSS feed: {feed.bozo_exception}"
