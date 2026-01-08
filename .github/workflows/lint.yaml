@@ -2,40 +2,19 @@ name: Linters
 
 on:
   push:
-    paths:
-      - ".github/workflows/lint.yaml"
-      - "**/*.py"
-      - "pyproject.toml"
+    branches: [main, dev]
   pull_request:
-    paths:
-      - ".github/workflows/lint.yaml"
-      - "**/*.py"
-      - "pyproject.toml"
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  linters:
-    name: Ruff & MyPy
-    runs-on: ubuntu-latest
+  ruff:
+    uses: finki-hub/.github/.github/workflows/ruff.yaml@main
+    secrets: inherit
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Install Dependencies
-        run: uv sync
-
-      - name: Run Ruff
-        run: uv run --active ruff check .
-
-      - name: Run MyPy
-        run: uv run --active mypy .
+  mypy:
+    uses: finki-hub/.github/.github/workflows/mypy.yaml@main
+    secrets: inherit
