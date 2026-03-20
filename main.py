@@ -117,7 +117,9 @@ class RSSToDiscord:
 
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After")
-                    wait_time = float(retry_after) if retry_after else base_delay * (2**attempt)
+                    wait_time = (
+                        float(retry_after) if retry_after else base_delay * (2**attempt)
+                    )
 
                     logger.warning(
                         "Rate limited (429), waiting %s seconds before retry %d/%d",

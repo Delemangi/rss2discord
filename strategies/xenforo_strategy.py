@@ -77,7 +77,9 @@ class XenForoStrategy(ScraperStrategy):
 
         thread_url = entry.get("thread_url")
         post_id = entry.get("id")
-        link = f"{thread_url}post-{post_id}" if thread_url and post_id is not None else ""
+        link = (
+            f"{thread_url}post-{post_id}" if thread_url and post_id is not None else ""
+        )
 
         content = entry.get("content", entry.get("text", ""))
         content = self._clean_xenforo_content(content)
