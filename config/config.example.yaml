@@ -1,7 +1,7 @@
 # Discord Webhook RSS Feed Monitor Configuration
 
 # How often to check feeds (in seconds)
-check_interval: 300
+refresh_interval: 300
 
 # Delay between posting multiple updates (in seconds)
 # This prevents rate limiting and allows users to read posts
