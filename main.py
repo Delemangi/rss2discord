@@ -20,12 +20,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+MAX_PROCESSED_IDS = 1000
+
 
 class RSSToDiscord:
     """Main application class for RSS to Discord webhook forwarding."""
 
     def __init__(self, config_path: str | None = None) -> None:
-        """Initialize the application with configuration."""
         if config_path is None:
             config_path = os.environ.get("CONFIG_PATH", "config.yaml")
         self.config_path = Path(config_path)
@@ -42,20 +43,10 @@ class RSSToDiscord:
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
     def _handle_shutdown(self, signum: int, frame: Any) -> None:  # noqa: ANN401
-        """Handle shutdown signals gracefully."""
         logger.info("Received shutdown signal, stopping...")
         self.shutdown_flag = True
 
     def _interruptible_sleep(self, seconds: float) -> bool:
-        """
-        Sleep for the specified duration, but check for shutdown signal periodically.
-
-        Args:
-            seconds: Number of seconds to sleep
-
-        Returns:
-            True if sleep completed normally, False if interrupted by shutdown
-        """
         end_time = time.time() + seconds
         while time.time() < end_time:
             if self.shutdown_flag:
@@ -64,7 +55,6 @@ class RSSToDiscord:
         return True
 
     def _load_config(self) -> dict[str, Any]:
-        """Load configuration from YAML file."""
         try:
             with self.config_path.open() as f:
                 config = yaml.safe_load(f)
@@ -79,7 +69,6 @@ class RSSToDiscord:
             return config
 
     def _load_state(self) -> dict[str, Any]:
-        """Load state from JSON file to track processed items."""
         if self.state_file.exists():
             try:
                 with self.state_file.open() as f:
@@ -92,7 +81,6 @@ class RSSToDiscord:
         return {"feeds": {}}
 
     def _save_state(self) -> None:
-        """Save state to JSON file."""
         try:
             with self.state_file.open("w") as f:
                 json.dump(self.state, f, indent=2)
@@ -101,7 +89,6 @@ class RSSToDiscord:
             logger.exception("Error saving state")
 
     def _get_strategy(self, strategy_name: str) -> ScraperStrategy:
-        """Get the appropriate scraping strategy."""
         strategy = self.strategies.get(strategy_name.lower())
         if strategy is None:
             logger.warning(
@@ -117,7 +104,6 @@ class RSSToDiscord:
         payload: dict[str, Any],
         max_retries: int = 3,
     ) -> bool:
-        """Send webhook request with retry logic for rate limiting."""
         base_delay = 2
 
         for attempt in range(max_retries):
@@ -131,10 +117,7 @@ class RSSToDiscord:
 
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After")
-                    if retry_after:
-                        wait_time = float(retry_after)
-                    else:
-                        wait_time = base_delay * (2**attempt)
+                    wait_time = float(retry_after) if retry_after else base_delay * (2**attempt)
 
                     logger.warning(
                         "Rate limited (429), waiting %s seconds before retry %d/%d",
@@ -142,7 +125,8 @@ class RSSToDiscord:
                         attempt + 1,
                         max_retries,
                     )
-                    time.sleep(wait_time)
+                    if not self._interruptible_sleep(wait_time):
+                        return False
                     continue
 
                 response.raise_for_status()
@@ -154,7 +138,8 @@ class RSSToDiscord:
                     max_retries,
                 )
                 if attempt < max_retries - 1:
-                    time.sleep(base_delay * (2**attempt))
+                    if not self._interruptible_sleep(base_delay * (2**attempt)):
+                        return False
                     continue
                 raise
             else:
@@ -171,91 +156,92 @@ class RSSToDiscord:
         webhook_avatar: str | None = None,
         embed_color: int | None = None,
     ) -> bool:
-        """Send entry data to Discord webhook with retry logic."""
+        title = entry_data.get("title", "No Title")
+        link = entry_data.get("link", "")
+        description = entry_data.get("description", "")
+        author = entry_data.get("author", "")
+        timestamp = entry_data.get("timestamp", datetime.now(UTC).isoformat())
+
+        embed: dict[str, Any] = {
+            "title": title,
+            "url": link,
+            "description": description,
+            "color": embed_color if embed_color is not None else 5814783,
+            "timestamp": timestamp,
+            "footer": {"text": feed_title},
+        }
+
+        if author:
+            embed["author"] = {"name": author}
+
+        payload: dict[str, Any] = {"embeds": [embed]}
+
+        if webhook_name:
+            payload["username"] = webhook_name
+
+        if webhook_avatar:
+            payload["avatar_url"] = webhook_avatar
+
         try:
-            title = entry_data.get("title", "No Title")
-            link = entry_data.get("link", "")
-            description = entry_data.get("description", "")
-            author = entry_data.get("author", "")
-            timestamp = entry_data.get("timestamp", datetime.now(UTC).isoformat())
-
-            embed = {
-                "title": title,
-                "url": link,
-                "description": description,
-                "color": embed_color if embed_color is not None else 5814783,
-                "timestamp": timestamp,
-                "footer": {"text": feed_title},
-            }
-
-            if author:
-                embed["author"] = {"name": author}
-
-            payload: dict[str, Any] = {"embeds": [embed]}
-
-            if webhook_name:
-                payload["username"] = webhook_name
-
-            if webhook_avatar:
-                payload["avatar_url"] = webhook_avatar
-
             success = self._send_webhook_request(webhook_url, payload)
-            if success:
-                logger.info("Sent to Discord: %s", title)
-            else:
-                logger.error("Failed to send to Discord: %s", title)
-
         except requests.exceptions.RequestException:
             logger.exception("Error sending to Discord webhook")
             return False
         except Exception:
             logger.exception("Unexpected error sending to Discord")
             return False
+
+        if success:
+            logger.info("Sent to Discord: %s", title)
         else:
-            return success
+            logger.error("Failed to send to Discord: %s", title)
+
+        return success
 
     def _is_entry_too_old(
         self,
         entry_data: dict[str, Any],
         max_age_days: int,
     ) -> bool:
-        """Check if an entry is older than the maximum allowed age."""
         if max_age_days <= 0:
             return False
 
+        entry_title = entry_data.get("title", "Unknown")
+        timestamp_str = entry_data.get("timestamp")
+
+        if not timestamp_str:
+            logger.warning(
+                "No timestamp found for entry, treating as too old: %s",
+                entry_title,
+            )
+            return True
+
         try:
-            entry_title = entry_data.get("title", "Unknown")
-            timestamp_str = entry_data.get("timestamp")
-
-            if not timestamp_str:
-                logger.warning(
-                    "No timestamp found for entry, treating as too old: %s",
-                    entry_title,
-                )
-                return True
-
             entry_time = datetime.fromisoformat(timestamp_str)
-            current_time = datetime.now(UTC)
-            age_days = (current_time - entry_time).days
-            age_hours = (current_time - entry_time).total_seconds() / 3600
-            is_old = age_days > max_age_days
+            age = datetime.now(UTC) - entry_time
+            is_old = age.days > max_age_days
 
             logger.info(
                 "Entry '%s' age: %.1f hours (%d days) - Max: %d days - Too old: %s",
                 entry_title,
-                age_hours,
-                age_days,
+                age.total_seconds() / 3600,
+                age.days,
                 max_age_days,
                 is_old,
             )
         except Exception:
             logger.exception(
                 "Error determining entry age, treating as too old: %s",
-                entry_data.get("title", "Unknown"),
+                entry_title,
             )
             return True
         else:
             return is_old
+
+    @staticmethod
+    def _cap_processed_ids(processed_ids: list[str]) -> None:
+        while len(processed_ids) > MAX_PROCESSED_IDS:
+            processed_ids.pop(0)
 
     def _filter_new_entries(
         self,
@@ -264,7 +250,6 @@ class RSSToDiscord:
         max_age_days: int,
         strategy: ScraperStrategy,
     ) -> tuple[list[tuple[str, dict[str, Any]]], int]:
-        """Filter entries to find new ones that aren't too old."""
         new_entries = []
         skipped_old = 0
 
@@ -276,8 +261,7 @@ class RSSToDiscord:
                 if self._is_entry_too_old(entry_data, max_age_days):
                     skipped_old += 1
                     processed_ids.append(entry_id)
-                    if len(processed_ids) > 5000:
-                        processed_ids.pop()
+                    self._cap_processed_ids(processed_ids)
                 else:
                     new_entries.append((entry_id, entry_data))
 
@@ -293,7 +277,6 @@ class RSSToDiscord:
         webhook_avatar: str | None = None,
         embed_color: int | None = None,
     ) -> None:
-        """Process and send new entries to Discord."""
         delay_between_posts = self.config.get("delay_between_posts", 2)
 
         for entry_id, entry_data in new_entries:
@@ -310,15 +293,13 @@ class RSSToDiscord:
                 embed_color,
             ):
                 processed_ids.append(entry_id)
-                if len(processed_ids) > 1000:
-                    processed_ids.pop(0)
+                self._cap_processed_ids(processed_ids)
 
                 if not self._interruptible_sleep(delay_between_posts):
                     logger.info("Shutdown requested during post delay")
                     break
 
     def process_feed(self, feed_config: dict[str, Any]) -> None:
-        """Process a single feed using the appropriate strategy."""
         feed_url = feed_config.get("url")
         webhook_url = feed_config.get("webhook")
         feed_name = feed_config.get("name", feed_url)
@@ -383,7 +364,6 @@ class RSSToDiscord:
             logger.exception("Error processing feed %s", feed_name)
 
     def run(self) -> None:
-        """Main run loop."""
         refresh_interval = self.config.get("refresh_interval", 300)
         feeds = self.config.get("feeds", [])
 

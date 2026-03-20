@@ -18,15 +18,7 @@ class RSSStrategy(ScraperStrategy):
     """Strategy for scraping RSS/Atom feeds."""
 
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
-        """
-        Fetch entries from an RSS feed.
-
-        Args:
-            url: The RSS feed URL
-
-        Returns:
-            A tuple of (entries list, feed title)
-        """
+        """Fetch entries from an RSS feed."""
         response = requests.get(
             url,
             headers={"User-Agent": feedparser.USER_AGENT},
@@ -44,15 +36,7 @@ class RSSStrategy(ScraperStrategy):
         return feed.entries[::-1], feed_title
 
     def get_entry_id(self, entry: Any) -> str:  # noqa: ANN401
-        """
-        Get unique identifier for an RSS entry.
-
-        Args:
-            entry: The RSS entry object
-
-        Returns:
-            A unique identifier string
-        """
+        """Get unique identifier for an RSS entry."""
         if hasattr(entry, "id"):
             return entry.id
         if hasattr(entry, "link"):
@@ -62,25 +46,14 @@ class RSSStrategy(ScraperStrategy):
         return str(hash(str(entry)))
 
     def get_entry_data(self, entry: Any) -> dict[str, Any]:  # noqa: ANN401
-        """
-        Extract data from an RSS entry.
-
-        Args:
-            entry: The RSS entry object
-
-        Returns:
-            Dictionary with keys: title, link, description, author, timestamp
-        """
-        title = entry.get("title", "No Title")
+        """Extract data from an RSS entry."""
+        title = unescape(entry.get("title", "No Title"))
         link = entry.get("link", "")
-        description = entry.get("summary", entry.get("description", ""))
         author = entry.get("author", "")
 
-        title = unescape(title)
-        description = self._clean_description(description)
-
-        if len(description) > 2000:
-            description = description[:1997] + "..."
+        description = entry.get("summary", entry.get("description", ""))
+        description = self._clean_rss_description(description)
+        description = self._truncate(description)
 
         return {
             "title": title,
@@ -90,18 +63,9 @@ class RSSStrategy(ScraperStrategy):
             "timestamp": self._get_timestamp(entry),
         }
 
-    def _clean_description(self, text: str) -> str:
-        """Clean HTML tags and unwanted content from description."""
-        if not text:
-            return ""
-
-        text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<p>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", "", text)
-        text = unescape(text)
-        text = text.replace("&#32;", " ")
+    def _clean_rss_description(self, text: str) -> str:
+        """Clean HTML and Reddit-specific markup from RSS description."""
+        text = self._clean_html(text)
         text = re.sub(
             r"\s*submitted by\s*/u/\S+.*$",
             "",
@@ -109,13 +73,11 @@ class RSSStrategy(ScraperStrategy):
             flags=re.IGNORECASE | re.MULTILINE,
         )
         text = re.sub(r"\[link\]|\[comments\]", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        text = text.strip()
+        return text.strip()
 
-        return text
-
-    def _get_timestamp(self, entry: Any) -> str:  # noqa: ANN401
-        """Get ISO timestamp from entry."""
+    @staticmethod
+    def _get_timestamp(entry: Any) -> str:  # noqa: ANN401
+        """Get ISO timestamp from RSS entry."""
         try:
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
