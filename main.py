@@ -262,8 +262,6 @@ class RSSToDiscord:
                 entry_data = strategy.get_entry_data(entry)
                 if self._is_entry_too_old(entry_data, max_age_days):
                     skipped_old += 1
-                    processed_ids.append(entry_id)
-                    self._cap_processed_ids(processed_ids)
                 else:
                     new_entries.append((entry_id, entry_data))
 
