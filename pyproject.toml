@@ -8,7 +8,7 @@ dependencies = [
     "feedparser>=6.0.12",
     "forumscraper>=0.1.21",
     "pyyaml>=6.0.3",
-    "requests>=2.34.1",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
