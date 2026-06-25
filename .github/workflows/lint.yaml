@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   ruff:
-    uses: finki-hub/.github/.github/workflows/ruff.yaml@main
+    uses: Delemangi/.github/.github/workflows/ruff.yaml@main
     secrets: inherit
 
   mypy:
-    uses: finki-hub/.github/.github/workflows/mypy.yaml@main
+    uses: Delemangi/.github/.github/workflows/mypy.yaml@main
     secrets: inherit
