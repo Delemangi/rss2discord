@@ -150,65 +150,6 @@ def test_malformed_yaml_does_not_expose_webhook_secret(
     assert "secret-token" not in format_logs(caplog)
 
 
-def test_invalid_legacy_state_does_not_expose_feed_url_secret(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    # Given
-    config_path = tmp_path / "config.yaml"
-    legacy_path = tmp_path / "state.json"
-    database_path = tmp_path / "state.db"
-    write_config(
-        config_path,
-        "  - id: news\n"
-        "    url: https://example.test/feed.xml\n"
-        "    webhook: https://discord.test/webhook\n",
-    )
-    legacy_path.write_text(
-        '{"feeds":{"https://feed.test/rss?token=secret-token":{"processed_ids":[1]}}}',
-    )
-    monkeypatch.setenv("CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("LEGACY_STATE_PATH", str(legacy_path))
-    monkeypatch.setenv("STATE_DB_PATH", str(database_path))
-    caplog.set_level(logging.ERROR)
-
-    # When
-    exit_code = app_main.main()
-
-    # Then
-    logs = format_logs(caplog)
-    assert exit_code == 1
-    assert "feeds.<key>.processed_ids.0" in logs
-    assert "secret-token" not in logs
-
-
-def test_malformed_legacy_json_exits_without_traceback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    # Given
-    config_path = tmp_path / "config.yaml"
-    legacy_path = tmp_path / "state.json"
-    config_path.write_text("feeds: []\n")
-    legacy_path.write_text('{"secret-token"')
-    monkeypatch.setenv("CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("LEGACY_STATE_PATH", str(legacy_path))
-    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.db"))
-    caplog.set_level(logging.ERROR)
-
-    # When
-    exit_code = app_main.main()
-
-    # Then
-    logs = format_logs(caplog)
-    assert exit_code == 1
-    assert all(record.exc_info is None for record in caplog.records)
-    assert "Invalid legacy state JSON" in logs
-    assert "secret-token" not in logs
-
-
 def test_database_open_failure_exits_without_traceback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -218,7 +159,6 @@ def test_database_open_failure_exits_without_traceback(
     config_path = tmp_path / "config.yaml"
     config_path.write_text("feeds: []\n")
     monkeypatch.setenv("CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("LEGACY_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("STATE_DB_PATH", str(tmp_path))
     caplog.set_level(logging.ERROR)
 

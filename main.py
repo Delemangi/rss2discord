@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import signal
@@ -12,7 +11,7 @@ from pydantic import ValidationError
 
 from app import RSSToDiscord
 from configuration import load_config
-from delivery_store import DeliveryStore, UnsupportedSchemaVersionError
+from delivery_store import DeliveryStore
 from discord_client import DiscordWebhookClient
 
 logging.basicConfig(
@@ -30,7 +29,6 @@ SAFE_VALIDATION_FIELDS = frozenset(
         "id",
         "max_post_age_days",
         "name",
-        "processed_ids",
         "refresh_interval",
         "strategy",
         "url",
@@ -44,11 +42,10 @@ SAFE_VALIDATION_FIELDS = frozenset(
 def main() -> int:
     config_path = Path(os.environ.get("CONFIG_PATH", "config/config.yaml"))
     database_path = Path(os.environ.get("STATE_DB_PATH", "data/state.db"))
-    legacy_state_path = Path(os.environ.get("LEGACY_STATE_PATH", "state.json"))
 
     try:
         config = load_config(config_path)
-        with DeliveryStore(database_path, legacy_state_path, config.feeds) as store:
+        with DeliveryStore(database_path) as store:
             application = RSSToDiscord(
                 config=config,
                 store=store,
@@ -65,18 +62,12 @@ def main() -> int:
     except yaml.YAMLError as error:
         logger.log(logging.ERROR, "Invalid YAML configuration%s", _yaml_location(error))
         return 1
-    except json.JSONDecodeError:
-        logger.log(logging.ERROR, "Invalid legacy state JSON")
-        return 1
     except sqlite3.Error as error:
         logger.log(
             logging.ERROR,
             "Storage initialization failed (%s)",
             type(error).__name__,
         )
-        return 1
-    except UnsupportedSchemaVersionError as error:
-        logger.log(logging.ERROR, "%s", error)
         return 1
     except OSError as error:
         logger.log(
