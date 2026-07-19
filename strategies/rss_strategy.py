@@ -9,6 +9,8 @@ from typing import Any
 import feedparser
 import requests
 
+from models import EntryData, EntryId
+
 from .base import ScraperStrategy
 
 logger = logging.getLogger(__name__)
@@ -35,33 +37,33 @@ class RSSStrategy(ScraperStrategy):
         feed_title = str(getattr(feed.feed, "title", "RSS Feed"))
         return feed.entries[::-1], feed_title
 
-    def get_entry_id(self, entry: Any) -> str:  # noqa: ANN401
+    def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """Get unique identifier for an RSS entry."""
-        if hasattr(entry, "id"):
-            return entry.id
-        if hasattr(entry, "link"):
-            return entry.link
-        if hasattr(entry, "title"):
-            return entry.title
-        return str(hash(str(entry)))
+        for field in ("id", "link"):
+            raw_value = entry.get(field)
+            if raw_value is not None:
+                value = str(raw_value).strip()
+                if value:
+                    return EntryId(value)
+        return None
 
-    def get_entry_data(self, entry: Any) -> dict[str, Any]:  # noqa: ANN401
+    def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         """Extract data from an RSS entry."""
-        title = unescape(entry.get("title", "No Title"))
-        link = entry.get("link", "")
-        author = entry.get("author", "")
+        title = unescape(str(entry.get("title", "No Title")))
+        link = str(entry.get("link", ""))
+        author = str(entry.get("author", ""))
 
-        description = entry.get("summary", entry.get("description", ""))
+        description = str(entry.get("summary", entry.get("description", "")))
         description = self._clean_rss_description(description)
         description = self._truncate(description)
 
-        return {
-            "title": title,
-            "link": link,
-            "description": description,
-            "author": author,
-            "timestamp": self._get_timestamp(entry),
-        }
+        return EntryData(
+            title=title,
+            link=link,
+            description=description,
+            author=author,
+            timestamp=self._get_timestamp(entry),
+        )
 
     def _clean_rss_description(self, text: str) -> str:
         """Clean HTML and Reddit-specific markup from RSS description."""
@@ -76,15 +78,23 @@ class RSSStrategy(ScraperStrategy):
         return text.strip()
 
     @staticmethod
-    def _get_timestamp(entry: Any) -> str:  # noqa: ANN401
+    def _get_timestamp(entry: Any) -> str | None:  # noqa: ANN401
         """Get ISO timestamp from RSS entry."""
-        try:
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
-                dt = datetime(*entry.published_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                return dt.isoformat()
-            if hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                dt = datetime(*entry.updated_parsed[:6], tzinfo=UTC)  # type: ignore[misc]
-                return dt.isoformat()
-        except Exception:
-            logger.debug("Could not parse timestamp from entry")
-        return datetime.now(UTC).isoformat()
+        for field in ("published_parsed", "updated_parsed"):
+            parsed_time = entry.get(field)
+            if parsed_time is None:
+                continue
+            try:
+                parsed_datetime = datetime(
+                    parsed_time.tm_year,
+                    parsed_time.tm_mon,
+                    parsed_time.tm_mday,
+                    parsed_time.tm_hour,
+                    parsed_time.tm_min,
+                    parsed_time.tm_sec,
+                    tzinfo=UTC,
+                )
+            except (AttributeError, ValueError):
+                continue
+            return parsed_datetime.isoformat()
+        return None
