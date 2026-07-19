@@ -1,6 +1,5 @@
 """RSS feed scraping strategy."""
 
-import logging
 import re
 from datetime import UTC, datetime
 from html import unescape
@@ -11,9 +10,7 @@ import requests
 
 from models import EntryData, EntryId
 
-from .base import ScraperStrategy
-
-logger = logging.getLogger(__name__)
+from .base import FeedFetchError, ScraperStrategy
 
 
 class RSSStrategy(ScraperStrategy):
@@ -21,18 +18,19 @@ class RSSStrategy(ScraperStrategy):
 
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """Fetch entries from an RSS feed."""
-        response = requests.get(
-            url,
-            headers={"User-Agent": feedparser.USER_AGENT},
-            timeout=30,
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                url,
+                headers={"User-Agent": feedparser.USER_AGENT},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            raise FeedFetchError("RSS", type(error).__name__) from None
         feed = feedparser.parse(response.content)
 
         if feed.bozo and not feed.entries:
-            error_msg = f"Error parsing RSS feed: {feed.bozo_exception}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            raise FeedFetchError("RSS", type(feed.bozo_exception).__name__) from None
 
         feed_title = str(getattr(feed.feed, "title", "RSS Feed"))
         return feed.entries[::-1], feed_title

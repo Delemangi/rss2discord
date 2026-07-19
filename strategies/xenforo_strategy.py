@@ -1,6 +1,5 @@
 """XenForo forum scraping strategy."""
 
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -10,9 +9,7 @@ from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
 
 from models import EntryData, EntryId
 
-from .base import ScraperStrategy
-
-logger = logging.getLogger(__name__)
+from .base import FeedFetchError, ScraperStrategy
 
 
 class XenForoStrategy(ScraperStrategy):
@@ -35,31 +32,27 @@ class XenForoStrategy(ScraperStrategy):
                 finally:
                     os.chdir(original_cwd)
 
-            if not result or not isinstance(result, dict):
-                error_msg = f"Failed to fetch XenForo thread from {url}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)  # noqa: TRY301
+        except Exception as error:
+            raise FeedFetchError("XenForo", type(error).__name__) from None
 
-            threads = result.get("data", {}).get("threads", [])
-            thread = threads[0] if threads else {}
+        if not result or not isinstance(result, dict):
+            raise FeedFetchError("XenForo", "EmptyResponse")
 
-            title = thread.get("title", "XenForo Thread")
-            thread_url = thread.get("url")
-            posts = thread.get("posts", [])
+        threads = result.get("data", {}).get("threads", [])
+        thread = threads[0] if threads else {}
 
-            if posts:
-                for post in posts:
-                    if isinstance(post, dict):
-                        post["title"] = title
-                        if thread_url:
-                            post["thread_url"] = thread_url
+        title = thread.get("title", "XenForo Thread")
+        thread_url = thread.get("url")
+        posts = thread.get("posts", [])
 
-        except Exception as e:
-            error_msg = f"Error scraping XenForo forum: {e}"
-            logger.exception(error_msg)
-            raise ValueError(error_msg) from e
-        else:
-            return posts, title
+        if posts:
+            for post in posts:
+                if isinstance(post, dict):
+                    post["title"] = title
+                    if thread_url:
+                        post["thread_url"] = thread_url
+
+        return posts, title
 
     def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """Get unique identifier for a forum post."""

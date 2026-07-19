@@ -6,9 +6,13 @@ from configuration import AppConfig, FeedConfig
 from delivery_store import DeliveryStore
 from discord_client import DiscordSender, WebhookMessage
 from models import EntryData, EntryId
-from strategies import RSSStrategy, ScraperStrategy, XenForoStrategy
+from strategies import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
 
 logger = logging.getLogger(__name__)
+
+
+def _log_feed_fetch_error(feed_id: str, error: FeedFetchError) -> None:
+    logger.error("Error processing feed %s: %s", feed_id, error)
 
 
 class RSSToDiscord:
@@ -85,6 +89,8 @@ class RSSToDiscord:
                     break
                 try:
                     self.process_feed(feed)
+                except FeedFetchError as error:
+                    _log_feed_fetch_error(feed.id, error)
                 except Exception:
                     logger.exception("Error processing feed %s", feed.id)
 

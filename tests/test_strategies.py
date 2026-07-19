@@ -1,6 +1,11 @@
-import feedparser
+import traceback
 
-from strategies import RSSStrategy, XenForoStrategy
+import feedparser
+import pytest
+import requests
+
+import strategies.xenforo_strategy as xenforo_module
+from strategies import FeedFetchError, RSSStrategy, XenForoStrategy
 
 
 def test_rss_strategy_uses_stable_native_identity() -> None:
@@ -40,3 +45,61 @@ def test_xenforo_strategy_does_not_invent_missing_timestamp() -> None:
 
     # When / Then
     assert strategy._get_timestamp({}) is None
+
+
+def test_rss_fetch_error_does_not_expose_feed_url_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feed_url = "https://feed.test/rss?token=secret-token"
+
+    def fail_request(url: str, **kwargs: object) -> requests.Response:
+        del kwargs
+        raise requests.ConnectionError(f"Could not connect to {url}")
+
+    monkeypatch.setattr(requests, "get", fail_request)
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        RSSStrategy().fetch_entries(feed_url)
+
+    # Then
+    rendered_error = "".join(
+        traceback.format_exception(
+            fetch_error.type,
+            fetch_error.value,
+            fetch_error.tb,
+        ),
+    )
+    assert "secret-token" not in rendered_error
+
+
+def test_xenforo_fetch_error_does_not_expose_feed_url_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feed_url = "https://feed.test/thread?token=secret-token"
+
+    class FailingScraper:
+        def get_thread(self, url: str) -> None:
+            raise RuntimeError(f"Could not connect to {url}")
+
+    monkeypatch.setattr(
+        xenforo_module,
+        "xenforo",
+        lambda **kwargs: FailingScraper(),
+    )
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        XenForoStrategy().fetch_entries(feed_url)
+
+    # Then
+    rendered_error = "".join(
+        traceback.format_exception(
+            fetch_error.type,
+            fetch_error.value,
+            fetch_error.tb,
+        ),
+    )
+    assert "secret-token" not in rendered_error
