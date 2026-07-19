@@ -124,7 +124,6 @@ class DiscordWebhookClient:
             )
             return True
 
-        logger.error("Discord delivery retries exhausted for feed %s", message.feed.id)
         return False
 
     @staticmethod
