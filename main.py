@@ -90,11 +90,7 @@ def main() -> int:
 
 def _format_error(error: ValidationError) -> str:
     messages = []
-    for detail in error.errors(
-        include_context=False,
-        include_input=False,
-        include_url=False,
-    ):
+    for detail in error.errors():
         location = _format_location(detail["loc"])
         messages.append(f"{location}: {detail['msg']}")
     return "; ".join(messages)
