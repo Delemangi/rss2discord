@@ -21,13 +21,14 @@ ENV CONFIG_PATH=/app/config/config.yaml \
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --home-dir /app --shell /usr/sbin/nologin app \
     && mkdir --parents /app/config /app/data \
-    && chown --recursive app:app /app
+    && chown app:app /app/data \
+    && chmod 0555 /app /app/config
 
 WORKDIR /app
 
-COPY --from=builder --chown=app:app /app/.venv /app/.venv
-COPY --chown=app:app app.py configuration.py delivery_store.py discord_client.py main.py models.py ./
-COPY --chown=app:app strategies/ ./strategies/
+COPY --from=builder /app/.venv /app/.venv
+COPY app.py configuration.py delivery_store.py discord_client.py main.py models.py ./
+COPY strategies/ ./strategies/
 
 USER app
 
