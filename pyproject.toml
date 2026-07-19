@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "feedparser>=6.0.12",
     "forumscraper>=0.1.21",
+    "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
     "requests>=2.34.2",
 ]
@@ -14,6 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy>=2.3.0",
+    "pytest>=9.0.2",
     "ruff>=0.15.22",
     "types-pyyaml>=6.0.12.20260518",
     "types-requests>=2.33.0.20260712",
@@ -79,3 +81,9 @@ ignore = [
     "E501",
     "PLR0913",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "SLF001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
