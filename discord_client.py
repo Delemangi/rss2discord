@@ -90,7 +90,11 @@ class DiscordWebhookClient:
             "title": message.entry.title,
             "url": message.entry.link,
             "description": message.entry.description,
-            "color": message.feed.embed_color or DEFAULT_EMBED_COLOR,
+            "color": (
+                message.feed.embed_color
+                if message.feed.embed_color is not None
+                else DEFAULT_EMBED_COLOR
+            ),
             "footer": {"text": message.source_title},
         }
         if message.entry.author:
