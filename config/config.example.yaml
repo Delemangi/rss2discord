@@ -3,6 +3,10 @@
 # How often to check feeds (in seconds)
 refresh_interval: 300
 
+# Delay between fetching separate feeds (in seconds)
+# Increase this when a source rate-limits consecutive requests
+delay_between_feeds: 0
+
 # Delay between posting multiple updates (in seconds)
 # This prevents rate limiting and allows users to read posts
 delay_between_posts: 2
