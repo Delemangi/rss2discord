@@ -42,7 +42,10 @@ def main() -> int:
     except ValidationError as error:
         logger.log(logging.ERROR, "Invalid startup data: %s", _format_error(error))
         return 1
-    except (OSError, UnsupportedSchemaVersionError, yaml.YAMLError):
+    except yaml.YAMLError as error:
+        logger.log(logging.ERROR, "Invalid YAML configuration%s", _yaml_location(error))
+        return 1
+    except (OSError, UnsupportedSchemaVersionError):
         logger.exception("Unable to start RSS to Discord")
         return 1
     return 0
@@ -58,6 +61,15 @@ def _format_error(error: ValidationError) -> str:
         location = ".".join(str(part) for part in detail["loc"]) or "configuration"
         messages.append(f"{location}: {detail['msg']}")
     return "; ".join(messages)
+
+
+def _yaml_location(error: yaml.YAMLError) -> str:
+    if not isinstance(error, yaml.MarkedYAMLError) or error.problem_mark is None:
+        return ""
+    return (
+        f" at line {error.problem_mark.line + 1}, "
+        f"column {error.problem_mark.column + 1}"
+    )
 
 
 def _install_signal_handlers(application: RSSToDiscord) -> None:

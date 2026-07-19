@@ -2,10 +2,16 @@ import logging
 from pathlib import Path
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 import main as app_main
 from configuration import load_config
+
+
+def format_logs(caplog: pytest.LogCaptureFixture) -> str:
+    formatter = logging.Formatter()
+    return "\n".join(formatter.format(record) for record in caplog.records)
 
 
 def write_config(path: Path, feeds: str) -> None:
@@ -114,4 +120,31 @@ def test_invalid_config_does_not_expose_webhook_secret(
     # Then
     assert "secret-token" not in str(validation_error.value)
     assert exit_code == 1
-    assert "secret-token" not in caplog.text
+    assert "secret-token" not in format_logs(caplog)
+
+
+def test_malformed_yaml_does_not_expose_webhook_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "feeds:\n"
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        '    webhook: "secret-token\n',
+    )
+    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+    caplog.set_level(logging.ERROR)
+
+    # When
+    with pytest.raises(yaml.YAMLError):
+        load_config(config_path)
+    exit_code = app_main.main()
+
+    # Then
+    assert exit_code == 1
+    assert all(record.exc_info is None for record in caplog.records)
+    assert "secret-token" not in format_logs(caplog)
