@@ -72,6 +72,47 @@ def make_entry(entry_id: str) -> FakeEntry:
     )
 
 
+def test_run_waits_between_feeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feeds = (make_feed("first"), make_feed("second"))
+    config = AppConfig(
+        refresh_interval=60,
+        delay_between_feeds=61,
+        delay_between_posts=0,
+        max_post_age_days=0,
+        feeds=feeds,
+    )
+    sender = FakeSender([])
+    strategy = FakeStrategy([])
+    sleep_calls: list[float] = []
+
+    with DeliveryStore(
+        tmp_path / "state.db",
+        tmp_path / "state.json",
+        (),
+    ) as store:
+        app = RSSToDiscord(config=config, store=store, sender=sender)
+        app._strategies["rss"] = strategy
+
+        def record_sleep(seconds: float) -> bool:
+            sleep_calls.append(seconds)
+            if seconds == config.refresh_interval:
+                app.request_shutdown()
+                return False
+            return True
+
+        monkeypatch.setattr(app, "_interruptible_sleep", record_sleep)
+
+        # When
+        app.run()
+
+    # Then
+    assert sleep_calls == [61, 60]
+
+
 def make_app(
     store: DeliveryStore,
     sender: FakeSender,

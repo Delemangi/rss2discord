@@ -85,7 +85,7 @@ class RSSToDiscord:
             self._config.refresh_interval,
         )
         while not self._shutdown_requested:
-            for feed in self._config.feeds:
+            for feed_index, feed in enumerate(self._config.feeds):
                 if self._shutdown_requested:
                     break
                 try:
@@ -94,6 +94,16 @@ class RSSToDiscord:
                     _log_feed_fetch_error(feed.id, error)
                 except Exception:
                     logger.exception("Error processing feed %s", feed.id)
+
+                has_next_feed = feed_index + 1 < len(self._config.feeds)
+                if (
+                    has_next_feed
+                    and self._config.delay_between_feeds > 0
+                    and not self._interruptible_sleep(
+                        self._config.delay_between_feeds,
+                    )
+                ):
+                    break
 
             if not self._shutdown_requested:
                 logger.info(
