@@ -89,11 +89,7 @@ def test_run_waits_between_feeds(
     strategy = FakeStrategy([])
     sleep_calls: list[float] = []
 
-    with DeliveryStore(
-        tmp_path / "state.db",
-        tmp_path / "state.json",
-        (),
-    ) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=sender)
         app._strategies["rss"] = strategy
 
