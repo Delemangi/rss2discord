@@ -1,71 +1,119 @@
-﻿# RSS2Discord
+# RSS2Discord
 
-Forward RSS feeds and XenForo forum threads to Discord webhooks with clean embeds.
+Forward RSS/Atom entries and XenForo thread posts to Discord webhooks as embeds.
 
-## Setup
+## Features
+
+- RSS, Atom, and XenForo sources
+- Stable per-feed delivery history in SQLite
+- Immediate persistence after every successful Discord delivery
+- Retry on the next poll when Discord delivery fails
+- Configurable entry age, polling interval, embed color, name, and avatar
+- Graceful shutdown during polling, rate-limit backoff, and post delays
+- Non-root, read-only container deployment
+
+## Docker Compose setup
 
 ```bash
 git clone https://github.com/Delemangi/rss2discord.git
 cd rss2discord
-mkdir config
-cp config.example.yaml config/config.yaml
-# Edit config/config.yaml with your feeds and webhooks
-docker compose up -d
+mkdir -p config data
+cp config/config.example.yaml config/config.yaml
+# Edit config/config.yaml and replace the example feeds and webhook URLs.
+sudo chown -R 10001:10001 data
+docker compose up -d --build
+```
+
+The ownership command lets the container's fixed non-root user write the SQLite
+database. Docker Desktop users may not need it. To view logs or stop the service:
+
+```bash
+docker compose logs -f rss2discord
+docker compose down
+```
+
+For the published image, use `compose.prod.yaml`:
+
+```bash
+docker compose -f compose.prod.yaml up -d
 ```
 
 ## Configuration
 
+Each feed requires a stable, unique `id`. It may contain lowercase letters,
+numbers, periods, underscores, and hyphens. Do not change an ID after deployment:
+delivery history is namespaced by it, so a changed ID makes existing entries
+eligible for delivery again.
+
 ```yaml
 refresh_interval: 300
+delay_between_posts: 2
+max_post_age_days: 7
 
 feeds:
-    # RSS Feed Example
-    - name: "My Feed"
-      url: "https://example.com/feed.xml"
-      webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-      strategy: "rss" # Optional, defaults to 'rss'
-      webhook_name: "RSS Bot" # optional
-      webhook_avatar: "https://url" # optional
+  - id: "my-feed"
+    name: "My Feed"
+    url: "https://example.com/feed.xml"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "rss"
+    webhook_name: "RSS Bot"
+    webhook_avatar: "https://example.com/avatar.png"
+    embed_color: 5814783
 
-    # XenForo Forum Thread Example
-    - name: "Forum Thread"
-      url: "https://forum.example.com/threads/topic.12345/"
-      webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-      strategy: "xenforo" # Required for forum scraping
-      webhook_name: "Forum Bot" # optional
-      embed_color: 3447003 # optional
+  - id: "forum-thread"
+    name: "Forum Thread"
+    url: "https://forum.example.com/threads/topic.12345/"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "xenforo"
 ```
 
-## Get Discord Webhook
+`strategy` defaults to `rss`. Set `max_post_age_days` to `0` to disable age
+filtering. When age filtering is enabled, entries without a valid timestamp are
+skipped rather than assigned an invented timestamp.
 
-1. Right-click Discord channel -> Edit Channel
-2. Integrations -> Webhooks -> New Webhook
-3. Copy webhook URL
+See `config/config.example.yaml` for a fully annotated example.
 
-## Features
+## Delivery state
 
-- Monitor multiple RSS/Atom feeds
-- Scrape XenForo forum threads for new posts
-- Strategy-based architecture for easy extensibility
-- Clean HTML/markup from descriptions
-- Rich Discord embeds
-- Custom webhook names & avatars
-- Persistent state (no duplicates)
-- Configurable refresh interval
+Delivery history is stored at `data/state.db`. The database uses `(feed_id,
+entry_id)` as its key, so two configured feeds can use the same URL without
+sharing delivery history.
 
-## Scraping Strategies
+The database is created automatically on first startup. When upgrading from a
+release that did not use `state.db`, delivery history starts empty and previously
+sent entries may be sent again.
 
-### RSS Strategy (default)
+## Runtime paths
 
-- Supports RSS 2.0 and Atom feeds
-- Automatically parses feed metadata
-- Cleans HTML from descriptions
+| Environment variable | Container default | Purpose |
+| --- | --- | --- |
+| `CONFIG_PATH` | `/app/config/config.yaml` | YAML configuration |
+| `STATE_DB_PATH` | `/app/data/state.db` | SQLite delivery ledger |
 
-### XenForo Strategy
+## Local development
 
-- Scrapes XenForo forum threads
-- Monitors new posts in specified threads
-- Extracts post content and author information
+Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
+
+```bash
+uv sync --frozen --dev
+uv run pytest
+uv run ruff check .
+uv run mypy .
+```
+
+Run the application with paths suitable for local development:
+
+```bash
+CONFIG_PATH=config/config.yaml \
+STATE_DB_PATH=data/state.db \
+uv run python main.py
+```
+
+## Get a Discord webhook
+
+1. Right-click the target Discord channel and select **Edit Channel**.
+2. Open **Integrations**, then **Webhooks**.
+3. Create a webhook and copy its URL into the feed configuration.
 
 ## License
 

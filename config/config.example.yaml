@@ -14,7 +14,8 @@ max_post_age_days: 7
 # List of feeds to monitor
 feeds:
   # Example RSS feed
-  - name: "Example Tech Blog"
+  - id: "example-tech-blog" # Required: stable and unique; do not change after deployment
+    name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "rss" # Optional: 'rss' (default) or 'xenforo'
@@ -23,7 +24,8 @@ feeds:
     embed_color: 5814783 # Optional: Decimal color (default: 5814783 = blue)
 
   # Example XenForo forum thread
-  - name: "Forum Discussion"
+  - id: "forum-discussion"
+    name: "Forum Discussion"
     url: "https://forum.example.com/threads/topic-name.12345/"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "xenforo" # Use XenForo forum scraping strategy
@@ -31,13 +33,16 @@ feeds:
     embed_color: 3447003 # Optional: Decimal color
 
   # Example feed 2
-  - name: "Another Feed"
+  - id: "another-feed"
+    name: "Another Feed"
     url: "https://another-example.com/rss"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     # strategy defaults to 'rss' if not specified
     # webhook_name, webhook_avatar, and embed_color are optional
 
 # Notes:
+# - id: Stable unique ID containing lowercase letters, numbers, '.', '_', or '-' (required)
+#   Delivery history is keyed by this value, so changing it will make old entries new again.
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
 # - url: The RSS/Atom feed URL or XenForo forum thread URL (required)
 # - webhook: Discord webhook URL for posting updates (required)

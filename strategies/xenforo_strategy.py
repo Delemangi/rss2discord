@@ -1,17 +1,15 @@
 """XenForo forum scraping strategy."""
 
-import logging
 import os
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
 
-from .base import ScraperStrategy
+from models import EntryData, EntryId
 
-logger = logging.getLogger(__name__)
+from .base import FeedFetchError, ScraperStrategy
 
 
 class XenForoStrategy(ScraperStrategy):
@@ -34,40 +32,39 @@ class XenForoStrategy(ScraperStrategy):
                 finally:
                     os.chdir(original_cwd)
 
-            if not result or not isinstance(result, dict):
-                error_msg = f"Failed to fetch XenForo thread from {url}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)  # noqa: TRY301
+        except Exception as error:
+            raise FeedFetchError("XenForo", type(error).__name__) from None
 
-            threads = result.get("data", {}).get("threads", [])
-            thread = threads[0] if threads else {}
+        if not result or not isinstance(result, dict):
+            raise FeedFetchError("XenForo", "EmptyResponse")
 
-            title = thread.get("title", "XenForo Thread")
-            thread_url = thread.get("url")
-            posts = thread.get("posts", [])
+        threads = result.get("data", {}).get("threads", [])
+        thread = threads[0] if threads else {}
 
-            if posts:
-                for post in posts:
-                    if isinstance(post, dict):
-                        post["title"] = title
-                        if thread_url:
-                            post["thread_url"] = thread_url
+        title = thread.get("title", "XenForo Thread")
+        thread_url = thread.get("url")
+        posts = thread.get("posts", [])
 
-        except Exception as e:
-            error_msg = f"Error scraping XenForo forum: {e}"
-            logger.exception(error_msg)
-            raise ValueError(error_msg) from e
-        else:
-            return posts, title
+        if posts:
+            for post in posts:
+                if isinstance(post, dict):
+                    post["title"] = title
+                    if thread_url:
+                        post["thread_url"] = thread_url
 
-    def get_entry_id(self, entry: Any) -> str:  # noqa: ANN401
+        return posts, title
+
+    def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """Get unique identifier for a forum post."""
-        if isinstance(entry, dict) and "id" in entry:
-            return str(entry["id"])
+        if isinstance(entry, dict):
+            raw_id = entry.get("id")
+            if raw_id is not None:
+                entry_id = str(raw_id).strip()
+                if entry_id:
+                    return EntryId(entry_id)
+        return None
 
-        return str(hash(str(entry)))
-
-    def get_entry_data(self, entry: Any) -> dict[str, Any]:  # noqa: ANN401
+    def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         """Extract data from a forum post."""
         if not isinstance(entry, dict):
             entry = {"content": str(entry)}
@@ -85,13 +82,13 @@ class XenForoStrategy(ScraperStrategy):
         content = self._clean_xenforo_content(content)
         content = self._truncate(content)
 
-        return {
-            "title": title,
-            "link": link,
-            "description": content,
-            "author": author,
-            "timestamp": self._get_timestamp(entry),
-        }
+        return EntryData(
+            title=str(title),
+            link=link,
+            description=content,
+            author=str(author),
+            timestamp=self._get_timestamp(entry),
+        )
 
     def _clean_xenforo_content(self, text: str) -> str:
         """Clean HTML and XenForo-specific markup from post content."""
@@ -99,11 +96,11 @@ class XenForoStrategy(ScraperStrategy):
         text = text.replace("Кликни за повеќе...", "")
         return text.strip()
 
-    def _get_timestamp(self, entry: Any) -> str:  # noqa: ANN401
+    def _get_timestamp(self, entry: Any) -> str | None:  # noqa: ANN401
         """Get ISO timestamp from a forum post."""
         if isinstance(entry, dict):
             for field in ("timestamp", "created_at", "date", "posted_at", "time"):
                 if field in entry:
                     return self._parse_timestamp(entry[field])
 
-        return datetime.now(UTC).isoformat()
+        return None

@@ -1,20 +1,22 @@
-"""Base strategy interface for content scraping."""
-
-import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from html import unescape
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from models import EntryData, EntryId
 
 MAX_DESCRIPTION_LENGTH = 2000
 
 
-class ScraperStrategy(ABC):
-    """Abstract base class for scraping strategies."""
+class FeedFetchError(Exception):
+    def __init__(self, strategy: str, cause_type: str) -> None:
+        self.strategy = strategy
+        self.cause_type = cause_type
+        super().__init__(f"{strategy} fetch failed ({cause_type})")
 
+
+class ScraperStrategy(ABC):
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """
@@ -28,36 +30,31 @@ class ScraperStrategy(ABC):
         """
 
     @abstractmethod
-    def get_entry_id(self, entry: Any) -> str:  # noqa: ANN401
+    def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """
-        Get unique identifier for an entry.
+        Get the stable typed identifier for an entry.
 
         Args:
             entry: The entry object
 
         Returns:
-            A unique identifier string
+            The entry ID, or None when no stable identifier is available
         """
 
     @abstractmethod
-    def get_entry_data(self, entry: Any) -> dict[str, Any]:  # noqa: ANN401
+    def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         """
-        Extract data from an entry for Discord webhook.
+        Extract an EntryData value for a Discord webhook.
 
         Args:
             entry: The entry object
 
         Returns:
-            Dictionary with keys: title, link, description, author, timestamp
+            The normalized entry data
         """
 
     @staticmethod
     def _clean_html(text: str) -> str:
-        """Clean HTML tags and common unwanted markup from text.
-
-        Handles comments, line break tags, paragraph tags, remaining tags,
-        HTML entities, and excessive whitespace.
-        """
         if not text:
             return ""
 
@@ -73,35 +70,34 @@ class ScraperStrategy(ABC):
 
     @staticmethod
     def _truncate(text: str, max_length: int = MAX_DESCRIPTION_LENGTH) -> str:
-        """Truncate text to max_length, appending '...' if truncated."""
         if len(text) > max_length:
             return text[: max_length - 3] + "..."
         return text
 
     @staticmethod
-    def _parse_timestamp(timestamp: Any) -> str:  # noqa: ANN401
+    def _parse_timestamp(timestamp: Any) -> str | None:  # noqa: ANN401
         """Convert various timestamp formats to ISO format string.
 
         Supports datetime objects, ISO format strings, and numeric
-        (Unix epoch) timestamps. Falls back to current UTC time.
+        (Unix epoch) timestamps. Returns None when conversion fails.
         """
-        if isinstance(timestamp, datetime):
-            if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=UTC)
-            return timestamp.isoformat()
-
-        if isinstance(timestamp, str):
-            try:
-                dt = datetime.fromisoformat(timestamp)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=UTC)
-                return dt.isoformat()
-            except ValueError:
-                logger.debug("Could not parse timestamp string: %s", timestamp)
-
-        if isinstance(timestamp, (int, float)):
-            dt = datetime.fromtimestamp(timestamp, tz=UTC)
-            return dt.isoformat()
-
-        logger.debug("Unrecognized timestamp format: %s", type(timestamp))
-        return datetime.now(UTC).isoformat()
+        match timestamp:
+            case datetime() as parsed_datetime:
+                if parsed_datetime.tzinfo is None:
+                    parsed_datetime = parsed_datetime.replace(tzinfo=UTC)
+                return parsed_datetime.isoformat()
+            case str() as timestamp_string:
+                try:
+                    parsed_datetime = datetime.fromisoformat(timestamp_string)
+                except ValueError:
+                    return None
+                if parsed_datetime.tzinfo is None:
+                    parsed_datetime = parsed_datetime.replace(tzinfo=UTC)
+                return parsed_datetime.isoformat()
+            case int() | float() as epoch:
+                try:
+                    return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
+                except (OSError, OverflowError, ValueError):
+                    return None
+            case _:
+                return None
