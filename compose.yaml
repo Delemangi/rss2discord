@@ -4,8 +4,19 @@ services:
   rss2discord:
     build: .
     restart: unless-stopped
+    init: true
+    read_only: true
+    stop_grace_period: 15s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      - ./config:/app/config
+      - ./config:/app/config:ro
       - ./data:/app/data
     environment:
-      - CONFIG_PATH=/app/config/config.yaml
+      CONFIG_PATH: /app/config/config.yaml
+      LEGACY_STATE_PATH: /app/data/state.json
+      STATE_DB_PATH: /app/data/state.db
+    tmpfs:
+      - /tmp:size=16m,mode=1777

@@ -1,18 +1,36 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
-RUN uv pip install --system --no-cache -r pyproject.toml
 
-COPY main.py ./
-COPY strategies/ ./strategies/
+FROM python:3.12-slim-bookworm AS runtime
 
-VOLUME ["/app/config", "/app/data"]
+ENV CONFIG_PATH=/app/config/config.yaml \
+    LEGACY_STATE_PATH=/app/data/state.json \
+    PATH=/app/.venv/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    STATE_DB_PATH=/app/data/state.db
 
-ENV CONFIG_PATH=/app/config/config.yaml
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home --home-dir /app --shell /usr/sbin/nologin app \
+    && mkdir --parents /app/config /app/data \
+    && chown --recursive app:app /app
 
-WORKDIR /app/data
+WORKDIR /app
 
-CMD ["python", "-u", "/app/main.py"]
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app app.py configuration.py delivery_store.py discord_client.py main.py models.py ./
+COPY --chown=app:app strategies/ ./strategies/
+
+USER app
+
+STOPSIGNAL SIGTERM
+
+CMD ["python", "main.py"]

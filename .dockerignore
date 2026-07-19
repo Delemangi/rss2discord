@@ -1,5 +1,6 @@
 # Git
 .git/
+.git
 .gitignore
 
 # Python
@@ -7,6 +8,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
 
 # Application data
 config.yaml
@@ -16,6 +21,10 @@ data/
 # Documentation
 README.md
 *.md
+
+# Development and deployment
+compose*.yaml
+tests/
 
 # IDE
 .vscode/
