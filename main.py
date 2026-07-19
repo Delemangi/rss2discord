@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import signal
+import sqlite3
 import sys
 from pathlib import Path
 from types import FrameType
@@ -63,8 +65,25 @@ def main() -> int:
     except yaml.YAMLError as error:
         logger.log(logging.ERROR, "Invalid YAML configuration%s", _yaml_location(error))
         return 1
-    except (OSError, UnsupportedSchemaVersionError):
-        logger.exception("Unable to start RSS to Discord")
+    except json.JSONDecodeError:
+        logger.log(logging.ERROR, "Invalid legacy state JSON")
+        return 1
+    except sqlite3.Error as error:
+        logger.log(
+            logging.ERROR,
+            "Storage initialization failed (%s)",
+            type(error).__name__,
+        )
+        return 1
+    except UnsupportedSchemaVersionError as error:
+        logger.log(logging.ERROR, "%s", error)
+        return 1
+    except OSError as error:
+        logger.log(
+            logging.ERROR,
+            "Startup file operation failed (%s)",
+            type(error).__name__,
+        )
         return 1
     return 0
 
