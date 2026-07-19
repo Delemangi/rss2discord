@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +10,7 @@ from models import EntryData, EntryId
 from strategies import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
 
 logger = logging.getLogger(__name__)
+PERSISTENCE_RETRY_DELAY_SECONDS = 5.0
 
 
 def _log_feed_fetch_error(feed_id: str, error: FeedFetchError) -> None:
@@ -68,7 +70,7 @@ class RSSToDiscord:
             if not self._sender.send(message, self._interruptible_sleep):
                 continue
 
-            self._store.mark_delivered(feed.id, entry_id)
+            self._persist_delivery(feed.id, entry_id)
             if not self._interruptible_sleep(self._config.delay_between_posts):
                 return
 
@@ -131,6 +133,21 @@ class RSSToDiscord:
             )
             return True
         return datetime.now(UTC) - published_at > timedelta(days=max_age_days)
+
+    def _persist_delivery(self, feed_id: str, entry_id: EntryId) -> None:
+        while True:
+            try:
+                self._store.mark_delivered(feed_id, entry_id)
+            except sqlite3.Error as error:
+                logger.warning(
+                    "Could not persist delivery for feed %s; retrying in %.1f seconds (%s)",
+                    feed_id,
+                    PERSISTENCE_RETRY_DELAY_SECONDS,
+                    type(error).__name__,
+                )
+                time.sleep(PERSISTENCE_RETRY_DELAY_SECONDS)
+            else:
+                return
 
     def _interruptible_sleep(self, seconds: float) -> bool:
         deadline = time.monotonic() + seconds

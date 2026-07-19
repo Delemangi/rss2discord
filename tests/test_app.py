@@ -1,3 +1,4 @@
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, assert_never
@@ -162,3 +163,72 @@ def test_success_is_committed_before_later_delivery_crashes(tmp_path: Path) -> N
     with DeliveryStore(database_path, legacy_path, ()) as reopened_store:
         assert reopened_store.has_delivered("news", "entry-1")
         assert not reopened_store.has_delivered("news", "entry-2")
+
+
+def test_successful_send_is_not_repeated_when_persistence_temporarily_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feed = make_feed("news")
+    sender = FakeSender([True])
+    strategy = FakeStrategy([make_entry("entry-1")])
+
+    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+        app = make_app(store, sender, strategy, (feed,))
+        mark_attempts = 0
+        mark_delivered = store.mark_delivered
+
+        def temporarily_locked(feed_id: str, entry_id: str) -> None:
+            nonlocal mark_attempts
+            mark_attempts += 1
+            if mark_attempts == 1:
+                raise sqlite3.OperationalError("database is locked")
+            mark_delivered(feed_id, entry_id)
+
+        monkeypatch.setattr(store, "mark_delivered", temporarily_locked)
+        monkeypatch.setattr("app.time.sleep", lambda _seconds: None)
+
+        # When
+        app.process_feed(feed)
+
+        # Then
+        assert store.has_delivered("news", "entry-1")
+        assert mark_attempts == 2
+        assert len(sender.messages) == 1
+
+
+def test_shutdown_waits_for_successful_send_to_be_persisted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feed = make_feed("news")
+    sender = FakeSender([True])
+    strategy = FakeStrategy([make_entry("entry-1")])
+
+    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+        app = make_app(store, sender, strategy, (feed,))
+        mark_attempts = 0
+        mark_delivered = store.mark_delivered
+
+        def temporarily_locked(feed_id: str, entry_id: str) -> None:
+            nonlocal mark_attempts
+            mark_attempts += 1
+            if mark_attempts == 1:
+                raise sqlite3.OperationalError("database is locked")
+            mark_delivered(feed_id, entry_id)
+
+        def request_shutdown(_seconds: float) -> None:
+            app.request_shutdown()
+
+        monkeypatch.setattr(store, "mark_delivered", temporarily_locked)
+        monkeypatch.setattr("app.time.sleep", request_shutdown)
+
+        # When
+        app.process_feed(feed)
+
+        # Then
+        assert store.has_delivered("news", "entry-1")
+        assert mark_attempts == 2
+        assert len(sender.messages) == 1
