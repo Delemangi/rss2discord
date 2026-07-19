@@ -80,10 +80,17 @@ entry_id)` as its key, so two configured feeds can use the same URL without
 sharing delivery history.
 
 On the first startup with no existing database, RSS2Discord looks for the legacy
-`data/state.json` file and imports its processed IDs in one transaction. Legacy
-records were keyed by URL, so records for a URL are copied to every configured
-feed using that URL. The JSON file is left untouched and subsequent startups do
-not import it again.
+`data/state.json` file and stages its processed IDs in SQLite in one transaction.
+Legacy records were keyed by URL, so records for a URL are copied to every
+configured feed using that URL. Staged records remain available for feeds added
+on later startups, even if the JSON file has since been removed.
+
+Schema-v1 databases are upgraded by reconstructing URL-level history from the
+configured feeds and their existing delivery rows. A valid legacy JSON file is
+also merged when available, but a stale or malformed file does not block this
+upgrade. After schema v2 is reached, the JSON file is not read again. Because the
+SQLite database can retain legacy feed URLs, protect `state.db` and its backups
+with the same care as the application configuration.
 
 Before upgrading an existing deployment:
 
@@ -100,7 +107,7 @@ docker compose up -d --build
 | --- | --- | --- |
 | `CONFIG_PATH` | `/app/config/config.yaml` | YAML configuration |
 | `STATE_DB_PATH` | `/app/data/state.db` | SQLite delivery ledger |
-| `LEGACY_STATE_PATH` | `/app/data/state.json` | One-time legacy import source |
+| `LEGACY_STATE_PATH` | `/app/data/state.json` | Initial migration and v1 upgrade recovery source |
 
 ## Local development
 
