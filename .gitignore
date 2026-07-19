@@ -217,5 +217,4 @@ __marimo__/
 
 # Application
 config.yaml
-state.json
 data/
