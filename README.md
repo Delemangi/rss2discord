@@ -73,33 +73,15 @@ skipped rather than assigned an invented timestamp.
 
 See `config/config.example.yaml` for a fully annotated example.
 
-## Delivery state and upgrades
+## Delivery state
 
 Delivery history is stored at `data/state.db`. The database uses `(feed_id,
 entry_id)` as its key, so two configured feeds can use the same URL without
 sharing delivery history.
 
-On the first startup with no existing database, RSS2Discord looks for the legacy
-`data/state.json` file and stages its processed IDs in SQLite in one transaction.
-Legacy records were keyed by URL, so records for a URL are copied to every
-configured feed using that URL. Staged records remain available for feeds added
-on later startups, even if the JSON file has since been removed.
-
-Schema-v1 databases are upgraded by reconstructing URL-level history from the
-configured feeds and their existing delivery rows. A valid legacy JSON file is
-also merged when available, but a stale or malformed file does not block this
-upgrade. After schema v2 is reached, the JSON file is not read again. Because the
-SQLite database can retain legacy feed URLs, protect `state.db` and its backups
-with the same care as the application configuration.
-
-Before upgrading an existing deployment:
-
-```bash
-docker compose down
-cp -a data data.backup
-sudo chown -R 10001:10001 data
-docker compose up -d --build
-```
+The database is created automatically on first startup. When upgrading from a
+release that did not use `state.db`, delivery history starts empty and previously
+sent entries may be sent again.
 
 ## Runtime paths
 
@@ -107,7 +89,6 @@ docker compose up -d --build
 | --- | --- | --- |
 | `CONFIG_PATH` | `/app/config/config.yaml` | YAML configuration |
 | `STATE_DB_PATH` | `/app/data/state.db` | SQLite delivery ledger |
-| `LEGACY_STATE_PATH` | `/app/data/state.json` | Initial migration and v1 upgrade recovery source |
 
 ## Local development
 
@@ -125,7 +106,6 @@ Run the application with paths suitable for local development:
 ```bash
 CONFIG_PATH=config/config.yaml \
 STATE_DB_PATH=data/state.db \
-LEGACY_STATE_PATH=data/state.json \
 uv run python main.py
 ```
 
