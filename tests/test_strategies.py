@@ -58,10 +58,11 @@ def test_rss_fetch_error_does_not_expose_feed_url_secret(
         raise requests.ConnectionError(f"Could not connect to {url}")
 
     monkeypatch.setattr(requests, "get", fail_request)
+    strategy = RSSStrategy()
 
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries(feed_url)
+        strategy.fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(
@@ -89,10 +90,11 @@ def test_xenforo_fetch_error_does_not_expose_feed_url_secret(
         "xenforo",
         lambda **kwargs: FailingScraper(),
     )
+    strategy = XenForoStrategy()
 
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        XenForoStrategy().fetch_entries(feed_url)
+        strategy.fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(
