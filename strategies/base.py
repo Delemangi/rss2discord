@@ -36,25 +36,25 @@ class ScraperStrategy(ABC):
     @abstractmethod
     def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """
-        Get unique identifier for an entry.
+        Get the stable typed identifier for an entry.
 
         Args:
             entry: The entry object
 
         Returns:
-            A unique identifier string
+            The entry ID, or None when no stable identifier is available
         """
 
     @abstractmethod
     def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         """
-        Extract data from an entry for Discord webhook.
+        Extract an EntryData value for a Discord webhook.
 
         Args:
             entry: The entry object
 
         Returns:
-            Dictionary with keys: title, link, description, author, timestamp
+            The normalized entry data
         """
 
     @staticmethod
@@ -89,7 +89,7 @@ class ScraperStrategy(ABC):
         """Convert various timestamp formats to ISO format string.
 
         Supports datetime objects, ISO format strings, and numeric
-        (Unix epoch) timestamps. Falls back to current UTC time.
+        (Unix epoch) timestamps. Returns None when conversion fails.
         """
         match timestamp:
             case datetime() as parsed_datetime:
