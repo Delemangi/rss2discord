@@ -12,7 +12,12 @@ NonEmptyString = Annotated[str, Field(min_length=1)]
 
 
 class FeedConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        hide_input_in_errors=True,
+        str_strip_whitespace=True,
+    )
 
     id: FeedIdValue
     url: NonEmptyString
@@ -25,7 +30,7 @@ class FeedConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
     refresh_interval: Annotated[float, Field(gt=0)] = 300
     delay_between_posts: Annotated[float, Field(ge=0)] = 2

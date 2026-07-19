@@ -39,10 +39,25 @@ def main() -> int:
     except FileNotFoundError:
         logger.log(logging.ERROR, "Configuration file not found: %s", config_path)
         return 1
-    except (OSError, UnsupportedSchemaVersionError, ValidationError, yaml.YAMLError):
+    except ValidationError as error:
+        logger.log(logging.ERROR, "Invalid startup data: %s", _format_error(error))
+        return 1
+    except (OSError, UnsupportedSchemaVersionError, yaml.YAMLError):
         logger.exception("Unable to start RSS to Discord")
         return 1
     return 0
+
+
+def _format_error(error: ValidationError) -> str:
+    messages = []
+    for detail in error.errors(
+        include_context=False,
+        include_input=False,
+        include_url=False,
+    ):
+        location = ".".join(str(part) for part in detail["loc"]) or "configuration"
+        messages.append(f"{location}: {detail['msg']}")
+    return "; ".join(messages)
 
 
 def _install_signal_handlers(application: RSSToDiscord) -> None:

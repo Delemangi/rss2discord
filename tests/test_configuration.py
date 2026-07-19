@@ -1,8 +1,10 @@
+import logging
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+import main as app_main
 from configuration import load_config
 
 
@@ -82,3 +84,34 @@ def test_load_config_rejects_unknown_strategy(tmp_path: Path) -> None:
     # When / Then
     with pytest.raises(ValidationError):
         load_config(config_path)
+
+
+def test_invalid_config_does_not_expose_webhook_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    webhook_url = "https://discord.test/api/webhooks/id/secret-token"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/one.xml\n"
+        f"    webhook: {webhook_url}\n"
+        "  - id: news\n"
+        "    url: https://example.test/two.xml\n"
+        f"    webhook: {webhook_url}\n",
+    )
+    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+    caplog.set_level(logging.ERROR)
+
+    # When
+    with pytest.raises(ValidationError) as validation_error:
+        load_config(config_path)
+    exit_code = app_main.main()
+
+    # Then
+    assert "secret-token" not in str(validation_error.value)
+    assert exit_code == 1
+    assert "secret-token" not in caplog.text
