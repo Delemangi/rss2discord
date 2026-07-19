@@ -136,7 +136,7 @@ def test_same_url_delivers_independently_for_each_feed_id(tmp_path: Path) -> Non
     strategy = FakeStrategy([make_entry("entry-1")])
 
     # When
-    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (primary, secondary))
         app.process_feed(primary)
         app.process_feed(secondary)
@@ -159,7 +159,7 @@ def test_failed_delivery_is_retried_and_only_success_is_recorded(
     strategy = FakeStrategy([make_entry("entry-1")])
 
     # When
-    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (feed,))
         app.process_feed(feed)
         first_attempt_delivered = store.has_delivered("news", "entry-1")
@@ -178,7 +178,7 @@ def test_duplicate_entries_in_one_fetch_are_sent_once(tmp_path: Path) -> None:
     strategy = FakeStrategy([make_entry("entry-1"), make_entry("entry-1")])
 
     # When
-    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (feed,))
         app.process_feed(feed)
 
@@ -192,16 +192,15 @@ def test_success_is_committed_before_later_delivery_crashes(tmp_path: Path) -> N
     sender = FakeSender([True, RuntimeError("transport crashed")])
     strategy = FakeStrategy([make_entry("entry-1"), make_entry("entry-2")])
     database_path = tmp_path / "state.db"
-    legacy_path = tmp_path / "state.json"
 
     # When
-    with DeliveryStore(database_path, legacy_path, ()) as store:
+    with DeliveryStore(database_path) as store:
         app = make_app(store, sender, strategy, (feed,))
         with pytest.raises(RuntimeError, match="transport crashed"):
             app.process_feed(feed)
 
     # Then
-    with DeliveryStore(database_path, legacy_path, ()) as reopened_store:
+    with DeliveryStore(database_path) as reopened_store:
         assert reopened_store.has_delivered("news", "entry-1")
         assert not reopened_store.has_delivered("news", "entry-2")
 
@@ -215,7 +214,7 @@ def test_successful_send_is_not_repeated_when_persistence_temporarily_fails(
     sender = FakeSender([True])
     strategy = FakeStrategy([make_entry("entry-1")])
 
-    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (feed,))
         mark_attempts = 0
         mark_delivered = store.mark_delivered
@@ -248,7 +247,7 @@ def test_shutdown_waits_for_successful_send_to_be_persisted(
     sender = FakeSender([True])
     strategy = FakeStrategy([make_entry("entry-1")])
 
-    with DeliveryStore(tmp_path / "state.db", tmp_path / "state.json", ()) as store:
+    with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (feed,))
         mark_attempts = 0
         mark_delivered = store.mark_delivered

@@ -1,5 +1,3 @@
-"""Base strategy interface for content scraping."""
-
 import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
@@ -19,8 +17,6 @@ class FeedFetchError(Exception):
 
 
 class ScraperStrategy(ABC):
-    """Abstract base class for scraping strategies."""
-
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """
@@ -59,11 +55,6 @@ class ScraperStrategy(ABC):
 
     @staticmethod
     def _clean_html(text: str) -> str:
-        """Clean HTML tags and common unwanted markup from text.
-
-        Handles comments, line break tags, paragraph tags, remaining tags,
-        HTML entities, and excessive whitespace.
-        """
         if not text:
             return ""
 
@@ -79,7 +70,6 @@ class ScraperStrategy(ABC):
 
     @staticmethod
     def _truncate(text: str, max_length: int = MAX_DESCRIPTION_LENGTH) -> str:
-        """Truncate text to max_length, appending '...' if truncated."""
         if len(text) > max_length:
             return text[: max_length - 3] + "..."
         return text

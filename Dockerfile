@@ -12,7 +12,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 FROM python:3.12-slim-bookworm AS runtime
 
 ENV CONFIG_PATH=/app/config/config.yaml \
-    LEGACY_STATE_PATH=/app/data/state.json \
     PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

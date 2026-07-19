@@ -15,7 +15,6 @@ __pycache__/
 
 # Application data
 config.yaml
-state.json
 data/
 
 # Documentation

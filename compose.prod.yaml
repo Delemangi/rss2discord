@@ -16,7 +16,6 @@ services:
       - ./data:/app/data
     environment:
       CONFIG_PATH: /app/config/config.yaml
-      LEGACY_STATE_PATH: /app/data/state.json
       STATE_DB_PATH: /app/data/state.db
     tmpfs:
       - /tmp:size=16m,mode=1777
