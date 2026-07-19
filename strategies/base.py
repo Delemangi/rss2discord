@@ -11,6 +11,13 @@ from models import EntryData, EntryId
 MAX_DESCRIPTION_LENGTH = 2000
 
 
+class FeedFetchError(Exception):
+    def __init__(self, strategy: str, cause_type: str) -> None:
+        self.strategy = strategy
+        self.cause_type = cause_type
+        super().__init__(f"{strategy} fetch failed ({cause_type})")
+
+
 class ScraperStrategy(ABC):
     """Abstract base class for scraping strategies."""
 

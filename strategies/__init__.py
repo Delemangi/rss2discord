@@ -1,7 +1,7 @@
 """Scraping strategies for different sources."""
 
-from .base import ScraperStrategy
+from .base import FeedFetchError, ScraperStrategy
 from .rss_strategy import RSSStrategy
 from .xenforo_strategy import XenForoStrategy
 
-__all__ = ["RSSStrategy", "ScraperStrategy", "XenForoStrategy"]
+__all__ = ["FeedFetchError", "RSSStrategy", "ScraperStrategy", "XenForoStrategy"]
