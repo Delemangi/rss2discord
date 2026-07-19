@@ -8,6 +8,10 @@ import requests
 from configuration import FeedConfig
 from models import EntryData
 
+type JSONValue = (
+    None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]
+)
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMBED_COLOR = 5814783
@@ -43,14 +47,25 @@ class DiscordWebhookClient:
                     headers={"Content-Type": "application/json"},
                     timeout=10,
                 )
-            except requests.Timeout:
+            except (requests.ConnectionError, requests.Timeout) as error:
+                if attempt >= MAX_RETRIES - 1:
+                    self._log_request_error(
+                        "request retries exhausted",
+                        message.feed.id,
+                        error,
+                    )
+                    return False
+                wait_time = self._retry_delay(attempt)
                 logger.warning(
-                    "Discord request timed out for feed %s on attempt %d/%d",
+                    "Discord request failed for feed %s on attempt %d/%d; "
+                    "retrying in %.1f seconds (%s)",
                     message.feed.id,
                     attempt + 1,
                     MAX_RETRIES,
+                    wait_time,
+                    type(error).__name__,
                 )
-                if not self._wait_before_retry(attempt, sleep):
+                if not sleep(wait_time):
                     return False
                 continue
             except requests.RequestException as error:
@@ -58,6 +73,12 @@ class DiscordWebhookClient:
                 return False
 
             if response.status_code == 429:
+                if attempt >= MAX_RETRIES - 1:
+                    logger.error(
+                        "Discord rate limit retries exhausted for feed %s",
+                        message.feed.id,
+                    )
+                    return False
                 wait_time = self._retry_after(response, attempt)
                 logger.warning(
                     "Discord rate limited feed %s; retrying in %.1f seconds",
@@ -68,9 +89,31 @@ class DiscordWebhookClient:
                     return False
                 continue
 
+            if 500 <= response.status_code < 600:
+                if attempt >= MAX_RETRIES - 1:
+                    logger.error(
+                        "Discord server retries exhausted for feed %s (HTTP %d)",
+                        message.feed.id,
+                        response.status_code,
+                    )
+                    return False
+                wait_time = self._retry_delay(attempt)
+                logger.warning(
+                    "Discord server error for feed %s on attempt %d/%d; "
+                    "retrying in %.1f seconds (HTTP %d)",
+                    message.feed.id,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    wait_time,
+                    response.status_code,
+                )
+                if not sleep(wait_time):
+                    return False
+                continue
+
             try:
                 response.raise_for_status()
-            except requests.RequestException as error:
+            except requests.HTTPError as error:
                 self._log_request_error("rejected message", message.feed.id, error)
                 return False
 
@@ -85,8 +128,8 @@ class DiscordWebhookClient:
         return False
 
     @staticmethod
-    def _build_payload(message: WebhookMessage) -> dict[str, object]:
-        embed: dict[str, object] = {
+    def _build_payload(message: WebhookMessage) -> dict[str, JSONValue]:
+        embed: dict[str, JSONValue] = {
             "title": message.entry.title,
             "url": message.entry.link,
             "description": message.entry.description,
@@ -102,7 +145,7 @@ class DiscordWebhookClient:
         if message.entry.timestamp is not None:
             embed["timestamp"] = message.entry.timestamp
 
-        payload: dict[str, object] = {"embeds": [embed]}
+        payload: dict[str, JSONValue] = {"embeds": [embed]}
         if message.feed.webhook_name:
             payload["username"] = message.feed.webhook_name
         if message.feed.webhook_avatar:
@@ -117,13 +160,11 @@ class DiscordWebhookClient:
                 return float(retry_after)
             except ValueError:
                 logger.warning("Discord returned an invalid Retry-After header")
-        return BASE_RETRY_DELAY_SECONDS * (2**attempt)
+        return DiscordWebhookClient._retry_delay(attempt)
 
     @staticmethod
-    def _wait_before_retry(attempt: int, sleep: SleepCallback) -> bool:
-        if attempt >= MAX_RETRIES - 1:
-            return True
-        return sleep(BASE_RETRY_DELAY_SECONDS * (2**attempt))
+    def _retry_delay(attempt: int) -> float:
+        return BASE_RETRY_DELAY_SECONDS * (2**attempt)
 
     @staticmethod
     def _log_request_error(action: str, feed_id: str, error: Exception) -> None:
