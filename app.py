@@ -50,11 +50,10 @@ class RSSToDiscord:
             if entry_id is None:
                 logger.warning("Skipping entry without a stable ID in feed %s", feed.id)
                 continue
-            if entry_id in seen_entry_ids:
-                continue
+            is_seen = entry_id in seen_entry_ids
             seen_entry_ids.add(entry_id)
 
-            if self._store.has_delivered(feed.id, entry_id):
+            if is_seen or self._store.has_delivered(feed.id, entry_id):
                 continue
 
             entry_data = strategy.get_entry_data(entry)
