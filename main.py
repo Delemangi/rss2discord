@@ -20,6 +20,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SAFE_VALIDATION_FIELDS = frozenset(
+    {
+        "delay_between_posts",
+        "embed_color",
+        "feeds",
+        "id",
+        "max_post_age_days",
+        "name",
+        "processed_ids",
+        "refresh_interval",
+        "strategy",
+        "url",
+        "webhook",
+        "webhook_avatar",
+        "webhook_name",
+    },
+)
+
 
 def main() -> int:
     config_path = Path(os.environ.get("CONFIG_PATH", "config/config.yaml"))
@@ -58,9 +76,21 @@ def _format_error(error: ValidationError) -> str:
         include_input=False,
         include_url=False,
     ):
-        location = ".".join(str(part) for part in detail["loc"]) or "configuration"
+        location = _format_location(detail["loc"])
         messages.append(f"{location}: {detail['msg']}")
     return "; ".join(messages)
+
+
+def _format_location(location: tuple[str | int, ...]) -> str:
+    safe_parts = []
+    for part in location:
+        if isinstance(part, int):
+            safe_parts.append(str(part))
+        elif part in SAFE_VALIDATION_FIELDS:
+            safe_parts.append(part)
+        else:
+            safe_parts.append("<key>")
+    return ".".join(safe_parts) or "configuration"
 
 
 def _yaml_location(error: yaml.YAMLError) -> str:
