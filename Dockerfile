@@ -26,7 +26,7 @@ RUN groupadd --gid 10001 app \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
-COPY app.py configuration.py delivery_store.py discord_client.py main.py models.py ./
+COPY app.py configuration.py delivery_store.py discord_client.py discord_components.py main.py models.py ./
 COPY strategies/ ./strategies/
 
 USER app
