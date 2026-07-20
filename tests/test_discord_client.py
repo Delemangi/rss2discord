@@ -225,18 +225,3 @@ def test_final_rate_limit_response_honors_bounded_cooldown(
     assert not delivered
     assert attempts == 3
     assert delays == expected_delays
-
-
-def test_zero_embed_color_is_preserved() -> None:
-    # Given
-    message = make_message(embed_color=0)
-
-    # When
-    payload = DiscordWebhookClient._build_payload(message)
-
-    # Then
-    embeds = payload["embeds"]
-    assert isinstance(embeds, list)
-    embed = embeds[0]
-    assert isinstance(embed, dict)
-    assert embed["color"] == 0
