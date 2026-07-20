@@ -1,7 +1,9 @@
 import logging
+import random
 import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any, Final
 
 from configuration import AppConfig, FeedConfig
 from delivery_store import DeliveryStore
@@ -10,7 +12,18 @@ from models import EntryData, EntryId
 from strategies import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
 
 logger = logging.getLogger(__name__)
-PERSISTENCE_RETRY_DELAY_SECONDS = 5.0
+PERSISTENCE_RETRY_DELAY_SECONDS: Final = 5.0
+FEED_FETCH_MAX_ATTEMPTS: Final = 3
+FEED_FETCH_BASE_DELAY_SECONDS: Final = 2.0
+FEED_FETCH_MAX_DELAY_SECONDS: Final = 300.0
+FEED_FETCH_MAX_BACKOFF_SECONDS: Final = 30.0
+SQLITE_TRANSIENT_ERROR_CODES: Final = frozenset(
+    {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED},
+)
+
+
+class FeedFetchInterruptedError(Exception):
+    pass
 
 
 def _log_feed_fetch_error(feed_id: str, error: FeedFetchError) -> None:
@@ -40,7 +53,7 @@ class RSSToDiscord:
     def process_feed(self, feed: FeedConfig) -> None:
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
-        entries, fetched_source_title = strategy.fetch_entries(feed.url)
+        entries, fetched_source_title = self._fetch_entries(feed, strategy)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
 
@@ -70,7 +83,8 @@ class RSSToDiscord:
             if not self._sender.send(message, self._interruptible_sleep):
                 continue
 
-            self._persist_delivery(feed.id, entry_id)
+            if not self._persist_delivery(feed.id, entry_id):
+                return
             if not self._interruptible_sleep(self._config.delay_between_posts):
                 return
 
@@ -107,6 +121,8 @@ class RSSToDiscord:
     def _process_feed_safely(self, feed: FeedConfig) -> None:
         try:
             self.process_feed(feed)
+        except FeedFetchInterruptedError:
+            return
         except FeedFetchError as error:
             _log_feed_fetch_error(feed.id, error)
         except Exception:
@@ -117,6 +133,39 @@ class RSSToDiscord:
         if not has_next_feed or self._config.delay_between_feeds <= 0:
             return False
         return not self._interruptible_sleep(self._config.delay_between_feeds)
+
+    def _fetch_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+    ) -> tuple[list[Any], str]:
+        attempt = 0
+        while True:
+            try:
+                return strategy.fetch_entries(feed.url)
+            except FeedFetchError as error:
+                attempt += 1
+                if not error.retryable or attempt >= FEED_FETCH_MAX_ATTEMPTS:
+                    raise
+                delay = self._feed_retry_delay(error, attempt - 1)
+                logger.warning(
+                    "Error processing feed %s: %s; retrying in %.1f seconds",
+                    feed.id,
+                    error,
+                    delay,
+                )
+                if not self._interruptible_sleep(delay):
+                    raise FeedFetchInterruptedError from None
+
+    @staticmethod
+    def _feed_retry_delay(error: FeedFetchError, attempt: int) -> float:
+        if error.retry_after is not None:
+            return min(error.retry_after, FEED_FETCH_MAX_DELAY_SECONDS)
+        backoff = min(
+            FEED_FETCH_BASE_DELAY_SECONDS * (2**attempt),
+            FEED_FETCH_MAX_BACKOFF_SECONDS,
+        )
+        return random.SystemRandom().uniform(0, backoff)
 
     def _is_too_old(self, entry: EntryData, feed_id: str) -> bool:
         max_age_days = self._config.max_post_age_days
@@ -148,20 +197,27 @@ class RSSToDiscord:
             return True
         return datetime.now(UTC) - published_at > timedelta(days=max_age_days)
 
-    def _persist_delivery(self, feed_id: str, entry_id: EntryId) -> None:
+    def _persist_delivery(self, feed_id: str, entry_id: EntryId) -> bool:
         while True:
             try:
                 self._store.mark_delivered(feed_id, entry_id)
             except sqlite3.Error as error:
+                error_code = getattr(error, "sqlite_errorcode", None)
+                if (
+                    error_code is None
+                    or error_code & 0xFF not in SQLITE_TRANSIENT_ERROR_CODES
+                ):
+                    raise
                 logger.warning(
                     "Could not persist delivery for feed %s; retrying in %.1f seconds (%s)",
                     feed_id,
                     PERSISTENCE_RETRY_DELAY_SECONDS,
                     type(error).__name__,
                 )
-                time.sleep(PERSISTENCE_RETRY_DELAY_SECONDS)
+                if not self._interruptible_sleep(PERSISTENCE_RETRY_DELAY_SECONDS):
+                    return False
             else:
-                return
+                return True
 
     def _interruptible_sleep(self, seconds: float) -> bool:
         deadline = time.monotonic() + seconds
