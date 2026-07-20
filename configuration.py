@@ -9,6 +9,7 @@ FeedIdValue = Annotated[
     Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9._-]*$"),
 ]
 NonEmptyString = Annotated[str, Field(min_length=1)]
+WebhookName = Annotated[str, Field(min_length=1, max_length=80)]
 
 
 class FeedConfig(BaseModel):
@@ -24,7 +25,7 @@ class FeedConfig(BaseModel):
     webhook: NonEmptyString
     name: str | None = None
     strategy: Literal["rss", "xenforo"] = "rss"
-    webhook_name: str | None = None
+    webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
     embed_color: Annotated[int, Field(ge=0, le=0xFFFFFF)] | None = None
 

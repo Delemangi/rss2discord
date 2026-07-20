@@ -44,6 +44,24 @@ def test_load_config_parses_valid_feed(tmp_path: Path) -> None:
     assert config.feeds[0].strategy == "rss"
 
 
+def test_load_config_rejects_webhook_name_over_80_characters(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        f"    webhook_name: {'n' * 81}\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_load_config_parses_delay_between_feeds(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"
