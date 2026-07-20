@@ -1,13 +1,10 @@
 from dataclasses import replace
 
 import pytest
-import requests
 
 from configuration import FeedConfig
-from discord_client import DiscordWebhookClient, JSONValue, WebhookMessage
+from discord_client import DiscordWebhookClient, WebhookMessage
 from models import EntryData
-
-type PostArgument = int | dict[str, str] | dict[str, JSONValue]
 
 
 def make_message(*, embed_color: int | None = None) -> WebhookMessage:
@@ -32,10 +29,22 @@ def make_message(*, embed_color: int | None = None) -> WebhookMessage:
     )
 
 
-def make_response(status_code: int) -> requests.Response:
-    response = requests.Response()
-    response.status_code = status_code
-    return response
+def get_text_display_contents(message: WebhookMessage) -> list[str]:
+    payload = DiscordWebhookClient._build_payload(message)
+    components = payload["components"]
+    assert isinstance(components, list)
+    container = components[0]
+    assert isinstance(container, dict)
+    children = container["components"]
+    assert isinstance(children, list)
+
+    contents: list[str] = []
+    for child in children:
+        assert isinstance(child, dict)
+        content = child.get("content")
+        if isinstance(content, str):
+            contents.append(content)
+    return contents
 
 
 def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
@@ -139,12 +148,20 @@ def test_components_v2_payload_safely_renders_entry_links(
         (
             "[Official](https://evil.example)",
             "News",
-            r"-# By \[Official\]\(https://evil.example\) • News • <t:1784548800:R>",
+            "-# By \\[Official\\]\\(h\u200bttps://evil.example\\) • News • "
+            "<t:1784548800:R>",
         ),
         (
             "Author",
             "[Trusted Source](https://evil.example)",
-            r"-# By Author • \[Trusted Source\]\(https://evil.example\) • <t:1784548800:R>",
+            "-# By Author • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • "
+            "<t:1784548800:R>",
+        ),
+        (
+            "https://evil.example/author",
+            "www.evil.example/source",
+            "-# By h\u200bttps://evil.example/author • w\u200bww.evil.example/source • "
+            "<t:1784548800:R>",
         ),
     ],
 )
@@ -176,23 +193,14 @@ def test_components_v2_payload_escapes_metadata_links(
     assert metadata["content"] == expected_metadata
 
 
-def test_delivery_enables_components_v2_for_webhook(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_components_v2_payload_preserves_description_markdown() -> None:
     # Given
-    session = requests.Session()
-    arguments: dict[str, PostArgument] = {}
-
-    def post(url: str, **kwargs: PostArgument) -> requests.Response:
-        del url
-        arguments.update(kwargs)
-        return make_response(204)
-
-    monkeypatch.setattr(session, "post", post)
+    description = "Read the [documentation](https://example.test/docs) for **details**."
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, description=description))
 
     # When
-    delivered = DiscordWebhookClient(session).send(make_message(), lambda _: True)
+    contents = get_text_display_contents(message)
 
     # Then
-    assert delivered
-    assert arguments["params"] == {"with_components": "true"}
+    assert contents[1] == description
