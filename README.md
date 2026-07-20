@@ -1,6 +1,7 @@
 # RSS2Discord
 
-Forward RSS/Atom entries and XenForo thread posts to Discord webhooks as embeds.
+Forward RSS/Atom entries and XenForo thread posts to Discord webhooks as rich
+Components v2 messages.
 
 ## Features
 
@@ -10,7 +11,7 @@ Forward RSS/Atom entries and XenForo thread posts to Discord webhooks as embeds.
 - Bounded retries for transient RSS fetch failures and SQLite write contention
 - Streamed RSS responses capped at 1 MiB
 - Retry on the next poll when Discord delivery fails
-- Configurable entry age, polling interval, embed color, name, and avatar
+- Configurable entry age, polling interval, accent color, name, and avatar
 - Graceful shutdown during polling, rate-limit backoff, and post delays
 - Non-root, read-only container deployment
 
@@ -74,6 +75,9 @@ feeds:
 filtering. When age filtering is enabled, entries without a valid timestamp are
 skipped rather than assigned an invented timestamp. Increase
 `delay_between_feeds` when a source rate-limits consecutive feed requests.
+All new deliveries use Discord Components v2. The existing `embed_color` key is
+retained for configuration compatibility and controls the message container's
+accent color. Mentions originating in external feed content are not expanded.
 
 See `config/config.example.yaml` for a fully annotated example.
 

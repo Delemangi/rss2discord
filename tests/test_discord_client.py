@@ -40,9 +40,55 @@ def make_response(
     response = requests.Response()
     response.status_code = status_code
     response.url = "https://discord.test/api/webhooks/id/token"
+    if status_code == 200:
+        response._content = b'{"id":"123"}'
     if retry_after is not None:
         response.headers["Retry-After"] = retry_after
     return response
+
+
+def test_delivery_requests_components_and_server_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+    arguments: dict[str, PostArgument] = {}
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        arguments.update(kwargs)
+        return make_response(200)
+
+    monkeypatch.setattr(session, "post", post)
+
+    # When
+    delivered = DiscordWebhookClient(session).send(make_message(), lambda _: True)
+
+    # Then
+    assert delivered
+    assert arguments["params"] == {
+        "wait": "true",
+        "with_components": "true",
+    }
+
+
+def test_delivery_rejects_response_without_created_message_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url, kwargs
+        return make_response(204)
+
+    monkeypatch.setattr(session, "post", post)
+
+    # When
+    delivered = DiscordWebhookClient(session).send(make_message(), lambda _: True)
+
+    # Then
+    assert not delivered
 
 
 def test_request_failure_does_not_log_webhook_url(
@@ -84,7 +130,7 @@ def test_connection_error_is_retried_before_success(
         attempts += 1
         if attempts == 1:
             raise requests.ConnectionError("connection reset")
-        return make_response(204)
+        return make_response(200)
 
     monkeypatch.setattr(session, "post", post)
     delays: list[float] = []
@@ -115,7 +161,7 @@ def test_timeout_error_is_retried_before_success(
         attempts += 1
         if attempts == 1:
             raise requests.Timeout("read timed out")
-        return make_response(204)
+        return make_response(200)
 
     monkeypatch.setattr(session, "post", post)
     delays: list[float] = []
@@ -138,7 +184,7 @@ def test_server_error_is_retried_before_success(
 ) -> None:
     # Given
     session = requests.Session()
-    responses = [make_response(503), make_response(204)]
+    responses = [make_response(503), make_response(200)]
     attempts = 0
 
     def post(url: str, **kwargs: PostArgument) -> requests.Response:
@@ -225,18 +271,3 @@ def test_final_rate_limit_response_honors_bounded_cooldown(
     assert not delivered
     assert attempts == 3
     assert delays == expected_delays
-
-
-def test_zero_embed_color_is_preserved() -> None:
-    # Given
-    message = make_message(embed_color=0)
-
-    # When
-    payload = DiscordWebhookClient._build_payload(message)
-
-    # Then
-    embeds = payload["embeds"]
-    assert isinstance(embeds, list)
-    embed = embeds[0]
-    assert isinstance(embed, dict)
-    assert embed["color"] == 0

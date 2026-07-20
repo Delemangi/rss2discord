@@ -25,7 +25,7 @@ feeds:
     strategy: "rss" # Optional: 'rss' (default) or 'xenforo'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
-    embed_color: 5814783 # Optional: Decimal color (default: 5814783 = blue)
+    embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
 
   # Example XenForo forum thread
   - id: "forum-discussion"
@@ -34,7 +34,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "xenforo" # Use XenForo forum scraping strategy
     webhook_name: "Forum Bot"
-    embed_color: 3447003 # Optional: Decimal color
+    embed_color: 3447003 # Optional: Components v2 accent color
 
   # Example feed 2
   - id: "another-feed"
@@ -55,4 +55,5 @@ feeds:
 #   - 'xenforo': For XenForo forum threads
 # - webhook_name: Custom name for the webhook bot (optional)
 # - webhook_avatar: URL to custom avatar image for the webhook bot (optional)
-# - embed_color: Decimal color for the embed sidebar (optional, default: 5814783)
+# - embed_color: Decimal color for the Components v2 container accent
+#   The legacy key name is retained for compatibility (optional, default: 5814783)

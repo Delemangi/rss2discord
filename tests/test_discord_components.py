@@ -1,0 +1,165 @@
+from dataclasses import replace
+
+import pytest
+
+from discord_client import DiscordWebhookClient
+from tests.discord_components_helpers import get_text_display_contents, make_message
+
+
+def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
+    # Given
+    message = make_message(embed_color=0)
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then
+    assert payload == {
+        "allowed_mentions": {"parse": []},
+        "avatar_url": "https://example.test/avatar.png",
+        "components": [
+            {
+                "accent_color": 0,
+                "components": [
+                    {
+                        "content": "## [Entry](https://example.test/entry)",
+                        "type": 10,
+                    },
+                    {"content": "Description", "type": 10},
+                    {"type": 14},
+                    {
+                        "content": "-# By Author • News • <t:1784548800:R>",
+                        "type": 10,
+                    },
+                ],
+                "type": 17,
+            },
+        ],
+        "flags": 32768,
+        "username": "RSS Bot",
+    }
+
+
+def test_components_v2_payload_omits_empty_optional_text() -> None:
+    # Given
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(message.entry, description="", author="", timestamp=None),
+    )
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then
+    components = payload["components"]
+    assert isinstance(components, list)
+    container = components[0]
+    assert isinstance(container, dict)
+    assert container["accent_color"] == 5814783
+    assert container["components"] == [
+        {"content": "## [Entry](https://example.test/entry)", "type": 10},
+        {"type": 14},
+        {"content": "-# News", "type": 10},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("link", "expected_heading"),
+    [
+        (
+            "https://example.test/wiki/Foo_(bar)",
+            "## [Entry](https://example.test/wiki/Foo_%28bar%29)",
+        ),
+        (
+            "https://legit.example/) [Urgent](https://evil.example/phish",
+            "## [Entry](https://legit.example/%29%20[Urgent]%28https://evil.example/phish)",
+        ),
+        ("javascript:alert(1)", "## Entry"),
+    ],
+)
+def test_components_v2_payload_safely_renders_entry_links(
+    link: str,
+    expected_heading: str,
+) -> None:
+    # Given
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, link=link))
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then
+    components = payload["components"]
+    assert isinstance(components, list)
+    container = components[0]
+    assert isinstance(container, dict)
+    children = container["components"]
+    assert isinstance(children, list)
+    heading = children[0]
+    assert isinstance(heading, dict)
+    assert heading["content"] == expected_heading
+
+
+@pytest.mark.parametrize(
+    ("author", "source_title", "expected_metadata"),
+    [
+        (
+            "[Official](https://evil.example)",
+            "News",
+            "-# By \\[Official\\]\\(h\u200bttps://evil.example\\) • News • "
+            "<t:1784548800:R>",
+        ),
+        (
+            "Author",
+            "[Trusted Source](https://evil.example)",
+            "-# By Author • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • "
+            "<t:1784548800:R>",
+        ),
+        (
+            "https://evil.example/author",
+            "www.evil.example/source",
+            "-# By h\u200bttps://evil.example/author • w\u200bww.evil.example/source • "
+            "<t:1784548800:R>",
+        ),
+    ],
+)
+def test_components_v2_payload_escapes_metadata_links(
+    author: str,
+    source_title: str,
+    expected_metadata: str,
+) -> None:
+    # Given
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(message.entry, author=author),
+        source_title=source_title,
+    )
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then
+    components = payload["components"]
+    assert isinstance(components, list)
+    container = components[0]
+    assert isinstance(container, dict)
+    children = container["components"]
+    assert isinstance(children, list)
+    metadata = children[-1]
+    assert isinstance(metadata, dict)
+    assert metadata["content"] == expected_metadata
+
+
+def test_components_v2_payload_preserves_description_markdown() -> None:
+    # Given
+    description = "Read the [documentation](https://example.test/docs) for **details**."
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, description=description))
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then
+    assert contents[1] == description

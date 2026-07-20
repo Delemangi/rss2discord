@@ -8,15 +8,11 @@ from typing import Protocol
 import requests
 
 from configuration import FeedConfig
+from discord_components import JSONValue, build_components_v2_payload
 from models import EntryData
-
-type JSONValue = (
-    None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]
-)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EMBED_COLOR = 5814783
 MAX_RETRIES = 3
 BASE_RETRY_DELAY_SECONDS = 2.0
 MAX_RETRY_AFTER_SECONDS = 300.0
@@ -83,6 +79,7 @@ class DiscordWebhookClient:
                 message.feed.webhook,
                 json=payload,
                 headers={"Content-Type": "application/json"},
+                params={"wait": "true", "with_components": "true"},
                 timeout=10,
             )
         except (requests.ConnectionError, requests.Timeout) as error:
@@ -134,6 +131,12 @@ class DiscordWebhookClient:
             response.raise_for_status()
         except requests.HTTPError as error:
             self._log_request_error("rejected message", message.feed.id, error)
+            return _DeliveryResult(_DeliveryAction.FAILED)
+        if not response.content:
+            logger.error(
+                "Discord returned no delivery confirmation for feed %s",
+                message.feed.id,
+            )
             return _DeliveryResult(_DeliveryAction.FAILED)
         return _DeliveryResult(_DeliveryAction.DELIVERED)
 
@@ -190,28 +193,11 @@ class DiscordWebhookClient:
 
     @staticmethod
     def _build_payload(message: WebhookMessage) -> dict[str, JSONValue]:
-        embed: dict[str, JSONValue] = {
-            "title": message.entry.title,
-            "url": message.entry.link,
-            "description": message.entry.description,
-            "color": (
-                message.feed.embed_color
-                if message.feed.embed_color is not None
-                else DEFAULT_EMBED_COLOR
-            ),
-            "footer": {"text": message.source_title},
-        }
-        if message.entry.author:
-            embed["author"] = {"name": message.entry.author}
-        if message.entry.timestamp is not None:
-            embed["timestamp"] = message.entry.timestamp
-
-        payload: dict[str, JSONValue] = {"embeds": [embed]}
-        if message.feed.webhook_name:
-            payload["username"] = message.feed.webhook_name
-        if message.feed.webhook_avatar:
-            payload["avatar_url"] = message.feed.webhook_avatar
-        return payload
+        return build_components_v2_payload(
+            message.feed,
+            message.entry,
+            message.source_title,
+        )
 
     @staticmethod
     def _retry_after(response: requests.Response, attempt: int) -> float:
