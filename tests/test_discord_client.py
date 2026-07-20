@@ -102,6 +102,37 @@ def test_connection_error_is_retried_before_success(
     assert delays == [2.0]
 
 
+def test_timeout_error_is_retried_before_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+    attempts = 0
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        nonlocal attempts
+        del url, kwargs
+        attempts += 1
+        if attempts == 1:
+            raise requests.Timeout("read timed out")
+        return make_response(204)
+
+    monkeypatch.setattr(session, "post", post)
+    delays: list[float] = []
+
+    def record_delay(seconds: float) -> bool:
+        delays.append(seconds)
+        return True
+
+    # When
+    delivered = DiscordWebhookClient(session).send(make_message(), record_delay)
+
+    # Then
+    assert delivered
+    assert attempts == 2
+    assert delays == [2.0]
+
+
 def test_server_error_is_retried_before_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

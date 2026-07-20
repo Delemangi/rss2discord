@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Protocol
 
 import requests
@@ -19,6 +20,18 @@ MAX_RETRIES = 3
 BASE_RETRY_DELAY_SECONDS = 2.0
 
 SleepCallback = Callable[[float], bool]
+
+
+class _DeliveryAction(Enum):
+    DELIVERED = auto()
+    RETRY = auto()
+    FAILED = auto()
+
+
+@dataclass(frozen=True, slots=True)
+class _DeliveryResult:
+    action: _DeliveryAction
+    wait_time: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,91 +53,136 @@ class DiscordWebhookClient:
         payload = self._build_payload(message)
 
         for attempt in range(MAX_RETRIES):
-            try:
-                response = self._session.post(
-                    message.feed.webhook,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=10,
-                )
-            except (requests.ConnectionError, requests.Timeout) as error:
-                if attempt >= MAX_RETRIES - 1:
-                    self._log_request_error(
-                        "request retries exhausted",
-                        message.feed.id,
-                        error,
-                    )
-                    return False
-                wait_time = self._retry_delay(attempt)
-                logger.warning(
-                    "Discord request failed for feed %s on attempt %d/%d; "
-                    "retrying in %.1f seconds (%s)",
-                    message.feed.id,
-                    attempt + 1,
-                    MAX_RETRIES,
-                    wait_time,
-                    type(error).__name__,
-                )
-                if not sleep(wait_time):
-                    return False
-                continue
-            except requests.RequestException as error:
-                self._log_request_error("request failed", message.feed.id, error)
+            result = self._attempt_delivery(message, payload, attempt)
+            if result.action is _DeliveryAction.FAILED:
                 return False
-
-            if response.status_code == 429:
-                if attempt >= MAX_RETRIES - 1:
-                    logger.error(
-                        "Discord rate limit retries exhausted for feed %s",
-                        message.feed.id,
-                    )
-                    return False
-                wait_time = self._retry_after(response, attempt)
-                logger.warning(
-                    "Discord rate limited feed %s; retrying in %.1f seconds",
+            if result.action is _DeliveryAction.DELIVERED:
+                logger.info(
+                    "Sent entry %s to Discord for feed %s",
+                    message.entry.title,
                     message.feed.id,
-                    wait_time,
                 )
-                if not sleep(wait_time):
-                    return False
-                continue
-
-            if 500 <= response.status_code < 600:
-                if attempt >= MAX_RETRIES - 1:
-                    logger.error(
-                        "Discord server retries exhausted for feed %s (HTTP %d)",
-                        message.feed.id,
-                        response.status_code,
-                    )
-                    return False
-                wait_time = self._retry_delay(attempt)
-                logger.warning(
-                    "Discord server error for feed %s on attempt %d/%d; "
-                    "retrying in %.1f seconds (HTTP %d)",
-                    message.feed.id,
-                    attempt + 1,
-                    MAX_RETRIES,
-                    wait_time,
-                    response.status_code,
-                )
-                if not sleep(wait_time):
-                    return False
-                continue
-
-            try:
-                response.raise_for_status()
-            except requests.HTTPError as error:
-                self._log_request_error("rejected message", message.feed.id, error)
+                return True
+            if not sleep(result.wait_time):
                 return False
-
-            logger.info(
-                "Sent entry %s to Discord for feed %s",
-                message.entry.title,
-                message.feed.id,
-            )
-            return True
 
         return False
+
+    def _attempt_delivery(
+        self,
+        message: WebhookMessage,
+        payload: dict[str, JSONValue],
+        attempt: int,
+    ) -> _DeliveryResult:
+        try:
+            response = self._session.post(
+                message.feed.webhook,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            )
+        except (requests.ConnectionError, requests.Timeout) as error:
+            return self._handle_retryable_request_error(message, error, attempt)
+        except requests.RequestException as error:
+            self._log_request_error("request failed", message.feed.id, error)
+            return _DeliveryResult(_DeliveryAction.FAILED)
+
+        return self._classify_response(message, response, attempt)
+
+    def _handle_retryable_request_error(
+        self,
+        message: WebhookMessage,
+        error: requests.RequestException,
+        attempt: int,
+    ) -> _DeliveryResult:
+        if self._is_final_attempt(attempt):
+            self._log_request_error(
+                "request retries exhausted",
+                message.feed.id,
+                error,
+            )
+            return _DeliveryResult(_DeliveryAction.FAILED)
+
+        wait_time = self._retry_delay(attempt)
+        logger.warning(
+            "Discord request failed for feed %s on attempt %d/%d; "
+            "retrying in %.1f seconds (%s)",
+            message.feed.id,
+            attempt + 1,
+            MAX_RETRIES,
+            wait_time,
+            type(error).__name__,
+        )
+        return _DeliveryResult(_DeliveryAction.RETRY, wait_time)
+
+    def _classify_response(
+        self,
+        message: WebhookMessage,
+        response: requests.Response,
+        attempt: int,
+    ) -> _DeliveryResult:
+        if response.status_code == 429:
+            return self._handle_rate_limit(message, response, attempt)
+        if 500 <= response.status_code < 600:
+            return self._handle_server_error(message, response, attempt)
+
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as error:
+            self._log_request_error("rejected message", message.feed.id, error)
+            return _DeliveryResult(_DeliveryAction.FAILED)
+        return _DeliveryResult(_DeliveryAction.DELIVERED)
+
+    def _handle_rate_limit(
+        self,
+        message: WebhookMessage,
+        response: requests.Response,
+        attempt: int,
+    ) -> _DeliveryResult:
+        if self._is_final_attempt(attempt):
+            logger.error(
+                "Discord rate limit retries exhausted for feed %s",
+                message.feed.id,
+            )
+            return _DeliveryResult(_DeliveryAction.FAILED)
+
+        wait_time = self._retry_after(response, attempt)
+        logger.warning(
+            "Discord rate limited feed %s; retrying in %.1f seconds",
+            message.feed.id,
+            wait_time,
+        )
+        return _DeliveryResult(_DeliveryAction.RETRY, wait_time)
+
+    def _handle_server_error(
+        self,
+        message: WebhookMessage,
+        response: requests.Response,
+        attempt: int,
+    ) -> _DeliveryResult:
+        if self._is_final_attempt(attempt):
+            logger.error(
+                "Discord server retries exhausted for feed %s (HTTP %d)",
+                message.feed.id,
+                response.status_code,
+            )
+            return _DeliveryResult(_DeliveryAction.FAILED)
+
+        wait_time = self._retry_delay(attempt)
+        logger.warning(
+            "Discord server error for feed %s on attempt %d/%d; "
+            "retrying in %.1f seconds (HTTP %d)",
+            message.feed.id,
+            attempt + 1,
+            MAX_RETRIES,
+            wait_time,
+            response.status_code,
+        )
+        return _DeliveryResult(_DeliveryAction.RETRY, wait_time)
+
+    @staticmethod
+    def _is_final_attempt(attempt: int) -> bool:
+        return attempt >= MAX_RETRIES - 1
 
     @staticmethod
     def _build_payload(message: WebhookMessage) -> dict[str, JSONValue]:
