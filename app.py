@@ -85,24 +85,38 @@ class RSSToDiscord:
             self._config.refresh_interval,
         )
         while not self._shutdown_requested:
-            for feed in self._config.feeds:
-                if self._shutdown_requested:
-                    break
-                try:
-                    self.process_feed(feed)
-                except FeedFetchError as error:
-                    _log_feed_fetch_error(feed.id, error)
-                except Exception:
-                    logger.exception("Error processing feed %s", feed.id)
-
-            if not self._shutdown_requested:
-                logger.info(
-                    "Waiting %.1f seconds until next refresh",
-                    self._config.refresh_interval,
-                )
-                self._interruptible_sleep(self._config.refresh_interval)
+            self._run_feed_cycle()
 
         logger.info("Shutdown complete")
+
+    def _run_feed_cycle(self) -> None:
+        for feed_index, feed in enumerate(self._config.feeds):
+            if self._shutdown_requested:
+                break
+            self._process_feed_safely(feed)
+            if self._inter_feed_sleep_was_interrupted(feed_index):
+                break
+
+        if not self._shutdown_requested:
+            logger.info(
+                "Waiting %.1f seconds until next refresh",
+                self._config.refresh_interval,
+            )
+            self._interruptible_sleep(self._config.refresh_interval)
+
+    def _process_feed_safely(self, feed: FeedConfig) -> None:
+        try:
+            self.process_feed(feed)
+        except FeedFetchError as error:
+            _log_feed_fetch_error(feed.id, error)
+        except Exception:
+            logger.exception("Error processing feed %s", feed.id)
+
+    def _inter_feed_sleep_was_interrupted(self, feed_index: int) -> bool:
+        has_next_feed = feed_index + 1 < len(self._config.feeds)
+        if not has_next_feed or self._config.delay_between_feeds <= 0:
+            return False
+        return not self._interruptible_sleep(self._config.delay_between_feeds)
 
     def _is_too_old(self, entry: EntryData, feed_id: str) -> bool:
         max_age_days = self._config.max_post_age_days

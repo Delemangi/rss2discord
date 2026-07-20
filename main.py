@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 SAFE_VALIDATION_FIELDS = frozenset(
     {
+        "delay_between_feeds",
         "delay_between_posts",
         "embed_color",
         "feeds",

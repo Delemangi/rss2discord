@@ -44,6 +44,28 @@ def test_load_config_parses_valid_feed(tmp_path: Path) -> None:
     assert config.feeds[0].strategy == "rss"
 
 
+def test_load_config_parses_delay_between_feeds(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("delay_between_feeds: 61\nfeeds: []\n")
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.delay_between_feeds == 61
+
+
+def test_load_config_rejects_negative_delay_between_feeds(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("delay_between_feeds: -1\nfeeds: []\n")
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_load_config_rejects_missing_feed_id(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"

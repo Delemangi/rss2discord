@@ -47,6 +47,7 @@ eligible for delivery again.
 
 ```yaml
 refresh_interval: 300
+delay_between_feeds: 0
 delay_between_posts: 2
 max_post_age_days: 7
 
@@ -69,7 +70,8 @@ feeds:
 
 `strategy` defaults to `rss`. Set `max_post_age_days` to `0` to disable age
 filtering. When age filtering is enabled, entries without a valid timestamp are
-skipped rather than assigned an invented timestamp.
+skipped rather than assigned an invented timestamp. Increase
+`delay_between_feeds` when a source rate-limits consecutive feed requests.
 
 See `config/config.example.yaml` for a fully annotated example.
 
