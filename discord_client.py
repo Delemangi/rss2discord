@@ -1,4 +1,5 @@
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBED_COLOR = 5814783
 MAX_RETRIES = 3
 BASE_RETRY_DELAY_SECONDS = 2.0
+MAX_RETRY_AFTER_SECONDS = 300.0
 
 SleepCallback = Callable[[float], bool]
 
@@ -216,8 +218,12 @@ class DiscordWebhookClient:
         retry_after = response.headers.get("Retry-After")
         if retry_after is not None:
             try:
-                return float(retry_after)
+                wait_time = float(retry_after)
             except ValueError:
+                logger.warning("Discord returned an invalid Retry-After header")
+            else:
+                if math.isfinite(wait_time) and wait_time >= 0:
+                    return min(wait_time, MAX_RETRY_AFTER_SECONDS)
                 logger.warning("Discord returned an invalid Retry-After header")
         return DiscordWebhookClient._retry_delay(attempt)
 

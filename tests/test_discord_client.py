@@ -187,8 +187,19 @@ def test_client_error_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     assert attempts == 1
 
 
-def test_final_rate_limit_response_honors_cooldown(
+@pytest.mark.parametrize(
+    ("retry_after", "expected_delays"),
+    [
+        ("0.25", [0.25, 0.25, 0.25]),
+        ("86400", [300.0, 300.0, 300.0]),
+        ("inf", [2.0, 4.0, 8.0]),
+        ("-1", [2.0, 4.0, 8.0]),
+    ],
+)
+def test_final_rate_limit_response_honors_bounded_cooldown(
     monkeypatch: pytest.MonkeyPatch,
+    retry_after: str,
+    expected_delays: list[float],
 ) -> None:
     # Given
     session = requests.Session()
@@ -198,7 +209,7 @@ def test_final_rate_limit_response_honors_cooldown(
         nonlocal attempts
         del url, kwargs
         attempts += 1
-        return make_response(429, retry_after="0.25")
+        return make_response(429, retry_after=retry_after)
 
     monkeypatch.setattr(session, "post", post)
     delays: list[float] = []
@@ -213,7 +224,7 @@ def test_final_rate_limit_response_honors_cooldown(
     # Then
     assert not delivered
     assert attempts == 3
-    assert delays == [0.25, 0.25, 0.25]
+    assert delays == expected_delays
 
 
 def test_zero_embed_color_is_preserved() -> None:
