@@ -42,6 +42,8 @@ def make_response(
     response = requests.Response()
     response.status_code = status_code
     response.url = "https://discord.test/api/webhooks/id/token"
+    if status_code == 200:
+        response._content = b'{"id":"123"}'
     if retry_after is not None:
         response.headers["Retry-After"] = retry_after
     return response
@@ -64,7 +66,7 @@ def test_invalid_retry_after_falls_back_to_exponential_delay(
     responses = [
         make_response(429, retry_after="invalid"),
         make_response(429, retry_after="invalid"),
-        make_response(204),
+        make_response(200),
     ]
     attempts = 0
 

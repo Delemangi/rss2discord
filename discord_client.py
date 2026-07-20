@@ -79,7 +79,7 @@ class DiscordWebhookClient:
                 message.feed.webhook,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                params={"with_components": "true"},
+                params={"wait": "true", "with_components": "true"},
                 timeout=10,
             )
         except (requests.ConnectionError, requests.Timeout) as error:
@@ -131,6 +131,12 @@ class DiscordWebhookClient:
             response.raise_for_status()
         except requests.HTTPError as error:
             self._log_request_error("rejected message", message.feed.id, error)
+            return _DeliveryResult(_DeliveryAction.FAILED)
+        if not response.content:
+            logger.error(
+                "Discord returned no delivery confirmation for feed %s",
+                message.feed.id,
+            )
             return _DeliveryResult(_DeliveryAction.FAILED)
         return _DeliveryResult(_DeliveryAction.DELIVERED)
 
