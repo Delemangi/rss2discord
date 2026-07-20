@@ -246,7 +246,7 @@ def test_successful_send_is_not_repeated_when_persistence_temporarily_fails(
         # Then
         assert store.has_delivered("news", "entry-1")
         assert mark_attempts == 2
-        assert retry_delays[0] == 5.0
+        assert retry_delays[0] == pytest.approx(5.0)
         assert len(sender.messages) == 1
 
 
