@@ -76,7 +76,7 @@ def _escape_markdown_link_text(text: str) -> str:
 
 def _escape_markdown_text(text: str) -> str:
     escaped = text.replace("\\", "\\\\")
-    for character in ("`", "*", "_", "~", "|", ">"):
+    for character in ("`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
         escaped = escaped.replace(character, f"\\{character}")
     return escaped
 
