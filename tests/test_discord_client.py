@@ -187,7 +187,7 @@ def test_client_error_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     assert attempts == 1
 
 
-def test_final_rate_limit_response_does_not_sleep(
+def test_final_rate_limit_response_honors_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
@@ -213,7 +213,7 @@ def test_final_rate_limit_response_does_not_sleep(
     # Then
     assert not delivered
     assert attempts == 3
-    assert delays == [0.25, 0.25]
+    assert delays == [0.25, 0.25, 0.25]
 
 
 def test_zero_embed_color_is_preserved() -> None:

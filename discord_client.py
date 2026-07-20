@@ -55,6 +55,8 @@ class DiscordWebhookClient:
         for attempt in range(MAX_RETRIES):
             result = self._attempt_delivery(message, payload, attempt)
             if result.action is _DeliveryAction.FAILED:
+                if result.wait_time > 0:
+                    sleep(result.wait_time)
                 return False
             if result.action is _DeliveryAction.DELIVERED:
                 logger.info(
@@ -139,14 +141,14 @@ class DiscordWebhookClient:
         response: requests.Response,
         attempt: int,
     ) -> _DeliveryResult:
+        wait_time = self._retry_after(response, attempt)
         if self._is_final_attempt(attempt):
             logger.error(
                 "Discord rate limit retries exhausted for feed %s",
                 message.feed.id,
             )
-            return _DeliveryResult(_DeliveryAction.FAILED)
+            return _DeliveryResult(_DeliveryAction.FAILED, wait_time)
 
-        wait_time = self._retry_after(response, attempt)
         logger.warning(
             "Discord rate limited feed %s; retrying in %.1f seconds",
             message.feed.id,
