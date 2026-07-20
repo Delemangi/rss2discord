@@ -1,9 +1,10 @@
 """RSS feed scraping strategy."""
 
+import math
 import re
 from datetime import UTC, datetime
 from html import unescape
-from typing import Any
+from typing import Any, Final
 
 import feedparser
 import requests
@@ -12,6 +13,9 @@ from models import EntryData, EntryId
 
 from .base import FeedFetchError, ScraperStrategy
 
+MAX_RSS_FEED_BYTES: Final = 1_048_576
+RSS_STREAM_CHUNK_BYTES: Final = 65_536
+
 
 class RSSStrategy(ScraperStrategy):
     """Strategy for scraping RSS/Atom feeds."""
@@ -19,21 +23,77 @@ class RSSStrategy(ScraperStrategy):
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """Fetch entries from an RSS feed."""
         try:
-            response = requests.get(
+            with requests.get(
                 url,
                 headers={"User-Agent": feedparser.USER_AGENT},
                 timeout=30,
-            )
-            response.raise_for_status()
+                stream=True,
+            ) as response:
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError:
+                    status_code = response.status_code
+                    raise FeedFetchError(
+                        "RSS",
+                        "HTTPError",
+                        status_code=status_code,
+                        retryable=status_code == 429 or 500 <= status_code < 600,
+                        retry_after=self._parse_retry_after(
+                            response.headers.get("Retry-After"),
+                        ),
+                    ) from None
+                content = self._read_content(response)
+        except FeedFetchError:
+            raise
+        except (requests.ConnectionError, requests.Timeout) as error:
+            raise FeedFetchError(
+                "RSS",
+                type(error).__name__,
+                retryable=True,
+            ) from None
         except requests.RequestException as error:
             raise FeedFetchError("RSS", type(error).__name__) from None
-        feed = feedparser.parse(response.content)
+        feed = feedparser.parse(content)
 
         if feed.bozo and not feed.entries:
             raise FeedFetchError("RSS", type(feed.bozo_exception).__name__) from None
 
         feed_title = str(getattr(feed.feed, "title", "RSS Feed"))
         return feed.entries[::-1], feed_title
+
+    @staticmethod
+    def _read_content(response: requests.Response) -> bytes:
+        content_length = response.headers.get("Content-Length")
+        if content_length is not None:
+            try:
+                declared_bytes = int(content_length)
+            except ValueError:
+                declared_bytes = 0
+            if declared_bytes > MAX_RSS_FEED_BYTES:
+                raise FeedFetchError(
+                    "RSS",
+                    "ResponseTooLarge",
+                )
+
+        content = bytearray()
+        for chunk in response.iter_content(chunk_size=RSS_STREAM_CHUNK_BYTES):
+            if len(content) + len(chunk) > MAX_RSS_FEED_BYTES:
+                raise FeedFetchError(
+                    "RSS",
+                    "ResponseTooLarge",
+                )
+            content.extend(chunk)
+        return bytes(content)
+
+    @staticmethod
+    def _parse_retry_after(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            retry_after = float(value)
+        except ValueError:
+            return None
+        return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
 
     def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """Get unique identifier for an RSS entry."""
