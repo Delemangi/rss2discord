@@ -1,11 +1,11 @@
 # RSS2Discord
 
-Forward RSS/Atom entries and XenForo thread posts to Discord webhooks as rich
-Components v2 messages.
+Forward RSS/Atom entries, XenForo thread posts, and IT.mk Oglasnik listings to
+Discord webhooks as rich Components v2 messages.
 
 ## Features
 
-- RSS, Atom, and XenForo sources
+- RSS, Atom, XenForo, and IT.mk Oglasnik sources
 - Optional Hacker News and Reddit source adapters on RSS feeds
 - Source-aware labels for Reddit, Hacker News, generic RSS, and forums
 - Distinct Hacker News discussion links when the feed supplies a separate comments URL
@@ -91,6 +91,12 @@ feeds:
     url: "https://forum.example.com/threads/topic.12345/"
     webhook: "https://discord.com/api/webhooks/ID/TOKEN"
     strategy: "xenforo"
+
+  - id: "itmk-oglasnik"
+    name: "IT.mk Oglasnik"
+    url: "https://forum.it.mk/oglasnik/"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "itmk_oglasnik"
 ```
 
 `strategy` defaults to `rss`. The optional `adapter` may be `hackernews` or
@@ -124,10 +130,16 @@ Generic RSS and Atom entries also use structured `content` when no summary is
 available and fall back to valid raw publication timestamps when parsed time
 structures are absent.
 
+The `itmk_oglasnik` strategy targets IT.mk Oglasnik index and category pages.
+It makes one request per poll and extracts the listing card's price, condition,
+type, category, seller, dates, views, status, and non-placeholder image. Use the
+`xenforo` strategy for ordinary forum discussion threads.
+
 ## Reliability behavior
 
-RSS requests are streamed and rejected when the decoded response body exceeds
-1 MiB. HTTP 429 and 5xx responses, connection errors, and timeouts are retried
+RSS and IT.mk Oglasnik requests are streamed and rejected when the decoded
+response body exceeds 1 MiB. Their HTTP 429 and 5xx responses, connection
+errors, and timeouts are retried
 up to three total attempts. Numeric `Retry-After` values are honored up to five
 minutes; otherwise retries use jittered exponential backoff. Other HTTP and
 feed parsing failures wait for the next scheduled poll.
