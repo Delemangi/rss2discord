@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, assert_never
 
 from app import RSSToDiscord
@@ -27,6 +27,15 @@ class FakeStrategy(ScraperStrategy):
 
     def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         return entry.data
+
+
+class FakeAdapter:
+    def __init__(self) -> None:
+        self.entries: list[FakeEntry] = []
+
+    def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
+        self.entries.append(entry)
+        return replace(data, author="Adapted Author")
 
 
 class FakeSender:
