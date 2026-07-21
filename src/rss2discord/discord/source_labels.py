@@ -26,11 +26,14 @@ def source_label(feed: FeedConfig) -> str:
         case "itmk_oglasnik":
             return SOURCE_LABEL_ITMK_OGLASNIK
         case "rss":
-            pass
+            return _rss_source_label(feed.url)
         case unreachable_strategy:
             assert_never(unreachable_strategy)
+
+
+def _rss_source_label(url: str) -> str:
     try:
-        parsed_url = urlsplit(feed.url)
+        parsed_url = urlsplit(url)
         hostname = parsed_url.hostname
     except ValueError:
         return SOURCE_LABEL_RSS
@@ -39,8 +42,7 @@ def source_label(feed: FeedConfig) -> str:
     hostname_lower = hostname.lower()
     path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
     if (
-        feed.strategy == "rss"
-        and hostname_lower == "github.com"
+        hostname_lower == "github.com"
         and len(path_segments) == 3
         and path_segments[-1] == "releases.atom"
     ):
