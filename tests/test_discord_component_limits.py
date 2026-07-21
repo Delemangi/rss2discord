@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 
 from discord_client import DiscordWebhookClient
-from models import EntryData
+from models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
     get_container_children,
     get_text_display_contents,
@@ -87,6 +87,7 @@ def test_components_v2_payload_stays_within_combined_text_limit() -> None:
             description="D" * 5000,
             author="A" * 5000,
             timestamp="invalid-" + "X" * 5000,
+            source_metrics=(SourceMetric(label="L" * 5000, value="V" * 5000),),
         ),
         source_title="S" * 5000,
     )

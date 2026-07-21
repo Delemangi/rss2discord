@@ -3,10 +3,13 @@ from typing import Any
 
 import pytest
 
+from adapters import AdapterError
 from app import RSSToDiscord
 from configuration import AppConfig, FeedConfig
 from delivery_store import DeliveryStore
+from models import EntryData
 from tests.app_helpers import (
+    FakeAdapter,
     FakeEntry,
     FakeSender,
     FakeStrategy,
@@ -161,3 +164,112 @@ def test_configured_feed_name_wins_over_fetched_source_title(tmp_path: Path) -> 
     # Then
     assert len(sender.messages) == 1
     assert sender.messages[0].source_title == "Configured Name"
+
+
+def test_configured_adapter_enriches_unseen_entry_before_delivery(
+    tmp_path: Path,
+) -> None:
+    # Given
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://example.test/feed.xml",
+        webhook="https://discord.test/news",
+        adapter="reddit",
+    )
+    sender = FakeSender([True])
+    raw_entry = make_entry("entry-1")
+    strategy = FakeStrategy([raw_entry])
+    adapter = FakeAdapter()
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["reddit"] = adapter
+        app.process_feed(feed)
+
+    # Then
+    assert adapter.entries == [raw_entry]
+    assert sender.messages[0].entry.author == "Adapted Author"
+
+
+def test_delivered_entry_skips_adapter_enrichment(tmp_path: Path) -> None:
+    # Given
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://example.test/feed.xml",
+        webhook="https://discord.test/news",
+        adapter="reddit",
+    )
+    raw_entry = make_entry("entry-1")
+    sender = FakeSender([])
+    strategy = FakeStrategy([raw_entry])
+    adapter = FakeAdapter()
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        store.mark_delivered(feed.id, raw_entry.id)
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["reddit"] = adapter
+        app.process_feed(feed)
+
+    # Then
+    assert adapter.entries == []
+    assert sender.messages == []
+
+
+def test_hackernews_adapter_requests_are_bounded_per_feed(tmp_path: Path) -> None:
+    # Given
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://news.ycombinator.com/rss",
+        webhook="https://discord.test/news",
+        adapter="hackernews",
+    )
+    entries = [make_entry(f"entry-{index}") for index in range(7)]
+    sender = FakeSender([True] * len(entries))
+    strategy = FakeStrategy(entries)
+    adapter = FakeAdapter()
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["hackernews"] = adapter
+        app.process_feed(feed)
+
+    # Then
+    assert len(adapter.entries) == 5
+    assert len(sender.messages) == len(entries)
+
+
+def test_adapter_failure_falls_back_per_entry(tmp_path: Path) -> None:
+    # Given
+    class FailingAdapter:
+        def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
+            del entry, data
+            raise AdapterError("adapter failed")
+
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://example.test/feed.xml",
+        webhook="https://discord.test/news",
+        adapter="reddit",
+    )
+    entries = [make_entry("entry-1"), make_entry("entry-2")]
+    sender = FakeSender([True, True])
+    strategy = FakeStrategy(entries)
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["reddit"] = FailingAdapter()
+        app.process_feed(feed)
+
+    # Then
+    assert [message.entry.title for message in sender.messages] == [
+        "entry-1",
+        "entry-2",
+    ]

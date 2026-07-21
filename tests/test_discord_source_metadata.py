@@ -4,7 +4,7 @@ from typing import Literal
 import pytest
 
 from discord_client import DiscordWebhookClient
-from models import EntryData
+from models import EntryData, SourceMetric
 from tests.discord_components_helpers import get_metadata_content, make_message
 
 
@@ -74,6 +74,77 @@ def test_components_v2_payload_renders_hacker_news_discussion_link() -> None:
     # Then
     assert "-# Hacker News • News" in metadata
     assert "[Discussion](https://news.ycombinator.com/item?id=12345)" in metadata
+
+
+@pytest.mark.parametrize(
+    ("adapter", "expected_label"),
+    [("hackernews", "Hacker News"), ("reddit", "Reddit")],
+)
+def test_components_v2_payload_renders_configured_adapter_label(
+    adapter: Literal["hackernews", "reddit"],
+    expected_label: str,
+) -> None:
+    # Given
+    message = make_message(
+        adapter=adapter,
+        url="https://feeds.example.test/source.xml",
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then
+    assert metadata.startswith(f"-# {expected_label} • ")
+
+
+def test_components_v2_payload_renders_escaped_source_metrics_in_order() -> None:
+    # Given
+    message = make_message(
+        adapter="hackernews",
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="Author",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric(label="Points", value="123"),
+                SourceMetric(
+                    label="Domain",
+                    value="[evil](https://evil.example)",
+                ),
+            ),
+        ),
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then
+    assert metadata.startswith("-# Hacker News • News • Points 123 • Domain ")
+    assert "\\[evil\\]\\(h\u200bttps://evil.example\\)" in metadata
+    assert metadata.endswith("• By Author")
+
+
+def test_components_v2_payload_omits_duplicate_source_title() -> None:
+    # Given
+    message = make_message(
+        adapter="hackernews",
+        source_title="Hacker News",
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then
+    assert metadata == "-# Hacker News"
 
 
 @pytest.mark.parametrize(

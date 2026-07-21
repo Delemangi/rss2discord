@@ -5,6 +5,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
+from adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
 from configuration import AppConfig, FeedConfig
 from delivery_store import DeliveryStore
 from discord_client import DiscordSender, WebhookMessage
@@ -17,6 +18,7 @@ FEED_FETCH_MAX_ATTEMPTS: Final = 3
 FEED_FETCH_BASE_DELAY_SECONDS: Final = 2.0
 FEED_FETCH_MAX_DELAY_SECONDS: Final = 300.0
 FEED_FETCH_MAX_BACKOFF_SECONDS: Final = 30.0
+MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
 SQLITE_TRANSIENT_ERROR_CODES: Final = frozenset(
     {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED},
 )
@@ -44,6 +46,10 @@ class RSSToDiscord:
             "rss": RSSStrategy(),
             "xenforo": XenForoStrategy(),
         }
+        self._adapters: dict[str, SourceAdapter] = {
+            "hackernews": HackerNewsAdapter(),
+            "reddit": RedditAdapter(),
+        }
         self._shutdown_requested = False
 
     def request_shutdown(self) -> None:
@@ -56,6 +62,13 @@ class RSSToDiscord:
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
+        adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
+        hacker_news_enrichments_remaining = (
+            MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED
+            if feed.adapter == "hackernews"
+            else None
+        )
+        enrichment_limit_logged = False
 
         for entry in entries:
             if self._shutdown_requested:
@@ -72,6 +85,25 @@ class RSSToDiscord:
                 continue
 
             entry_data = strategy.get_entry_data(entry)
+            if adapter is not None and hacker_news_enrichments_remaining != 0:
+                try:
+                    entry_data = adapter.adapt(entry, entry_data)
+                except AdapterError as error:
+                    logger.warning(
+                        "Adapter %s failed for feed %s (%s); using baseline data",
+                        feed.adapter,
+                        feed.id,
+                        type(error).__name__,
+                    )
+                if hacker_news_enrichments_remaining is not None:
+                    hacker_news_enrichments_remaining -= 1
+            elif adapter is not None and not enrichment_limit_logged:
+                logger.warning(
+                    "Hacker News enrichment limit reached for feed %s; "
+                    "using baseline data",
+                    feed.id,
+                )
+                enrichment_limit_logged = True
             if self._is_too_old(entry_data, feed.id):
                 continue
 

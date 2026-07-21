@@ -27,6 +27,22 @@ feeds:
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
 
+  # Hacker News RSS with official API enrichment
+  - id: "hacker-news"
+    name: "Hacker News"
+    url: "https://news.ycombinator.com/rss"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "rss"
+    adapter: "hackernews"
+
+  # Reddit RSS with outbound/discussion link separation
+  - id: "reddit-python"
+    name: "r/Python"
+    url: "https://www.reddit.com/r/python/.rss"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "rss"
+    adapter: "reddit"
+
   # Example XenForo forum thread
   - id: "forum-discussion"
     name: "Forum Discussion"
@@ -53,6 +69,9 @@ feeds:
 # - strategy: Scraping strategy to use (optional, default: 'rss')
 #   - 'rss': For RSS/Atom feeds (default)
 #   - 'xenforo': For XenForo forum threads
+# - adapter: Optional source-specific enrichment for RSS feeds
+#   - 'hackernews': Author, points, comments, self-post text, and article domain
+#   - 'reddit': Outbound/discussion links and normalized authors without OAuth
 # - webhook_name: Custom name for the webhook bot (optional)
 # - webhook_avatar: URL to custom avatar image for the webhook bot (optional)
 # - embed_color: Decimal color for the Components v2 container accent

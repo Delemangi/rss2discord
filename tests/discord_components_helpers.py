@@ -1,6 +1,6 @@
 from typing import Literal
 
-from configuration import FeedConfig
+from configuration import FeedAdapterName, FeedConfig
 from discord_client import DiscordWebhookClient, WebhookMessage
 from discord_components import JSONValue
 from models import EntryData
@@ -10,6 +10,7 @@ def make_message(
     *,
     embed_color: int | None = None,
     strategy: Literal["rss", "xenforo"] = "rss",
+    adapter: FeedAdapterName | None = None,
     url: str = "https://example.test/feed.xml",
     webhook_name: str | None = "RSS Bot",
     webhook_avatar: str | None = "https://example.test/avatar.png",
@@ -26,6 +27,7 @@ def make_message(
             webhook_avatar=webhook_avatar,
             embed_color=embed_color,
             strategy=strategy,
+            adapter=adapter,
         ),
         entry=entry
         or EntryData(

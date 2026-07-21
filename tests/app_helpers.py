@@ -29,6 +29,25 @@ class FakeStrategy(ScraperStrategy):
         return entry.data
 
 
+class FakeAdapter:
+    def __init__(self) -> None:
+        self.entries: list[FakeEntry] = []
+
+    def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
+        self.entries.append(entry)
+        return EntryData(
+            title=data.title,
+            link=data.link,
+            description=data.description,
+            author="Adapted Author",
+            timestamp=data.timestamp,
+            discussion_url=data.discussion_url,
+            image_url=data.image_url,
+            categories=data.categories,
+            source_metrics=data.source_metrics,
+        )
+
+
 class FakeSender:
     def __init__(self, outcomes: list[bool | RuntimeError]) -> None:
         self.outcomes = outcomes
