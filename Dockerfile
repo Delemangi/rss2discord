@@ -8,7 +8,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-
+COPY README.md ./
+COPY src/ ./src/
+RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.12-slim-bookworm AS runtime
 
 ENV CONFIG_PATH=/app/config/config.yaml \
@@ -26,12 +28,9 @@ RUN groupadd --gid 10001 app \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
-COPY app.py configuration.py delivery_store.py discord_client.py discord_components.py main.py models.py source_labels.py ./
-COPY adapters/ ./adapters/
-COPY strategies/ ./strategies/
 
 USER app
 
 STOPSIGNAL SIGTERM
 
-CMD ["python", "main.py"]
+CMD ["python", "-m", "rss2discord"]

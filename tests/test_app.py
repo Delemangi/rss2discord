@@ -3,11 +3,11 @@ from typing import Any
 
 import pytest
 
-from adapters import AdapterError
-from app import RSSToDiscord
-from configuration import AppConfig, FeedConfig
-from delivery_store import DeliveryStore
-from models import EntryData
+from rss2discord.adapters import AdapterError
+from rss2discord.app import RSSToDiscord
+from rss2discord.configuration import AppConfig, FeedConfig
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import EntryData
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,

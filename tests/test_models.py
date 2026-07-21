@@ -1,4 +1,4 @@
-from models import EntryData
+from rss2discord.models import EntryData
 
 
 def test_entry_data_defaults_to_no_source_metrics() -> None:

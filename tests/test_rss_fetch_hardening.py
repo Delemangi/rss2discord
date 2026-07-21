@@ -5,7 +5,7 @@ from typing import Self
 import pytest
 import requests
 
-from strategies import FeedFetchError, RSSStrategy
+from rss2discord.transports import FeedFetchError, RSSStrategy
 
 RSS_FEED_LIMIT_BYTES = 1_048_576
 VALID_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>

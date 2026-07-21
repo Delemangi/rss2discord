@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 import requests
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from models import EntryData, SourceMetric
+from rss2discord.models import EntryData, SourceMetric
 
 logger = logging.getLogger(__name__)
 HACKER_NEWS_ITEM_URL: Final = (

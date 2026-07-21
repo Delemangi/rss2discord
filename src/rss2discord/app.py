@@ -5,12 +5,12 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
-from configuration import AppConfig, FeedConfig
-from delivery_store import DeliveryStore
-from discord_client import DiscordSender, WebhookMessage
-from models import EntryData, EntryId
-from strategies import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
+from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
+from .configuration import AppConfig, FeedConfig
+from .delivery_store import DeliveryStore
+from .discord.client import DiscordSender, WebhookMessage
+from .models import EntryData, EntryId
+from .transports import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
 
 logger = logging.getLogger(__name__)
 PERSISTENCE_RETRY_DELAY_SECONDS: Final = 5.0

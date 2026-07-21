@@ -3,14 +3,14 @@ from urllib.parse import quote
 import pytest
 import requests
 
-import adapters.hackernews as hackernews_module
-from adapters.hackernews import (
+import rss2discord.adapters.hackernews as hackernews_module
+from rss2discord.adapters.hackernews import (
     HACKER_NEWS_TIMEOUT_SECONDS,
     HackerNewsAdapter,
     HackerNewsItem,
     fetch_hacker_news_item,
 )
-from models import EntryData, SourceMetric
+from rss2discord.models import EntryData, SourceMetric
 
 
 def make_entry(

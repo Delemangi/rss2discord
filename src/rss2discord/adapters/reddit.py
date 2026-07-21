@@ -4,7 +4,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit
 
-from models import EntryData
+from rss2discord.models import EntryData
 
 
 class RedditAdapter:

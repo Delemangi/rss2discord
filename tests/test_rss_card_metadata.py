@@ -3,8 +3,8 @@ from dataclasses import FrozenInstanceError
 import feedparser
 import pytest
 
-from models import EntryData
-from strategies import RSSStrategy
+from rss2discord.models import EntryData
+from rss2discord.transports import RSSStrategy
 
 
 def test_entry_data_defaults_richer_card_metadata() -> None:

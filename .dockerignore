@@ -20,6 +20,7 @@ data/
 # Documentation
 README.md
 *.md
+!README.md
 
 # Development and deployment
 compose*.yaml

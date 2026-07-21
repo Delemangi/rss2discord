@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from delivery_store import DeliveryStore
-from models import EntryId
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import EntryId
 from tests.app_helpers import FakeSender, FakeStrategy, make_app, make_entry, make_feed
 
 

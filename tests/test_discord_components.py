@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from discord_client import DiscordWebhookClient
+from rss2discord.discord.client import DiscordWebhookClient
 from tests.discord_components_helpers import (
     get_container_children,
     get_metadata_content,

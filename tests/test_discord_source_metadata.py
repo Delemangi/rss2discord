@@ -3,8 +3,8 @@ from typing import Literal
 
 import pytest
 
-from discord_client import DiscordWebhookClient
-from models import EntryData, SourceMetric
+from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import get_metadata_content, make_message
 
 

@@ -7,9 +7,8 @@ from typing import Any
 
 from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
 
-from models import EntryData, EntryId
-
-from .base import FeedFetchError, ScraperStrategy
+from rss2discord.models import EntryData, EntryId
+from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 
 class XenForoStrategy(ScraperStrategy):

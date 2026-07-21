@@ -3,8 +3,8 @@ from dataclasses import replace
 
 import pytest
 
-from discord_client import DiscordWebhookClient
-from models import EntryData, SourceMetric
+from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
     get_container_children,
     get_text_display_contents,
