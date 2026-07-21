@@ -3,7 +3,6 @@
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import UTC, datetime
 from html import unescape
 from typing import Any, Final, Literal
@@ -105,12 +104,15 @@ class HackerNewsAdapter:
         if domain is not None:
             metrics.append(SourceMetric(label="Domain", value=domain))
 
-        return replace(
-            data,
+        return EntryData(
+            title=data.title,
             link=link,
             description=description,
             author=item.by or data.author,
             timestamp=timestamp,
+            discussion_url=data.discussion_url,
+            image_url=data.image_url,
+            categories=data.categories,
             source_metrics=tuple(metrics),
         )
 
@@ -126,9 +128,19 @@ def _item_id(discussion_url: str | None, link: str) -> int | None:
         if parsed.hostname != "news.ycombinator.com" or parsed.path != "/item":
             continue
         values = parse_qs(parsed.query).get("id", ())
-        if len(values) != 1 or not values[0].isdigit():
+        if len(values) != 1:
             continue
-        item_id = int(values[0])
+        raw_item_id = values[0]
+        if (
+            len(raw_item_id) > 20
+            or not raw_item_id.isascii()
+            or not raw_item_id.isdigit()
+        ):
+            continue
+        try:
+            item_id = int(raw_item_id)
+        except ValueError:
+            continue
         if item_id > 0:
             return item_id
     return None

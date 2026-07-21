@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 import pytest
 import requests
 
@@ -105,6 +107,23 @@ def test_hackernews_adapter_preserves_entry_when_api_item_is_unavailable() -> No
 
     # Then
     assert result is entry
+
+
+@pytest.mark.parametrize("raw_item_id", ["²", "9" * 5000])
+def test_hackernews_adapter_ignores_nonconvertible_item_id(raw_item_id: str) -> None:
+    # Given
+    fetched_ids: list[int] = []
+    adapter = HackerNewsAdapter(fetch_item=fetched_ids.append)
+    entry = make_entry(
+        discussion_url=("https://news.ycombinator.com/item?id=" + quote(raw_item_id)),
+    )
+
+    # When
+    result = adapter.adapt({}, entry)
+
+    # Then
+    assert result is entry
+    assert fetched_ids == []
 
 
 def test_hackernews_adapter_preserves_deleted_item() -> None:
