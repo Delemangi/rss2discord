@@ -132,6 +132,57 @@ def test_load_config_rejects_unknown_strategy(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+def test_load_config_parses_hackernews_adapter(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: hacker-news\n"
+        "    url: https://news.ycombinator.com/rss\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    adapter: hackernews\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].adapter == "hackernews"
+
+
+def test_load_config_rejects_unknown_adapter(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    adapter: typo\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
+def test_load_config_rejects_adapter_with_xenforo_strategy(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: forum\n"
+        "    url: https://forum.example.test/threads/topic.1/\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: xenforo\n"
+        "    adapter: reddit\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_invalid_config_does_not_expose_webhook_secret(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

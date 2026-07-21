@@ -10,6 +10,7 @@ FeedIdValue = Annotated[
 ]
 NonEmptyString = Annotated[str, Field(min_length=1)]
 WebhookName = Annotated[str, Field(min_length=1, max_length=80)]
+FeedAdapterName = Literal["hackernews", "reddit"]
 
 
 class FeedConfig(BaseModel):
@@ -25,9 +26,17 @@ class FeedConfig(BaseModel):
     webhook: NonEmptyString
     name: str | None = None
     strategy: Literal["rss", "xenforo"] = "rss"
+    adapter: FeedAdapterName | None = None
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
     embed_color: Annotated[int, Field(ge=0, le=0xFFFFFF)] | None = None
+
+    @model_validator(mode="after")
+    def require_rss_strategy_for_adapter(self) -> Self:
+        if self.adapter is not None and self.strategy != "rss":
+            msg = "feed adapters require the rss strategy"
+            raise ValueError(msg)
+        return self
 
 
 class AppConfig(BaseModel):
