@@ -7,9 +7,9 @@ from typing import Protocol
 
 import requests
 
-from configuration import FeedConfig
-from discord_components import JSONValue, build_components_v2_payload
-from models import EntryData
+from rss2discord.configuration import FeedConfig
+from rss2discord.discord.components import JSONValue, build_components_v2_payload
+from rss2discord.models import EntryData
 
 logger = logging.getLogger(__name__)
 

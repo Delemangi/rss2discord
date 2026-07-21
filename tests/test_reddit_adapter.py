@@ -1,5 +1,5 @@
-from adapters.reddit import RedditAdapter
-from models import EntryData
+from rss2discord.adapters.reddit import RedditAdapter
+from rss2discord.models import EntryData
 
 
 def make_entry() -> EntryData:

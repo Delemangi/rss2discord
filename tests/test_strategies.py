@@ -5,8 +5,8 @@ import feedparser
 import pytest
 import requests
 
-import strategies.xenforo_strategy as xenforo_module
-from strategies import FeedFetchError, RSSStrategy, XenForoStrategy
+import rss2discord.transports.xenforo as xenforo_module
+from rss2discord.transports import FeedFetchError, RSSStrategy, XenForoStrategy
 
 
 def test_rss_strategy_uses_stable_native_identity() -> None:

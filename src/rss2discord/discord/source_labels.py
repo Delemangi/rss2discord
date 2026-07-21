@@ -1,7 +1,7 @@
 from typing import Final, assert_never
 from urllib.parse import urlsplit
 
-from configuration import FeedConfig
+from rss2discord.configuration import FeedConfig
 
 SOURCE_LABEL_FORUM: Final = "Forum"
 SOURCE_LABEL_REDDIT: Final = "Reddit"

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from html import unescape
 from typing import Any
 
-from models import EntryData, EntryId
+from rss2discord.models import EntryData, EntryId
 
 MAX_DESCRIPTION_LENGTH = 2000
 

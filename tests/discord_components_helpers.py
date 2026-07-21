@@ -1,9 +1,9 @@
 from typing import Literal
 
-from configuration import FeedAdapterName, FeedConfig
-from discord_client import DiscordWebhookClient, WebhookMessage
-from discord_components import JSONValue
-from models import EntryData
+from rss2discord.configuration import FeedAdapterName, FeedConfig
+from rss2discord.discord.client import DiscordWebhookClient, WebhookMessage
+from rss2discord.discord.components import JSONValue
+from rss2discord.models import EntryData
 
 
 def make_message(

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from delivery_store import DeliveryStore
+from rss2discord.delivery_store import DeliveryStore
 
 
 def test_delivery_store_keeps_feed_namespaces_separate(tmp_path: Path) -> None:

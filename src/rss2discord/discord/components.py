@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 from typing import Final
 from urllib.parse import quote, urlsplit
 
-from configuration import FeedConfig
-from models import EntryData
-from source_labels import source_label
+from rss2discord.configuration import FeedConfig
+from rss2discord.discord.source_labels import source_label
+from rss2discord.models import EntryData
 
 type JSONValue = (
     None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]

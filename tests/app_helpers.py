@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from typing import Any, assert_never
 
-from app import RSSToDiscord
-from configuration import AppConfig, FeedConfig
-from delivery_store import DeliveryStore
-from discord_client import SleepCallback, WebhookMessage
-from models import EntryData, EntryId
-from strategies import ScraperStrategy
+from rss2discord.app import RSSToDiscord
+from rss2discord.configuration import AppConfig, FeedConfig
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.discord.client import SleepCallback, WebhookMessage
+from rss2discord.models import EntryData, EntryId
+from rss2discord.transports import ScraperStrategy
 
 
 @dataclass(frozen=True, slots=True)

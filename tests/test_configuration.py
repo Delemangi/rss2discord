@@ -5,8 +5,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-import main as app_main
-from configuration import load_config
+import rss2discord.main as app_main
+from rss2discord.configuration import load_config
 
 
 def format_logs(caplog: pytest.LogCaptureFixture) -> str:

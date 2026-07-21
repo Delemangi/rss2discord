@@ -9,10 +9,9 @@ from typing import Any, Final
 import feedparser
 import requests
 
-from models import EntryData, EntryId
-
-from .base import FeedFetchError, ScraperStrategy
-from .rss_timestamp import get_rss_timestamp
+from rss2discord.models import EntryData, EntryId
+from rss2discord.transports.base import FeedFetchError, ScraperStrategy
+from rss2discord.transports.rss_timestamp import get_rss_timestamp
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
 RSS_STREAM_CHUNK_BYTES: Final = 65_536

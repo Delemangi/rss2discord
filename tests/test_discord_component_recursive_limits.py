@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from discord_client import DiscordWebhookClient
-from models import EntryData
+from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.models import EntryData
 from tests.discord_components_helpers import (
     get_all_components,
     get_text_display_contents,

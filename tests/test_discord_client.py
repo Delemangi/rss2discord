@@ -3,9 +3,9 @@ import logging
 import pytest
 import requests
 
-from configuration import FeedConfig
-from discord_client import DiscordWebhookClient, JSONValue, WebhookMessage
-from models import EntryData
+from rss2discord.configuration import FeedConfig
+from rss2discord.discord.client import DiscordWebhookClient, JSONValue, WebhookMessage
+from rss2discord.models import EntryData
 
 type PostArgument = int | dict[str, str] | dict[str, JSONValue]
 

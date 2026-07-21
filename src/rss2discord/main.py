@@ -9,10 +9,10 @@ from types import FrameType
 import yaml
 from pydantic import ValidationError
 
-from app import RSSToDiscord
-from configuration import load_config
-from delivery_store import DeliveryStore
-from discord_client import DiscordWebhookClient
+from .app import RSSToDiscord
+from .configuration import load_config
+from .delivery_store import DeliveryStore
+from .discord.client import DiscordWebhookClient
 
 logging.basicConfig(
     level=logging.INFO,

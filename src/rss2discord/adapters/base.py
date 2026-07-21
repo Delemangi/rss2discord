@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from models import EntryData
+from rss2discord.models import EntryData
 
 
 class AdapterError(Exception):

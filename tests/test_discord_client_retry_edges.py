@@ -4,14 +4,14 @@ from typing import Literal, assert_never
 import pytest
 import requests
 
-from configuration import FeedConfig
-from discord_client import (
+from rss2discord.configuration import FeedConfig
+from rss2discord.discord.client import (
     DiscordWebhookClient,
     JSONValue,
     SleepCallback,
     WebhookMessage,
 )
-from models import EntryData
+from rss2discord.models import EntryData
 
 type PostArgument = int | dict[str, str] | dict[str, JSONValue]
 
