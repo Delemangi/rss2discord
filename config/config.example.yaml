@@ -43,6 +43,13 @@ feeds:
     strategy: "rss"
     adapter: "reddit"
 
+  # Public GitHub repository releases feed
+  - id: "github-cli-releases"
+    name: "GitHub CLI Releases"
+    url: "https://github.com/cli/cli/releases.atom"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "rss"
+
   # Example XenForo forum thread
   - id: "forum-discussion"
     name: "Forum Discussion"
@@ -73,6 +80,8 @@ feeds:
 #   Delivery history is keyed by this value, so changing it will make old entries new again.
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
 # - url: The RSS/Atom feed, XenForo thread, or IT.mk Oglasnik index/category URL (required)
+#   Public GitHub release feeds use https://github.com/OWNER/REPOSITORY/releases.atom
+#   and render with a GitHub source label. They do not require an adapter.
 # - webhook: Discord webhook URL for posting updates (required)
 # - strategy: Scraping strategy to use (optional, default: 'rss')
 #   - 'rss': For RSS/Atom feeds (default)

@@ -7,7 +7,7 @@ Discord webhooks as rich Components v2 messages.
 
 - RSS, Atom, XenForo, and IT.mk Oglasnik sources
 - Optional Hacker News and Reddit source adapters on RSS feeds
-- Source-aware labels for Reddit, Hacker News, generic RSS, and forums
+- Source-aware labels for GitHub releases, Reddit, Hacker News, generic RSS, and forums
 - Distinct Hacker News discussion links when the feed supplies a separate comments URL
 - Hacker News submitter, points, comment count, self-post text, and article domain from the official API
 - Reddit outbound and discussion link separation using credential-free feed metadata
@@ -86,6 +86,12 @@ feeds:
     strategy: "rss"
     adapter: "reddit"
 
+  - id: "github-cli-releases"
+    name: "GitHub CLI Releases"
+    url: "https://github.com/cli/cli/releases.atom"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "rss"
+
   - id: "forum-thread"
     name: "Forum Thread"
     url: "https://forum.example.com/threads/topic.12345/"
@@ -125,6 +131,17 @@ The Reddit adapter uses public RSS or Atom data only. It separates an outbound
 `[link]` target from the Reddit discussion permalink and normalizes `/u/`
 authors. Reddit scores, comment counts, flair, and NSFW state are not reliably
 available without authenticated API access and are not invented.
+
+Public GitHub repository releases can be monitored with the repository's
+`https://github.com/OWNER/REPOSITORY/releases.atom` feed. These feeds use the
+standard RSS strategy and render with a GitHub source label; no adapter is
+required. GitHub may include prereleases as ordinary feed entries, but the Atom
+data does not provide reliable draft or prerelease flags. GitHub's release Atom
+feed is a bounded public feed, not a paginated official API, so unusually
+high-volume repositories should use a shorter `refresh_interval` or a future
+GitHub Releases API integration if missing any release is unacceptable. Private
+repositories, draft releases, release-state filtering, and guaranteed historical
+backfill are outside the RSS feed integration's scope.
 
 Generic RSS and Atom entries also use structured `content` when no summary is
 available and fall back to valid raw publication timestamps when parsed time
