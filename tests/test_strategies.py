@@ -1,4 +1,5 @@
 import traceback
+from time import struct_time
 
 import feedparser
 import pytest
@@ -19,6 +20,32 @@ def test_rss_strategy_uses_stable_native_identity() -> None:
     assert strategy.get_entry_id(identified_entry) == "guid-1"
     assert strategy.get_entry_id(linked_entry) == "https://example.test/1"
     assert strategy.get_entry_id(unidentified_entry) is None
+
+
+def test_rss_strategy_preserves_core_normalization_behavior() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "id": " guid-42 ",
+            "title": "Hello &amp; World",
+            "link": "https://example.test/articles/42",
+            "summary": "<p>Body &amp; <strong>more</strong></p>\nsubmitted by /u/source",
+            "author": "Author",
+            "published_parsed": struct_time((2026, 7, 20, 12, 34, 56, 0, 201, -1)),
+        },
+    )
+
+    # When
+    entry_id = strategy.get_entry_id(entry)
+    entry_data = strategy.get_entry_data(entry)
+
+    # Then
+    assert entry_id == "guid-42"
+    assert entry_data.title == "Hello & World"
+    assert entry_data.link == "https://example.test/articles/42"
+    assert entry_data.description == "Body & more"
+    assert entry_data.timestamp == "2026-07-20T12:34:56+00:00"
 
 
 def test_xenforo_strategy_requires_post_id() -> None:
@@ -53,16 +80,19 @@ def test_rss_fetch_error_does_not_expose_feed_url_secret(
     # Given
     feed_url = "https://feed.test/rss?token=secret-token"
 
-    def fail_request(url: str, **kwargs: object) -> requests.Response:
-        del kwargs
+    def fail_request(
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: int,
+        stream: bool,
+    ) -> requests.Response:
         raise requests.ConnectionError(f"Could not connect to {url}")
 
     monkeypatch.setattr(requests, "get", fail_request)
-    strategy = RSSStrategy()
-
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        strategy.fetch_entries(feed_url)
+        RSSStrategy().fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(
@@ -81,20 +111,17 @@ def test_xenforo_fetch_error_does_not_expose_feed_url_secret(
     # Given
     feed_url = "https://feed.test/thread?token=secret-token"
 
+    class XenForoRequestError(Exception):
+        pass
+
     class FailingScraper:
         def get_thread(self, url: str) -> None:
-            raise RuntimeError(f"Could not connect to {url}")
+            raise XenForoRequestError(f"Could not connect to {url}")
 
-    monkeypatch.setattr(
-        xenforo_module,
-        "xenforo",
-        lambda **kwargs: FailingScraper(),
-    )
-    strategy = XenForoStrategy()
-
+    monkeypatch.setattr(xenforo_module, "xenforo", lambda **kwargs: FailingScraper())
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        strategy.fetch_entries(feed_url)
+        XenForoStrategy().fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(

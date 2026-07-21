@@ -6,6 +6,11 @@ Components v2 messages.
 ## Features
 
 - RSS, Atom, and XenForo sources
+- Source-aware labels for Reddit, Hacker News, generic RSS, and forums
+- Distinct Hacker News discussion links when the feed supplies a separate comments URL
+- Up to three structured category tags from RSS feeds
+- Structured thumbnail images from feed metadata when available and safe, with a clean text-only fallback when absent or invalid
+- XenForo posts remain text-focused without media extraction
 - Stable per-feed delivery history in SQLite
 - Immediate persistence after every successful Discord delivery
 - Bounded retries for transient RSS fetch failures and SQLite write contention
@@ -80,6 +85,10 @@ retained for configuration compatibility and controls the message container's
 accent color. Mentions originating in external feed content are not expanded.
 
 See `config/config.example.yaml` for a fully annotated example.
+
+## Richer source cards
+
+No configuration or database migration is required. Only newly delivered entries use the richer layout with source labels, optional discussion links, categories, and thumbnails. Existing delivery records are honored, so previously sent entries are not intentionally replayed. The configured feed name still takes precedence over any fetched source title.
 
 ## Reliability behavior
 

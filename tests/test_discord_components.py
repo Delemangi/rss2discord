@@ -1,9 +1,49 @@
+import json
 from dataclasses import replace
 
 import pytest
 
 from discord_client import DiscordWebhookClient
-from tests.discord_components_helpers import get_text_display_contents, make_message
+from tests.discord_components_helpers import (
+    get_container_children,
+    get_metadata_content,
+    get_text_display_contents,
+    make_message,
+)
+
+
+def test_components_v2_payload_preserves_webhook_compatibility_fields() -> None:
+    # Baseline characterization: invariant aspects that must survive the
+    # richer-card renderer change. Passes before and after production edits.
+    # Given
+    message = make_message(embed_color=0)
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then - flags, mentions, username, avatar, accent color
+    assert payload["flags"] == 32768
+    assert payload["allowed_mentions"] == {"parse": []}
+    assert payload["username"] == "RSS Bot"
+    assert payload["avatar_url"] == "https://example.test/avatar.png"
+    children = get_container_children(message)
+    assert children[0]["type"] == 10
+    assert children[0]["content"] == "## [Entry](https://example.test/entry)"
+    assert children[1]["type"] == 10
+    assert children[1]["content"] == "Description"
+    assert children[2]["type"] == 14
+    assert children[3]["type"] == 10
+    # Then - title-link fallback for unsafe link
+    unsafe_message = make_message()
+    unsafe_message = replace(
+        unsafe_message,
+        entry=replace(unsafe_message.entry, link="javascript:alert(1)"),
+    )
+    unsafe_children = get_container_children(unsafe_message)
+    assert unsafe_children[0]["content"] == "## Entry"
+    # Then - no javascript: anywhere in serialized payload
+    unsafe_payload = DiscordWebhookClient._build_payload(unsafe_message)
+    assert "javascript:" not in json.dumps(unsafe_payload)
 
 
 def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
@@ -26,9 +66,9 @@ def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
                         "type": 10,
                     },
                     {"content": "Description", "type": 10},
-                    {"type": 14},
+                    {"divider": True, "spacing": 1, "type": 14},
                     {
-                        "content": "-# By Author • News • <t:1784548800:R>",
+                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
                         "type": 10,
                     },
                 ],
@@ -59,8 +99,8 @@ def test_components_v2_payload_omits_empty_optional_text() -> None:
     assert container["accent_color"] == 5814783
     assert container["components"] == [
         {"content": "## [Entry](https://example.test/entry)", "type": 10},
-        {"type": 14},
-        {"content": "-# News", "type": 10},
+        {"divider": True, "spacing": 1, "type": 14},
+        {"content": "-# RSS • News", "type": 10},
     ]
 
 
@@ -87,17 +127,10 @@ def test_components_v2_payload_safely_renders_entry_links(
     message = replace(message, entry=replace(message.entry, link=link))
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    children = get_container_children(message)
 
     # Then
-    components = payload["components"]
-    assert isinstance(components, list)
-    container = components[0]
-    assert isinstance(container, dict)
-    children = container["components"]
-    assert isinstance(children, list)
     heading = children[0]
-    assert isinstance(heading, dict)
     assert heading["content"] == expected_heading
 
 
@@ -107,19 +140,19 @@ def test_components_v2_payload_safely_renders_entry_links(
         (
             "[Official](https://evil.example)",
             "News",
-            "-# By \\[Official\\]\\(h\u200bttps://evil.example\\) • News • "
+            "-# RSS • News • By \\[Official\\]\\(h\u200bttps://evil.example\\) • "
             "<t:1784548800:R>",
         ),
         (
             "Author",
             "[Trusted Source](https://evil.example)",
-            "-# By Author • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • "
+            "-# RSS • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • By Author • "
             "<t:1784548800:R>",
         ),
         (
             "https://evil.example/author",
             "www.evil.example/source",
-            "-# By h\u200bttps://evil.example/author • w\u200bww.evil.example/source • "
+            "-# RSS • w\u200bww.evil.example/source • By h\u200bttps://evil.example/author • "
             "<t:1784548800:R>",
         ),
     ],
@@ -138,18 +171,10 @@ def test_components_v2_payload_escapes_metadata_links(
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    metadata = get_metadata_content(message)
 
     # Then
-    components = payload["components"]
-    assert isinstance(components, list)
-    container = components[0]
-    assert isinstance(container, dict)
-    children = container["components"]
-    assert isinstance(children, list)
-    metadata = children[-1]
-    assert isinstance(metadata, dict)
-    assert metadata["content"] == expected_metadata
+    assert metadata == expected_metadata
 
 
 def test_components_v2_payload_preserves_description_markdown() -> None:

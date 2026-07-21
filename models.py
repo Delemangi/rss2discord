@@ -12,3 +12,6 @@ class EntryData:
     description: str
     author: str
     timestamp: str | None
+    discussion_url: str | None = None
+    image_url: str | None = None
+    categories: tuple[str, ...] = ()

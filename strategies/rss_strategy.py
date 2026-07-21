@@ -2,6 +2,7 @@
 
 import math
 import re
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from html import unescape
 from typing import Any, Final
@@ -15,6 +16,8 @@ from .base import FeedFetchError, ScraperStrategy
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
+MAX_RSS_CATEGORIES: Final = 3
+MAX_RSS_CATEGORY_LENGTH: Final = 64
 
 
 class RSSStrategy(ScraperStrategy):
@@ -115,13 +118,117 @@ class RSSStrategy(ScraperStrategy):
         description = self._clean_rss_description(description)
         description = self._truncate(description)
 
+        discussion_url = self._optional_string(
+            self._structured_field(entry, "comments"),
+        )
+        if discussion_url == link.strip():
+            discussion_url = None
+
+        image_url = (
+            self._first_structured_url(
+                self._structured_field(entry, "media_thumbnail"),
+                ("url",),
+            )
+            or self._first_structured_url(
+                self._structured_field(entry, "media_content"),
+                ("url",),
+                image_filter=self._declares_image,
+            )
+            or self._first_structured_url(
+                self._structured_field(entry, "enclosures"),
+                ("href", "url"),
+                image_filter=self._declares_image_mime,
+            )
+        )
+
         return EntryData(
             title=title,
             link=link,
             description=description,
             author=author,
             timestamp=self._get_timestamp(entry),
+            discussion_url=discussion_url,
+            image_url=image_url,
+            categories=self._categories(self._structured_field(entry, "tags")),
         )
+
+    @staticmethod
+    def _structured_field(entry: Any, field: str) -> Any:  # noqa: ANN401
+        """Read direct feedparser-shaped fields before computed accessors."""
+        if isinstance(entry, dict):
+            value = dict.get(entry, field)
+            if value is not None:
+                return value
+        return entry.get(field)
+
+    @staticmethod
+    def _optional_string(value: Any) -> str | None:  # noqa: ANN401
+        """Return a non-empty, trimmed feedparser scalar string."""
+        if not isinstance(value, str):
+            return None
+        normalized_value = value.strip()
+        return normalized_value or None
+
+    @classmethod
+    def _first_structured_url(
+        cls,
+        items: Any,  # noqa: ANN401
+        fields: tuple[str, ...],
+        *,
+        image_filter: Callable[[Mapping[str, Any]], bool] | None = None,
+    ) -> str | None:
+        """Return the first usable URL from list-shaped structured feed metadata."""
+        if not isinstance(items, list):
+            return None
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            if image_filter is not None and not image_filter(item):
+                continue
+            for field in fields:
+                value = cls._optional_string(item.get(field))
+                if value is not None:
+                    return value
+        return None
+
+    @staticmethod
+    def _declares_image(item: Mapping[str, Any]) -> bool:
+        """Determine whether a media-content item declares an image."""
+        medium = item.get("medium")
+        media_type = item.get("type")
+        return (isinstance(medium, str) and medium.casefold() == "image") or (
+            isinstance(media_type, str) and media_type.casefold().startswith("image/")
+        )
+
+    @staticmethod
+    def _declares_image_mime(item: Mapping[str, Any]) -> bool:
+        """Determine whether an enclosure item declares an image MIME type."""
+        media_type = item.get("type")
+        return isinstance(media_type, str) and media_type.casefold().startswith(
+            "image/",
+        )
+
+    @classmethod
+    def _categories(cls, tags: Any) -> tuple[str, ...]:  # noqa: ANN401
+        """Normalize bounded category terms from list-shaped feedparser tags."""
+        if not isinstance(tags, list):
+            return ()
+
+        categories: list[str] = []
+        for tag in tags:
+            if not isinstance(tag, Mapping):
+                continue
+            category = cls._optional_string(tag.get("term"))
+            if category is None:
+                continue
+            category = " ".join(category.split())
+            category = category[:MAX_RSS_CATEGORY_LENGTH]
+            if category in categories:
+                continue
+            categories.append(category)
+            if len(categories) == MAX_RSS_CATEGORIES:
+                break
+        return tuple(categories)
 
     def _clean_rss_description(self, text: str) -> str:
         """Clean HTML and Reddit-specific markup from RSS description."""

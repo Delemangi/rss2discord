@@ -14,9 +14,13 @@ type JSONValue = (
 DEFAULT_ACCENT_COLOR: Final = 5814783
 IS_COMPONENTS_V2: Final = 1 << 15
 TEXT_DISPLAY_COMPONENT: Final = 10
+SECTION_COMPONENT: Final = 9
+THUMBNAIL_COMPONENT: Final = 11
 SEPARATOR_COMPONENT: Final = 14
 CONTAINER_COMPONENT: Final = 17
 MAX_TEXT_DISPLAY_CHARACTERS: Final = 4000
+MAX_THUMBNAIL_DESCRIPTION_CHARACTERS: Final = 1024
+SEPARATOR_SPACING_COMPACT: Final = 1
 ELLIPSIS: Final = "…"
 MIN_HEADING_CHARACTERS: Final = len(f"## {ELLIPSIS}")
 MIN_METADATA_CHARACTERS: Final = len(f"-# {ELLIPSIS}")
@@ -27,6 +31,11 @@ BARE_LINK_PREFIX: Final[re.Pattern[str]] = re.compile(
     r"\b(?:https?://|www\.)",
     re.IGNORECASE,
 )
+
+SOURCE_LABEL_FORUM: Final = "Forum"
+SOURCE_LABEL_REDDIT: Final = "Reddit"
+SOURCE_LABEL_HACKER_NEWS: Final = "Hacker News"
+SOURCE_LABEL_RSS: Final = "RSS"
 
 
 def build_components_v2_payload(
@@ -39,7 +48,7 @@ def build_components_v2_payload(
     plain_heading = f"## {title}"
     heading = f"## [{title}]({link})" if link is not None else plain_heading
     description = _bounded_description(entry.description)
-    metadata = _build_metadata(entry, source_title)
+    metadata = _build_metadata(entry, feed, source_title, link)
 
     if (
         link is not None
@@ -59,17 +68,44 @@ def build_components_v2_payload(
             heading = _truncate_heading(entry.title, heading_limit)
             metadata = _truncate_rendered_text(metadata, text_budget - len(heading))
 
-    container_components: list[JSONValue] = [
-        {"content": heading, "type": TEXT_DISPLAY_COMPONENT},
-    ]
-    if description:
+    safe_image_url = _safe_markdown_url(entry.image_url) if entry.image_url else None
+
+    container_components: list[JSONValue] = []
+    if safe_image_url is not None:
+        section_children: list[JSONValue] = [
+            {"content": heading, "type": TEXT_DISPLAY_COMPONENT},
+        ]
+        if description:
+            section_children.append(
+                {"content": description, "type": TEXT_DISPLAY_COMPONENT},
+            )
         container_components.append(
-            {"content": description, "type": TEXT_DISPLAY_COMPONENT},
+            {
+                "accessory": {
+                    "description": _thumbnail_description(entry.title),
+                    "media": {"url": safe_image_url},
+                    "type": THUMBNAIL_COMPONENT,
+                },
+                "components": section_children,
+                "type": SECTION_COMPONENT,
+            },
         )
+    else:
+        container_components.append(
+            {"content": heading, "type": TEXT_DISPLAY_COMPONENT},
+        )
+        if description:
+            container_components.append(
+                {"content": description, "type": TEXT_DISPLAY_COMPONENT},
+            )
 
     container_components.extend(
         [
-            {"type": SEPARATOR_COMPONENT},
+            {
+                "divider": True,
+                "spacing": SEPARATOR_SPACING_COMPACT,
+                "type": SEPARATOR_COMPONENT,
+            },
             {
                 "content": metadata,
                 "type": TEXT_DISPLAY_COMPONENT,
@@ -125,14 +161,58 @@ def _bounded_description(description: str) -> str:
     return _truncate_rendered_text(description, MAX_DESCRIPTION_CHARACTERS)
 
 
-def _build_metadata(entry: EntryData, source_title: str) -> str:
-    parts = []
+def _source_label(feed: FeedConfig) -> str:
+    if feed.strategy == "xenforo":
+        return SOURCE_LABEL_FORUM
+    try:
+        hostname = urlsplit(feed.url).hostname
+    except ValueError:
+        return SOURCE_LABEL_RSS
+    if hostname is None:
+        return SOURCE_LABEL_RSS
+    hostname_lower = hostname.lower()
+    if hostname_lower == "news.ycombinator.com":
+        return SOURCE_LABEL_HACKER_NEWS
+    if hostname_lower == "reddit.com" or hostname_lower.endswith(".reddit.com"):
+        return SOURCE_LABEL_REDDIT
+    return SOURCE_LABEL_RSS
+
+
+def _build_metadata(
+    entry: EntryData,
+    feed: FeedConfig,
+    source_title: str,
+    safe_primary_link: str | None,
+) -> str:
+    label = _source_label(feed)
+    first_parts: list[str] = [label, _escape_metadata_text(source_title)]
     if entry.author:
-        parts.append(f"By {_escape_metadata_text(entry.author)}")
-    parts.append(_escape_metadata_text(source_title))
+        first_parts.append(f"By {_escape_metadata_text(entry.author)}")
     if entry.timestamp is not None:
-        parts.append(_format_timestamp(entry.timestamp))
-    return f"-# {' • '.join(parts)}"
+        first_parts.append(_format_timestamp(entry.timestamp))
+    first_line = f"-# {' • '.join(first_parts)}"
+
+    second_parts: list[str] = []
+    safe_discussion_url = (
+        _safe_markdown_url(entry.discussion_url) if entry.discussion_url else None
+    )
+    if safe_discussion_url is not None and safe_discussion_url != safe_primary_link:
+        second_parts.append(f"[Discussion]({safe_discussion_url})")
+    second_parts.extend(
+        _escape_metadata_text(category) for category in entry.categories
+    )
+
+    if not second_parts:
+        return first_line
+    second_line = f"-# {' • '.join(second_parts)}"
+    return f"{first_line}\n{second_line}"
+
+
+def _thumbnail_description(title: str) -> str:
+    return _truncate_rendered_text(
+        title,
+        MAX_THUMBNAIL_DESCRIPTION_CHARACTERS,
+    )
 
 
 def _truncate_heading(title: str, max_length: int) -> str:
