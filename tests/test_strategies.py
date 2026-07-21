@@ -1,4 +1,5 @@
 import traceback
+from pathlib import Path
 from time import struct_time
 
 import feedparser
@@ -81,6 +82,57 @@ def test_xenforo_strategy_does_not_invent_missing_timestamp() -> None:
 
     # When / Then
     assert strategy._get_timestamp({}) is None
+
+
+def test_xenforo_strategy_builds_post_permalink_from_latest_url() -> None:
+    # Given
+    strategy = XenForoStrategy()
+    entry = {
+        "id": 10481134,
+        "thread_url": "https://forum.example.test/threads/topic.68732/latest",
+    }
+
+    # When
+    entry_data = strategy.get_entry_data(entry)
+
+    # Then
+    assert entry_data.link == (
+        "https://forum.example.test/threads/topic.68732/post-10481134"
+    )
+
+
+def test_xenforo_fetch_does_not_change_process_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    original_cwd = Path.cwd()
+    scraper_working_directories: list[Path] = []
+
+    class RecordingScraper:
+        def get_thread(
+            self,
+            url: str,
+        ) -> dict[str, dict[str, list[dict[str, str | list[str]]]]]:
+            scraper_working_directories.append(Path.cwd())
+            return {
+                "data": {
+                    "threads": [
+                        {
+                            "title": "Thread",
+                            "url": url,
+                            "posts": [],
+                        },
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(xenforo_module, "xenforo", lambda **kwargs: RecordingScraper())
+
+    # When
+    XenForoStrategy().fetch_entries("https://forum.example.test/threads/topic.1/")
+
+    # Then
+    assert scraper_working_directories == [original_cwd]
 
 
 def test_rss_fetch_error_does_not_expose_feed_url_secret(
