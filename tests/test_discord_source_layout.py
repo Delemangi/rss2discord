@@ -114,6 +114,39 @@ def test_components_v2_payload_caps_thumbnail_description_at_1024() -> None:
     assert len(description) <= 1024
 
 
+def test_components_v2_payload_keeps_thumbnail_description_plain() -> None:
+    # Given - Markdown-shaped title with a safe image
+    title = "[Release] **v2**"
+    message = make_message(
+        entry=EntryData(
+            title=title,
+            link="https://example.test/entry",
+            description="Description",
+            author="Author",
+            timestamp="2026-07-20T12:00:00+00:00",
+            image_url="https://example.test/image.png",
+        ),
+    )
+
+    # When
+    children = get_container_children(message)
+
+    # Then - thumbnail alt text is plain, heading stays Markdown-escaped
+    section = children[0]
+    assert section["type"] == 9
+    section_children = section["components"]
+    assert isinstance(section_children, list)
+    heading = section_children[0]
+    assert isinstance(heading, dict)
+    assert heading["content"] == (
+        "## [\\[Release\\] **v2**](https://example.test/entry)"
+    )
+    accessory = section["accessory"]
+    assert isinstance(accessory, dict)
+    assert accessory["type"] == 11
+    assert accessory["description"] == title
+
+
 def test_components_v2_payload_separator_has_divider_and_compact_spacing() -> None:
     # Given
     message = make_message()

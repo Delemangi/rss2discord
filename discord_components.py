@@ -209,10 +209,9 @@ def _build_metadata(
 
 
 def _thumbnail_description(title: str) -> str:
-    return _truncate_escaped_text(
+    return _truncate_rendered_text(
         title,
         MAX_THUMBNAIL_DESCRIPTION_CHARACTERS,
-        _escape_markdown_text,
     )
 
 
