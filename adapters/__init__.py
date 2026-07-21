@@ -1,5 +1,3 @@
-"""Source-specific entry adapters."""
-
 from .base import AdapterError, SourceAdapter
 from .hackernews import HackerNewsAdapter
 from .reddit import RedditAdapter

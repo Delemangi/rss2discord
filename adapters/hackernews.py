@@ -1,5 +1,3 @@
-"""Hacker News RSS enrichment."""
-
 import logging
 import re
 from collections.abc import Callable
@@ -21,8 +19,6 @@ HACKER_NEWS_TIMEOUT_SECONDS: Final = 5
 
 
 class HackerNewsItem(BaseModel):
-    """Typed boundary model for a Hacker News API item."""
-
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     id: int
@@ -41,7 +37,6 @@ FetchHackerNewsItem = Callable[[int], HackerNewsItem | None]
 
 
 def fetch_hacker_news_item(item_id: int) -> HackerNewsItem | None:
-    """Fetch one typed Hacker News item."""
     try:
         response = requests.get(
             HACKER_NEWS_ITEM_URL.format(item_id=item_id),
@@ -59,8 +54,6 @@ def fetch_hacker_news_item(item_id: int) -> HackerNewsItem | None:
 
 
 class HackerNewsAdapter:
-    """Enrich RSS entries with official Hacker News item metadata."""
-
     def __init__(
         self,
         fetch_item: FetchHackerNewsItem = fetch_hacker_news_item,
@@ -68,7 +61,6 @@ class HackerNewsAdapter:
         self._fetch_item = fetch_item
 
     def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
-        """Return an enriched entry when a Hacker News item is available."""
         del entry
         item_id = _item_id(data.discussion_url, data.link)
         if item_id is None:

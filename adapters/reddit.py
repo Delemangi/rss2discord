@@ -1,5 +1,3 @@
-"""Credential-free Reddit RSS normalization."""
-
 import re
 from collections.abc import Mapping
 from html.parser import HTMLParser
@@ -10,8 +8,6 @@ from models import EntryData
 
 
 class RedditAdapter:
-    """Normalize Reddit RSS links and authors without OAuth metadata."""
-
     def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
         outbound_link = _outbound_link(entry)
         link = data.link
