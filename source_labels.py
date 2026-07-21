@@ -1,5 +1,3 @@
-"""Discord source labels for configured feed transports and adapters."""
-
 from typing import Final, assert_never
 from urllib.parse import urlsplit
 
