@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 from rss2discord.configuration import FeedConfig
 
 SOURCE_LABEL_FORUM: Final = "Forum"
+SOURCE_LABEL_GITHUB: Final = "GitHub"
 SOURCE_LABEL_REDDIT: Final = "Reddit"
 SOURCE_LABEL_HACKER_NEWS: Final = "Hacker News"
 SOURCE_LABEL_RSS: Final = "RSS"
@@ -21,12 +22,21 @@ def source_label(feed: FeedConfig) -> str:
     if feed.strategy == "xenforo":
         return SOURCE_LABEL_FORUM
     try:
-        hostname = urlsplit(feed.url).hostname
+        parsed_url = urlsplit(feed.url)
+        hostname = parsed_url.hostname
     except ValueError:
         return SOURCE_LABEL_RSS
     if hostname is None:
         return SOURCE_LABEL_RSS
     hostname_lower = hostname.lower()
+    path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
+    if (
+        feed.strategy == "rss"
+        and hostname_lower == "github.com"
+        and len(path_segments) == 3
+        and path_segments[-1] == "releases.atom"
+    ):
+        return SOURCE_LABEL_GITHUB
     if hostname_lower == "news.ycombinator.com":
         return SOURCE_LABEL_HACKER_NEWS
     if hostname_lower == "reddit.com" or hostname_lower.endswith(".reddit.com"):
