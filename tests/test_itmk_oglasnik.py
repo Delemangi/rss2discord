@@ -111,10 +111,11 @@ def test_itmk_oglasnik_strategy_rejects_pages_without_valid_cards(
     # Given
     response = make_response("<html><h1>Огласник</h1></html>")
     monkeypatch.setattr(requests, "get", StubGet(response))
+    strategy = ITMkOglasnikStrategy()
 
     # When / Then
     with pytest.raises(FeedFetchError, match="EmptyResponse"):
-        ITMkOglasnikStrategy().fetch_entries(INDEX_URL)
+        strategy.fetch_entries(INDEX_URL)
 
 
 def test_itmk_oglasnik_strategy_builds_rich_discord_payload(

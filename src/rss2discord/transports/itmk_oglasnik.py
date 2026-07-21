@@ -16,7 +16,8 @@ from rss2discord.transports.itmk_oglasnik_http import (
 )
 
 LISTING_PATH_PATTERN: Final = re.compile(
-    r"/oglasnik/[^/?#]*\.(?P<listing_id>[0-9]+)/?$",
+    r"/oglasnik/[^/?#]*\.(?P<listing_id>\d+)/?$",
+    re.ASCII,
 )
 PLACEHOLDER_IMAGE_NAME: Final = "no-product-image.png"
 
@@ -89,25 +90,14 @@ class ITMkOglasnikStrategy(ScraperStrategy):
         card: Tag,
         base_url: str,
     ) -> ITMkOglasnikListing | None:
-        listing_link: Tag | None = None
-        listing_url: str | None = None
-        listing_id: EntryId | None = None
-        for candidate in card.select(".structItem-title a[href]"):
-            href = self._attribute(candidate, "href")
-            if href is None:
-                continue
-            candidate_url = urljoin(base_url, href)
-            match = LISTING_PATH_PATTERN.fullmatch(urlsplit(candidate_url).path)
-            if match is None:
-                continue
-            listing_link = candidate
-            listing_url = candidate_url
-            listing_id = EntryId(match.group("listing_id"))
-            break
+        identity = self._listing_identity(card, base_url)
+        if identity is None:
+            return None
+        listing_link, listing_url, listing_id = identity
 
         title = self._text(listing_link)
         summary = self._text(card.select_one(".structItem-listingDescription"))
-        if listing_url is None or listing_id is None or not title or not summary:
+        if not title or not summary:
             return None
 
         seller = self._attribute(card, "data-author") or self._text(
@@ -128,19 +118,7 @@ class ITMkOglasnikStrategy(ScraperStrategy):
             value for value in (category, sale_status, locked_status) if value
         )
 
-        metadata: dict[str, str] = {}
-        for field in card.select(".structItem-cell--listingMeta dl"):
-            label = self._text(field.select_one("dt")).rstrip(":")
-            value_node = field.select_one("dd")
-            value = (
-                self._timestamp(value_node.select_one("time[datetime]"))
-                if value_node
-                else None
-            )
-            value = value or self._text(value_node)
-            if label and value:
-                metadata[label] = value
-
+        metadata = self._metadata(card)
         price = self._text(card.select_one(".structItem-statuses .ribbon"))
         condition = next(
             (
@@ -182,6 +160,39 @@ class ITMkOglasnikStrategy(ScraperStrategy):
             categories=categories,
             source_metrics=source_metrics,
         )
+
+    def _listing_identity(
+        self,
+        card: Tag,
+        base_url: str,
+    ) -> tuple[Tag, str, EntryId] | None:
+        for candidate in card.select(".structItem-title a[href]"):
+            href = self._attribute(candidate, "href")
+            if href is None:
+                continue
+            candidate_url = urljoin(base_url, href)
+            listing_match = LISTING_PATH_PATTERN.fullmatch(
+                urlsplit(candidate_url).path,
+            )
+            if listing_match is None:
+                continue
+            return candidate, candidate_url, EntryId(listing_match.group("listing_id"))
+        return None
+
+    def _metadata(self, card: Tag) -> dict[str, str]:
+        metadata: dict[str, str] = {}
+        for field in card.select(".structItem-cell--listingMeta dl"):
+            label = self._text(field.select_one("dt")).rstrip(":")
+            value_node = field.select_one("dd")
+            value = (
+                self._timestamp(value_node.select_one("time[datetime]"))
+                if value_node is not None
+                else None
+            )
+            value = value or self._text(value_node)
+            if label and value:
+                metadata[label] = value
+        return metadata
 
     @staticmethod
     def _text(node: Tag | None) -> str:
