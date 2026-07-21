@@ -1,8 +1,5 @@
 """XenForo forum scraping strategy."""
 
-import os
-import tempfile
-from pathlib import Path
 from typing import Any
 
 from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
@@ -17,20 +14,13 @@ class XenForoStrategy(ScraperStrategy):
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """Fetch posts from a XenForo forum thread."""
         try:
-            with tempfile.TemporaryDirectory() as tempdir:
-                original_cwd = Path.cwd()
-                try:
-                    os.chdir(tempdir)
-                    scraper = xenforo(
-                        output=Outputs.data | Outputs.write_by_id,
-                        requests={
-                            "allow_redirects": True,
-                        },
-                    )
-                    result = scraper.get_thread(url)
-                finally:
-                    os.chdir(original_cwd)
-
+            scraper = xenforo(
+                output=Outputs.data,
+                requests={
+                    "allow_redirects": True,
+                },
+            )
+            result = scraper.get_thread(url)
         except Exception as error:
             raise FeedFetchError("XenForo", type(error).__name__) from None
 
@@ -73,9 +63,10 @@ class XenForoStrategy(ScraperStrategy):
 
         thread_url = entry.get("thread_url")
         post_id = entry.get("id")
-        link = (
-            f"{thread_url}post-{post_id}" if thread_url and post_id is not None else ""
-        )
+        link = ""
+        if thread_url and post_id is not None:
+            permalink_base = str(thread_url).rstrip("/").removesuffix("/latest")
+            link = f"{permalink_base}/post-{post_id}"
 
         content = entry.get("content", entry.get("text", ""))
         content = self._clean_xenforo_content(content)
