@@ -31,7 +31,8 @@ def source_label(feed: FeedConfig) -> str:
     hostname_lower = hostname.lower()
     path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
     if (
-        hostname_lower == "github.com"
+        feed.strategy == "rss"
+        and hostname_lower == "github.com"
         and len(path_segments) == 3
         and path_segments[-1] == "releases.atom"
     ):
