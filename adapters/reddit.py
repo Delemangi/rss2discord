@@ -2,7 +2,6 @@
 
 import re
 from collections.abc import Mapping
-from dataclasses import replace
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit
@@ -22,11 +21,16 @@ class RedditAdapter:
             discussion_url = data.discussion_url or data.link
 
         author = re.sub(r"^/?u/", "", data.author, flags=re.IGNORECASE)
-        return replace(
-            data,
+        return EntryData(
+            title=data.title,
             link=link,
-            discussion_url=discussion_url,
+            description=data.description,
             author=author,
+            timestamp=data.timestamp,
+            discussion_url=discussion_url,
+            image_url=data.image_url,
+            categories=data.categories,
+            source_metrics=data.source_metrics,
         )
 
 

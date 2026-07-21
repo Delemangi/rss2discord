@@ -12,15 +12,14 @@ SOURCE_LABEL_RSS: Final = "RSS"
 
 
 def source_label(feed: FeedConfig) -> str:
-    match feed.adapter:
-        case "hackernews":
-            return SOURCE_LABEL_HACKER_NEWS
-        case "reddit":
-            return SOURCE_LABEL_REDDIT
-        case None:
-            pass
-        case unreachable:
-            assert_never(unreachable)
+    if feed.adapter is not None:
+        match feed.adapter:
+            case "hackernews":
+                return SOURCE_LABEL_HACKER_NEWS
+            case "reddit":
+                return SOURCE_LABEL_REDDIT
+            case unreachable:
+                assert_never(unreachable)
     if feed.strategy == "xenforo":
         return SOURCE_LABEL_FORUM
     try:

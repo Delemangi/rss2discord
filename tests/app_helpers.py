@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, assert_never
 
 from app import RSSToDiscord
@@ -35,7 +35,17 @@ class FakeAdapter:
 
     def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
         self.entries.append(entry)
-        return replace(data, author="Adapted Author")
+        return EntryData(
+            title=data.title,
+            link=data.link,
+            description=data.description,
+            author="Adapted Author",
+            timestamp=data.timestamp,
+            discussion_url=data.discussion_url,
+            image_url=data.image_url,
+            categories=data.categories,
+            source_metrics=data.source_metrics,
+        )
 
 
 class FakeSender:
