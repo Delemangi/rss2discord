@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 from rss2discord.configuration import FeedConfig
 
 SOURCE_LABEL_FORUM: Final = "Forum"
+SOURCE_LABEL_ITMK_OGLASNIK: Final = "IT.mk Oglasnik"
 SOURCE_LABEL_REDDIT: Final = "Reddit"
 SOURCE_LABEL_HACKER_NEWS: Final = "Hacker News"
 SOURCE_LABEL_RSS: Final = "RSS"
@@ -18,8 +19,15 @@ def source_label(feed: FeedConfig) -> str:
                 return SOURCE_LABEL_REDDIT
             case unreachable:
                 assert_never(unreachable)
-    if feed.strategy == "xenforo":
-        return SOURCE_LABEL_FORUM
+    match feed.strategy:
+        case "xenforo":
+            return SOURCE_LABEL_FORUM
+        case "itmk_oglasnik":
+            return SOURCE_LABEL_ITMK_OGLASNIK
+        case "rss":
+            pass
+        case unreachable_strategy:
+            assert_never(unreachable_strategy)
     try:
         hostname = urlsplit(feed.url).hostname
     except ValueError:

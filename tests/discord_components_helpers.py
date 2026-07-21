@@ -9,7 +9,7 @@ from rss2discord.models import EntryData
 def make_message(
     *,
     embed_color: int | None = None,
-    strategy: Literal["rss", "xenforo"] = "rss",
+    strategy: Literal["rss", "xenforo", "itmk_oglasnik"] = "rss",
     adapter: FeedAdapterName | None = None,
     url: str = "https://example.test/feed.xml",
     webhook_name: str | None = "RSS Bot",
