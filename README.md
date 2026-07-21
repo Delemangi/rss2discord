@@ -6,8 +6,11 @@ Components v2 messages.
 ## Features
 
 - RSS, Atom, and XenForo sources
+- Optional Hacker News and Reddit source adapters on RSS feeds
 - Source-aware labels for Reddit, Hacker News, generic RSS, and forums
 - Distinct Hacker News discussion links when the feed supplies a separate comments URL
+- Hacker News submitter, points, comment count, self-post text, and article domain from the official API
+- Reddit outbound and discussion link separation using credential-free feed metadata
 - Up to three structured category tags from RSS feeds
 - Structured thumbnail images from feed metadata when available and safe, with a clean text-only fallback when absent or invalid
 - XenForo posts remain text-focused without media extraction
@@ -69,6 +72,20 @@ feeds:
     webhook_avatar: "https://example.com/avatar.png"
     embed_color: 5814783
 
+  - id: "hacker-news"
+    name: "Hacker News"
+    url: "https://news.ycombinator.com/rss"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "rss"
+    adapter: "hackernews"
+
+  - id: "reddit-python"
+    name: "r/Python"
+    url: "https://www.reddit.com/r/python/.rss"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "rss"
+    adapter: "reddit"
+
   - id: "forum-thread"
     name: "Forum Thread"
     url: "https://forum.example.com/threads/topic.12345/"
@@ -76,7 +93,8 @@ feeds:
     strategy: "xenforo"
 ```
 
-`strategy` defaults to `rss`. Set `max_post_age_days` to `0` to disable age
+`strategy` defaults to `rss`. The optional `adapter` may be `hackernews` or
+`reddit` and is only valid with the RSS strategy. Set `max_post_age_days` to `0` to disable age
 filtering. When age filtering is enabled, entries without a valid timestamp are
 skipped rather than assigned an invented timestamp. Increase
 `delay_between_feeds` when a source rate-limits consecutive feed requests.
@@ -89,6 +107,22 @@ See `config/config.example.yaml` for a fully annotated example.
 ## Richer source cards
 
 No configuration or database migration is required. Only newly delivered entries use the richer layout with source labels, optional discussion links, categories, and thumbnails. Existing delivery records are honored, so previously sent entries are not intentionally replayed. The configured feed name still takes precedence over any fetched source title.
+
+The Hacker News adapter uses RSS for discovery and fetches each unseen item's
+structured metadata from the official Hacker News API. Missing, deleted, dead,
+malformed, or temporarily unavailable API items fall back to the original RSS
+entry. API enrichment is capped at five unseen entries per feed poll; remaining
+entries are still delivered using their RSS data. It does not fetch linked
+article pages or traverse comment trees.
+
+The Reddit adapter uses public RSS or Atom data only. It separates an outbound
+`[link]` target from the Reddit discussion permalink and normalizes `/u/`
+authors. Reddit scores, comment counts, flair, and NSFW state are not reliably
+available without authenticated API access and are not invented.
+
+Generic RSS and Atom entries also use structured `content` when no summary is
+available and fall back to valid raw publication timestamps when parsed time
+structures are absent.
 
 ## Reliability behavior
 
