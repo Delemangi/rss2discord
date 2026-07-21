@@ -220,3 +220,52 @@ def test_rss_strategy_collapses_newlines_in_parsed_category_terms() -> None:
     # Then
     assert entry_data.categories == ("news # Official notice",)
     assert "\n" not in entry_data.categories[0]
+
+
+def test_rss_strategy_uses_structured_content_when_summary_is_missing() -> None:
+    # Given
+    entry = feedparser.FeedParserDict(
+        {
+            "content": [
+                {"type": "text/html", "value": "<p>Full release notes</p>"},
+            ],
+        },
+    )
+
+    # When
+    entry_data = RSSStrategy().get_entry_data(entry)
+
+    # Then
+    assert entry_data.description == "Full release notes"
+
+
+def test_rss_strategy_prefers_summary_over_structured_content() -> None:
+    # Given
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": "Short summary",
+            "content": [{"value": "Full body"}],
+        },
+    )
+
+    # When
+    entry_data = RSSStrategy().get_entry_data(entry)
+
+    # Then
+    assert entry_data.description == "Short summary"
+
+
+def test_rss_strategy_uses_structured_content_when_summary_is_none() -> None:
+    # Given
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": None,
+            "content": [{"value": "Full body"}],
+        },
+    )
+
+    # When
+    entry_data = RSSStrategy().get_entry_data(entry)
+
+    # Then
+    assert entry_data.description == "Full body"

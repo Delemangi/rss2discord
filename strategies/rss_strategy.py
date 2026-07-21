@@ -3,7 +3,6 @@
 import math
 import re
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
 from html import unescape
 from typing import Any, Final
 
@@ -13,6 +12,7 @@ import requests
 from models import EntryData, EntryId
 
 from .base import FeedFetchError, ScraperStrategy
+from .rss_timestamp import get_rss_timestamp
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
@@ -114,7 +114,16 @@ class RSSStrategy(ScraperStrategy):
         link = str(entry.get("link", ""))
         author = str(entry.get("author", ""))
 
-        description = str(entry.get("summary", entry.get("description", "")))
+        raw_description = entry.get("summary", entry.get("description", ""))
+        description = "" if raw_description is None else str(raw_description)
+        if not description.strip():
+            description = (
+                self._first_structured_value(
+                    self._structured_field(entry, "content"),
+                    ("value",),
+                )
+                or ""
+            )
         description = self._clean_rss_description(description)
         description = self._truncate(description)
 
@@ -125,16 +134,16 @@ class RSSStrategy(ScraperStrategy):
             discussion_url = None
 
         image_url = (
-            self._first_structured_url(
+            self._first_structured_value(
                 self._structured_field(entry, "media_thumbnail"),
                 ("url",),
             )
-            or self._first_structured_url(
+            or self._first_structured_value(
                 self._structured_field(entry, "media_content"),
                 ("url",),
                 image_filter=self._declares_image,
             )
-            or self._first_structured_url(
+            or self._first_structured_value(
                 self._structured_field(entry, "enclosures"),
                 ("href", "url"),
                 image_filter=self._declares_image_mime,
@@ -170,14 +179,14 @@ class RSSStrategy(ScraperStrategy):
         return normalized_value or None
 
     @classmethod
-    def _first_structured_url(
+    def _first_structured_value(
         cls,
         items: Any,  # noqa: ANN401
         fields: tuple[str, ...],
         *,
         image_filter: Callable[[Mapping[str, Any]], bool] | None = None,
     ) -> str | None:
-        """Return the first usable URL from list-shaped structured feed metadata."""
+        """Return the first usable string from list-shaped structured metadata."""
         if not isinstance(items, list):
             return None
         for item in items:
@@ -242,24 +251,7 @@ class RSSStrategy(ScraperStrategy):
         text = re.sub(r"\[link\]|\[comments\]", "", text, flags=re.IGNORECASE)
         return text.strip()
 
-    @staticmethod
-    def _get_timestamp(entry: Any) -> str | None:  # noqa: ANN401
+    @classmethod
+    def _get_timestamp(cls, entry: Any) -> str | None:  # noqa: ANN401
         """Get ISO timestamp from RSS entry."""
-        for field in ("published_parsed", "updated_parsed"):
-            parsed_time = entry.get(field)
-            if parsed_time is None:
-                continue
-            try:
-                parsed_datetime = datetime(
-                    parsed_time.tm_year,
-                    parsed_time.tm_mon,
-                    parsed_time.tm_mday,
-                    parsed_time.tm_hour,
-                    parsed_time.tm_min,
-                    parsed_time.tm_sec,
-                    tzinfo=UTC,
-                )
-            except (AttributeError, ValueError):
-                continue
-            return parsed_datetime.isoformat()
-        return None
+        return get_rss_timestamp(entry, cls._parse_timestamp)

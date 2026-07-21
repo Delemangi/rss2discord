@@ -66,6 +66,15 @@ def test_rss_strategy_does_not_invent_missing_timestamp() -> None:
     assert strategy._get_timestamp(entry) is None
 
 
+def test_rss_strategy_parses_raw_timestamp_when_structured_time_is_missing() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict({"published": "2026-07-21T09:30:00+00:00"})
+
+    # When / Then
+    assert strategy._get_timestamp(entry) == "2026-07-21T09:30:00+00:00"
+
+
 def test_xenforo_strategy_does_not_invent_missing_timestamp() -> None:
     # Given
     strategy = XenForoStrategy()
