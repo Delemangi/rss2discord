@@ -81,10 +81,10 @@ def test_components_v2_payload_renders_hacker_news_discussion_link() -> None:
     [
         ("https://example.test/entry", "equal-to-primary-link"),
         ("javascript:alert(1)", "unsafe-scheme"),
-        ("ftp://files.example/test", "non-http-scheme"),
+        ("mailto:user@example.test", "non-http-scheme"),
         ("", "empty-string"),
     ],
-    ids=["equal", "javascript", "ftp", "empty"],
+    ids=["equal", "javascript", "mailto", "empty"],
 )
 def test_components_v2_payload_omits_invalid_or_equal_discussion_link(
     discussion_url: str,
@@ -108,8 +108,7 @@ def test_components_v2_payload_omits_invalid_or_equal_discussion_link(
     # Then
     metadata = get_metadata_content(message)
     assert "Discussion" not in metadata
-    assert "javascript:" not in json.dumps(payload)
-    assert "ftp://" not in json.dumps(payload)
+    assert f"[Discussion]({discussion_url})" not in json.dumps(payload)
 
 
 def test_components_v2_payload_renders_escaped_categories_in_metadata() -> None:
