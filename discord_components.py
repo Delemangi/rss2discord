@@ -6,6 +6,7 @@ from urllib.parse import quote, urlsplit
 
 from configuration import FeedConfig
 from models import EntryData
+from source_labels import source_label
 
 type JSONValue = (
     None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]
@@ -31,11 +32,6 @@ BARE_LINK_PREFIX: Final[re.Pattern[str]] = re.compile(
     r"\b(?:https?://|www\.)",
     re.IGNORECASE,
 )
-
-SOURCE_LABEL_FORUM: Final = "Forum"
-SOURCE_LABEL_REDDIT: Final = "Reddit"
-SOURCE_LABEL_HACKER_NEWS: Final = "Hacker News"
-SOURCE_LABEL_RSS: Final = "RSS"
 
 
 def build_components_v2_payload(
@@ -161,31 +157,20 @@ def _bounded_description(description: str) -> str:
     return _truncate_rendered_text(description, MAX_DESCRIPTION_CHARACTERS)
 
 
-def _source_label(feed: FeedConfig) -> str:
-    if feed.strategy == "xenforo":
-        return SOURCE_LABEL_FORUM
-    try:
-        hostname = urlsplit(feed.url).hostname
-    except ValueError:
-        return SOURCE_LABEL_RSS
-    if hostname is None:
-        return SOURCE_LABEL_RSS
-    hostname_lower = hostname.lower()
-    if hostname_lower == "news.ycombinator.com":
-        return SOURCE_LABEL_HACKER_NEWS
-    if hostname_lower == "reddit.com" or hostname_lower.endswith(".reddit.com"):
-        return SOURCE_LABEL_REDDIT
-    return SOURCE_LABEL_RSS
-
-
 def _build_metadata(
     entry: EntryData,
     feed: FeedConfig,
     source_title: str,
     safe_primary_link: str | None,
 ) -> str:
-    label = _source_label(feed)
-    first_parts: list[str] = [label, _escape_metadata_text(source_title)]
+    label = source_label(feed)
+    first_parts: list[str] = [label]
+    if source_title and source_title.strip().casefold() != label.casefold():
+        first_parts.append(_escape_metadata_text(source_title))
+    first_parts.extend(
+        f"{_escape_metadata_text(metric.label)} {_escape_metadata_text(metric.value)}"
+        for metric in entry.source_metrics
+    )
     if entry.author:
         first_parts.append(f"By {_escape_metadata_text(entry.author)}")
     if entry.timestamp is not None:
