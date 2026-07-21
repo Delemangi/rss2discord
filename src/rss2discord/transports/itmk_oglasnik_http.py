@@ -46,14 +46,14 @@ def _fetch_page(url: str) -> tuple[bytes, str]:
             allow_redirects=False,
             stream=True,
         ) as response:
-            if response.is_redirect:
-                _read_content(response)
+            if 300 <= response.status_code < 400:
                 location = response.headers.get("Location")
                 if location is None:
                     raise FeedFetchError(
                         ITMK_OGLASNIK_LABEL,
                         "InvalidRedirect",
                     )
+                _read_content(response)
                 current_url = urljoin(response.url, location)
                 continue
             try:

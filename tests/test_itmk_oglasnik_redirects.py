@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 import requests
 
+from rss2discord.transports import FeedFetchError
 from rss2discord.transports.itmk_oglasnik_http import fetch_itmk_oglasnik_page
 
 START_URL = "https://forum.it.mk/redirect-start"
@@ -86,3 +87,22 @@ def test_itmk_oglasnik_strategy_bounds_redirects_before_following(
     # Then
     assert content == LISTING_HTML
     assert final_url == FINAL_URL
+
+
+def test_itmk_oglasnik_strategy_rejects_redirect_without_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    responses = (
+        RedirectResponse(
+            body=LISTING_HTML,
+            status_code=302,
+            url=START_URL,
+            headers={},
+        ),
+    )
+    monkeypatch.setattr(requests, "get", SequenceGet(responses))
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="InvalidRedirect"):
+        fetch_itmk_oglasnik_page(START_URL)
