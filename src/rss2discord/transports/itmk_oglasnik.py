@@ -184,11 +184,10 @@ class ITMkOglasnikStrategy(ScraperStrategy):
         for field in card.select(".structItem-cell--listingMeta dl"):
             label = self._text(field.select_one("dt")).rstrip(":")
             value_node = field.select_one("dd")
-            value = (
-                self._timestamp(value_node.select_one("time[datetime]"))
-                if value_node is not None
-                else None
-            )
+            time_node: Tag | None = None
+            if value_node is not None:
+                time_node = value_node.select_one("time[datetime]")
+            value = self._timestamp(time_node)
             value = value or self._text(value_node)
             if label and value:
                 metadata[label] = value
