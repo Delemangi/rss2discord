@@ -131,9 +131,10 @@ available and fall back to valid raw publication timestamps when parsed time
 structures are absent.
 
 The `itmk_oglasnik` strategy targets IT.mk Oglasnik index and category pages.
-It makes one request per poll and extracts the listing card's price, condition,
-type, category, seller, dates, views, status, and non-placeholder image. Use the
-`xenforo` strategy for ordinary forum discussion threads.
+It fetches only the configured index or category page and does not request
+individual listing detail pages. Listing cards provide the price, condition,
+type, category, seller, dates, views, status, and non-placeholder image. Use
+the `xenforo` strategy for ordinary forum discussion threads.
 
 ## Reliability behavior
 
