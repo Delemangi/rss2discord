@@ -1,5 +1,3 @@
-"""RSS and Atom timestamp normalization."""
-
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any

@@ -186,7 +186,6 @@ class RSSStrategy(ScraperStrategy):
         *,
         image_filter: Callable[[Mapping[str, Any]], bool] | None = None,
     ) -> str | None:
-        """Return the first usable string from list-shaped structured metadata."""
         if not isinstance(items, list):
             return None
         for item in items:
