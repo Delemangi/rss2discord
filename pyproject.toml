@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
     "feedparser>=6.0.12",
     "forumscraper>=0.1.21",
     "pydantic>=2.12.5",
