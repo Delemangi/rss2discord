@@ -171,7 +171,15 @@ Run the application with paths suitable for local development:
 ```bash
 CONFIG_PATH=config/config.yaml \
 STATE_DB_PATH=data/state.db \
-uv run python main.py
+uv run rss2discord
+```
+
+Equivalent module invocation:
+
+```bash
+CONFIG_PATH=config/config.yaml \
+STATE_DB_PATH=data/state.db \
+uv run python -m rss2discord
 ```
 
 ## Get a Discord webhook
