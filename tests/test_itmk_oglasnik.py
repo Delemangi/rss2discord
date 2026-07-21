@@ -46,6 +46,41 @@ def test_itmk_oglasnik_strategy_extracts_rich_cards_oldest_first(
     )
 
 
+def test_itmk_oglasnik_strategy_sorts_promoted_cards_and_places_undated_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    promoted_old_card = """
+    <div class="structItem">
+      <div class="structItem-title"><a href="/oglasnik/old.9001/">Old</a></div>
+      <div class="structItem-startDate"><time datetime="2026-07-06T08:00:00+0200"></time></div>
+      <div class="structItem-listingDescription">Old summary</div>
+    </div>
+    """
+    newer_card = """
+    <div class="structItem">
+      <div class="structItem-title"><a href="/oglasnik/new.9002/">New</a></div>
+      <div class="structItem-startDate"><time datetime="2026-07-20T08:00:00+0200"></time></div>
+      <div class="structItem-listingDescription">New summary</div>
+    </div>
+    """
+    response = make_response(
+        f"<h1>Огласник</h1>{NEWER_CARD}{promoted_old_card}{newer_card}",
+    )
+    monkeypatch.setattr(requests, "get", StubGet(response))
+    strategy = ITMkOglasnikStrategy()
+
+    # When
+    entries, _ = strategy.fetch_entries(INDEX_URL)
+
+    # Then
+    assert [strategy.get_entry_id(entry) for entry in entries] == [
+        "9001",
+        "9002",
+        "6271",
+    ]
+
+
 def test_itmk_oglasnik_strategy_skips_malformed_cards_and_placeholder_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

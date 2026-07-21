@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Final
 from urllib.parse import urljoin, urlsplit
 
@@ -53,7 +54,18 @@ class ITMkOglasnikStrategy(ScraperStrategy):
         source_title = self._text(soup.select_one("h1.p-title-value"))
         if not source_title:
             source_title = self._text(soup.select_one("h1")) or ITMK_OGLASNIK_LABEL
-        return listings[::-1], source_title
+
+        dated_listings: list[tuple[datetime, ITMkOglasnikListing]] = []
+        undated_listings: list[ITMkOglasnikListing] = []
+        for listing in listings:
+            if listing.created_at is None:
+                undated_listings.append(listing)
+                continue
+            dated_listings.append((datetime.fromisoformat(listing.created_at), listing))
+        dated_listings.sort(key=lambda item: item[0])
+        return [
+            listing for _, listing in dated_listings
+        ] + undated_listings, source_title
 
     def get_entry_id(self, entry: ITMkOglasnikListing) -> EntryId:
         """Return the numeric marketplace listing ID."""
