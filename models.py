@@ -6,6 +6,12 @@ FeedId = NewType("FeedId", str)
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMetric:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
 class EntryData:
     title: str
     link: str
@@ -15,3 +21,4 @@ class EntryData:
     discussion_url: str | None = None
     image_url: str | None = None
     categories: tuple[str, ...] = ()
+    source_metrics: tuple[SourceMetric, ...] = ()
