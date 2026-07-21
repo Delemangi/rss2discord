@@ -11,6 +11,7 @@ FeedIdValue = Annotated[
 NonEmptyString = Annotated[str, Field(min_length=1)]
 WebhookName = Annotated[str, Field(min_length=1, max_length=80)]
 FeedAdapterName = Literal["hackernews", "reddit"]
+FeedStrategyName = Literal["rss", "xenforo", "itmk_oglasnik"]
 
 
 class FeedConfig(BaseModel):
@@ -25,7 +26,7 @@ class FeedConfig(BaseModel):
     url: NonEmptyString
     webhook: NonEmptyString
     name: str | None = None
-    strategy: Literal["rss", "xenforo"] = "rss"
+    strategy: FeedStrategyName = "rss"
     adapter: FeedAdapterName | None = None
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None

@@ -8,6 +8,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
+from rss2discord.transports import ITMkOglasnikStrategy
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,
@@ -26,6 +27,15 @@ class FakeStrategyWithTitle(FakeStrategy):
 
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         return list(self.entries), self._fetched_title
+
+
+def test_app_registers_itmk_oglasnik_strategy(tmp_path: Path) -> None:
+    # Given / When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(config=AppConfig(), store=store, sender=FakeSender([]))
+
+    # Then
+    assert isinstance(app._strategies["itmk_oglasnik"], ITMkOglasnikStrategy)
 
 
 def test_run_waits_between_feeds(

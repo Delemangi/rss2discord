@@ -10,7 +10,13 @@ from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, WebhookMessage
 from .models import EntryData, EntryId
-from .transports import FeedFetchError, RSSStrategy, ScraperStrategy, XenForoStrategy
+from .transports import (
+    FeedFetchError,
+    ITMkOglasnikStrategy,
+    RSSStrategy,
+    ScraperStrategy,
+    XenForoStrategy,
+)
 
 logger = logging.getLogger(__name__)
 PERSISTENCE_RETRY_DELAY_SECONDS: Final = 5.0
@@ -43,6 +49,7 @@ class RSSToDiscord:
         self._store = store
         self._sender = sender
         self._strategies: dict[str, ScraperStrategy] = {
+            "itmk_oglasnik": ITMkOglasnikStrategy(),
             "rss": RSSStrategy(),
             "xenforo": XenForoStrategy(),
         }

@@ -185,6 +185,43 @@ def test_load_config_rejects_adapter_with_xenforo_strategy(tmp_path: Path) -> No
         load_config(config_path)
 
 
+def test_load_config_parses_itmk_oglasnik_strategy(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: itmk-oglasnik\n"
+        "    url: https://forum.it.mk/oglasnik/\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: itmk_oglasnik\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].strategy == "itmk_oglasnik"
+
+
+def test_load_config_rejects_adapter_with_itmk_oglasnik_strategy(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: itmk-oglasnik\n"
+        "    url: https://forum.it.mk/oglasnik/\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: itmk_oglasnik\n"
+        "    adapter: reddit\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_invalid_config_does_not_expose_webhook_secret(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
