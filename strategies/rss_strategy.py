@@ -221,6 +221,7 @@ class RSSStrategy(ScraperStrategy):
             category = cls._optional_string(tag.get("term"))
             if category is None:
                 continue
+            category = " ".join(category.split())
             category = category[:MAX_RSS_CATEGORY_LENGTH]
             if category in categories:
                 continue
