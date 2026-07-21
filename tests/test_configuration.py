@@ -1,4 +1,6 @@
+import importlib.metadata
 import logging
+import runpy
 from pathlib import Path
 
 import pytest
@@ -261,3 +263,35 @@ def test_database_open_failure_exits_without_traceback(
     assert exit_code == 1
     assert all(record.exc_info is None for record in caplog.records)
     assert "Storage initialization failed (OperationalError)" in logs
+
+
+def test_module_entrypoint_delegates_to_main(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    calls: list[str] = []
+
+    def fake_main() -> int:
+        calls.append("main")
+        return 7
+
+    monkeypatch.setattr(app_main, "main", fake_main)
+
+    # When
+    with pytest.raises(SystemExit) as system_exit:
+        runpy.run_module("rss2discord.__main__", run_name="__main__")
+
+    # Then
+    assert calls == ["main"]
+    assert system_exit.value.code == 7
+
+
+def test_console_script_targets_main() -> None:
+    # Given / When
+    entry_points = importlib.metadata.entry_points(group="console_scripts")
+    entry_point = next(
+        entry_point for entry_point in entry_points if entry_point.name == "rss2discord"
+    )
+
+    # Then
+    assert entry_point.value == "rss2discord.main:main"
