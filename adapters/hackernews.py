@@ -121,29 +121,30 @@ def _item_id(discussion_url: str | None, link: str) -> int | None:
     for candidate in (discussion_url, link):
         if candidate is None:
             continue
-        try:
-            parsed = urlsplit(candidate)
-        except ValueError:
-            continue
-        if parsed.hostname != "news.ycombinator.com" or parsed.path != "/item":
-            continue
-        values = parse_qs(parsed.query).get("id", ())
-        if len(values) != 1:
-            continue
-        raw_item_id = values[0]
-        if (
-            len(raw_item_id) > 20
-            or not raw_item_id.isascii()
-            or not raw_item_id.isdigit()
-        ):
-            continue
-        try:
-            item_id = int(raw_item_id)
-        except ValueError:
-            continue
-        if item_id > 0:
+        item_id = _item_id_from_url(candidate)
+        if item_id is not None:
             return item_id
     return None
+
+
+def _item_id_from_url(candidate: str) -> int | None:
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return None
+    if parsed.hostname != "news.ycombinator.com" or parsed.path != "/item":
+        return None
+    values = parse_qs(parsed.query).get("id", ())
+    if len(values) != 1:
+        return None
+    raw_item_id = values[0]
+    if len(raw_item_id) > 20 or not raw_item_id.isascii() or not raw_item_id.isdigit():
+        return None
+    try:
+        item_id = int(raw_item_id)
+    except ValueError:
+        return None
+    return item_id if item_id > 0 else None
 
 
 def _article_domain(link: str) -> str | None:
