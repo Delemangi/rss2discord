@@ -29,6 +29,8 @@ class FeedFetchError(Exception):
 
 
 class ScraperStrategy(ABC):
+    seed_existing_on_first_fetch = False
+
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
         """
