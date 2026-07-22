@@ -242,16 +242,19 @@ def test_anhoch_strategy_rejects_oversized_response(
         AnhochStrategy().fetch_entries(CATALOG_URL)
 
 
-def test_anhoch_strategy_rejects_empty_catalog(
+def test_anhoch_strategy_accepts_empty_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     get = RecordingGet([StubResponse(page_payload(1, 1, []))])
     monkeypatch.setattr(requests, "get", get)
 
-    # When / Then
-    with pytest.raises(FeedFetchError, match="EmptyResponse"):
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+    # When
+    entries, source_title = AnhochStrategy().fetch_entries(CATALOG_URL)
+
+    # Then
+    assert entries == []
+    assert source_title == "Anhoch"
 
 
 def test_anhoch_strategy_accepts_empty_image_array(

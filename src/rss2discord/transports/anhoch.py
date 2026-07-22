@@ -93,8 +93,6 @@ class AnhochStrategy(ScraperStrategy):
         products: list[AnhochProduct] = []
         for page_number in range(1, MAX_ANHOCH_PAGES + 1):
             page = self._fetch_page(self._page_url(url, page_number))
-            if page_number == 1 and not page.data:
-                raise FeedFetchError(ANHOCH_LABEL, "EmptyResponse")
             products.extend(page.data)
             if page.current_page >= page.last_page or not page.data:
                 break

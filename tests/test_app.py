@@ -134,6 +134,25 @@ def test_first_successful_fetch_seeds_entries_before_new_delivery(
     assert [message.entry.title for message in sender.messages] == ["new-product"]
 
 
+def test_empty_first_fetch_initializes_before_future_delivery(tmp_path: Path) -> None:
+    # Given
+    feed = make_feed("anhoch")
+    sender = FakeSender([True])
+    strategy = SeedOnFirstFetchStrategy([])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app.process_feed(feed)
+        initialized_after_empty_fetch = store.is_feed_initialized(feed.id)
+        strategy.entries.append(make_entry("first-product"))
+        app.process_feed(feed)
+
+    # Then
+    assert initialized_after_empty_fetch
+    assert [message.entry.title for message in sender.messages] == ["first-product"]
+
+
 def test_failed_delivery_is_retried_and_only_success_is_recorded(
     tmp_path: Path,
 ) -> None:
