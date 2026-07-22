@@ -11,6 +11,7 @@ from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, WebhookMessage
 from .models import EntryData, EntryId
 from .transports import (
+    AnhochStrategy,
     FeedFetchError,
     ITMkOglasnikStrategy,
     RSSStrategy,
@@ -49,6 +50,7 @@ class RSSToDiscord:
         self._store = store
         self._sender = sender
         self._strategies: dict[str, ScraperStrategy] = {
+            "anhoch": AnhochStrategy(),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "rss": RSSStrategy(),
             "xenforo": XenForoStrategy(),
@@ -67,6 +69,15 @@ class RSSToDiscord:
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
+        if strategy.seed_existing_on_first_fetch:
+            entry_ids = {
+                entry_id
+                for entry in entries
+                if (entry_id := strategy.get_entry_id(entry)) is not None
+            }
+            if self._store.seed_feed(feed.id, entry_ids):
+                logger.info("Initialized feed %s with existing entries", feed.id)
+                return
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None

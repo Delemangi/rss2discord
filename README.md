@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, and IT.mk Oglasnik listings to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new Anhoch products to Discord webhooks.
 
 ## What it supports
 
@@ -8,6 +8,7 @@ Forward RSS/Atom feeds, XenForo thread posts, and IT.mk Oglasnik listings to Dis
 - Optional RSS adapters for Hacker News and Reddit
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
+- New products from the latest Anhoch catalog pages
 - SQLite delivery history so entries are not posted twice
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
@@ -96,13 +97,22 @@ Common feed types:
   url: "https://forum.it.mk/oglasnik/"
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "itmk_oglasnik"
+
+# Anhoch new products
+- id: "anhoch-new-products"
+  name: "Anhoch New Products"
+  url: "https://www.anhoch.com/products?inStockOnly=2"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "anhoch"
+  webhook_name: "Anhoch"
+  webhook_avatar: "https://www.anhoch.com/storage/media/lUuXIR1al8ZZVSTbX4e7Rryi6jgaymSLQGsDYjkT.svg"
 ```
 
 Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo` and `itmk_oglasnik`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, and `anhoch`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
@@ -114,7 +124,8 @@ See `config/config.example.yaml` for the fully annotated configuration.
 
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
 - The database is created automatically on first startup.
-- RSS and IT.mk responses are capped at 1 MiB and transient fetch failures are retried.
+- RSS, IT.mk, and Anhoch responses are capped at 1 MiB and transient fetch failures are retried.
+- Anhoch checks at most the latest 90 products and seeds the first successful fetch without notifications.
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.

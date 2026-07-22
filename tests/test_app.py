@@ -8,7 +8,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
-from rss2discord.transports import ITMkOglasnikStrategy
+from rss2discord.transports import AnhochStrategy, ITMkOglasnikStrategy
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,
@@ -29,6 +29,10 @@ class FakeStrategyWithTitle(FakeStrategy):
         return list(self.entries), self._fetched_title
 
 
+class SeedOnFirstFetchStrategy(FakeStrategy):
+    seed_existing_on_first_fetch = True
+
+
 def test_app_registers_itmk_oglasnik_strategy(tmp_path: Path) -> None:
     # Given / When
     with DeliveryStore(tmp_path / "state.db") as store:
@@ -36,6 +40,15 @@ def test_app_registers_itmk_oglasnik_strategy(tmp_path: Path) -> None:
 
     # Then
     assert isinstance(app._strategies["itmk_oglasnik"], ITMkOglasnikStrategy)
+
+
+def test_app_registers_anhoch_strategy(tmp_path: Path) -> None:
+    # Given / When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(config=AppConfig(), store=store, sender=FakeSender([]))
+
+    # Then
+    assert isinstance(app._strategies["anhoch"], AnhochStrategy)
 
 
 def test_run_waits_between_feeds(
@@ -95,6 +108,49 @@ def test_same_url_delivers_independently_for_each_feed_id(tmp_path: Path) -> Non
         "primary",
         "secondary",
     ]
+
+
+def test_first_successful_fetch_seeds_entries_before_new_delivery(
+    tmp_path: Path,
+) -> None:
+    # Given
+    feed = make_feed("anhoch")
+    sender = FakeSender([True])
+    strategy = SeedOnFirstFetchStrategy([make_entry("existing")])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app.process_feed(feed)
+        messages_after_seed = list(sender.messages)
+        strategy.entries.append(make_entry("new-product"))
+        app.process_feed(feed)
+
+        # Then
+        assert store.is_feed_initialized(feed.id)
+        assert store.has_delivered(feed.id, "existing")
+        assert store.has_delivered(feed.id, "new-product")
+    assert messages_after_seed == []
+    assert [message.entry.title for message in sender.messages] == ["new-product"]
+
+
+def test_empty_first_fetch_initializes_before_future_delivery(tmp_path: Path) -> None:
+    # Given
+    feed = make_feed("anhoch")
+    sender = FakeSender([True])
+    strategy = SeedOnFirstFetchStrategy([])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app.process_feed(feed)
+        initialized_after_empty_fetch = store.is_feed_initialized(feed.id)
+        strategy.entries.append(make_entry("first-product"))
+        app.process_feed(feed)
+
+    # Then
+    assert initialized_after_empty_fetch
+    assert [message.entry.title for message in sender.messages] == ["first-product"]
 
 
 def test_failed_delivery_is_retried_and_only_success_is_recorded(
