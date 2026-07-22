@@ -222,6 +222,24 @@ def test_load_config_rejects_adapter_with_itmk_oglasnik_strategy(
         load_config(config_path)
 
 
+def test_load_config_parses_anhoch_strategy(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: anhoch-new-products\n"
+        "    url: https://www.anhoch.com/products?inStockOnly=2\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: anhoch\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].strategy == "anhoch"
+
+
 def test_invalid_config_does_not_expose_webhook_secret(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
