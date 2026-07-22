@@ -85,8 +85,9 @@ class RecordingGet:
         headers: Mapping[str, str],
         timeout: int,
         stream: bool,
+        allow_redirects: bool,
     ) -> AbstractContextManager[StubResponse]:
-        del timeout, stream
+        del timeout, stream, allow_redirects
         self.urls.append(url)
         self.headers.append(headers)
         return nullcontext(self.responses.pop(0))
@@ -103,9 +104,28 @@ class RaisingGet:
         headers: Mapping[str, str],
         timeout: int,
         stream: bool,
+        allow_redirects: bool,
+    ) -> AbstractContextManager[StubResponse]:
+        del url, headers, timeout, stream, allow_redirects
+        raise self.error
+
+
+@dataclass(frozen=True, slots=True)
+class RedirectingGet:
+    redirect: StubResponse
+    final: StubResponse
+
+    def __call__(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        timeout: int,
+        stream: bool,
+        allow_redirects: bool = True,
     ) -> AbstractContextManager[StubResponse]:
         del url, headers, timeout, stream
-        raise self.error
+        return nullcontext(self.final if allow_redirects else self.redirect)
 
 
 def test_anhoch_strategy_fetches_pages_and_maps_products_oldest_first(
@@ -271,3 +291,34 @@ def test_anhoch_strategy_accepts_empty_image_array(
 
     # Then
     assert AnhochStrategy().get_entry_data(entries[0]).image_url is None
+
+
+def test_anhoch_strategy_rejects_oversized_redirect_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    redirect = StubResponse(
+        b"ignored",
+        status_code=302,
+        headers={"Content-Length": "1048577", "Location": "/products"},
+    )
+    final = StubResponse(page_payload(1, 1, []))
+    monkeypatch.setattr(requests, "get", RedirectingGet(redirect, final))
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
+        AnhochStrategy().fetch_entries(CATALOG_URL)
+
+
+def test_anhoch_strategy_redacts_malformed_url_credentials() -> None:
+    # Given
+    credential = "sensitive-value"
+    malformed_url = f"https://user:{credential}@℀.example.test/products"
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        AnhochStrategy().fetch_entries(malformed_url)
+
+    # Then
+    assert fetch_error.value.cause_type == "InvalidUrl"
+    assert credential not in str(fetch_error.value)

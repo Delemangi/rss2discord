@@ -3,7 +3,7 @@
 import math
 from datetime import UTC, datetime
 from typing import Annotated, Final
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from pydantic import (
@@ -25,6 +25,7 @@ ANHOCH_PRODUCTS_PER_PAGE: Final = 30
 MAX_ANHOCH_PAGES: Final = 3
 MAX_ANHOCH_RESPONSE_BYTES: Final = 1_048_576
 ANHOCH_STREAM_CHUNK_BYTES: Final = 65_536
+MAX_ANHOCH_REDIRECTS: Final = 10
 
 
 class _AnhochPrice(BaseModel):
@@ -131,7 +132,10 @@ class AnhochStrategy(ScraperStrategy):
 
     @staticmethod
     def _page_url(url: str, page_number: int) -> str:
-        parsed_url = urlsplit(url)
+        try:
+            parsed_url = urlsplit(url)
+        except ValueError:
+            raise FeedFetchError(ANHOCH_LABEL, "InvalidUrl") from None
         retained_query = [
             (key, value)
             for key, value in parse_qsl(parsed_url.query, keep_blank_values=True)
@@ -149,32 +153,48 @@ class AnhochStrategy(ScraperStrategy):
     @staticmethod
     def _fetch_page(url: str) -> _AnhochProductPage:
         try:
-            with requests.get(
-                url,
-                headers={
-                    "Accept": "application/json",
-                    "User-Agent": ANHOCH_USER_AGENT,
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-                timeout=30,
-                stream=True,
-            ) as response:
-                try:
-                    response.raise_for_status()
-                except requests.HTTPError:
-                    status_code = response.status_code
-                    raise FeedFetchError(
-                        ANHOCH_LABEL,
-                        "HTTPError",
-                        status_code=status_code,
-                        retryable=status_code == 429 or 500 <= status_code < 600,
-                        retry_after=_parse_retry_after(
-                            response.headers.get("Retry-After"),
-                        ),
-                    ) from None
-                content = _read_content(response)
-        except FeedFetchError:
-            raise
+            current_url = url
+            for _ in range(MAX_ANHOCH_REDIRECTS + 1):
+                with requests.get(
+                    current_url,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": ANHOCH_USER_AGENT,
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    timeout=30,
+                    stream=True,
+                    allow_redirects=False,
+                ) as response:
+                    if 300 <= response.status_code < 400:
+                        location = response.headers.get("Location")
+                        if location is None:
+                            raise FeedFetchError(
+                                ANHOCH_LABEL,
+                                "InvalidRedirect",
+                            ) from None
+                        _read_content(response)
+                        current_url = urljoin(current_url, location)
+                        continue
+                    try:
+                        response.raise_for_status()
+                    except requests.HTTPError:
+                        status_code = response.status_code
+                        raise FeedFetchError(
+                            ANHOCH_LABEL,
+                            "HTTPError",
+                            status_code=status_code,
+                            retryable=(status_code == 429 or 500 <= status_code < 600),
+                            retry_after=_parse_retry_after(
+                                response.headers.get("Retry-After"),
+                            ),
+                        ) from None
+                    content = _read_content(response)
+                    break
+            else:
+                raise FeedFetchError(ANHOCH_LABEL, "TooManyRedirects") from None
+        except ValueError:
+            raise FeedFetchError(ANHOCH_LABEL, "InvalidUrl") from None
         except (requests.ConnectionError, requests.Timeout) as error:
             raise FeedFetchError(
                 ANHOCH_LABEL,
