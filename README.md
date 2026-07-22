@@ -151,4 +151,4 @@ In Discord, open the target channel settings, go to **Integrations** > **Webhook
 
 ## License
 
-MIT
+This project is licensed under the terms of the MIT license.
