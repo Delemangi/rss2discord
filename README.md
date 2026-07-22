@@ -1,13 +1,14 @@
 # RSS2Discord
 
-Forward RSS/Atom entries, XenForo thread posts, and IT.mk Oglasnik listings to
-Discord webhooks as rich Components v2 messages.
+Forward RSS/Atom entries, XenForo thread posts, IT.mk Oglasnik listings, and
+new Anhoch products to Discord webhooks as rich Components v2 messages.
 
 ## Features
 
-- RSS, Atom, XenForo, and IT.mk Oglasnik sources
+- RSS, Atom, XenForo, IT.mk Oglasnik, and Anhoch sources
 - Optional Hacker News and Reddit source adapters on RSS feeds
-- Source-aware labels for GitHub releases, Reddit, Hacker News, generic RSS, and forums
+- Source-aware labels for Anhoch, IT.mk Oglasnik, GitHub releases, Reddit,
+  Hacker News, generic RSS, and forums
 - Distinct Hacker News discussion links when the feed supplies a separate comments URL
 - Hacker News submitter, points, comment count, self-post text, and article domain from the official API
 - Reddit outbound and discussion link separation using credential-free feed metadata
@@ -103,6 +104,12 @@ feeds:
     url: "https://forum.it.mk/oglasnik/"
     webhook: "https://discord.com/api/webhooks/ID/TOKEN"
     strategy: "itmk_oglasnik"
+
+  - id: "anhoch-new-products"
+    name: "Anhoch New Products"
+    url: "https://www.anhoch.com/products?inStockOnly=2"
+    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+    strategy: "anhoch"
 ```
 
 `strategy` defaults to `rss`. The optional `adapter` may be `hackernews` or
@@ -153,11 +160,20 @@ individual listing detail pages. Listing cards provide the price, condition,
 type, category, seller, dates, views, status, and non-placeholder image. Use
 the `xenforo` strategy for ordinary forum discussion threads.
 
+The `anhoch` strategy uses Anhoch's public catalog response to discover newly
+listed products. Its first successful fetch records the current products
+without sending Discord messages; later unseen product IDs are delivered with
+their current price, original price when discounted, stock quantity,
+installment information, and image. Configured catalog filters are preserved,
+while sorting and pagination are forced to the latest 90 products across at
+most three requests. Price changes for already-seen products are intentionally
+ignored.
+
 ## Reliability behavior
 
-RSS and IT.mk Oglasnik requests are streamed and rejected when the decoded
-response body exceeds 1 MiB. Their HTTP 429 and 5xx responses, connection
-errors, and timeouts are retried
+RSS, IT.mk Oglasnik, and Anhoch requests are streamed and rejected when the
+decoded response body exceeds 1 MiB. Their HTTP 429 and 5xx responses,
+connection errors, and timeouts are retried
 up to three total attempts. Numeric `Retry-After` values are honored up to five
 minutes; otherwise retries use jittered exponential backoff. Other HTTP and
 feed parsing failures wait for the next scheduled poll.
@@ -177,6 +193,10 @@ sharing delivery history.
 The database is created automatically on first startup. When upgrading from a
 release that did not use `state.db`, delivery history starts empty and previously
 sent entries may be sent again.
+
+Strategies that suppress an initial backfill also store per-feed initialization
+state in the same database. Changing an Anhoch feed ID therefore seeds its
+current products again before notifications resume.
 
 ## Runtime paths
 
