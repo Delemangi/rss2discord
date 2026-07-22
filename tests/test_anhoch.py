@@ -201,10 +201,11 @@ def test_anhoch_strategy_rejects_malformed_catalog_response(
     # Given
     get = RecordingGet([StubResponse(b'{"products": {"data": "invalid"}}')])
     monkeypatch.setattr(requests, "get", get)
+    strategy = AnhochStrategy()
 
     # When / Then
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 @pytest.mark.parametrize(
@@ -219,10 +220,11 @@ def test_anhoch_strategy_classifies_http_failures(
     # Given
     get = RecordingGet([StubResponse(b"failure", status_code=status_code)])
     monkeypatch.setattr(requests, "get", get)
+    strategy = AnhochStrategy()
 
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.status_code == status_code
@@ -234,10 +236,11 @@ def test_anhoch_strategy_marks_timeout_retryable(
 ) -> None:
     # Given
     monkeypatch.setattr(requests, "get", RaisingGet(requests.Timeout()))
+    strategy = AnhochStrategy()
 
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retryable
@@ -256,10 +259,11 @@ def test_anhoch_strategy_rejects_oversized_response(
         ],
     )
     monkeypatch.setattr(requests, "get", get)
+    strategy = AnhochStrategy()
 
     # When / Then
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_anhoch_strategy_accepts_empty_catalog(
@@ -304,20 +308,22 @@ def test_anhoch_strategy_rejects_oversized_redirect_response(
     )
     final = StubResponse(page_payload(1, 1, []))
     monkeypatch.setattr(requests, "get", RedirectingGet(redirect, final))
+    strategy = AnhochStrategy()
 
     # When / Then
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        AnhochStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_anhoch_strategy_redacts_malformed_url_credentials() -> None:
     # Given
     credential = "sensitive-value"
     malformed_url = f"https://user:{credential}@℀.example.test/products"
+    strategy = AnhochStrategy()
 
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
-        AnhochStrategy().fetch_entries(malformed_url)
+        strategy.fetch_entries(malformed_url)
 
     # Then
     assert fetch_error.value.cause_type == "InvalidUrl"
