@@ -14,6 +14,19 @@ from tests.anhoch_helpers import (
 )
 
 
+def test_full_catalog_scan_budget_covers_every_bounded_page() -> None:
+    # Given / When
+    maximum_bounded_catalog_bytes = (
+        anhoch_catalog.MAX_ANHOCH_CATALOG_RESPONSE_BYTES
+        * anhoch_catalog.MAX_ANHOCH_CATALOG_PAGES
+    )
+
+    # Then
+    assert maximum_bounded_catalog_bytes <= (
+        anhoch_catalog.MAX_ANHOCH_CATALOG_SCAN_BYTES
+    )
+
+
 def test_anhoch_latest_scan_counts_redirect_body_bytes_and_stops_before_following(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

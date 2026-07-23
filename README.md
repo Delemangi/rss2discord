@@ -131,7 +131,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - The database is created automatically on first startup.
 - RSS, IT.mk, and ordinary Anhoch new-product responses are capped at 1 MiB and transient fetch failures are retried.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
-- Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page and cap each response at 2 MiB.
+- Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total).
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.

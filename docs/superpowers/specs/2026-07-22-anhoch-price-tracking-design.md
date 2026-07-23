@@ -95,6 +95,7 @@ The full-catalog contract is:
 - `sort=latest`;
 - 500 products per page;
 - at most 100 pages, supporting 50,000 products;
+- a 200 MiB aggregate ceiling derived from the 2 MiB per-response and 100-page limits;
 - stop at the declared last page or first empty page;
 - reject a catalog that still claims additional pages after page 100;
 - retain original API order because comparison does not depend on delivery order.
