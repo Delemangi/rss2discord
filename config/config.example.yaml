@@ -67,12 +67,15 @@ feeds:
     strategy: "itmk_oglasnik"
     webhook_name: "Oglasnik Bot"
 
-  # Anhoch new products; the first successful fetch seeds without notifications
+  # Anhoch new products plus opt-in selling-price monitoring
   - id: "anhoch-new-products"
     name: "Anhoch New Products"
     url: "https://www.anhoch.com/products?inStockOnly=2"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
+    # Full-catalog selling-price scan every hour. Omit or set null to disable;
+    # valid only for Anhoch. The immediate first scan stores a silent baseline.
+    price_check_interval: 3600
     webhook_name: "Anhoch Bot"
 
   # Example feed 2
@@ -96,6 +99,10 @@ feeds:
 #   - 'xenforo': For XenForo forum threads
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'anhoch': For new products from Anhoch's public catalog
+# - price_check_interval: Optional seconds between Anhoch full-catalog selling-price scans
+#   Set to 3600 for hourly checks. Omit or set to null to disable; it is invalid
+#   for non-Anhoch feeds. Full scans use 500 products per page with a 2 MiB
+#   response cap, and their immediate first scan creates a silent baseline.
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth
