@@ -127,6 +127,15 @@ def _scan_price_monitor(monitor: PriceMonitor, feed_id: str) -> None:
             feed_id,
             type(error).__name__,
         )
+    except Exception as error:
+        logger.exception(
+            "Unexpected price scan failure for feed %s (%s)",
+            feed_id,
+            type(error).__name__,
+            exc_info=RuntimeError(type(error).__name__).with_traceback(
+                error.__traceback__,
+            ),
+        )
 
 
 def _log_fetch_retry(feed_id: str, error: FeedFetchError, delay: float) -> None:

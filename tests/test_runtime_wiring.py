@@ -50,7 +50,7 @@ class RecordingMonitor:
 
 
 class FailingMonitor:
-    def __init__(self, error: FeedFetchError | sqlite3.Error) -> None:
+    def __init__(self, error: Exception) -> None:
         self._error = error
 
     def scan(self) -> None:
@@ -183,13 +183,17 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
     [
         ("fetch-failed", FeedFetchError("Anhoch", "NetworkError")),
         ("persistence-failed", sqlite3.OperationalError("database is locked")),
+        (
+            "unexpected-failed",
+            RuntimeError("https://catalog.example.test?feed_secret=hidden"),
+        ),
     ],
 )
 def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
     feed_id: str,
-    failure: FeedFetchError | sqlite3.Error,
+    failure: Exception,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=2)
