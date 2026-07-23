@@ -240,6 +240,24 @@ def test_load_config_parses_anhoch_strategy(tmp_path: Path) -> None:
     assert config.feeds[0].strategy == "anhoch"
 
 
+def test_load_config_parses_setec_strategy(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: setec-new-products\n"
+        "    url: https://setec.mk/e-prodazba\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: setec\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].strategy == "setec"
+
+
 def test_invalid_config_does_not_expose_webhook_secret(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
