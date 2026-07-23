@@ -165,3 +165,26 @@ def test_shutdown_during_retry_sleep_aborts(
     assert not delivered
     assert attempts == 1
     assert delays == [expected_delay]
+
+
+def test_shutdown_during_retry_sleep_returns_an_explicit_interruption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url, kwargs
+        raise requests.ConnectionError("connection reset")
+
+    monkeypatch.setattr(session, "post", post)
+
+    # When
+    outcome = DiscordWebhookClient(session).send(
+        make_message(),
+        record_delays([], continue_waiting=False),
+    )
+
+    # Then
+    assert not isinstance(outcome, bool)
+    assert outcome.name == "INTERRUPTED"

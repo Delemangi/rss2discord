@@ -7,8 +7,13 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.discord.client import SleepCallback, WebhookMessage
+from rss2discord.discord.client import (
+    DiscordDeliveryResult,
+    SleepCallback,
+    WebhookMessage,
+)
 from rss2discord.models import EntryData, EntryId
+from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports import FeedFetchError, ScraperStrategy
 
 type FetchResult = tuple[list[Any], str]
@@ -40,7 +45,11 @@ class RetryStrategy(ScraperStrategy):
 
 
 class UnusedSender:
-    def send(self, message: WebhookMessage, sleep: SleepCallback) -> bool:
+    def send(
+        self,
+        message: WebhookMessage,
+        sleep: SleepCallback,
+    ) -> DiscordDeliveryResult:
         del message, sleep
         raise AssertionError("sender should not be called")
 
@@ -71,6 +80,78 @@ def make_app(
 def record_sleep(delays: list[float], seconds: float) -> bool:
     delays.append(seconds)
     return True
+
+
+def test_ordinary_fetch_retry_characterizes_existing_successful_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feed = make_feed()
+    strategy = RetryStrategy(
+        [
+            FeedFetchError(
+                "RSS",
+                "HTTPError",
+                status_code=429,
+                retryable=True,
+                retry_after=12,
+            ),
+            ([], "News"),
+        ],
+    )
+    delays: list[float] = []
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, strategy, feed)
+        monkeypatch.setattr(
+            app,
+            "_interruptible_sleep",
+            lambda seconds: record_sleep(delays, seconds),
+        )
+
+        # When
+        app.process_feed(feed)
+
+    # Then
+    assert strategy.attempts == 2
+    assert delays == [12]
+
+
+def test_full_catalog_retry_policy_restarts_the_entire_scan_after_later_failure() -> (
+    None
+):
+    # Given
+    page_requests: list[int] = []
+    retry_delays: list[float] = []
+    scan_attempts = 0
+
+    def scan_catalog() -> tuple[str, ...]:
+        nonlocal scan_attempts
+        scan_attempts += 1
+        page_requests.extend((1, 2))
+        if scan_attempts == 1:
+            raise FeedFetchError(
+                "Anhoch",
+                "HTTPError",
+                status_code=503,
+                retryable=True,
+                retry_after=9999,
+            )
+        return ("product-2", "product-1")
+
+    retry_policy = FetchRetryPolicy(
+        sleep=lambda seconds: record_sleep(retry_delays, seconds),
+        on_retry=lambda error, delay: None,
+    )
+
+    # When
+    products = retry_policy.execute(scan_catalog)
+
+    # Then
+    assert products == ("product-2", "product-1")
+    assert page_requests == [1, 2, 1, 2]
+    assert retry_delays == [300.0]
 
 
 def test_retry_after_is_capped_before_retry(

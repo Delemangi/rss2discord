@@ -4,7 +4,11 @@ from typing import Any, assert_never
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.discord.client import SleepCallback, WebhookMessage
+from rss2discord.discord.client import (
+    DiscordDeliveryResult,
+    SleepCallback,
+    WebhookMessage,
+)
 from rss2discord.models import EntryData, EntryId
 from rss2discord.transports import ScraperStrategy
 
@@ -53,14 +57,22 @@ class FakeSender:
         self.outcomes = outcomes
         self.messages: list[WebhookMessage] = []
 
-    def send(self, message: WebhookMessage, sleep: SleepCallback) -> bool:
+    def send(
+        self,
+        message: WebhookMessage,
+        sleep: SleepCallback,
+    ) -> DiscordDeliveryResult:
         self.messages.append(message)
         outcome = self.outcomes.pop(0)
         match outcome:
             case RuntimeError():
                 raise outcome
             case bool():
-                return outcome
+                return (
+                    DiscordDeliveryResult.DELIVERED
+                    if outcome
+                    else DiscordDeliveryResult.FAILED
+                )
             case _ as unreachable:
                 assert_never(unreachable)
 

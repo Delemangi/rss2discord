@@ -31,6 +31,7 @@ SAFE_VALIDATION_FIELDS = frozenset(
         "id",
         "max_post_age_days",
         "name",
+        "price_check_interval",
         "refresh_interval",
         "strategy",
         "url",

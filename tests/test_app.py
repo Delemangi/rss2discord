@@ -79,6 +79,7 @@ def test_run_waits_between_feeds(
                 return False
             return True
 
+        monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: 0.0)
         monkeypatch.setattr(app, "_interruptible_sleep", record_sleep)
 
         # When
