@@ -26,6 +26,17 @@ class _DeliveryAction(Enum):
     FAILED = auto()
 
 
+class DiscordDeliveryResult(Enum):
+    """The observable result of one Discord webhook delivery attempt."""
+
+    DELIVERED = auto()
+    FAILED = auto()
+    INTERRUPTED = auto()
+
+    def __bool__(self) -> bool:
+        return self is DiscordDeliveryResult.DELIVERED
+
+
 @dataclass(frozen=True, slots=True)
 class _DeliveryResult:
     action: _DeliveryAction
@@ -40,33 +51,41 @@ class WebhookMessage:
 
 
 class DiscordSender(Protocol):
-    def send(self, message: WebhookMessage, sleep: SleepCallback) -> bool: ...
+    def send(
+        self,
+        message: WebhookMessage,
+        sleep: SleepCallback,
+    ) -> DiscordDeliveryResult: ...
 
 
 class DiscordWebhookClient:
     def __init__(self, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
 
-    def send(self, message: WebhookMessage, sleep: SleepCallback) -> bool:
+    def send(
+        self,
+        message: WebhookMessage,
+        sleep: SleepCallback,
+    ) -> DiscordDeliveryResult:
         payload = self._build_payload(message)
 
         for attempt in range(MAX_RETRIES):
             result = self._attempt_delivery(message, payload, attempt)
             if result.action is _DeliveryAction.FAILED:
-                if result.wait_time > 0:
-                    sleep(result.wait_time)
-                return False
+                if result.wait_time > 0 and not sleep(result.wait_time):
+                    return DiscordDeliveryResult.INTERRUPTED
+                return DiscordDeliveryResult.FAILED
             if result.action is _DeliveryAction.DELIVERED:
                 logger.info(
                     "Sent entry %s to Discord for feed %s",
                     message.entry.title,
                     message.feed.id,
                 )
-                return True
+                return DiscordDeliveryResult.DELIVERED
             if not sleep(result.wait_time):
-                return False
+                return DiscordDeliveryResult.INTERRUPTED
 
-        return False
+        return DiscordDeliveryResult.FAILED
 
     def _attempt_delivery(
         self,
