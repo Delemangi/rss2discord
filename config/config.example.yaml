@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', or 'anhoch'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'anhoch', or 'setec'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -75,6 +75,14 @@ feeds:
     strategy: "anhoch"
     webhook_name: "Anhoch Bot"
 
+  # Setec new products; the first successful fetch seeds without notifications
+  - id: "setec-new-products"
+    name: "Setec New Products"
+    url: "https://setec.mk/e-prodazba"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "setec"
+    webhook_name: "Setec Bot"
+
   # Example feed 2
   - id: "another-feed"
     name: "Another Feed"
@@ -87,7 +95,7 @@ feeds:
 # - id: Stable unique ID containing lowercase letters, numbers, '.', '_', or '-' (required)
 #   Delivery history is keyed by this value, so changing it will make old entries new again.
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
-# - url: The RSS/Atom feed, XenForo thread, marketplace page, or Anhoch catalog URL (required)
+# - url: The RSS/Atom feed, XenForo thread, marketplace page, or product catalog URL (required)
 #   Public GitHub release feeds use https://github.com/OWNER/REPOSITORY/releases.atom
 #   and render with a GitHub source label. They do not require an adapter.
 # - webhook: Discord webhook URL for posting updates (required)
@@ -96,6 +104,7 @@ feeds:
 #   - 'xenforo': For XenForo forum threads
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'anhoch': For new products from Anhoch's public catalog
+#   - 'setec': For new products from Setec's public catalog
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth
