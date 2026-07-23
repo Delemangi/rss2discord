@@ -2,7 +2,8 @@
 
 import math
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Annotated, ClassVar, Final, Literal, final, override
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
@@ -156,7 +157,9 @@ class SetecStrategy(ScraperStrategy):
                             SETEC_LABEL,
                             "HTTPError",
                             status_code=status_code,
-                            retryable=(status_code == 429 or 500 <= status_code < 600),
+                            retryable=(
+                                status_code in {408, 429} or 500 <= status_code < 600
+                            ),
                             retry_after=_parse_retry_after(
                                 response.headers.get("Retry-After"),
                             ),
@@ -167,7 +170,11 @@ class SetecStrategy(ScraperStrategy):
                 raise FeedFetchError(SETEC_LABEL, "TooManyRedirects") from None
         except ValueError:
             raise FeedFetchError(SETEC_LABEL, "InvalidUrl") from None
-        except (requests.ConnectionError, requests.Timeout) as error:
+        except (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ) as error:
             raise FeedFetchError(
                 SETEC_LABEL,
                 type(error).__name__,
@@ -233,5 +240,11 @@ def _parse_retry_after(value: str | None) -> float | None:
     try:
         retry_after = float(value)
     except ValueError:
-        return None
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
     return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None

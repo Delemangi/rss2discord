@@ -200,7 +200,7 @@ def test_setec_strategy_rejects_malformed_response(
 
 @pytest.mark.parametrize(
     ("status_code", "retryable"),
-    [(404, False), (429, True), (503, True)],
+    [(404, False), (408, True), (429, True), (503, True)],
 )
 def test_setec_strategy_classifies_http_failures(
     monkeypatch: pytest.MonkeyPatch,
@@ -232,6 +232,48 @@ def test_setec_strategy_marks_timeout_retryable(
 
     # Then
     assert fetch_error.value.retryable
+
+
+def test_setec_strategy_marks_chunked_response_interruption_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RaisingGet(requests.exceptions.ChunkedEncodingError()),
+    )
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+
+    # Then
+    assert fetch_error.value.retryable
+
+
+def test_setec_strategy_parses_http_date_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
+        [
+            StubResponse(
+                b"failure",
+                status_code=429,
+                headers={"Retry-After": "Thu, 23 Jul 2099 10:00:00 GMT"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(requests, "get", get)
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+
+    # Then
+    assert fetch_error.value.retry_after is not None
+    assert fetch_error.value.retry_after > 0
 
 
 def test_setec_strategy_rejects_oversized_response(
