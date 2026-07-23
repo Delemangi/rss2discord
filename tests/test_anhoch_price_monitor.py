@@ -278,7 +278,7 @@ def test_scan_delays_only_between_accepted_alerts(tmp_path: Path) -> None:
         )
         for product_id in (1, 2, 3)
     )
-    sender = RecordingSender([False, True, True])
+    sender = RecordingSender([True, False, True])
     delays: list[float] = []
 
     def record_delay(seconds: float) -> bool:

@@ -129,18 +129,19 @@ class AnhochPriceMonitor:
                 ),
             )
 
-        accepted_alerts = 0
+        delay_before_next_attempt = False
         for change in changes:
             if self._dependencies.delivery.is_shutdown_requested():
                 return
             if (
-                accepted_alerts > 0
+                delay_before_next_attempt
                 and self._dependencies.delivery.delay_between_posts > 0
                 and not self._dependencies.delivery.sleep(
                     self._dependencies.delivery.delay_between_posts,
                 )
             ):
                 return
+            delay_before_next_attempt = False
             if self._dependencies.delivery.is_shutdown_requested():
                 return
             delivery_result = self._dependencies.sender.send(
@@ -150,7 +151,7 @@ class AnhochPriceMonitor:
             match delivery_result:
                 case DiscordDeliveryResult.DELIVERED:
                     self._persist_changed_snapshot(change.current)
-                    accepted_alerts += 1
+                    delay_before_next_attempt = True
                 case DiscordDeliveryResult.FAILED:
                     if self._dependencies.delivery.is_shutdown_requested():
                         return
