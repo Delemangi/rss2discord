@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -15,7 +15,7 @@ FeedStrategyName = Literal["rss", "xenforo", "itmk_oglasnik", "anhoch"]
 
 
 class FeedConfig(BaseModel):
-    model_config = ConfigDict(
+    model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         frozen=True,
         hide_input_in_errors=True,
@@ -31,17 +31,27 @@ class FeedConfig(BaseModel):
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
     embed_color: Annotated[int, Field(ge=0, le=0xFFFFFF)] | None = None
+    price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
+        None
+    )
 
     @model_validator(mode="after")
     def require_rss_strategy_for_adapter(self) -> Self:
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
+        if self.price_check_interval is not None and self.strategy != "anhoch":
+            msg = "price_check_interval requires the anhoch strategy"
+            raise ValueError(msg)
         return self
 
 
 class AppConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        hide_input_in_errors=True,
+    )
 
     refresh_interval: Annotated[float, Field(gt=0)] = 300
     delay_between_feeds: Annotated[float, Field(ge=0)] = 0
