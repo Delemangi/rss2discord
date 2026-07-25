@@ -147,7 +147,7 @@ class SetecStrategy(ScraperStrategy):
                                 "InvalidRedirect",
                             ) from None
                         _ = _read_content(response)
-                        current_url = urljoin(current_url, location)
+                        current_url = _same_origin_redirect_url(current_url, location)
                         continue
                     try:
                         response.raise_for_status()
@@ -205,6 +205,27 @@ def _build_api_url(url: str) -> str:
     ):
         raise FeedFetchError(SETEC_LABEL, "InvalidUrl")
     return urlunsplit(parsed._replace(path=SETEC_API_PATH, query="", fragment=""))
+
+
+def _same_origin_redirect_url(current_url: str, location: str) -> str:
+    redirected_url = urljoin(current_url, location)
+    try:
+        current = urlsplit(current_url)
+        redirected = urlsplit(redirected_url)
+        default_port = 443 if current.scheme == "https" else 80
+        current_port = current.port or default_port
+        redirected_port = redirected.port or default_port
+    except ValueError:
+        raise FeedFetchError(SETEC_LABEL, "InvalidRedirect") from None
+    if (
+        redirected.scheme != current.scheme
+        or redirected.hostname != current.hostname
+        or redirected_port != current_port
+        or redirected.username is not None
+        or redirected.password is not None
+    ):
+        raise FeedFetchError(SETEC_LABEL, "InvalidRedirect")
+    return redirected_url
 
 
 def _read_content(response: requests.Response) -> bytes:

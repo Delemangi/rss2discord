@@ -290,6 +290,28 @@ def test_setec_strategy_rejects_oversized_response(
         _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
 
 
+def test_setec_strategy_rejects_cross_origin_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
+        [
+            StubResponse(
+                b"",
+                status_code=302,
+                headers={"Location": "http://127.0.0.1/internal"},
+            ),
+            StubResponse(catalog_payload(0, [])),
+        ],
+    )
+    monkeypatch.setattr(requests, "get", get)
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="InvalidRedirect"):
+        _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+    assert len(get.urls) == 1
+
+
 def test_setec_strategy_redacts_malformed_url_credentials() -> None:
     # Given
     credential = "sensitive-value"
