@@ -24,6 +24,7 @@ class StubImageResponse:
     )
     url: str = IMAGE_URL
 
+
 @dataclass(frozen=True, slots=True)
 class RecordingImageSession:
     response: StubImageResponse

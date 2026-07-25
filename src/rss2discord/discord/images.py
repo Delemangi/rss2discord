@@ -44,6 +44,7 @@ class ImageResponse(Protocol):
     @property
     def url(self) -> str: ...
 
+
 class ImageSession(Protocol):
     def get(
         self,
@@ -95,6 +96,7 @@ class _CurlCffiImageResponse:
     @property
     def url(self) -> str:
         return self._response.url
+
 
 class _CurlCffiImageSession:
     def get(
@@ -165,14 +167,11 @@ class AnhochImageDownloader:
 
 
 def _read_image(response: ImageResponse, content: bytes) -> DownloadedImage | None:
-    if (
-        response.status_code != 200
-        or _canonical_anhoch_image_url(response.url) is None
-    ):
+    if response.status_code != 200 or _canonical_anhoch_image_url(response.url) is None:
         return None
-    content_type = (_header(response.headers, "content-type") or "").partition(";")[
-        0
-    ].lower()
+    content_type = (
+        (_header(response.headers, "content-type") or "").partition(";")[0].lower()
+    )
     extension = IMAGE_EXTENSIONS.get(content_type)
     if extension is None:
         return None
