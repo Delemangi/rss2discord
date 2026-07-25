@@ -140,6 +140,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - The database is created automatically on first startup.
 - RSS, IT.mk, ordinary Anhoch new-product, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
+- Anhoch new-product and price checks intentionally use separate catalog requests: discovery preserves the configured query filters and latest-product window, while price monitoring removes filters to compare the complete catalog without coupling either job's failures to the other.
 - Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total).
 - A Discord delivery is recorded immediately after Discord accepts the message.
