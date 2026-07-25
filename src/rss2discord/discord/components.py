@@ -9,7 +9,7 @@ from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData
 
 type JSONValue = (
-    None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]
+    bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None
 )
 
 DEFAULT_ACCENT_COLOR: Final = 5814783

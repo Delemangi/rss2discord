@@ -8,7 +8,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
-from rss2discord.transports import AnhochStrategy, ITMkOglasnikStrategy
+from rss2discord.transports import AnhochStrategy, ITMkOglasnikStrategy, SetecStrategy
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,
@@ -49,6 +49,15 @@ def test_app_registers_anhoch_strategy(tmp_path: Path) -> None:
 
     # Then
     assert isinstance(app._strategies["anhoch"], AnhochStrategy)
+
+
+def test_app_registers_setec_strategy(tmp_path: Path) -> None:
+    # Given / When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(config=AppConfig(), store=store, sender=FakeSender([]))
+
+    # Then
+    assert isinstance(app._strategies["setec"], SetecStrategy)
 
 
 def test_run_waits_between_feeds(

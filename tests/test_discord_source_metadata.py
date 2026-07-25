@@ -14,6 +14,7 @@ from tests.discord_components_helpers import get_metadata_content, make_message
         ("xenforo", "https://forum.example.com/threads/topic.12345/", "Forum"),
         ("itmk_oglasnik", "https://forum.it.mk/oglasnik/", "IT.mk Oglasnik"),
         ("anhoch", "https://www.anhoch.com/products", "Anhoch"),
+        ("setec", "https://setec.mk/e-prodazba", "Setec"),
         ("rss", "https://www.reddit.com/r/python/.rss", "Reddit"),
         ("rss", "https://reddit.com/r/python/.rss", "Reddit"),
         ("rss", "https://old.reddit.com/r/python/.rss", "Reddit"),
@@ -25,6 +26,7 @@ from tests.discord_components_helpers import get_metadata_content, make_message
         "xenforo-forum",
         "itmk-oglasnik",
         "anhoch",
+        "setec",
         "reddit-www",
         "reddit-bare",
         "reddit-subdomain",
@@ -34,7 +36,7 @@ from tests.discord_components_helpers import get_metadata_content, make_message
     ],
 )
 def test_components_v2_payload_renders_source_label(
-    strategy: Literal["rss", "xenforo", "itmk_oglasnik", "anhoch"],
+    strategy: Literal["rss", "xenforo", "itmk_oglasnik", "anhoch", "setec"],
     url: str,
     expected_label: str,
 ) -> None:

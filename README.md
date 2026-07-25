@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoch product updates to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoch or Setec product updates to Discord webhooks.
 
 ## What it supports
 
@@ -9,6 +9,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoc
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
 - New products from the latest Anhoch catalog pages and opt-in selling-price alerts
+- New products from Setec's online catalog
 - SQLite delivery history and persistent Anhoch selling-price snapshots
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
@@ -107,6 +108,14 @@ Common feed types:
   price_check_interval: 3600
   webhook_name: "Anhoch"
   webhook_avatar: "https://www.anhoch.com/storage/media/lUuXIR1al8ZZVSTbX4e7Rryi6jgaymSLQGsDYjkT.svg"
+
+# Setec new products
+- id: "setec-new-products"
+  name: "Setec New Products"
+  url: "https://setec.mk/e-prodazba"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "setec"
+  webhook_name: "Setec"
 ```
 
 `price_check_interval: 3600` opts an Anhoch feed into an immediate, silent full-catalog selling-price baseline and then hourly price checks. To enable it in a Compose deployment, add that line beneath the Anhoch feed in the active `/app/config/config.yaml`; do not put it on a non-Anhoch feed. Omit the key or set it to `null` to disable price monitoring.
@@ -115,7 +124,7 @@ Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, and `anhoch`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `anhoch`, and `setec`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
@@ -129,8 +138,9 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
 - Anhoch selling-price snapshots are stored persistently in the same SQLite database by feed and product.
 - The database is created automatically on first startup.
-- RSS, IT.mk, and ordinary Anhoch new-product responses are capped at 1 MiB and transient fetch failures are retried.
+- RSS, IT.mk, ordinary Anhoch new-product, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
+- Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total).
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.

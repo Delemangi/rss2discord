@@ -22,6 +22,7 @@ from .transports import (
     ITMkOglasnikStrategy,
     RSSStrategy,
     ScraperStrategy,
+    SetecStrategy,
     XenForoStrategy,
 )
 
@@ -47,6 +48,7 @@ class RSSToDiscord:
             "anhoch": AnhochStrategy(),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "rss": RSSStrategy(),
+            "setec": SetecStrategy(),
             "xenforo": XenForoStrategy(),
         }
         self._adapters: dict[str, SourceAdapter] = {

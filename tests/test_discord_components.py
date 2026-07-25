@@ -140,20 +140,26 @@ def test_components_v2_payload_safely_renders_entry_links(
         (
             "[Official](https://evil.example)",
             "News",
-            "-# RSS • News • By \\[Official\\]\\(h\u200bttps://evil.example\\) • "
-            "<t:1784548800:R>",
+            (
+                "-# RSS • News • By \\[Official\\]\\(h\u200bttps://evil.example\\) • "
+                "<t:1784548800:R>"
+            ),
         ),
         (
             "Author",
             "[Trusted Source](https://evil.example)",
-            "-# RSS • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • By Author • "
-            "<t:1784548800:R>",
+            (
+                "-# RSS • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • By Author • "
+                "<t:1784548800:R>"
+            ),
         ),
         (
             "https://evil.example/author",
             "www.evil.example/source",
-            "-# RSS • w\u200bww.evil.example/source • By h\u200bttps://evil.example/author • "
-            "<t:1784548800:R>",
+            (
+                "-# RSS • w\u200bww.evil.example/source • By h\u200bttps://evil.example/author • "
+                "<t:1784548800:R>"
+            ),
         ),
     ],
 )

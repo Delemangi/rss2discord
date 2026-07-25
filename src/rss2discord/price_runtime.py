@@ -76,7 +76,7 @@ def build_price_jobs(
                 interval = feed.price_check_interval
                 if interval is None:
                     continue
-            case "rss" | "xenforo" | "itmk_oglasnik":
+            case "rss" | "xenforo" | "itmk_oglasnik" | "setec":
                 continue
             case unreachable:
                 assert_never(unreachable)
@@ -127,7 +127,7 @@ def _scan_price_monitor(monitor: PriceMonitor, feed_id: str) -> None:
             feed_id,
             type(error).__name__,
         )
-    except Exception as error:
+    except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK
         logger.exception(
             "Unexpected price scan failure for feed %s (%s)",
             feed_id,

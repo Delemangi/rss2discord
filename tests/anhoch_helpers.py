@@ -14,7 +14,7 @@ CATALOG_URL = (
 )
 
 type PayloadValue = (
-    str | int | Decimal | None | Mapping[str, PayloadValue] | Sequence[PayloadValue]
+    str | int | Decimal | Mapping[str, PayloadValue] | Sequence[PayloadValue] | None
 )
 type ProductPayload = dict[str, PayloadValue]
 
