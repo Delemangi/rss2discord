@@ -77,6 +77,7 @@ feeds:
     # valid only for Anhoch. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
+    webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
   # Setec new products; the first successful fetch seeds without notifications
   - id: "setec-new-products"

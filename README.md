@@ -107,7 +107,7 @@ Common feed types:
   strategy: "anhoch"
   price_check_interval: 3600
   webhook_name: "Anhoch"
-  webhook_avatar: "https://www.anhoch.com/storage/media/lUuXIR1al8ZZVSTbX4e7Rryi6jgaymSLQGsDYjkT.svg"
+  webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
 # Setec new products
 - id: "setec-new-products"
@@ -142,6 +142,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - IT.mk Oglasnik seeds the first successful fetch without notifications.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
 - Anhoch new-product and price checks intentionally use separate catalog requests: discovery preserves the configured query filters and latest-product window, while price monitoring removes filters to compare the complete catalog without coupling either job's failures to the other.
+- Anhoch product images are downloaded with browser-compatible TLS and uploaded to Discord as Components v2 thumbnail attachments. If an image cannot be retrieved safely, the product update is delivered without a thumbnail.
 - Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total).
 - A Discord delivery is recorded immediately after Discord accepts the message.
