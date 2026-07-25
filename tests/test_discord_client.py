@@ -161,6 +161,50 @@ def test_delivery_omits_unavailable_anhoch_thumbnail(
     assert "accessory" not in first_child
 
 
+def test_delivery_retries_without_thumbnail_when_discord_rejects_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+    responses = [make_response(415), make_response(200)]
+    attempts: list[dict[str, PostArgument]] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        attempts.append(kwargs)
+        return responses.pop(0)
+
+    monkeypatch.setattr(session, "post", post)
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+
+    # When
+    delivered = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(image),
+    ).send(make_anhoch_message(), lambda _: True)
+
+    # Then
+    assert delivered
+    assert len(attempts) == 2
+    assert "files" in attempts[0]
+    assert "files" not in attempts[1]
+    fallback_payload = attempts[1]["json"]
+    assert isinstance(fallback_payload, dict)
+    components = fallback_payload["components"]
+    assert isinstance(components, list)
+    container = components[0]
+    assert isinstance(container, dict)
+    children = container["components"]
+    assert isinstance(children, list)
+    first_child = children[0]
+    assert isinstance(first_child, dict)
+    assert "accessory" not in first_child
+
+
 def test_delivery_requests_components_and_server_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -258,7 +258,12 @@ def _safe_markdown_url(url: str) -> str | None:
 def _safe_media_url(url: str) -> str | None:
     attachment_name = url.removeprefix("attachment://")
     if attachment_name != url:
-        if attachment_name and "/" not in attachment_name and "\\" not in attachment_name:
+        if attachment_name in {
+            "product-image.gif",
+            "product-image.jpg",
+            "product-image.png",
+            "product-image.webp",
+        }:
             return url
         return None
     return _safe_markdown_url(url)
