@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new Anhoch products to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new Anhoch or Setec products to Discord webhooks.
 
 ## What it supports
 
@@ -9,6 +9,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new A
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
 - New products from the latest Anhoch catalog pages
+- New products from Setec's online catalog
 - SQLite delivery history so entries are not posted twice
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
@@ -106,13 +107,21 @@ Common feed types:
   strategy: "anhoch"
   webhook_name: "Anhoch"
   webhook_avatar: "https://www.anhoch.com/storage/media/lUuXIR1al8ZZVSTbX4e7Rryi6jgaymSLQGsDYjkT.svg"
+
+# Setec new products
+- id: "setec-new-products"
+  name: "Setec New Products"
+  url: "https://setec.mk/e-prodazba"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "setec"
+  webhook_name: "Setec"
 ```
 
 Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, and `anhoch`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `anhoch`, and `setec`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
@@ -124,8 +133,9 @@ See `config/config.example.yaml` for the fully annotated configuration.
 
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
 - The database is created automatically on first startup.
-- RSS, IT.mk, and Anhoch responses are capped at 1 MiB and transient fetch failures are retried.
+- RSS, IT.mk, Anhoch, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
 - Anhoch checks at most the latest 90 products and seeds the first successful fetch without notifications.
+- Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.
