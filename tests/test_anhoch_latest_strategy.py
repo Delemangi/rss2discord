@@ -1,7 +1,3 @@
-import json
-from collections.abc import Iterator, Mapping
-from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
@@ -11,121 +7,16 @@ import requests
 from rss2discord.models import SourceMetric
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.anhoch import AnhochStrategy
-
-CATALOG_URL = (
-    "https://www.anhoch.com/products?query=keyboard&inStockOnly=2&sort=price_asc"
+from tests.anhoch_helpers import (
+    CATALOG_URL,
+    RaisingGet,
+    RecordingGet,
+    RedirectingGet,
+    StubResponse,
+    page_payload,
+    product_payload,
+    requested_page_numbers,
 )
-
-
-def product_payload(
-    product_id: int,
-    slug: str,
-    *,
-    selling_price: str = "1.200,00 ден.",
-) -> dict[str, object]:
-    return {
-        "id": product_id,
-        "name": f"Product {product_id}",
-        "slug": slug,
-        "price": {"formatted": "1.500,00 ден."},
-        "selling_price": {"formatted": selling_price},
-        "base_image": {"path": f"https://www.anhoch.com/images/{product_id}.jpg"},
-        "is_in_stock": True,
-        "qty": 7,
-        "installments": {
-            "period": 24,
-            "price": {"formatted": "50,00 ден."},
-        },
-    }
-
-
-def page_payload(
-    current_page: int,
-    last_page: int,
-    products: list[dict[str, object]],
-) -> bytes:
-    return json.dumps(
-        {
-            "products": {
-                "current_page": current_page,
-                "last_page": last_page,
-                "data": products,
-            },
-        },
-    ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-
-class RecordingGet:
-    """Return queued responses while recording mutable request history."""
-
-    def __init__(self, responses: list[StubResponse]) -> None:
-        self.responses = responses
-        self.urls: list[str] = []
-        self.headers: list[Mapping[str, str]] = []
-
-    def __call__(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
-        allow_redirects: bool,
-    ) -> AbstractContextManager[StubResponse]:
-        del timeout, stream, allow_redirects
-        self.urls.append(url)
-        self.headers.append(headers)
-        return nullcontext(self.responses.pop(0))
-
-
-@dataclass(frozen=True, slots=True)
-class RaisingGet:
-    error: requests.RequestException
-
-    def __call__(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
-        allow_redirects: bool,
-    ) -> AbstractContextManager[StubResponse]:
-        del url, headers, timeout, stream, allow_redirects
-        raise self.error
-
-
-@dataclass(frozen=True, slots=True)
-class RedirectingGet:
-    redirect: StubResponse
-    final: StubResponse
-
-    def __call__(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
-        allow_redirects: bool = True,
-    ) -> AbstractContextManager[StubResponse]:
-        del url, headers, timeout, stream
-        return nullcontext(self.final if allow_redirects else self.redirect)
 
 
 def test_anhoch_strategy_fetches_pages_and_maps_products_oldest_first(
@@ -175,14 +66,15 @@ def test_anhoch_strategy_fetches_pages_and_maps_products_oldest_first(
     )
 
 
-def test_anhoch_strategy_bounds_catalog_pagination(
+def test_anhoch_strategy_fetches_three_page_latest_window_when_catalog_has_more_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     get = RecordingGet(
         [
-            StubResponse(page_payload(page, 99, [product_payload(page, f"p-{page}")]))
-            for page in range(1, 4)
+            StubResponse(page_payload(1, 99, [product_payload(3, "p-3")])),
+            StubResponse(page_payload(2, 99, [product_payload(2, "p-2")])),
+            StubResponse(page_payload(3, 99, [product_payload(1, "p-1")])),
         ],
     )
     monkeypatch.setattr(requests, "get", get)
@@ -191,8 +83,8 @@ def test_anhoch_strategy_bounds_catalog_pagination(
     entries, _ = AnhochStrategy().fetch_entries(CATALOG_URL)
 
     # Then
-    assert len(get.urls) == 3
-    assert [entry.id for entry in entries] == [3, 2, 1]
+    assert [entry.id for entry in entries] == [1, 2, 3]
+    assert requested_page_numbers(get.urls) == ["1", "2", "3"]
 
 
 def test_anhoch_strategy_rejects_malformed_catalog_response(
@@ -328,3 +220,58 @@ def test_anhoch_strategy_redacts_malformed_url_credentials() -> None:
     # Then
     assert fetch_error.value.cause_type == "InvalidUrl"
     assert credential not in str(fetch_error.value)
+
+
+def test_anhoch_strategy_restarts_latest_window_after_retryable_later_page_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
+        [
+            StubResponse(page_payload(1, 2, [product_payload(2, "new-product-0002")])),
+            StubResponse(b"retry me", status_code=503),
+            StubResponse(page_payload(1, 2, [product_payload(2, "new-product-0002")])),
+            StubResponse(page_payload(2, 2, [product_payload(1, "old-product-0001")])),
+        ],
+    )
+    monkeypatch.setattr(requests, "get", get)
+    strategy = AnhochStrategy()
+
+    # When / Then
+    with pytest.raises(FeedFetchError) as fetch_error:
+        strategy.fetch_entries(CATALOG_URL)
+    assert fetch_error.value.retryable
+
+    entries, _ = strategy.fetch_entries(CATALOG_URL)
+    assert [entry.id for entry in entries] == [1, 2]
+    assert len(get.urls) == 4
+    assert requested_page_numbers(get.urls) == ["1", "2", "1", "2"]
+
+
+def test_anhoch_strategy_accepts_formatted_only_ancillary_prices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_payload(1, "product-0001")
+    product["price"] = {"formatted": "1.500,00 ден."}
+    product["installments"] = {
+        "period": 24,
+        "price": {"formatted": "50,00 ден."},
+    }
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(page_payload(1, 1, [product]))]),
+    )
+
+    # When
+    entries, _ = AnhochStrategy().fetch_entries(CATALOG_URL)
+    entry = AnhochStrategy().get_entry_data(entries[0])
+
+    # Then
+    assert entry.source_metrics == (
+        SourceMetric(label="Price", value="1.200,00 ден."),
+        SourceMetric(label="Original", value="1.500,00 ден."),
+        SourceMetric(label="Stock", value="7"),
+        SourceMetric(label="Installments", value="24 × 50,00 ден."),
+    )

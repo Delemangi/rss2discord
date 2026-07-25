@@ -1,8 +1,21 @@
 import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
 from typing import Self
+
+from rss2discord.anhoch_money import canonicalize_anhoch_amount
+
+
+@dataclass(frozen=True, slots=True)
+class PriceSnapshot:
+    feed_id: str
+    product_id: int
+    amount: Decimal
+    formatted: str
+    currency: str
 
 
 class DeliveryStore:
@@ -67,6 +80,54 @@ class DeliveryStore:
             )
         return True
 
+    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]:
+        rows = self._connection.execute(
+            "SELECT product_id, amount, formatted, currency "
+            "FROM anhoch_price_snapshots "
+            "WHERE feed_id = ? "
+            "ORDER BY product_id",
+            (feed_id,),
+        )
+        return tuple(
+            PriceSnapshot(
+                feed_id=feed_id,
+                product_id=product_id,
+                amount=Decimal(amount),
+                formatted=formatted,
+                currency=currency,
+            )
+            for product_id, amount, formatted, currency in rows
+        )
+
+    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:
+        self.upsert_price_snapshots((snapshot,))
+
+    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
+        with self._connection:
+            self._connection.executemany(
+                "INSERT INTO anhoch_price_snapshots "
+                "(feed_id, product_id, amount, formatted, currency) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(feed_id, product_id) DO UPDATE SET "
+                "amount = excluded.amount, "
+                "formatted = excluded.formatted, "
+                "currency = excluded.currency, "
+                "updated_at = unixepoch() "
+                "WHERE anhoch_price_snapshots.amount <> excluded.amount "
+                "OR anhoch_price_snapshots.formatted <> excluded.formatted "
+                "OR anhoch_price_snapshots.currency <> excluded.currency",
+                (
+                    (
+                        snapshot.feed_id,
+                        snapshot.product_id,
+                        canonicalize_anhoch_amount(snapshot.amount),
+                        snapshot.formatted,
+                        snapshot.currency,
+                    )
+                    for snapshot in snapshots
+                ),
+            )
+
     def _initialize(self) -> None:
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute("PRAGMA synchronous = NORMAL")
@@ -84,5 +145,16 @@ class DeliveryStore:
                 "CREATE TABLE IF NOT EXISTS initialized_feeds ("
                 "feed_id TEXT NOT NULL PRIMARY KEY, "
                 "initialized_at INTEGER NOT NULL DEFAULT (unixepoch())"
+                ") WITHOUT ROWID",
+            )
+            self._connection.execute(
+                "CREATE TABLE IF NOT EXISTS anhoch_price_snapshots ("
+                "feed_id TEXT NOT NULL, "
+                "product_id INTEGER NOT NULL, "
+                "amount TEXT NOT NULL, "
+                "formatted TEXT NOT NULL, "
+                "currency TEXT NOT NULL, "
+                "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+                "PRIMARY KEY (feed_id, product_id)"
                 ") WITHOUT ROWID",
             )

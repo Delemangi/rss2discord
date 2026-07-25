@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new Anhoch or Setec products to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoch or Setec product updates to Discord webhooks.
 
 ## What it supports
 
@@ -8,9 +8,9 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and new A
 - Optional RSS adapters for Hacker News and Reddit
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
-- New products from the latest Anhoch catalog pages
+- New products from the latest Anhoch catalog pages and opt-in selling-price alerts
 - New products from Setec's online catalog
-- SQLite delivery history so entries are not posted twice
+- SQLite delivery history and persistent Anhoch selling-price snapshots
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
 ## Docker Compose setup
@@ -40,7 +40,7 @@ docker compose -f compose.prod.yaml up -d
 
 ## Configuration
 
-Edit `config/config.yaml`. Each feed needs a stable, unique `id`; changing it later makes old entries eligible for reposting.
+The checked-in `config/config.example.yaml` contains safe placeholders. Copy it to the ignored deployment configuration, then edit `config/config.yaml`; Compose mounts that active file read-only at `/app/config/config.yaml`. Each feed needs a stable, unique `id`; changing it later makes old entries eligible for reposting.
 
 ```yaml
 refresh_interval: 300
@@ -99,12 +99,13 @@ Common feed types:
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "itmk_oglasnik"
 
-# Anhoch new products
+# Anhoch new products and opt-in selling-price monitoring
 - id: "anhoch-new-products"
   name: "Anhoch New Products"
   url: "https://www.anhoch.com/products?inStockOnly=2"
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "anhoch"
+  price_check_interval: 3600
   webhook_name: "Anhoch"
   webhook_avatar: "https://www.anhoch.com/storage/media/lUuXIR1al8ZZVSTbX4e7Rryi6jgaymSLQGsDYjkT.svg"
 
@@ -117,6 +118,8 @@ Common feed types:
   webhook_name: "Setec"
 ```
 
+`price_check_interval: 3600` opts an Anhoch feed into an immediate, silent full-catalog selling-price baseline and then hourly price checks. To enable it in a Compose deployment, add that line beneath the Anhoch feed in the active `/app/config/config.yaml`; do not put it on a non-Anhoch feed. Omit the key or set it to `null` to disable price monitoring.
+
 Useful options:
 
 | Key | Notes |
@@ -126,16 +129,20 @@ Useful options:
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. |
+| `price_check_interval` | Anhoch only. Set to `3600` for hourly full-catalog selling-price checks; omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
 ## Runtime notes
 
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
+- Anhoch selling-price snapshots are stored persistently in the same SQLite database by feed and product.
 - The database is created automatically on first startup.
-- RSS, IT.mk, Anhoch, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
-- Anhoch checks at most the latest 90 products and seeds the first successful fetch without notifications.
+- RSS, IT.mk, ordinary Anhoch new-product, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
+- Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
+- Anhoch new-product and price checks intentionally use separate catalog requests: discovery preserves the configured query filters and latest-product window, while price monitoring removes filters to compare the complete catalog without coupling either job's failures to the other.
 - Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
+- Enabled Anhoch price scans run immediately and then at `price_check_interval`; the initial price snapshot is silent. Full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total).
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.
