@@ -158,3 +158,7 @@ class DeliveryStore:
                 "PRIMARY KEY (feed_id, product_id)"
                 ") WITHOUT ROWID",
             )
+            self._connection.execute(
+                "INSERT OR IGNORE INTO initialized_feeds (feed_id) "
+                "SELECT DISTINCT feed_id FROM delivered_entries",
+            )
