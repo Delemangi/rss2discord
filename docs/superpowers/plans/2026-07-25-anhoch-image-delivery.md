@@ -59,9 +59,9 @@ class DownloadedImage:
     content_type: str
     content: bytes
 
+
 class AnhochImageDownloader:
-    def download(self, url: str) -> DownloadedImage | None:
-        ...
+    def download(self, url: str) -> DownloadedImage | None: ...
 ```
 
 - [ ] **Step 4: Run the image tests**
