@@ -8,7 +8,7 @@ from curl_cffi import requests as curl_requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
-ANHOCH_IMAGE_PATH_PREFIX: Final = "/storage/media/"
+ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 MAX_IMAGE_BYTES: Final = 8 * 1024 * 1024
 MAX_IMAGE_REDIRECTS: Final = 3
 IMAGE_TIMEOUT_MS: Final = 30_000
@@ -212,7 +212,7 @@ def _canonical_anhoch_image_url(url: str) -> str | None:
         or "\\" in decoded_path
         or decoded_path.count("/") != parsed.path.count("/")
         or any(segment in {".", ".."} for segment in decoded_path.split("/"))
-        or not decoded_path.startswith(ANHOCH_IMAGE_PATH_PREFIX)
+        or not decoded_path.startswith(ANHOCH_IMAGE_PATH_PREFIXES)
     ):
         return None
     canonical_path = quote(decoded_path, safe="/-._~")

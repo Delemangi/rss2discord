@@ -13,6 +13,7 @@ from rss2discord.discord.images import (
 )
 
 IMAGE_URL = "https://www.anhoch.com/storage/media/product.jpg"
+CATALOG_IMAGE_URL = "https://www.anhoch.com/images/product.jpg"
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +95,24 @@ def test_anhoch_image_downloader_returns_bounded_jpeg() -> None:
     )
     assert session.calls == [
         (IMAGE_URL, "chrome", 30, False, {CurlOpt.TIMEOUT_MS: 30_000}),
+    ]
+
+
+def test_anhoch_image_downloader_accepts_catalog_image_path() -> None:
+    # Given
+    response = StubImageResponse(
+        chunks=(b"\xff\xd8\xffimage",),
+        url=CATALOG_IMAGE_URL,
+    )
+    session = RecordingImageSession(response)
+
+    # When
+    image = AnhochImageDownloader(session).download(CATALOG_IMAGE_URL)
+
+    # Then
+    assert image is not None
+    assert session.calls == [
+        (CATALOG_IMAGE_URL, "chrome", 30, False, {CurlOpt.TIMEOUT_MS: 30_000}),
     ]
 
 
