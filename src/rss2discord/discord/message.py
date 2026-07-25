@@ -26,36 +26,25 @@ def prepare_delivery(
     image_downloader: ImageDownloader,
 ) -> PreparedDelivery:
     image: DownloadedImage | None = None
-    rendered_message = message
+    rendered_entry = message.entry
     if message.feed.strategy == "anhoch" and message.entry.image_url is not None:
         image = image_downloader.download(message.entry.image_url)
-        rendered_message = replace(
-            message,
-            entry=replace(
-                message.entry,
-                image_url=(
-                    f"attachment://{image.filename}" if image is not None else None
-                ),
-            ),
-        )
+        rendered_entry = replace(message.entry, image_url=None)
     payload = build_components_v2_payload(
-        rendered_message.feed,
-        rendered_message.entry,
-        rendered_message.source_title,
+        message.feed,
+        rendered_entry,
+        message.source_title,
+        attachment_filename=image.filename if image is not None else None,
     )
     fallback_request: DiscordRequest | None = None
     if image is not None:
         payload["attachments"] = [{"id": 0, "filename": image.filename}]
-        fallback_message = replace(
-            message,
-            entry=replace(message.entry, image_url=None),
-        )
         fallback_request = DiscordRequest(
             webhook=message.feed.webhook,
             payload=build_components_v2_payload(
-                fallback_message.feed,
-                fallback_message.entry,
-                fallback_message.source_title,
+                message.feed,
+                rendered_entry,
+                message.source_title,
             ),
             image=None,
         )
