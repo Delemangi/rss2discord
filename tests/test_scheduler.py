@@ -99,7 +99,9 @@ def test_scheduler_runs_once_when_a_sleep_overruns_a_job_deadline() -> None:
     assert clock.sleep_calls == [300, 300]
 
 
-def test_scheduler_runs_ordinary_immediately_after_price_job_overruns_deadline() -> None:
+def test_scheduler_runs_ordinary_immediately_after_price_job_overruns_deadline() -> (
+    None
+):
     # Given
     clock = FakeSchedulerClock()
     events: list[tuple[str, float]] = []
@@ -112,7 +114,9 @@ def test_scheduler_runs_ordinary_immediately_after_price_job_overruns_deadline()
         clock.now += 1000
 
     def fail_on_sleep(seconds: float) -> bool:
-        raise AssertionError(f"scheduler slept for {seconds} seconds instead of catching up")
+        raise AssertionError(
+            f"scheduler slept for {seconds} seconds instead of catching up",
+        )
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
