@@ -134,6 +134,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
 - The database is created automatically on first startup.
 - RSS, IT.mk, Anhoch, and Setec responses are capped at 1 MiB and transient fetch failures are retried.
+- IT.mk Oglasnik seeds the first successful fetch without notifications.
 - Anhoch checks at most the latest 90 products and seeds the first successful fetch without notifications.
 - Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - A Discord delivery is recorded immediately after Discord accepts the message.

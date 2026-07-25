@@ -59,7 +59,7 @@ feeds:
     webhook_name: "Forum Bot"
     embed_color: 3447003 # Optional: Components v2 accent color
 
-  # IT.mk Oglasnik index or category page
+  # IT.mk Oglasnik index or category page; the first successful fetch seeds without notifications
   - id: "itmk-oglasnik"
     name: "IT.mk Oglasnik"
     url: "https://forum.it.mk/oglasnik/"
