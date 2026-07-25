@@ -86,3 +86,7 @@ class DeliveryStore:
                 "initialized_at INTEGER NOT NULL DEFAULT (unixepoch())"
                 ") WITHOUT ROWID",
             )
+            self._connection.execute(
+                "INSERT OR IGNORE INTO initialized_feeds (feed_id) "
+                "SELECT DISTINCT feed_id FROM delivered_entries",
+            )

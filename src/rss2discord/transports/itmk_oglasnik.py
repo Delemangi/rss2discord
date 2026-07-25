@@ -40,6 +40,8 @@ class ITMkOglasnikListing:
 class ITMkOglasnikStrategy(ScraperStrategy):
     """Scrape server-rendered IT.mk Oglasnik index and category pages."""
 
+    seed_existing_on_first_fetch = True
+
     def fetch_entries(self, url: str) -> tuple[list[ITMkOglasnikListing], str]:
         """Fetch and normalize marketplace listing cards."""
         html, final_url = fetch_itmk_oglasnik_page(url)

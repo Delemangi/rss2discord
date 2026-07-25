@@ -1,10 +1,15 @@
+from pathlib import Path
+
 import pytest
 import requests
 
-from rss2discord.configuration import FeedConfig
+from rss2discord.app import RSSToDiscord
+from rss2discord.configuration import AppConfig, FeedConfig
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.components import build_components_v2_payload
 from rss2discord.models import SourceMetric
 from rss2discord.transports import FeedFetchError, ITMkOglasnikStrategy
+from tests.app_helpers import FakeSender
 from tests.itmk_oglasnik_fixtures import (
     COMPLETE_CARD,
     INDEX_URL,
@@ -116,6 +121,76 @@ def test_itmk_oglasnik_strategy_rejects_pages_without_valid_cards(
     # When / Then
     with pytest.raises(FeedFetchError, match="EmptyResponse"):
         strategy.fetch_entries(INDEX_URL)
+
+
+def test_itmk_oglasnik_first_fetch_seeds_existing_listings_without_sending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Given
+    response = make_response(f"<h1>Огласник</h1>{COMPLETE_CARD}")
+    monkeypatch.setattr(requests, "get", StubGet(response))
+    feed = FeedConfig(
+        id="itmk-oglasnik",
+        url=INDEX_URL,
+        webhook="https://discord.test/webhook",
+        strategy="itmk_oglasnik",
+    )
+    sender = FakeSender([True])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(
+            config=AppConfig(
+                delay_between_posts=0,
+                max_post_age_days=0,
+                feeds=(feed,),
+            ),
+            store=store,
+            sender=sender,
+        )
+        app.process_feed(feed)
+
+        # Then
+        assert store.is_feed_initialized(feed.id)
+        assert store.has_delivered(feed.id, "6228")
+    assert sender.messages == []
+
+
+def test_itmk_oglasnik_upgrade_delivers_unseen_listings_for_existing_feed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Given
+    response = make_response(f"<h1>Огласник</h1>{NEWER_CARD}{COMPLETE_CARD}")
+    monkeypatch.setattr(requests, "get", StubGet(response))
+    feed = FeedConfig(
+        id="itmk-oglasnik",
+        url=INDEX_URL,
+        webhook="https://discord.test/webhook",
+        strategy="itmk_oglasnik",
+    )
+    database_path = tmp_path / "state.db"
+    with DeliveryStore(database_path) as existing_store:
+        existing_store.mark_delivered(feed.id, "6228")
+    sender = FakeSender([True])
+
+    # When
+    with DeliveryStore(database_path) as store:
+        app = RSSToDiscord(
+            config=AppConfig(
+                delay_between_posts=0,
+                max_post_age_days=0,
+                feeds=(feed,),
+            ),
+            store=store,
+            sender=sender,
+        )
+        app.process_feed(feed)
+
+        # Then
+        assert store.has_delivered(feed.id, "6271")
+    assert [message.entry.title for message in sender.messages] == ["GPU"]
 
 
 def test_itmk_oglasnik_strategy_builds_rich_discord_payload(
