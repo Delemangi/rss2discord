@@ -16,7 +16,7 @@ class StubImageResponse:
     chunks: tuple[bytes, ...]
     status_code: int = 200
     headers: Mapping[str, str] = field(
-        default_factory=lambda: {"Content-Type": "image/jpeg"},
+        default_factory=lambda: {"content-type": "image/jpeg"},
     )
     url: str = IMAGE_URL
 

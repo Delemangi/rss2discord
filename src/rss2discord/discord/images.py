@@ -132,11 +132,13 @@ class AnhochImageDownloader:
 def _read_image(response: ImageResponse) -> DownloadedImage | None:
     if response.status_code != 200 or not _is_anhoch_image_url(response.url):
         return None
-    content_type = response.headers.get("Content-Type", "").partition(";")[0].lower()
+    content_type = (_header(response.headers, "content-type") or "").partition(";")[
+        0
+    ].lower()
     extension = IMAGE_EXTENSIONS.get(content_type)
     if extension is None:
         return None
-    declared_length = response.headers.get("Content-Length")
+    declared_length = _header(response.headers, "content-length")
     if declared_length is not None:
         try:
             if int(declared_length) > MAX_IMAGE_BYTES:
@@ -167,4 +169,12 @@ def _is_anhoch_image_url(url: str) -> bool:
         parsed.scheme == "https"
         and parsed.hostname == ANHOCH_IMAGE_HOST
         and parsed.path.startswith(ANHOCH_IMAGE_PATH_PREFIX)
+    )
+
+
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    folded_name = name.casefold()
+    return next(
+        (value for key, value in headers.items() if key.casefold() == folded_name),
+        None,
     )
