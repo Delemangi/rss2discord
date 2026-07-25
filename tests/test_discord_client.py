@@ -205,6 +205,46 @@ def test_delivery_retries_without_thumbnail_when_discord_rejects_media(
     assert "accessory" not in first_child
 
 
+def test_thumbnail_fallback_remains_selected_after_connection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+    attempts: list[dict[str, PostArgument]] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            return make_response(415)
+        if len(attempts) == 2:
+            raise requests.ConnectionError("connection reset")
+        return make_response(200)
+
+    monkeypatch.setattr(session, "post", post)
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+    delays: list[float] = []
+
+    def record_delay(seconds: float) -> bool:
+        delays.append(seconds)
+        return True
+
+    # When
+    delivered = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(image),
+    ).send(make_anhoch_message(), record_delay)
+
+    # Then
+    assert delivered
+    assert ["files" in attempt for attempt in attempts] == [True, False, False]
+    assert delays == [2.0]
+
+
 def test_delivery_requests_components_and_server_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -105,6 +105,7 @@ class DiscordWebhookClient:
         attempt: int,
     ) -> _DeliveryResult:
         message = delivery.message
+        drop_image = False
         try:
             response = delivery.request.post(self._session)
             if (
@@ -118,16 +119,17 @@ class DiscordWebhookClient:
                     message.feed.id,
                     response.status_code,
                 )
+                drop_image = True
                 response = delivery.fallback_request.post(self._session)
-                result = self._classify_response(message, response, attempt)
-                return replace(result, drop_image=True)
         except (requests.ConnectionError, requests.Timeout) as error:
-            return self._handle_retryable_request_error(message, error, attempt)
+            result = self._handle_retryable_request_error(message, error, attempt)
+            return replace(result, drop_image=drop_image)
         except requests.RequestException as error:
             self._log_request_error("request failed", message.feed.id, error)
-            return _DeliveryResult(_DeliveryAction.FAILED)
+            return _DeliveryResult(_DeliveryAction.FAILED, drop_image=drop_image)
 
-        return self._classify_response(message, response, attempt)
+        result = self._classify_response(message, response, attempt)
+        return replace(result, drop_image=drop_image)
 
     def _prepare_delivery(self, message: WebhookMessage) -> PreparedDelivery:
         return prepare_delivery(message, self._image_downloader)
