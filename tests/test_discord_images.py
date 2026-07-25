@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from curl_cffi import CurlOpt
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.discord.images import (
     AnhochImageDownloader,
@@ -42,8 +43,10 @@ class RecordingImageSession:
     ) -> ImageResponse:
         self.calls.append((url, impersonate, timeout, allow_redirects, curl_options))
         for chunk in self.response.chunks:
-            if content_callback(chunk) != len(chunk):
+            result = content_callback(chunk)
+            if result == CURL_WRITEFUNC_ERROR:
                 break
+            assert result == len(chunk)
         return self.response
 
 
@@ -66,8 +69,10 @@ class SequenceImageSession:
         self.calls.append(url)
         response = self.responses.pop(0)
         for chunk in response.chunks:
-            if content_callback(chunk) != len(chunk):
+            result = content_callback(chunk)
+            if result == CURL_WRITEFUNC_ERROR:
                 break
+            assert result == len(chunk)
         return response
 
 

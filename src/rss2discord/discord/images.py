@@ -5,6 +5,7 @@ from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
 from curl_cffi import CurlOpt
 from curl_cffi import requests as curl_requests
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIX: Final = "/storage/media/"
@@ -70,7 +71,7 @@ class _BoundedImageContent:
     def write(self, chunk: bytes) -> int:
         if len(self.content) + len(chunk) > MAX_IMAGE_BYTES:
             self.exceeded_limit = True
-            return 0
+            return CURL_WRITEFUNC_ERROR
         self.content.extend(chunk)
         return len(chunk)
 
