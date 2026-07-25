@@ -701,7 +701,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
-    { name = "curl-cffi", specifier = ">=0.13.0" },
+    { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "feedparser", specifier = ">=6.0.12" },
     { name = "forumscraper", specifier = ">=0.1.21" },
     { name = "pydantic", specifier = ">=2.12.5" },
