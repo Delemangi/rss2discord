@@ -23,6 +23,14 @@ MAX_TEXT_DISPLAY_CHARACTERS: Final = 4000
 MAX_THUMBNAIL_DESCRIPTION_CHARACTERS: Final = 1024
 SEPARATOR_SPACING_COMPACT: Final = 1
 ELLIPSIS: Final = "…"
+ATTACHMENT_FILENAMES: Final = frozenset(
+    {
+        "product-image.gif",
+        "product-image.jpg",
+        "product-image.png",
+        "product-image.webp",
+    },
+)
 MIN_HEADING_CHARACTERS: Final = len(f"## {ELLIPSIS}")
 MIN_METADATA_CHARACTERS: Final = len(f"-# {ELLIPSIS}")
 MAX_DESCRIPTION_CHARACTERS: Final = (
@@ -38,6 +46,8 @@ def build_components_v2_payload(
     feed: FeedConfig,
     entry: EntryData,
     source_title: str,
+    *,
+    attachment_filename: str | None = None,
 ) -> dict[str, JSONValue]:
     title = _escape_markdown_link_text(entry.title)
     link = _safe_markdown_url(entry.link)
@@ -64,7 +74,14 @@ def build_components_v2_payload(
             heading = _truncate_heading(entry.title, heading_limit)
             metadata = _truncate_rendered_text(metadata, text_budget - len(heading))
 
-    safe_image_url = _safe_markdown_url(entry.image_url) if entry.image_url else None
+    if attachment_filename is None:
+        safe_image_url = (
+            _safe_markdown_url(entry.image_url) if entry.image_url else None
+        )
+    elif attachment_filename in ATTACHMENT_FILENAMES:
+        safe_image_url = f"attachment://{attachment_filename}"
+    else:
+        safe_image_url = None
 
     container_components: list[JSONValue] = []
     if safe_image_url is not None:

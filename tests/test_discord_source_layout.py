@@ -87,6 +87,28 @@ def test_components_v2_payload_falls_back_for_unsafe_image_url() -> None:
         assert "accessory" not in child
 
 
+def test_components_v2_payload_rejects_untrusted_attachment_reference() -> None:
+    # Given
+    message = make_message(
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="Description",
+            author="",
+            timestamp=None,
+            image_url="attachment://product-image.jpg",
+        ),
+    )
+
+    # When
+    payload = DiscordWebhookClient._build_payload(message)
+
+    # Then
+    assert "attachment://" not in json.dumps(payload)
+    for child in get_container_children(message):
+        assert "accessory" not in child
+
+
 def test_components_v2_payload_caps_thumbnail_description_at_1024() -> None:
     # Given
     long_title = "T" * 5000

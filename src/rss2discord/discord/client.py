@@ -1,21 +1,26 @@
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import Protocol
+from typing import Final, Protocol
 
 import requests
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.components import JSONValue, build_components_v2_payload
-from rss2discord.models import EntryData
+from rss2discord.discord.images import AnhochImageDownloader, ImageDownloader
+from rss2discord.discord.message import (
+    PreparedDelivery,
+    WebhookMessage,
+    prepare_delivery,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 BASE_RETRY_DELAY_SECONDS = 2.0
 MAX_RETRY_AFTER_SECONDS = 300.0
+MEDIA_REJECTION_STATUS_CODES: Final = frozenset({400, 413, 415})
 
 SleepCallback = Callable[[float], bool]
 
@@ -41,13 +46,7 @@ class DiscordDeliveryResult(Enum):
 class _DeliveryResult:
     action: _DeliveryAction
     wait_time: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
-class WebhookMessage:
-    feed: FeedConfig
-    entry: EntryData
-    source_title: str
+    drop_image: bool = False
 
 
 class DiscordSender(Protocol):
@@ -59,18 +58,33 @@ class DiscordSender(Protocol):
 
 
 class DiscordWebhookClient:
-    def __init__(self, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        session: requests.Session | None = None,
+        image_downloader: ImageDownloader | None = None,
+    ) -> None:
         self._session = session or requests.Session()
+        self._image_downloader = (
+            image_downloader
+            if image_downloader is not None
+            else AnhochImageDownloader()
+        )
 
     def send(
         self,
         message: WebhookMessage,
         sleep: SleepCallback,
     ) -> DiscordDeliveryResult:
-        payload = self._build_payload(message)
+        delivery = self._prepare_delivery(message)
 
         for attempt in range(MAX_RETRIES):
-            result = self._attempt_delivery(message, payload, attempt)
+            result = self._attempt_delivery(delivery, attempt)
+            if result.drop_image and delivery.fallback_request is not None:
+                delivery = replace(
+                    delivery,
+                    request=delivery.fallback_request,
+                    fallback_request=None,
+                )
             if result.action is _DeliveryAction.FAILED:
                 if result.wait_time > 0 and not sleep(result.wait_time):
                     return DiscordDeliveryResult.INTERRUPTED
@@ -89,25 +103,38 @@ class DiscordWebhookClient:
 
     def _attempt_delivery(
         self,
-        message: WebhookMessage,
-        payload: dict[str, JSONValue],
+        delivery: PreparedDelivery,
         attempt: int,
     ) -> _DeliveryResult:
+        message = delivery.message
+        drop_image = False
         try:
-            response = self._session.post(
-                message.feed.webhook,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                params={"wait": "true", "with_components": "true"},
-                timeout=10,
-            )
+            response = delivery.request.post(self._session)
+            if (
+                delivery.request.image is not None
+                and response.status_code in MEDIA_REJECTION_STATUS_CODES
+                and delivery.fallback_request is not None
+            ):
+                logger.warning(
+                    "Discord rejected thumbnail for feed %s (HTTP %d); "
+                    "retrying without it",
+                    message.feed.id,
+                    response.status_code,
+                )
+                drop_image = True
+                response = delivery.fallback_request.post(self._session)
         except (requests.ConnectionError, requests.Timeout) as error:
-            return self._handle_retryable_request_error(message, error, attempt)
+            result = self._handle_retryable_request_error(message, error, attempt)
+            return _DeliveryResult(result.action, result.wait_time, drop_image)
         except requests.RequestException as error:
             self._log_request_error("request failed", message.feed.id, error)
-            return _DeliveryResult(_DeliveryAction.FAILED)
+            return _DeliveryResult(_DeliveryAction.FAILED, drop_image=drop_image)
 
-        return self._classify_response(message, response, attempt)
+        result = self._classify_response(message, response, attempt)
+        return _DeliveryResult(result.action, result.wait_time, drop_image)
+
+    def _prepare_delivery(self, message: WebhookMessage) -> PreparedDelivery:
+        return prepare_delivery(message, self._image_downloader)
 
     def _handle_retryable_request_error(
         self,
