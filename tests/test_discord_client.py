@@ -11,9 +11,7 @@ from rss2discord.discord.images import DownloadedImage
 from rss2discord.models import EntryData
 
 type FilePart = tuple[str, bytes, str]
-type PostArgument = (
-    int | dict[str, str] | dict[str, JSONValue] | dict[str, FilePart]
-)
+type PostArgument = int | dict[str, str] | dict[str, JSONValue] | dict[str, FilePart]
 
 
 @dataclass(frozen=True, slots=True)

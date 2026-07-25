@@ -65,7 +65,9 @@ class DiscordWebhookClient:
     ) -> None:
         self._session = session or requests.Session()
         self._image_downloader = (
-            image_downloader if image_downloader is not None else AnhochImageDownloader()
+            image_downloader
+            if image_downloader is not None
+            else AnhochImageDownloader()
         )
 
     def send(
