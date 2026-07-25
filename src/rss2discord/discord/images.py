@@ -151,18 +151,17 @@ class AnhochImageDownloader:
             response_url = _canonical_anhoch_image_url(response.url)
             if response_url != current_url:
                 return None
-            if 300 <= response.status_code < 400:
-                location = _header(response.headers, "location")
-                if location is None:
-                    return None
-                redirected_url = _canonical_anhoch_image_url(
-                    urljoin(current_url, location),
-                )
-                if redirected_url is None:
-                    return None
-                current_url = redirected_url
-                continue
-            return _read_image(response, bytes(content.content))
+            if not 300 <= response.status_code < 400:
+                return _read_image(response, bytes(content.content))
+            location = _header(response.headers, "location")
+            if location is None:
+                return None
+            redirected_url = _canonical_anhoch_image_url(
+                urljoin(current_url, location),
+            )
+            if redirected_url is None:
+                return None
+            current_url = redirected_url
         return None
 
 

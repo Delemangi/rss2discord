@@ -125,13 +125,13 @@ class DiscordWebhookClient:
                 response = delivery.fallback_request.post(self._session)
         except (requests.ConnectionError, requests.Timeout) as error:
             result = self._handle_retryable_request_error(message, error, attempt)
-            return replace(result, drop_image=drop_image)
+            return _DeliveryResult(result.action, result.wait_time, drop_image)
         except requests.RequestException as error:
             self._log_request_error("request failed", message.feed.id, error)
             return _DeliveryResult(_DeliveryAction.FAILED, drop_image=drop_image)
 
         result = self._classify_response(message, response, attempt)
-        return replace(result, drop_image=drop_image)
+        return _DeliveryResult(result.action, result.wait_time, drop_image)
 
     def _prepare_delivery(self, message: WebhookMessage) -> PreparedDelivery:
         return prepare_delivery(message, self._image_downloader)
