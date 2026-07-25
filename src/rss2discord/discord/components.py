@@ -64,7 +64,7 @@ def build_components_v2_payload(
             heading = _truncate_heading(entry.title, heading_limit)
             metadata = _truncate_rendered_text(metadata, text_budget - len(heading))
 
-    safe_image_url = _safe_markdown_url(entry.image_url) if entry.image_url else None
+    safe_image_url = _safe_media_url(entry.image_url) if entry.image_url else None
 
     container_components: list[JSONValue] = []
     if safe_image_url is not None:
@@ -253,6 +253,15 @@ def _safe_markdown_url(url: str) -> str | None:
     if parsed.scheme.lower() not in {"http", "https"} or hostname is None:
         return None
     return quote(url, safe=":/?#[]@!$&'*+,;=%-._~")
+
+
+def _safe_media_url(url: str) -> str | None:
+    attachment_name = url.removeprefix("attachment://")
+    if attachment_name != url:
+        if attachment_name and "/" not in attachment_name and "\\" not in attachment_name:
+            return url
+        return None
+    return _safe_markdown_url(url)
 
 
 def _format_timestamp(timestamp: str) -> str:

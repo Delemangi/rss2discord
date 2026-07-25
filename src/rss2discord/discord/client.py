@@ -1,7 +1,7 @@
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import Protocol
 
@@ -9,6 +9,12 @@ import requests
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.components import JSONValue, build_components_v2_payload
+from rss2discord.discord.images import (
+    AnhochImageDownloader,
+    DownloadedImage,
+    ImageDownloader,
+)
+from rss2discord.discord.request import DiscordRequest
 from rss2discord.models import EntryData
 
 logger = logging.getLogger(__name__)
@@ -50,6 +56,12 @@ class WebhookMessage:
     source_title: str
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedDelivery:
+    message: WebhookMessage
+    request: DiscordRequest
+
+
 class DiscordSender(Protocol):
     def send(
         self,
@@ -59,18 +71,25 @@ class DiscordSender(Protocol):
 
 
 class DiscordWebhookClient:
-    def __init__(self, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        session: requests.Session | None = None,
+        image_downloader: ImageDownloader | None = None,
+    ) -> None:
         self._session = session or requests.Session()
+        self._image_downloader = (
+            image_downloader if image_downloader is not None else AnhochImageDownloader()
+        )
 
     def send(
         self,
         message: WebhookMessage,
         sleep: SleepCallback,
     ) -> DiscordDeliveryResult:
-        payload = self._build_payload(message)
+        delivery = self._prepare_delivery(message)
 
         for attempt in range(MAX_RETRIES):
-            result = self._attempt_delivery(message, payload, attempt)
+            result = self._attempt_delivery(delivery, attempt)
             if result.action is _DeliveryAction.FAILED:
                 if result.wait_time > 0 and not sleep(result.wait_time):
                     return DiscordDeliveryResult.INTERRUPTED
@@ -89,18 +108,12 @@ class DiscordWebhookClient:
 
     def _attempt_delivery(
         self,
-        message: WebhookMessage,
-        payload: dict[str, JSONValue],
+        delivery: _PreparedDelivery,
         attempt: int,
     ) -> _DeliveryResult:
+        message = delivery.message
         try:
-            response = self._session.post(
-                message.feed.webhook,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                params={"wait": "true", "with_components": "true"},
-                timeout=10,
-            )
+            response = delivery.request.post(self._session)
         except (requests.ConnectionError, requests.Timeout) as error:
             return self._handle_retryable_request_error(message, error, attempt)
         except requests.RequestException as error:
@@ -108,6 +121,32 @@ class DiscordWebhookClient:
             return _DeliveryResult(_DeliveryAction.FAILED)
 
         return self._classify_response(message, response, attempt)
+
+    def _prepare_delivery(self, message: WebhookMessage) -> _PreparedDelivery:
+        image: DownloadedImage | None = None
+        rendered_message = message
+        if message.feed.strategy == "anhoch" and message.entry.image_url is not None:
+            image = self._image_downloader.download(message.entry.image_url)
+            rendered_message = replace(
+                message,
+                entry=replace(
+                    message.entry,
+                    image_url=(
+                        f"attachment://{image.filename}" if image is not None else None
+                    ),
+                ),
+            )
+        payload = self._build_payload(rendered_message)
+        if image is not None:
+            payload["attachments"] = [{"id": 0, "filename": image.filename}]
+        return _PreparedDelivery(
+            message=message,
+            request=DiscordRequest(
+                webhook=message.feed.webhook,
+                payload=payload,
+                image=image,
+            ),
+        )
 
     def _handle_retryable_request_error(
         self,
