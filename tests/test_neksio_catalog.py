@@ -31,7 +31,9 @@ def test_fetch_catalog_extracts_categories_and_preserves_request_and_api_order(
         [
             StubResponse(page_payload(5, 1, 2, 101, first_page)),
             StubResponse(page_payload(5, 2, 2, 101, [product_card(1)])),
-            StubResponse(page_payload(3, 1, 1, 1, [product_card(9, old_price="1.500 ден.")])),
+            StubResponse(
+                page_payload(3, 1, 1, 1, [product_card(9, old_price="1.500 ден.")]),
+            ),
         ],
     )
     monkeypatch.setattr(requests, "get", get)
@@ -42,7 +44,11 @@ def test_fetch_catalog_extracts_categories_and_preserves_request_and_api_order(
 
     # Then
     assert [product.product_id for product in products] == [*range(100, 200), 1, 9]
-    assert post.bodies == [catalog_request(5, 1), catalog_request(5, 2), catalog_request(3, 1)]
+    assert post.bodies == [
+        catalog_request(5, 1),
+        catalog_request(5, 2),
+        catalog_request(3, 1),
+    ]
     assert products[0].product_name == "Product 100"
     assert products[0].product_code == "CODE-100"
     assert products[0].price_with_tax == Decimal(1200)
@@ -133,7 +139,11 @@ def test_fetch_catalog_rejects_malformed_json_and_invalid_product_models(
     payload: bytes,
 ) -> None:
     # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(requests, "post", RecordingPost([StubResponse(payload)]))
 
     # When / Then
@@ -155,7 +165,11 @@ def test_fetch_catalog_rejects_inconsistent_pagination(
 ) -> None:
     # Given
     page, page_size, no_of_pages, no_of_products, cause_type = case
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",

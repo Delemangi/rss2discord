@@ -21,7 +21,11 @@ def test_fetch_catalog_accepts_omitted_old_price_with_none_default(
     # Given
     product = product_card(1)
     del product["old_PriceWTax"]
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -41,7 +45,11 @@ def test_fetch_catalog_accepts_null_manufacturer(
     # Given
     product = product_card(1)
     product["manufacturer"] = None
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -61,7 +69,11 @@ def test_fetch_catalog_accepts_null_subcategory(
     # Given
     product = product_card(1)
     product["subCategory"] = None
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -81,7 +93,11 @@ def test_fetch_catalog_normalizes_negative_stock_to_zero(
     # Given
     product = product_card(1)
     product["quantity"] = -1
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -126,7 +142,11 @@ def test_fetch_catalog_rejects_price_precision_the_snapshot_store_cannot_persist
     # Given
     product = product_card(1)
     product["priceWTax"] = 1.12345
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -144,7 +164,11 @@ def test_fetch_catalog_rejects_price_magnitude_the_snapshot_store_cannot_persist
     # Given
     product = product_card(1)
     product["priceWTax"] = 1_000_000_000_000
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -182,7 +206,11 @@ def test_fetch_catalog_enforces_the_category_limit(
 ) -> None:
     # Given
     monkeypatch.setattr(neksio_catalog, "MAX_NEKSIO_CATEGORIES", 1)
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1, 2]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1, 2]))]),
+    )
 
     # When / Then
     with pytest.raises(FeedFetchError, match="CategoryLimitExceeded"):
@@ -194,11 +222,17 @@ def test_fetch_catalog_enforces_the_page_limit(
 ) -> None:
     # Given
     page_limit = neksio_catalog.MAX_NEKSIO_PAGES_PER_CATEGORY + 1
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
-        RecordingPost([StubResponse(page_payload(1, 1, page_limit, 1, [product_card(1)]))]),
+        RecordingPost(
+            [StubResponse(page_payload(1, 1, page_limit, 1, [product_card(1)]))],
+        ),
     )
 
     # When / Then
@@ -211,7 +245,11 @@ def test_fetch_catalog_enforces_the_unique_product_limit(
 ) -> None:
     # Given
     monkeypatch.setattr(neksio_catalog, "MAX_NEKSIO_PRODUCTS", 1)
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -235,7 +273,11 @@ def test_fetch_catalog_rejects_pagination_metadata_drift(
     # Given
     first_page = [product_card(product_id) for product_id in range(100, 200)]
     second_page = [product_card(product_id) for product_id in range(200, 300)]
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",

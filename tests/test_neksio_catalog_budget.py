@@ -17,7 +17,11 @@ def test_scan_budget_rejects_a_response_before_sending_past_the_limit(
 ) -> None:
     # Given
     get = RecordingGet([StubResponse(b"first"), StubResponse(b"second")])
-    budget = NeksioScanBudget(responses_remaining=1, bytes_remaining=100, expires_at=math.inf)
+    budget = NeksioScanBudget(
+        responses_remaining=1,
+        bytes_remaining=100,
+        expires_at=math.inf,
+    )
     monkeypatch.setattr(requests, "get", get)
 
     # When
@@ -34,7 +38,11 @@ def test_scan_budget_rejects_cumulative_response_bytes(
 ) -> None:
     # Given
     get = RecordingGet([StubResponse(b"12345")])
-    budget = NeksioScanBudget(responses_remaining=1, bytes_remaining=4, expires_at=math.inf)
+    budget = NeksioScanBudget(
+        responses_remaining=1,
+        bytes_remaining=4,
+        expires_at=math.inf,
+    )
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
