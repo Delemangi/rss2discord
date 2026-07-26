@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self, assert_never
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -47,12 +47,18 @@ class FeedConfig(BaseModel):
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
-        if self.price_check_interval is not None and self.strategy not in {
-            "anhoch",
-            "neksio",
-        }:
-            msg = "price_check_interval requires the anhoch or neksio strategy"
-            raise ValueError(msg)
+        if self.price_check_interval is not None:
+            match self.strategy:
+                case "anhoch" | "neksio" | "setec":
+                    pass
+                case "rss" | "xenforo" | "itmk_oglasnik":
+                    msg = (
+                        "price_check_interval requires the anhoch, neksio, or setec "
+                        "strategy"
+                    )
+                    raise ValueError(msg)
+                case unreachable:
+                    assert_never(unreachable)
         return self
 
 

@@ -154,6 +154,6 @@ def snapshots_by_product(
     store: DeliveryStore,
 ) -> dict[int, PriceSnapshot]:
     return {
-        snapshot.product_id: snapshot
+        int(snapshot.product_id): snapshot
         for snapshot in store.load_price_snapshots("neksio")
     }

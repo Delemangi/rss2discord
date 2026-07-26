@@ -19,36 +19,7 @@ from rss2discord.transports.neksio_price_monitor import (
     NeksioPriceMonitorDependencies,
 )
 from tests.app_helpers import FakeSender
-
-
-class FakeClock:
-    def __init__(self, maximum_sleeps: int) -> None:
-        self.now = 0.0
-        self.sleep_calls: list[float] = []
-        self._maximum_sleeps = maximum_sleeps
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> bool:
-        self.sleep_calls.append(seconds)
-        self.now += seconds
-        return len(self.sleep_calls) < self._maximum_sleeps
-
-
-class RecordingMonitor:
-    def __init__(
-        self,
-        feed_id: str,
-        events: list[tuple[str, float]],
-        clock: FakeClock,
-    ) -> None:
-        self._feed_id = feed_id
-        self._events = events
-        self._clock = clock
-
-    def scan(self) -> None:
-        self._events.append((self._feed_id, self._clock.now))
+from tests.runtime_helpers import FakeClock, RecordingMonitor
 
 
 def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
@@ -204,8 +175,20 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
                 url="https://example.test/feed.xml",
                 webhook="https://discord.example.test/ordinary",
             ),
-            make_anhoch_feed("first", 5),
-            make_anhoch_feed("second", 7),
+            FeedConfig(
+                id="first",
+                url="https://catalog.example.test/first",
+                webhook="https://discord.example.test/first",
+                strategy="anhoch",
+                price_check_interval=5,
+            ),
+            FeedConfig(
+                id="second",
+                url="https://catalog.example.test/second",
+                webhook="https://discord.example.test/second",
+                strategy="anhoch",
+                price_check_interval=7,
+            ),
         ),
     )
 

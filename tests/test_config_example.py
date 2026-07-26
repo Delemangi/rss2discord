@@ -29,3 +29,15 @@ def test_checked_in_config_example_documents_neksio_price_monitoring() -> None:
     assert neksio_feed.url == "https://g.store.neksio.mk/"
     assert neksio_feed.strategy == "neksio"
     assert neksio_feed.price_check_interval == 3600
+
+
+def test_checked_in_config_example_enables_hourly_setec_price_monitoring() -> None:
+    # Given
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+
+    # When
+    config = load_config(example_path)
+    setec_feed = next(feed for feed in config.feeds if feed.id == "setec-new-products")
+
+    # Then
+    assert setec_feed.price_check_interval == 3600

@@ -10,8 +10,8 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoc
 - IT.mk Oglasnik index and category pages
 - New products from Anhoch's catalog and opt-in selling-price alerts
 - New products from Neksio's full public catalog and opt-in selling-price alerts
-- New products from Setec's online catalog
-- SQLite delivery history and feed-scoped persistent Anhoch and Neksio selling-price snapshots
+- New products from Setec's online catalog and opt-in selling-price alerts
+- SQLite delivery history and persistent selling-price snapshots for Anhoch, Neksio, and Setec
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
 ## Docker Compose setup
@@ -119,16 +119,17 @@ Common feed types:
   price_check_interval: 3600
   webhook_name: "Neksio"
 
-# Setec new products
+# Setec new products and opt-in selling-price monitoring
 - id: "setec-new-products"
   name: "Setec New Products"
   url: "https://setec.mk/e-prodazba"
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "setec"
+  price_check_interval: 3600
   webhook_name: "Setec"
 ```
 
-`price_check_interval: 3600` opts an Anhoch or Neksio feed into an immediate, silent full-catalog selling-price baseline and then hourly price checks. To enable it in a Compose deployment, add that line beneath the selected Anhoch or Neksio feed in the active `/app/config/config.yaml`; do not put it on a different strategy. Omit the key or set it to `null` to disable price monitoring. Setec supports new-product discovery only and does not support price monitoring.
+`price_check_interval: 3600` opts an Anhoch, Neksio, or Setec feed into an immediate, independent full-catalog selling-price scan. The first scan silently stores a full-catalog baseline; later scans run at the configured interval. To enable it in a Compose deployment, add that line beneath the selected product feed in the active `/app/config/config.yaml`. The key is valid only for those three strategies. Omit it or set it to `null` to disable price monitoring.
 
 Useful options:
 
@@ -139,14 +140,14 @@ Useful options:
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. |
-| `price_check_interval` | Anhoch or Neksio only. Set to `3600` for hourly full-catalog selling-price checks; omit or set to `null` to disable. |
+| `price_check_interval` | Anhoch, Neksio, or Setec only. Set to `3600` for hourly full-catalog selling-price checks; omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
 ## Runtime notes
 
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
-- Anhoch and Neksio selling-price snapshots are stored persistently in the same SQLite database, scoped by feed and product.
+- Selling-price snapshots are stored persistently in the same SQLite database by feed and product.
 - The database is created automatically on first startup.
 - RSS, IT.mk, ordinary Anhoch new-product, Setec, and Neksio first-party responses are capped at 1 MiB and transient fetch failures are retried. Neksio accepts only `https://g.store.neksio.mk/`, follows only same-origin redirects, and applies a 30-second request timeout. Anhoch price responses are capped at 2 MiB.
 - IT.mk Oglasnik seeds the first successful fetch without notifications.
@@ -154,8 +155,8 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
 - Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.
 - Anhoch product images are downloaded with browser-compatible TLS and uploaded to Discord as Components v2 thumbnail attachments. If an image cannot be retrieved safely, the product update is delivered without a thumbnail.
-- Setec checks at most the latest 30 products and seeds the first successful fetch without notifications. Setec does not support price monitoring.
-- Enabled Anhoch and Neksio price scans run immediately and then at `price_check_interval`; each initial price snapshot is silent and later changes are posted. Anhoch full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages. Neksio price scans use the same full-category bounds as discovery, with each response capped at 1 MiB.
+- Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
+- Enabled Anhoch, Neksio, and Setec price scans run immediately and independently, then at `price_check_interval`; the initial full-catalog price snapshot is silent. Anhoch full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total). Neksio price scans use the same full-category bounds as discovery, with each response capped at 1 MiB. Setec full-catalog scans request 250 products per page, allow up to 100 pages (25,000 products), cap each response at 5 MiB, and allow 500 MiB total. Setec products without a current first-variant price are skipped without deleting prior snapshots.
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.
