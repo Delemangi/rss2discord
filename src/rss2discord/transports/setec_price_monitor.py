@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Protocol, assert_never
 
 from rss2discord.configuration import FeedConfig
@@ -152,7 +151,7 @@ class SetecPriceMonitor:
         return PriceSnapshot(
             feed_id=self._feed.id,
             product_id=product.id,
-            amount=Decimal(calculated_amount),
+            amount=calculated_amount,
             formatted=format_setec_mkd(calculated_amount),
             currency="MKD",
         )

@@ -1,5 +1,6 @@
 import sqlite3
 from collections.abc import Callable
+from decimal import Decimal
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
@@ -89,8 +90,8 @@ def make_feed() -> FeedConfig:
 def make_product(
     product_id: str,
     *,
-    calculated_amount: int | None = 1_499,
-    original_amount: int | None = None,
+    calculated_amount: Decimal | int | None = 1_499,
+    original_amount: Decimal | int | None = None,
 ) -> SetecProduct:
     variants = (
         []

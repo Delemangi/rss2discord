@@ -33,6 +33,34 @@ def test_scan_seeds_first_and_later_unseen_products_silently(tmp_path: Path) -> 
         assert set(snapshots_by_product(store)) == {"prod-1", "prod-2"}
 
 
+def test_initial_scan_persists_exact_fractional_setec_amount_after_reopen(
+    tmp_path: Path,
+) -> None:
+    # Given
+    database_path = tmp_path / "state.db"
+    amount = Decimal("651261.49217128")
+    product = make_product("prod-1", calculated_amount=amount)
+    sender = RecordingSender([])
+
+    with DeliveryStore(database_path) as store:
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([(product,)]),
+            store,
+            sender,
+        )
+
+        # When
+        monitor.scan()
+
+    with DeliveryStore(database_path) as reopened_store:
+        snapshot = snapshots_by_product(reopened_store)["prod-1"]
+
+    # Then
+    assert sender.messages == []
+    assert snapshot.amount == amount
+
+
 def test_scan_skips_no_variant_until_its_first_price_appears(tmp_path: Path) -> None:
     # Given
     without_price = make_product("prod-1", calculated_amount=None)
