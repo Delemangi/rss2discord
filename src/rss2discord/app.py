@@ -48,7 +48,7 @@ class RSSToDiscord:
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
-            "neksio": NeksioStrategy(),
+            "neksio": NeksioStrategy(self.is_shutdown_requested),
             "rss": RSSStrategy(),
             "setec": SetecStrategy(),
             "xenforo": XenForoStrategy(),

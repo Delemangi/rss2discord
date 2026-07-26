@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -49,13 +50,18 @@ def test_neksio_first_fetch_seeds_current_products_before_later_delivery(
         },
     )
     products = [first_product]
+    shutdown_callbacks: list[Callable[[], bool]] = []
 
     def fetch_catalog(
         client: NeksioCatalogClient,
         url: str,
+        *,
+        is_shutdown_requested: Callable[[], bool] | None = None,
     ) -> tuple[NeksioProduct, ...]:
         del client
         assert url == "https://g.store.neksio.mk/"
+        assert is_shutdown_requested is not None
+        shutdown_callbacks.append(is_shutdown_requested)
         return tuple(products)
 
     monkeypatch.setattr(NeksioCatalogClient, "fetch_catalog", fetch_catalog)
@@ -84,3 +90,4 @@ def test_neksio_first_fetch_seeds_current_products_before_later_delivery(
     assert messages_after_seed == []
     assert [message.entry.title for message in sender.messages] == ["Later product"]
     assert sender.messages[0].source_title == "Neksio"
+    assert shutdown_callbacks == [app.is_shutdown_requested, app.is_shutdown_requested]

@@ -1,5 +1,6 @@
 """Neksio public catalog strategy."""
 
+from collections.abc import Callable
 from typing import Final
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
@@ -18,12 +19,24 @@ class NeksioStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch = True
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        is_shutdown_requested: Callable[[], bool] | None = None,
+    ) -> None:
         self._client = NeksioCatalogClient()
+        self._is_shutdown_requested = is_shutdown_requested
 
     def fetch_entries(self, url: str) -> tuple[list[NeksioProduct], str]:
         """Fetch the complete current Neksio catalog."""
-        return list(self._client.fetch_catalog(url)), NEKSIO_LABEL
+        return (
+            list(
+                self._client.fetch_catalog(
+                    url,
+                    is_shutdown_requested=self._is_shutdown_requested,
+                ),
+            ),
+            NEKSIO_LABEL,
+        )
 
     def get_entry_id(self, entry: NeksioProduct) -> EntryId:
         """Return the stable Neksio product ID."""
@@ -52,6 +65,10 @@ class NeksioStrategy(ScraperStrategy):
                 if entry.image_path
                 else None
             ),
-            categories=(entry.category, entry.subcategory),
+            categories=_categories(entry),
             source_metrics=tuple(metrics),
         )
+
+
+def _categories(product: NeksioProduct) -> tuple[str, ...]:
+    return tuple(value for value in (product.category, product.subcategory) if value)

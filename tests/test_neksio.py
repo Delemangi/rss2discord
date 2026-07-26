@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -42,8 +43,10 @@ def test_neksio_strategy_fetches_catalog_and_returns_source_title(
     def fetch_catalog(
         client: NeksioCatalogClient,
         url: str,
+        *,
+        is_shutdown_requested: Callable[[], bool] | None = None,
     ) -> tuple[NeksioProduct, ...]:
-        del client
+        del client, is_shutdown_requested
         assert url == CATALOG_URL
         return (product,)
 
@@ -99,3 +102,14 @@ def test_neksio_strategy_omits_missing_old_price_metric() -> None:
         SourceMetric(label="Manufacturer", value="Example"),
         SourceMetric(label="Stock", value="7"),
     )
+
+
+def test_neksio_strategy_omits_empty_subcategory() -> None:
+    # Given
+    product = make_product().model_copy(update={"subcategory": ""})
+
+    # When
+    entry_data = NeksioStrategy().get_entry_data(product)
+
+    # Then
+    assert entry_data.categories == ("Components",)
