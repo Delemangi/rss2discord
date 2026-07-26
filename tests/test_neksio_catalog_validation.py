@@ -111,6 +111,50 @@ def test_fetch_catalog_normalizes_negative_stock_to_zero(
     assert products[0].stock_quantity == 0
 
 
+def test_fetch_catalog_rejects_stock_below_negative_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_card(1)
+    product["quantity"] = -2
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product]))]),
+    )
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="InvalidResponse"):
+        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+
+def test_fetch_catalog_rejects_oversized_formatted_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_card(1)
+    product["priceWTax_f"] = "x" * 129
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product]))]),
+    )
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="InvalidResponse"):
+        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+
 def test_fetch_catalog_stops_before_the_next_page_when_shutdown_is_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

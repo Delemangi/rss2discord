@@ -36,8 +36,8 @@ class NeksioProduct(BaseModel):
             allow_inf_nan=False,
         ),
     ]
-    formatted_price: Annotated[str, Field(min_length=1)]
-    old_formatted_price: str | None = None
+    formatted_price: Annotated[str, Field(min_length=1, max_length=128)]
+    old_formatted_price: Annotated[str | None, Field(max_length=128)] = None
     image_path: Annotated[str, Field(min_length=1)]
     stock_quantity: Annotated[int, Field(ge=0)]
     observed_at: datetime
@@ -67,13 +67,16 @@ class NeksioProductCard(BaseModel):
             allow_inf_nan=False,
         ),
     ]
-    formatted_price: Annotated[str, Field(validation_alias="priceWTax_f", min_length=1)]
+    formatted_price: Annotated[
+        str,
+        Field(validation_alias="priceWTax_f", min_length=1, max_length=128),
+    ]
     old_formatted_price: Annotated[
         str | None,
-        Field(validation_alias="old_PriceWTax"),
+        Field(validation_alias="old_PriceWTax", max_length=128),
     ] = None
     image_path: Annotated[str, Field(validation_alias="imagePath", min_length=1)]
-    stock_quantity: Annotated[int, Field(validation_alias="quantity")]
+    stock_quantity: Annotated[int, Field(validation_alias="quantity", ge=-1)]
 
     def observe(self, observed_at: datetime) -> NeksioProduct:
         """Attach the single scan observation time to this validated API card."""
@@ -88,7 +91,7 @@ class NeksioProductCard(BaseModel):
             formatted_price=self.formatted_price,
             old_formatted_price=self.old_formatted_price,
             image_path=self.image_path,
-            stock_quantity=max(self.stock_quantity, 0),
+            stock_quantity=0 if self.stock_quantity == -1 else self.stock_quantity,
             observed_at=observed_at,
         )
 
