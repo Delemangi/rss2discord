@@ -40,7 +40,7 @@ def test_snapshot_operation_retries_with_the_shared_transient_sqlite_policy(
     # Given
     snapshot = delivery_store.PriceSnapshot(
         feed_id="anhoch",
-        product_id=1,
+        product_id="1",
         amount=Decimal("99.95"),
         formatted="99.95 den",
         currency="MKD",
@@ -224,7 +224,7 @@ def test_app_delivery_persistence_survives_price_snapshot_schema_initialization(
     strategy = FakeStrategy([make_entry("entry-1")])
     snapshot = delivery_store.PriceSnapshot(
         feed_id="anhoch",
-        product_id=1,
+        product_id="1",
         amount=Decimal("99.95"),
         formatted="99.95 ден",
         currency="MKD",
