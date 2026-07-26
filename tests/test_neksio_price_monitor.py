@@ -7,6 +7,7 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import SourceMetric
 from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import FeedFetchError, neksio_price_monitor
 from tests.neksio_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -33,6 +34,34 @@ def test_scan_baselines_new_products_silently_and_keeps_removed_history(
 
         assert sender.messages == []
         assert set(snapshots_by_product(store)) == {1, 2}
+
+
+def test_scan_rejects_snapshot_history_past_the_retention_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    first = make_product(1, amount="100", formatted="100 MKD")
+    second = make_product(2, amount="200", formatted="200 MKD")
+    monkeypatch.setattr(
+        neksio_price_monitor,
+        "MAX_NEKSIO_RETAINED_SNAPSHOTS",
+        1,
+        raising=False,
+    )
+
+    # When / Then
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([(first,), (second,)]),
+            store,
+            RecordingSender([]),
+        )
+        monitor.scan()
+        with pytest.raises(FeedFetchError, match="SnapshotLimitExceeded"):
+            monitor.scan()
+        assert set(snapshots_by_product(store)) == {1}
 
 
 def test_scan_treats_equal_decimal_prices_as_formatting_only_changes(
@@ -101,6 +130,41 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         SourceMetric(label="Manufacturer", value="Neksio"),
         SourceMetric(label="Stock", value="3"),
     )
+
+
+def test_scan_escapes_markdown_in_formatted_prices_and_omits_empty_subcategory(
+    tmp_path: Path,
+) -> None:
+    # Given
+    before = make_product(
+        1,
+        amount="100",
+        formatted="[old](https://evil.example)",
+        subcategory="",
+    )
+    after = make_product(
+        1,
+        amount="90",
+        formatted="[new](https://evil.example)",
+        subcategory="",
+    )
+    sender = RecordingSender([True])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([(before,), (after,)]),
+            store,
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+
+    # Then
+    entry = sender.messages[0].entry
+    assert "](" not in entry.description
+    assert entry.categories == ("Laptops",)
 
 
 def test_failed_delivery_retries_and_persists_after_reopen(tmp_path: Path) -> None:

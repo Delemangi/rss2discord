@@ -11,14 +11,13 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.anhoch_price_monitor import PriceAlertDelivery
 from rss2discord.transports.neksio_models import NeksioProduct
 from rss2discord.transports.neksio_price_monitor import (
     NeksioCatalog,
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
-    PriceSnapshotStore,
 )
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
 
 
 class CatalogStub:

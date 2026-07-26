@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol, assert_never
+from typing import Final, Protocol, assert_never
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
@@ -14,16 +15,19 @@ from rss2discord.discord.client import (
     DiscordSender,
     WebhookMessage,
 )
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.anhoch_price_monitor import PriceAlertDelivery
-from rss2discord.transports.neksio import NEKSIO_PRODUCT_DETAILS_PATH
+from rss2discord.transports.neksio import NEKSIO_PRODUCT_DETAILS_PATH, _categories
 from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL, NEKSIO_ORIGIN
 from rss2discord.transports.neksio_models import NeksioProduct
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+
+MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
 
 
 class NeksioCatalog(Protocol):
@@ -35,16 +39,6 @@ class NeksioCatalog(Protocol):
         *,
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[NeksioProduct, ...]: ...
-
-
-class PriceSnapshotStore(Protocol):
-    """Persist price snapshots for one feed."""
-
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]: ...
-
-    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None: ...
-
-    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +91,10 @@ class NeksioPriceMonitor:
         snapshots_by_product = {
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
+        retained_product_ids = set(snapshots_by_product)
+        retained_product_ids.update(str(product.product_id) for product in products)
+        if len(retained_product_ids) > MAX_NEKSIO_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(NEKSIO_LABEL, "SnapshotLimitExceeded")
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
 
@@ -182,7 +180,7 @@ class NeksioPriceMonitor:
                 author="",
                 timestamp=product.observed_at.isoformat(),
                 image_url=f"{NEKSIO_ORIGIN}{product.image_path.lstrip('/')}",
-                categories=(product.category, product.subcategory),
+                categories=_categories(product),
                 source_metrics=self._metrics_for(change),
             ),
             source_title=self._feed.name or NEKSIO_LABEL,
@@ -197,8 +195,8 @@ class NeksioPriceMonitor:
         else:
             action = "increased"
         return (
-            f"Price {action} from {change.previous.formatted} "
-            f"to {change.current.formatted}"
+            f"Price {action} from {_escape_markdown(change.previous.formatted)} "
+            f"to {_escape_markdown(change.current.formatted)}"
         )
 
     @staticmethod
@@ -222,3 +220,7 @@ class NeksioPriceMonitor:
             )
         metrics.append(SourceMetric(label="Stock", value=str(product.stock_quantity)))
         return tuple(metrics)
+
+
+def _escape_markdown(value: str) -> str:
+    return re.sub(r"([\\`*_{}\[\]()<>#+\-.!|~])", r"\\\1", value)
