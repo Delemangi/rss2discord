@@ -76,7 +76,7 @@ def build_price_jobs(
                 interval = feed.price_check_interval
                 if interval is None:
                     continue
-            case "rss" | "xenforo" | "itmk_oglasnik" | "setec":
+            case "rss" | "xenforo" | "itmk_oglasnik" | "setec" | "neksio":
                 continue
             case unreachable:
                 assert_never(unreachable)
