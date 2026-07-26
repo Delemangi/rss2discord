@@ -34,7 +34,7 @@ def test_neksio_first_fetch_seeds_current_products_before_later_delivery(
         category="Components",
         subcategory="Graphics",
         manufacturer="Example",
-        price_with_tax=Decimal("1200"),
+        price_with_tax=Decimal(1200),
         formatted_price="1.200 ден.",
         image_path="/images/1.png",
         stock_quantity=7,

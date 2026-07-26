@@ -8,7 +8,6 @@ from rss2discord.transports.neksio import NeksioStrategy
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
 from rss2discord.transports.neksio_models import NeksioProduct
 
-
 CATALOG_URL = "https://g.store.neksio.mk/"
 OBSERVED_AT = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
 
@@ -25,7 +24,7 @@ def make_product(
         category="Components",
         subcategory="Graphics",
         manufacturer="Example",
-        price_with_tax=Decimal("1200"),
+        price_with_tax=Decimal(1200),
         formatted_price="1.200 ден.",
         old_formatted_price=old_formatted_price,
         image_path="/images/gpu-2077.png",
