@@ -129,18 +129,20 @@ class RecordingGet:
     def __init__(self, responses: list[StubResponse]) -> None:
         self.responses = responses
         self.urls: list[str] = []
+        self.timeouts: list[float] = []
 
     def __call__(
         self,
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout: int,
+        timeout: float,
         stream: bool,
         allow_redirects: bool,
     ) -> AbstractContextManager[StubResponse]:
-        del headers, timeout, stream, allow_redirects
+        del headers, stream, allow_redirects
         self.urls.append(url)
+        self.timeouts.append(timeout)
         return nullcontext(self.responses.pop(0))
 
 
@@ -149,20 +151,22 @@ class RecordingPost:
         self.responses = responses
         self.urls: list[str] = []
         self.bodies: list[CatalogRequestPayload] = []
+        self.timeouts: list[float] = []
 
     def __call__(
         self,
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout: int,
+        timeout: float,
         stream: bool,
         allow_redirects: bool,
         json: CatalogRequestPayload,
     ) -> AbstractContextManager[StubResponse]:
-        del headers, timeout, stream, allow_redirects
+        del headers, stream, allow_redirects
         self.urls.append(url)
         self.bodies.append(json)
+        self.timeouts.append(timeout)
         return nullcontext(self.responses.pop(0))
 
 
@@ -175,7 +179,7 @@ class RaisingPost:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout: int,
+        timeout: float,
         stream: bool,
         allow_redirects: bool,
         json: CatalogRequestPayload,

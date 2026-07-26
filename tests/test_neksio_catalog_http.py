@@ -4,8 +4,13 @@ from email.utils import format_datetime
 import pytest
 import requests
 
-from rss2discord.transports import FeedFetchError
+from rss2discord.transports import FeedFetchError, neksio_catalog_http
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
+from rss2discord.transports.neksio_catalog_http import (
+    NEKSIO_ORIGIN,
+    NeksioScanBudget,
+    fetch_homepage,
+)
 from tests.neksio_helpers import (
     CATALOG_URL,
     RaisingPost,
@@ -157,6 +162,41 @@ def test_fetch_catalog_rejects_oversized_streamed_page(
     # When / Then
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
         NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+
+def test_fetch_homepage_limits_request_timeout_to_remaining_scan_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet([StubResponse(b"homepage")])
+    budget = NeksioScanBudget(responses_remaining=1, bytes_remaining=100, expires_at=15)
+    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(neksio_catalog_http.time, "monotonic", lambda: 10)
+
+    # When
+    fetch_homepage(NEKSIO_ORIGIN, budget=budget)
+
+    # Then
+    assert get.timeouts == [5]
+
+
+def test_fetch_homepage_rejects_empty_response_completed_after_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet([StubResponse(b"", chunks=())])
+    budget = NeksioScanBudget(responses_remaining=1, bytes_remaining=100, expires_at=1)
+    monotonic_values = iter((0, 2))
+    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(
+        neksio_catalog_http.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
+        fetch_homepage(NEKSIO_ORIGIN, budget=budget)
 
 
 def test_fetch_catalog_classifies_numeric_retry_after_metadata(

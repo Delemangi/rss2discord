@@ -55,7 +55,7 @@ class NeksioCatalogRequest(TypedDict):
     quantityStock: int
 
 
-type _RequestSender = Callable[[str], AbstractContextManager[requests.Response]]
+type _RequestSender = Callable[[str, float], AbstractContextManager[requests.Response]]
 
 
 @dataclass(slots=True)
@@ -74,12 +74,14 @@ class NeksioScanBudget:
             expires_at=time.monotonic() + MAX_NEKSIO_SCAN_SECONDS,
         )
 
-    def consume_response(self) -> None:
-        if time.monotonic() >= self.expires_at:
+    def consume_response(self) -> float:
+        remaining_seconds = self.expires_at - time.monotonic()
+        if remaining_seconds <= 0:
             raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded")
         if self.responses_remaining <= 0:
             raise FeedFetchError(NEKSIO_LABEL, "ScanResponseLimitExceeded")
         self.responses_remaining -= 1
+        return min(30.0, remaining_seconds)
 
     def consume_bytes(self, size: int) -> None:
         if time.monotonic() >= self.expires_at:
@@ -114,10 +116,10 @@ def fetch_homepage(origin: str, *, budget: NeksioScanBudget | None = None) -> by
     """Fetch the capped source homepage without automatic redirects."""
     return _fetch_content(
         origin,
-        lambda current_url: requests.get(
+        lambda current_url, timeout: requests.get(
             current_url,
             headers=_HOMEPAGE_HEADERS,
-            timeout=30,
+            timeout=timeout,
             stream=True,
             allow_redirects=False,
         ),
@@ -134,10 +136,10 @@ def fetch_page_content(
     """Post one catalog page request and return its capped response bytes."""
     return _fetch_content(
         endpoint,
-        lambda current_url: requests.post(
+        lambda current_url, timeout: requests.post(
             current_url,
             headers=_CATALOG_HEADERS,
-            timeout=30,
+            timeout=timeout,
             stream=True,
             allow_redirects=False,
             json=body,
@@ -154,9 +156,8 @@ def _fetch_content(
     try:
         current_url = url
         for _ in range(MAX_NEKSIO_REDIRECTS + 1):
-            if budget is not None:
-                budget.consume_response()
-            with send(current_url) as response:
+            timeout = budget.consume_response() if budget is not None else 30.0
+            with send(current_url, timeout) as response:
                 if 300 <= response.status_code < 400:
                     location = response.headers.get("Location")
                     if location is None:
@@ -240,4 +241,6 @@ def _read_content(
         if budget is not None:
             budget.consume_bytes(len(chunk))
         content.extend(chunk)
+    if budget is not None:
+        budget.consume_bytes(0)
     return bytes(content)
