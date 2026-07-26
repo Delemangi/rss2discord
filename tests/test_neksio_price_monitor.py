@@ -198,6 +198,29 @@ def test_shutdown_before_fetch_stops_without_loading_snapshots(tmp_path: Path) -
     assert sender.messages == []
 
 
+def test_scan_passes_the_runtime_shutdown_callback_to_the_catalog(
+    tmp_path: Path,
+) -> None:
+    # Given
+    catalog = CatalogStub([()])
+
+    def is_shutdown_requested() -> bool:
+        return False
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        make_monitor(
+            make_feed(),
+            catalog,
+            store,
+            RecordingSender([]),
+            is_shutdown_requested=is_shutdown_requested,
+        ).scan()
+
+    # Then
+    assert catalog.shutdown_callbacks == [is_shutdown_requested]
+
+
 def test_shutdown_after_fetch_stops_before_delivery(tmp_path: Path) -> None:
     checks = 0
 

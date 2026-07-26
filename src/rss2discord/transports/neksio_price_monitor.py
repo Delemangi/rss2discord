@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol, assert_never
@@ -29,7 +29,12 @@ from rss2discord.transports.neksio_models import NeksioProduct
 class NeksioCatalog(Protocol):
     """Retrieve a validated full Neksio catalog in API order."""
 
-    def fetch_catalog(self, url: str) -> tuple[NeksioProduct, ...]: ...
+    def fetch_catalog(
+        self,
+        url: str,
+        *,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[NeksioProduct, ...]: ...
 
 
 class PriceSnapshotStore(Protocol):
@@ -77,7 +82,12 @@ class NeksioPriceMonitor:
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.fetch_retry_policy.execute(
-            lambda: self._dependencies.catalog.fetch_catalog(self._feed.url),
+            lambda: self._dependencies.catalog.fetch_catalog(
+                self._feed.url,
+                is_shutdown_requested=(
+                    self._dependencies.delivery.is_shutdown_requested
+                ),
+            ),
         )
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError

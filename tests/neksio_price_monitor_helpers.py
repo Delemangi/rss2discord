@@ -25,9 +25,16 @@ class CatalogStub:
     def __init__(self, batches: list[tuple[NeksioProduct, ...]]) -> None:
         self._batches = batches
         self.urls: list[str] = []
+        self.shutdown_callbacks: list[Callable[[], bool]] = []
 
-    def fetch_catalog(self, url: str) -> tuple[NeksioProduct, ...]:
+    def fetch_catalog(
+        self,
+        url: str,
+        *,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[NeksioProduct, ...]:
         self.urls.append(url)
+        self.shutdown_callbacks.append(is_shutdown_requested)
         return self._batches.pop(0)
 
 
