@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 
 import requests
+from pydantic import JsonValue
 
 from rss2discord.retries import FetchRetryPolicy
 
@@ -25,9 +26,9 @@ def product_payload(
     product_id: str,
     handle: str,
     *,
-    price: int = 1_499,
-    original_price: int = 1_999,
-) -> dict[str, object]:
+    price: int | float | str = 1_499,
+    original_price: int | float | str = 1_999,
+) -> dict[str, JsonValue]:
     return {
         "id": product_id,
         "title": f"Product {product_id}",
@@ -47,7 +48,7 @@ def product_payload(
     }
 
 
-def catalog_payload(count: int, products: list[dict[str, object]]) -> bytes:
+def catalog_payload(count: int, products: list[dict[str, JsonValue]]) -> bytes:
     return json.dumps({"count": count, "products": products}).encode()
 
 

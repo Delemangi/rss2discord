@@ -1,9 +1,11 @@
 """Setec public catalog strategy."""
 
+from decimal import Decimal
 from typing import Final, final, override
 from urllib.parse import urljoin
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
+from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.transports.base import ScraperStrategy
 from rss2discord.transports.setec_catalog import SetecCatalogClient
 from rss2discord.transports.setec_catalog_bounds import (
@@ -86,7 +88,12 @@ class SetecStrategy(ScraperStrategy):
         )
 
 
-def format_setec_mkd(amount: int) -> str:
-    """Format an integer MKD amount with dot thousands separator, e.g. 1499 → '1.499 ден.'"""
-    formatted = f"{amount:,}".replace(",", ".")
-    return f"{formatted} ден."
+def format_setec_mkd(amount: int | Decimal) -> str:
+    """Format MKD with dot-grouped whole digits and comma fractional digits."""
+    canonical_amount = canonicalize_price_amount(Decimal(amount))
+    whole_digits, _, fractional_digits = canonical_amount.partition(".")
+    grouped_whole_digits = f"{int(whole_digits):,}".replace(",", ".")
+    significant_fractional_digits = fractional_digits.rstrip("0")
+    if significant_fractional_digits:
+        return f"{grouped_whole_digits},{significant_fractional_digits} ден."
+    return f"{grouped_whole_digits} ден."

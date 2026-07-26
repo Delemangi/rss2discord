@@ -1,17 +1,26 @@
 """Validated Setec catalog API models."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from rss2discord.price_amount import canonicalize_price_amount
 
 
 class _SetecCalculatedPrice(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", frozen=True)
 
-    calculated_amount: Annotated[int, Field(ge=0)]
-    original_amount: Annotated[int, Field(ge=0)]
+    calculated_amount: Annotated[Decimal, Field(ge=0)]
+    original_amount: Annotated[Decimal, Field(ge=0)]
     currency_code: Literal["mkd"]
+
+    @field_validator("calculated_amount", "original_amount")
+    @classmethod
+    def require_persistable_amount(cls, amount: Decimal) -> Decimal:
+        canonicalize_price_amount(amount)
+        return amount
 
 
 class _SetecVariant(BaseModel):

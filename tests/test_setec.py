@@ -1,3 +1,4 @@
+from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -5,7 +6,9 @@ import requests
 
 from rss2discord import transports
 from rss2discord.models import SourceMetric
+from rss2discord.price_amount import PriceAmountValidationError
 from rss2discord.transports import FeedFetchError
+from rss2discord.transports.setec import format_setec_mkd
 from tests.setec_helpers import (
     CATALOG_URL,
     RaisingGet,
@@ -83,6 +86,87 @@ def test_setec_strategy_omits_original_price_when_not_discounted(
 
     # Then
     assert data.source_metrics == (SourceMetric(label="Price", value="999 ден."),)
+
+
+def test_setec_strategy_accepts_a_fractional_live_calculated_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_payload(
+        "prod-fractional",
+        "fractional-product",
+        price=651_261.49217128,
+        original_price=651_261.49217128,
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(catalog_payload(1, [product]))]),
+    )
+
+    # When
+    entries, _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+    data = transports.SetecStrategy().get_entry_data(entries[0])
+
+    # Then
+    assert data.source_metrics == (
+        SourceMetric(label="Price", value="651.261,49217128 ден."),
+    )
+
+
+def test_format_setec_mkd_trims_insignificant_fractional_zeroes() -> None:
+    # Given
+    amount = Decimal("1.2300")
+
+    # When
+    formatted_amount = format_setec_mkd(amount)
+
+    # Then
+    assert formatted_amount == "1,23 ден."
+
+
+def test_format_setec_mkd_rejects_hostile_exponent_before_fixed_point_expansion() -> (
+    None
+):
+    # Given
+    amount = Decimal("1E+1000000")
+
+    # When / Then
+    with pytest.raises(PriceAmountValidationError):
+        format_setec_mkd(amount)
+
+
+@pytest.mark.parametrize(
+    ("price", "original_price"),
+    [
+        ("1E+1000000", 1_499),
+        (1_499, "1E+1000000"),
+    ],
+)
+def test_setec_strategy_rejects_compact_hostile_price_as_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+    price: int | str,
+    original_price: int | str,
+) -> None:
+    # Given
+    product = product_payload(
+        "prod-hostile",
+        "hostile-product",
+        price=price,
+        original_price=original_price,
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(catalog_payload(1, [product]))]),
+    )
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+
+    # Then
+    assert fetch_error.value.cause_type == "InvalidResponse"
 
 
 def test_setec_strategy_accepts_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
