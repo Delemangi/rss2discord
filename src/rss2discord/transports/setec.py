@@ -1,9 +1,7 @@
 """Setec public catalog strategy."""
 
-import math
 from collections.abc import Iterator
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
+from datetime import datetime
 from typing import Annotated, ClassVar, Final, Literal, final, override
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
@@ -11,6 +9,7 @@ import requests
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
+from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 SETEC_LABEL: Final = "Setec"
@@ -160,7 +159,7 @@ class SetecStrategy(ScraperStrategy):
                             retryable=(
                                 status_code in {408, 429} or 500 <= status_code < 600
                             ),
-                            retry_after=_parse_retry_after(
+                            retry_after=parse_retry_after(
                                 response.headers.get("Retry-After"),
                             ),
                         ) from None
@@ -253,19 +252,3 @@ def _format_mkd(amount: int) -> str:
     """Format an integer MKD amount with dot thousands separator, e.g. 1499 → '1.499 ден.'"""
     formatted = f"{amount:,}".replace(",", ".")
     return f"{formatted} ден."
-
-
-def _parse_retry_after(value: str | None) -> float | None:
-    if value is None:
-        return None
-    try:
-        retry_after = float(value)
-    except ValueError:
-        try:
-            retry_at = parsedate_to_datetime(value)
-        except (TypeError, ValueError):
-            return None
-        if retry_at.tzinfo is None:
-            retry_at = retry_at.replace(tzinfo=UTC)
-        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
-    return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
