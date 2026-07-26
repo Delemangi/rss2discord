@@ -22,7 +22,10 @@ class NeksioProduct(BaseModel):
     category: str
     subcategory: str
     manufacturer: str
-    price_with_tax: Annotated[Decimal, Field(ge=Decimal(0), allow_inf_nan=False)]
+    price_with_tax: Annotated[
+        Decimal,
+        Field(ge=Decimal(0), decimal_places=4, allow_inf_nan=False),
+    ]
     formatted_price: Annotated[str, Field(min_length=1)]
     old_formatted_price: str | None = None
     image_path: Annotated[str, Field(min_length=1)]
@@ -46,7 +49,12 @@ class NeksioProductCard(BaseModel):
     manufacturer: str | None = None
     price_with_tax: Annotated[
         Decimal,
-        Field(validation_alias="priceWTax", ge=Decimal(0), allow_inf_nan=False),
+        Field(
+            validation_alias="priceWTax",
+            ge=Decimal(0),
+            decimal_places=4,
+            allow_inf_nan=False,
+        ),
     ]
     formatted_price: Annotated[str, Field(validation_alias="priceWTax_f", min_length=1)]
     old_formatted_price: Annotated[

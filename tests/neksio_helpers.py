@@ -35,7 +35,7 @@ class ProductCardPayload(TypedDict):
     category: str
     subCategory: str | None
     manufacturer: str | None
-    priceWTax: int | Decimal
+    priceWTax: int | float | Decimal
     priceWTax_f: str
     old_PriceWTax: NotRequired[str | None]
     imagePath: str
