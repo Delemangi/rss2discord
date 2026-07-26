@@ -100,7 +100,7 @@ def test_initial_scan_persists_max_sqlite_signed_product_id(tmp_path: Path) -> N
 
         # Then
         assert snapshots_by_product(store)[str(maximum_product_id)].product_id == str(
-            maximum_product_id
+            maximum_product_id,
         )
 
 
