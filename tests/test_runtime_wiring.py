@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -8,9 +9,15 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.scheduler import ScheduledJob
 from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
-from rss2discord.transports.anhoch_price_monitor import AnhochPriceMonitorDependencies
+from rss2discord.transports.anhoch_price_monitor import (
+    AnhochPriceMonitor,
+    AnhochPriceMonitorDependencies,
+)
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_price_monitor import NeksioPriceMonitorDependencies
+from rss2discord.transports.neksio_price_monitor import (
+    NeksioPriceMonitor,
+    NeksioPriceMonitorDependencies,
+)
 from tests.app_helpers import FakeSender
 
 
@@ -143,6 +150,43 @@ def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
         dependency.delivery.is_shutdown_requested()
         for dependency in constructed_neksio_dependencies
     )
+
+
+def test_build_price_jobs_defaults_select_exact_provider_monitors(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config = AppConfig(
+        feeds=(
+            make_anhoch_feed("anhoch", 5),
+            make_neksio_feed("neksio", 7),
+        ),
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        dependencies = PriceJobDependencies(
+            store=store,
+            sender=FakeSender([]),
+            sleep=lambda _seconds: True,
+            delay_between_posts=0,
+            is_shutdown_requested=lambda: False,
+        )
+
+        # When
+        jobs = build_price_jobs(config, dependencies)
+
+    # Then
+    assert [job.interval for job in jobs] == [5, 7]
+    assert isinstance(jobs[0].run, partial)
+    assert isinstance(jobs[1].run, partial)
+    anhoch_monitor = jobs[0].run.args[0]
+    neksio_monitor = jobs[1].run.args[0]
+    assert type(anhoch_monitor) is AnhochPriceMonitor
+    assert type(anhoch_monitor._dependencies) is AnhochPriceMonitorDependencies
+    assert type(anhoch_monitor._dependencies.catalog) is AnhochCatalogClient
+    assert type(neksio_monitor) is NeksioPriceMonitor
+    assert type(neksio_monitor._dependencies) is NeksioPriceMonitorDependencies
+    assert type(neksio_monitor._dependencies.catalog) is NeksioCatalogClient
 
 
 def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(

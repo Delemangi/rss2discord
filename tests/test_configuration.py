@@ -139,8 +139,13 @@ def test_load_config_rejects_non_finite_anhoch_price_check_interval(
         load_config(config_path)
 
 
-def test_load_config_rejects_price_check_interval_for_non_anhoch_feed(
+@pytest.mark.parametrize(
+    "strategy",
+    ["rss", "xenforo", "itmk_oglasnik", "setec"],
+)
+def test_load_config_rejects_price_check_interval_for_unsupported_strategy(
     tmp_path: Path,
+    strategy: str,
 ) -> None:
     # Given
     config_path = tmp_path / "config.yaml"
@@ -149,7 +154,7 @@ def test_load_config_rejects_price_check_interval_for_non_anhoch_feed(
         "  - id: news\n"
         "    url: https://example.test/feed.xml\n"
         "    webhook: https://discord.test/webhook\n"
-        "    strategy: rss\n"
+        f"    strategy: {strategy}\n"
         "    price_check_interval: 3600\n",
     )
 
