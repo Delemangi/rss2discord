@@ -34,6 +34,46 @@ def test_fetch_catalog_accepts_omitted_old_price_with_none_default(
     assert products[0].old_formatted_price is None
 
 
+def test_fetch_catalog_accepts_null_manufacturer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_card(1)
+    product["manufacturer"] = None
+    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product]))]),
+    )
+
+    # When
+    products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+    # Then
+    assert products[0].manufacturer == ""
+
+
+def test_fetch_catalog_accepts_null_subcategory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_card(1)
+    product["subCategory"] = None
+    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product]))]),
+    )
+
+    # When
+    products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+    # Then
+    assert products[0].subcategory == ""
+
+
 def test_fetch_catalog_rejects_oversized_category_ids_before_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

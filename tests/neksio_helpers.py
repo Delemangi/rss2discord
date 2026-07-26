@@ -33,8 +33,8 @@ class ProductCardPayload(TypedDict):
     productName: str
     productCode: str
     category: str
-    subCategory: str
-    manufacturer: str
+    subCategory: str | None
+    manufacturer: str | None
     priceWTax: int | Decimal
     priceWTax_f: str
     old_PriceWTax: NotRequired[str | None]

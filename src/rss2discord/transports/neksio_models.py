@@ -42,8 +42,8 @@ class NeksioProductCard(BaseModel):
     product_name: Annotated[str, Field(validation_alias="productName", min_length=1)]
     product_code: Annotated[str, Field(validation_alias="productCode")]
     category: str
-    subcategory: Annotated[str, Field(validation_alias="subCategory")]
-    manufacturer: str
+    subcategory: Annotated[str | None, Field(validation_alias="subCategory")] = None
+    manufacturer: str | None = None
     price_with_tax: Annotated[
         Decimal,
         Field(validation_alias="priceWTax", ge=Decimal(0), allow_inf_nan=False),
@@ -63,8 +63,8 @@ class NeksioProductCard(BaseModel):
             product_name=self.product_name,
             product_code=self.product_code,
             category=self.category,
-            subcategory=self.subcategory,
-            manufacturer=self.manufacturer,
+            subcategory=self.subcategory or "",
+            manufacturer=self.manufacturer or "",
             price_with_tax=self.price_with_tax,
             formatted_price=self.formatted_price,
             old_formatted_price=self.old_formatted_price,
