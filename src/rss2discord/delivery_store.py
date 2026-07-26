@@ -6,7 +6,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from rss2discord.anhoch_money import canonicalize_anhoch_amount
+from rss2discord.price_amount import canonicalize_price_amount
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +120,7 @@ class DeliveryStore:
                     (
                         snapshot.feed_id,
                         snapshot.product_id,
-                        canonicalize_anhoch_amount(snapshot.amount),
+                        canonicalize_price_amount(snapshot.amount),
                         snapshot.formatted,
                         snapshot.currency,
                     )
