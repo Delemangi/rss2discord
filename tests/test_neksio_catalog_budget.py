@@ -54,3 +54,12 @@ def test_scan_budget_rejects_an_expired_scan_before_sending(
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
         fetch_homepage(NEKSIO_ORIGIN, budget=budget)
     assert get.urls == []
+
+
+def test_scan_budget_rejects_streamed_bytes_after_the_deadline() -> None:
+    # Given
+    budget = NeksioScanBudget(responses_remaining=1, bytes_remaining=100, expires_at=0)
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
+        budget.consume_bytes(1)

@@ -84,6 +84,8 @@ class NeksioScanBudget:
         self.responses_remaining -= 1
 
     def consume_bytes(self, size: int) -> None:
+        if time.monotonic() >= self.expires_at:
+            raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded")
         if size > self.bytes_remaining:
             raise FeedFetchError(NEKSIO_LABEL, "ScanByteLimitExceeded")
         self.bytes_remaining -= size
