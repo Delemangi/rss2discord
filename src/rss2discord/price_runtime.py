@@ -24,7 +24,12 @@ from .transports.anhoch_catalog import AnhochCatalogClient
 from .transports.anhoch_price_monitor import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
-    PriceAlertDelivery,
+)
+from .transports.price_monitor import PriceAlertDelivery
+from .transports.setec_catalog import SetecCatalogClient
+from .transports.setec_price_monitor import (
+    SetecPriceMonitor,
+    SetecPriceMonitorDependencies,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,8 +41,12 @@ class PriceMonitor(Protocol):
     def scan(self) -> None: ...
 
 
-type PriceMonitorFactory = Callable[
+type AnhochPriceMonitorFactory = Callable[
     [FeedConfig, AnhochPriceMonitorDependencies],
+    PriceMonitor,
+]
+type SetecPriceMonitorFactory = Callable[
+    [FeedConfig, SetecPriceMonitorDependencies],
     PriceMonitor,
 ]
 
@@ -53,6 +62,15 @@ class PriceJobDependencies:
     is_shutdown_requested: Callable[[], bool]
 
 
+@dataclass(frozen=True, slots=True)
+class _SharedPriceMonitorDependencies:
+    snapshots: DeliveryStore
+    sender: DiscordSender
+    fetch_retry_policy: FetchRetryPolicy
+    sqlite_retry_policy: SQLiteRetryPolicy
+    delivery: PriceAlertDelivery
+
+
 class _RetrySleepAdapter:
     def __init__(self, sleep: SleepCallback) -> None:
         self._sleep = sleep
@@ -65,9 +83,10 @@ def build_price_jobs(
     config: AppConfig,
     dependencies: PriceJobDependencies,
     *,
-    monitor_factory: PriceMonitorFactory = AnhochPriceMonitor,
+    anhoch_monitor_factory: AnhochPriceMonitorFactory = AnhochPriceMonitor,
+    setec_monitor_factory: SetecPriceMonitorFactory = SetecPriceMonitor,
 ) -> tuple[ScheduledJob, ...]:
-    """Create one independent callable job for every enabled Anhoch feed."""
+    """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
     retry_sleep = _RetrySleepAdapter(dependencies.sleep)
     for feed in config.feeds:
@@ -76,36 +95,75 @@ def build_price_jobs(
                 interval = feed.price_check_interval
                 if interval is None:
                     continue
-            case "rss" | "xenforo" | "itmk_oglasnik" | "setec":
+                shared_dependencies = _shared_monitor_dependencies(
+                    feed,
+                    dependencies,
+                    retry_sleep,
+                )
+                monitor = anhoch_monitor_factory(
+                    feed,
+                    AnhochPriceMonitorDependencies(
+                        catalog=AnhochCatalogClient(),
+                        snapshots=shared_dependencies.snapshots,
+                        sender=shared_dependencies.sender,
+                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
+                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
+                        delivery=shared_dependencies.delivery,
+                    ),
+                )
+            case "setec":
+                interval = feed.price_check_interval
+                if interval is None:
+                    continue
+                shared_dependencies = _shared_monitor_dependencies(
+                    feed,
+                    dependencies,
+                    retry_sleep,
+                )
+                monitor = setec_monitor_factory(
+                    feed,
+                    SetecPriceMonitorDependencies(
+                        catalog=SetecCatalogClient(),
+                        snapshots=shared_dependencies.snapshots,
+                        sender=shared_dependencies.sender,
+                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
+                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
+                        delivery=shared_dependencies.delivery,
+                    ),
+                )
+            case "rss" | "xenforo" | "itmk_oglasnik":
                 continue
             case unreachable:
                 assert_never(unreachable)
 
-        monitor = monitor_factory(
-            feed,
-            AnhochPriceMonitorDependencies(
-                catalog=AnhochCatalogClient(),
-                snapshots=dependencies.store,
-                sender=dependencies.sender,
-                fetch_retry_policy=FetchRetryPolicy(
-                    sleep=retry_sleep,
-                    on_retry=partial(_log_fetch_retry, feed.id),
-                ),
-                sqlite_retry_policy=SQLiteRetryPolicy(
-                    sleep=retry_sleep,
-                    on_retry=partial(_log_persistence_retry, feed.id),
-                ),
-                delivery=PriceAlertDelivery(
-                    sleep=dependencies.sleep,
-                    delay_between_posts=dependencies.delay_between_posts,
-                    is_shutdown_requested=dependencies.is_shutdown_requested,
-                ),
-            ),
-        )
         jobs.append(
             ScheduledJob(interval, partial(_scan_price_monitor, monitor, feed.id)),
         )
     return tuple(jobs)
+
+
+def _shared_monitor_dependencies(
+    feed: FeedConfig,
+    dependencies: PriceJobDependencies,
+    retry_sleep: _RetrySleepAdapter,
+) -> _SharedPriceMonitorDependencies:
+    return _SharedPriceMonitorDependencies(
+        snapshots=dependencies.store,
+        sender=dependencies.sender,
+        fetch_retry_policy=FetchRetryPolicy(
+            sleep=retry_sleep,
+            on_retry=partial(_log_fetch_retry, feed.id),
+        ),
+        sqlite_retry_policy=SQLiteRetryPolicy(
+            sleep=retry_sleep,
+            on_retry=partial(_log_persistence_retry, feed.id),
+        ),
+        delivery=PriceAlertDelivery(
+            sleep=dependencies.sleep,
+            delay_between_posts=dependencies.delay_between_posts,
+            is_shutdown_requested=dependencies.is_shutdown_requested,
+        ),
+    )
 
 
 def _scan_price_monitor(monitor: PriceMonitor, feed_id: str) -> None:
