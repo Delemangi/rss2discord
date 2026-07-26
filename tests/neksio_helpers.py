@@ -7,7 +7,7 @@ from typing import TypedDict
 
 import requests
 
-CATALOG_URL = "https://catalog.example.test/not-the-homepage?ignored=true"
+CATALOG_URL = "https://g.store.neksio.mk/not-the-homepage?ignored=true"
 PAGE_SIZE = 100
 
 

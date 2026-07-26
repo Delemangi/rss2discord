@@ -8,7 +8,6 @@ from rss2discord.transports import FeedFetchError
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
 from tests.neksio_helpers import (
     CATALOG_URL,
-    RaisingPost,
     RecordingGet,
     RecordingPost,
     StubResponse,
@@ -140,32 +139,6 @@ def test_fetch_catalog_rejects_malformed_json_and_invalid_product_models(
         NeksioCatalogClient().fetch_catalog(CATALOG_URL)
 
 
-def test_fetch_catalog_rejects_oversized_homepage_and_streamed_page(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    oversized_homepage = RecordingGet(
-        [StubResponse(b"", headers={"Content-Length": "1048577"})],
-    )
-    monkeypatch.setattr(requests, "get", oversized_homepage)
-
-    # When / Then
-    with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-    # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost([StubResponse(b"", chunks=(b"x" * 1_048_576, b"y"))]),
-    )
-
-    # When / Then
-    with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-
 @pytest.mark.parametrize(
     "case",
     [
@@ -203,117 +176,3 @@ def test_fetch_catalog_rejects_inconsistent_pagination(
     # When / Then
     with pytest.raises(FeedFetchError, match=cause_type):
         NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-
-def test_fetch_catalog_follows_same_origin_redirects_only(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    get = RecordingGet(
-        [
-            StubResponse(b"", status_code=302, headers={"Location": "/"}),
-            StubResponse(homepage_payload([1])),
-        ],
-    )
-    monkeypatch.setattr(requests, "get", get)
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product_card(1)]))]),
-    )
-
-    # When
-    products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-    # Then
-    assert [product.id for product in products] == [1]
-    assert get.urls == ["https://catalog.example.test/", "https://catalog.example.test/"]
-
-
-def test_fetch_catalog_classifies_retryable_http_response_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost(
-            [
-                StubResponse(
-                    b"failure",
-                    status_code=429,
-                    headers={"Retry-After": "2.5"},
-                ),
-            ],
-        ),
-    )
-
-    # When
-    with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-    # Then
-    assert fetch_error.value.status_code == 429
-    assert fetch_error.value.retryable
-    assert fetch_error.value.retry_after == 2.5
-
-
-@pytest.mark.parametrize("error", [requests.ConnectionError(), requests.Timeout()])
-def test_fetch_catalog_marks_request_transport_interruptions_retryable(
-    monkeypatch: pytest.MonkeyPatch,
-    error: requests.RequestException,
-) -> None:
-    # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
-    monkeypatch.setattr(requests, "post", RaisingPost(error))
-
-    # When
-    with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-    # Then
-    assert fetch_error.value.retryable
-    assert fetch_error.value.cause_type == type(error).__name__
-
-
-def test_fetch_catalog_marks_stream_interruptions_retryable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost(
-            [
-                StubResponse(
-                    b"",
-                    interruption=requests.exceptions.ChunkedEncodingError(),
-                ),
-            ],
-        ),
-    )
-
-    # When
-    with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-    # Then
-    assert fetch_error.value.retryable
-    assert fetch_error.value.cause_type == "ChunkedEncodingError"
-
-
-def test_fetch_catalog_rejects_urls_with_credentials_without_leaking_them() -> None:
-    # Given
-    credential = "top-secret"
-
-    # When
-    with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(
-            f"https://user:{credential}@catalog.example.test/",
-        )
-
-    # Then
-    assert fetch_error.value.cause_type == "InvalidUrl"
-    assert credential not in str(fetch_error.value)

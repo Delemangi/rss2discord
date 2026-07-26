@@ -5,15 +5,19 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from types import MappingProxyType
 from typing import Final, TypedDict
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
 from rss2discord.transports.base import FeedFetchError
 
 NEKSIO_LABEL: Final = "Neksio"
+NEKSIO_HOST: Final = "g.store.neksio.mk"
+NEKSIO_ORIGIN: Final = f"https://{NEKSIO_HOST}/"
 NEKSIO_PAGE_SIZE: Final = 100
 MAX_NEKSIO_RESPONSE_BYTES: Final = 1_048_576
 NEKSIO_STREAM_CHUNK_BYTES: Final = 65_536
@@ -58,16 +62,18 @@ def origin_url(url: str) -> str:
         hostname = parsed.hostname
         username = parsed.username
         password = parsed.password
+        port = parsed.port
     except ValueError:
         raise FeedFetchError(NEKSIO_LABEL, "InvalidUrl") from None
     if (
-        parsed.scheme not in {"http", "https"}
-        or hostname is None
+        parsed.scheme != "https"
+        or hostname != NEKSIO_HOST
         or username is not None
         or password is not None
+        or port not in {None, 443}
     ):
         raise FeedFetchError(NEKSIO_LABEL, "InvalidUrl")
-    return urlunsplit(parsed._replace(path="/", query="", fragment=""))
+    return NEKSIO_ORIGIN
 
 
 def fetch_homepage(origin: str) -> bytes:
@@ -187,5 +193,11 @@ def _parse_retry_after(value: str | None) -> float | None:
     try:
         retry_after = float(value)
     except ValueError:
-        return None
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
     return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
