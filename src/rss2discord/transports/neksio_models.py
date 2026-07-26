@@ -8,6 +8,11 @@ from typing import Annotated, ClassVar, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rss2discord.anhoch_money import (
+    MAX_ANHOCH_MONEY_DECIMAL_PLACES,
+    MAX_ANHOCH_MONEY_DIGITS,
+)
+
 MAX_SQLITE_SIGNED_INTEGER: Final = 2**63 - 1
 
 
@@ -24,7 +29,12 @@ class NeksioProduct(BaseModel):
     manufacturer: str
     price_with_tax: Annotated[
         Decimal,
-        Field(ge=Decimal(0), decimal_places=4, allow_inf_nan=False),
+        Field(
+            ge=Decimal(0),
+            max_digits=MAX_ANHOCH_MONEY_DIGITS,
+            decimal_places=MAX_ANHOCH_MONEY_DECIMAL_PLACES,
+            allow_inf_nan=False,
+        ),
     ]
     formatted_price: Annotated[str, Field(min_length=1)]
     old_formatted_price: str | None = None
@@ -52,7 +62,8 @@ class NeksioProductCard(BaseModel):
         Field(
             validation_alias="priceWTax",
             ge=Decimal(0),
-            decimal_places=4,
+            max_digits=MAX_ANHOCH_MONEY_DIGITS,
+            decimal_places=MAX_ANHOCH_MONEY_DECIMAL_PLACES,
             allow_inf_nan=False,
         ),
     ]
