@@ -20,6 +20,7 @@ from .transports import (
     AnhochStrategy,
     FeedFetchError,
     ITMkOglasnikStrategy,
+    NeksioStrategy,
     RSSStrategy,
     ScraperStrategy,
     SetecStrategy,
@@ -47,6 +48,7 @@ class RSSToDiscord:
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
+            "neksio": NeksioStrategy(),
             "rss": RSSStrategy(),
             "setec": SetecStrategy(),
             "xenforo": XenForoStrategy(),
