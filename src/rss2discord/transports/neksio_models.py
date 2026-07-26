@@ -18,7 +18,7 @@ class NeksioProduct(BaseModel):
 
     product_id: Annotated[int, Field(ge=1, le=MAX_SQLITE_SIGNED_INTEGER)]
     product_name: Annotated[str, Field(min_length=1)]
-    code: str
+    product_code: str
     category: str
     subcategory: str
     manufacturer: str
@@ -61,7 +61,7 @@ class NeksioProductCard(BaseModel):
         return NeksioProduct(
             product_id=self.product_id,
             product_name=self.product_name,
-            code=self.product_code,
+            product_code=self.product_code,
             category=self.category,
             subcategory=self.subcategory,
             manufacturer=self.manufacturer,
