@@ -74,17 +74,20 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
-  # Setec new products; the first successful fetch seeds without notifications
+  # Setec new products and opt-in selling-price monitoring; the first successful fetch seeds without notifications
   - id: "setec-new-products"
     name: "Setec New Products"
     url: "https://setec.mk/e-prodazba"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
+    # Full-catalog selling-price scan every hour. Omit or set null to disable;
+    # valid only for Anhoch or Setec. The immediate first scan stores a silent baseline.
+    price_check_interval: 3600
     webhook_name: "Setec Bot"
 
   # Example feed 2
@@ -109,10 +112,14 @@ feeds:
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'setec': For new products from Setec's public catalog
-# - price_check_interval: Optional seconds between Anhoch full-catalog selling-price scans
-#   Set to 3600 for hourly checks. Omit or set to null to disable; it is invalid
-#   for non-Anhoch feeds. Full scans use 500 products per page with a 2 MiB
-#   response cap, and their immediate first scan creates a silent baseline.
+# - price_check_interval: Optional seconds between Anhoch or Setec full-catalog
+#   selling-price scans. Set to 3600 for hourly checks. Omit or set to null to
+#   disable; it is invalid for other feeds. The first scan runs immediately and
+#   silently creates a full-catalog baseline. Anhoch scans use 500 products per
+#   page, a 2 MiB per-response cap, and a 200 MiB total cap. Setec scans use
+#   250 products per page, up to 100 pages / 25,000 products, with a 5 MiB
+#   per-response cap and a 500 MiB total cap. Setec products without a current
+#   first-variant price are skipped without deleting prior snapshots.
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth

@@ -1,7 +1,4 @@
-import json
-from collections.abc import Iterator, Mapping
-from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -9,96 +6,17 @@ import requests
 
 from rss2discord import transports
 from rss2discord.models import SourceMetric
+from rss2discord.price_amount import PriceAmountValidationError
 from rss2discord.transports import FeedFetchError
-
-CATALOG_URL = "https://setec.mk/e-prodazba"
-
-
-def product_payload(
-    product_id: str,
-    handle: str,
-    *,
-    price: int = 1_499,
-    original_price: int = 1_999,
-) -> dict[str, object]:
-    return {
-        "id": product_id,
-        "title": f"Product {product_id}",
-        "handle": handle,
-        "thumbnail": f"https://cdn.setec.mk/{product_id}.webp",
-        "created_at": "2026-07-23T02:24:28.424Z",
-        "variants": [
-            {
-                "calculated_price": {
-                    "calculated_amount": price,
-                    "original_amount": original_price,
-                    "currency_code": "mkd",
-                },
-            },
-        ],
-        "categories": [{"name": "Computers"}, {"name": "Accessories"}],
-    }
-
-
-def catalog_payload(count: int, products: list[dict[str, object]]) -> bytes:
-    return json.dumps({"count": count, "products": products}).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-
-class RecordingGet:
-    """Return queued responses while recording mutable request history."""
-
-    def __init__(self, responses: list[StubResponse]) -> None:
-        self.responses: list[StubResponse] = responses
-        self.urls: list[str] = []
-        self.headers: list[Mapping[str, str]] = []
-        self.allow_redirects: list[bool] = []
-
-    def __call__(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
-        allow_redirects: bool,
-    ) -> AbstractContextManager[StubResponse]:
-        del timeout, stream
-        self.urls.append(url)
-        self.headers.append(headers)
-        self.allow_redirects.append(allow_redirects)
-        return nullcontext(self.responses.pop(0))
-
-
-@dataclass(frozen=True, slots=True)
-class RaisingGet:
-    error: requests.RequestException
-
-    def __call__(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
-        allow_redirects: bool,
-    ) -> AbstractContextManager[StubResponse]:
-        del url, headers, timeout, stream, allow_redirects
-        raise self.error
+from rss2discord.transports.setec import format_setec_mkd
+from tests.setec_helpers import (
+    CATALOG_URL,
+    RaisingGet,
+    RecordingGet,
+    StubResponse,
+    catalog_payload,
+    product_payload,
+)
 
 
 def test_setec_strategy_fetches_latest_window_and_maps_products(
@@ -168,6 +86,87 @@ def test_setec_strategy_omits_original_price_when_not_discounted(
 
     # Then
     assert data.source_metrics == (SourceMetric(label="Price", value="999 ден."),)
+
+
+def test_setec_strategy_accepts_a_fractional_live_calculated_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    product = product_payload(
+        "prod-fractional",
+        "fractional-product",
+        price=651_261.49217128,
+        original_price=651_261.49217128,
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(catalog_payload(1, [product]))]),
+    )
+
+    # When
+    entries, _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+    data = transports.SetecStrategy().get_entry_data(entries[0])
+
+    # Then
+    assert data.source_metrics == (
+        SourceMetric(label="Price", value="651.261,49217128 ден."),
+    )
+
+
+def test_format_setec_mkd_trims_insignificant_fractional_zeroes() -> None:
+    # Given
+    amount = Decimal("1.2300")
+
+    # When
+    formatted_amount = format_setec_mkd(amount)
+
+    # Then
+    assert formatted_amount == "1,23 ден."
+
+
+def test_format_setec_mkd_rejects_hostile_exponent_before_fixed_point_expansion() -> (
+    None
+):
+    # Given
+    amount = Decimal("1E+1000000")
+
+    # When / Then
+    with pytest.raises(PriceAmountValidationError):
+        format_setec_mkd(amount)
+
+
+@pytest.mark.parametrize(
+    ("price", "original_price"),
+    [
+        ("1E+1000000", 1_499),
+        (1_499, "1E+1000000"),
+    ],
+)
+def test_setec_strategy_rejects_compact_hostile_price_as_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+    price: int | str,
+    original_price: int | str,
+) -> None:
+    # Given
+    product = product_payload(
+        "prod-hostile",
+        "hostile-product",
+        price=price,
+        original_price=original_price,
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(catalog_payload(1, [product]))]),
+    )
+
+    # When
+    with pytest.raises(FeedFetchError) as fetch_error:
+        _ = transports.SetecStrategy().fetch_entries(CATALOG_URL)
+
+    # Then
+    assert fetch_error.value.cause_type == "InvalidResponse"
 
 
 def test_setec_strategy_accepts_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:

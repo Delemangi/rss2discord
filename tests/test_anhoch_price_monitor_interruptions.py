@@ -176,9 +176,9 @@ def test_retry_interruption_stops_before_later_alert_and_preserves_prior_accepta
         snapshots = snapshots_by_product(store)
 
     assert attempts == 2
-    assert snapshots[1].amount == Decimal(90)
-    assert snapshots[2].amount == Decimal(200)
-    assert snapshots[3].amount == Decimal(300)
+    assert snapshots["1"].amount == Decimal(90)
+    assert snapshots["2"].amount == Decimal(200)
+    assert snapshots["3"].amount == Decimal(300)
 
 
 def test_retry_interruption_stops_before_the_next_changed_product(
@@ -233,5 +233,5 @@ def test_retry_interruption_stops_before_the_next_changed_product(
         snapshots = snapshots_by_product(store)
 
     assert attempts == 1
-    assert snapshots[1].amount == Decimal(100)
-    assert snapshots[2].amount == Decimal(200)
+    assert snapshots["1"].amount == Decimal(100)
+    assert snapshots["2"].amount == Decimal(200)
