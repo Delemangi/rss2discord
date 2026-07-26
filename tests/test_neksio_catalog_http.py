@@ -99,7 +99,7 @@ def test_fetch_catalog_follows_same_origin_redirects_only(
     products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
 
     # Then
-    assert [product.id for product in products] == [1]
+    assert [product.product_id for product in products] == [1]
     assert get.urls == ["https://g.store.neksio.mk/", "https://g.store.neksio.mk/"]
 
 

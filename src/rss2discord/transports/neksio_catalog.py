@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
 from urllib.parse import urljoin
@@ -28,7 +29,18 @@ NEKSIO_FILTER_PATH: Final = "/FilterAndPaginateProducts"
 MAX_NEKSIO_CATEGORIES: Final = 100
 MAX_NEKSIO_PAGES_PER_CATEGORY: Final = 100
 MAX_NEKSIO_PRODUCTS: Final = 10_000
-_CATEGORY_TARGET: Final = re.compile(r"#subcat_([1-9][0-9]*)\Z")
+MAX_NEKSIO_CATEGORY_ID: Final = 2**63 - 1
+_CATEGORY_TARGET: Final = re.compile(r"#subcat_([1-9][0-9]{0,18})\Z")
+
+
+@dataclass(slots=True)
+class _CatalogScan:
+    """Mutable catalog state accumulated across one complete scan."""
+
+    endpoint: str
+    observed_at: datetime
+    products: list[NeksioProduct]
+    seen_products: dict[int, NeksioProduct]
 
 
 class NeksioCatalogClient:
@@ -42,47 +54,42 @@ class NeksioCatalogClient:
         if len(categories) > MAX_NEKSIO_CATEGORIES:
             raise FeedFetchError(NEKSIO_LABEL, "CategoryLimitExceeded")
 
-        products: list[NeksioProduct] = []
-        seen_products: dict[int, NeksioProduct] = {}
-        endpoint = urljoin(origin, NEKSIO_FILTER_PATH)
+        scan = _CatalogScan(
+            endpoint=urljoin(origin, NEKSIO_FILTER_PATH),
+            observed_at=observed_at,
+            products=[],
+            seen_products={},
+        )
         for category_id in categories:
-            self._append_category_products(
-                endpoint,
-                category_id,
-                observed_at,
-                products,
-                seen_products,
-            )
-        return tuple(products)
+            self._append_category_products(scan, category_id)
+        return tuple(scan.products)
 
-    @classmethod
-    def _append_category_products(
-        cls,
-        endpoint: str,
-        category_id: int,
-        observed_at: datetime,
-        products: list[NeksioProduct],
-        seen_products: dict[int, NeksioProduct],
-    ) -> None:
+    @staticmethod
+    def _append_category_products(scan: _CatalogScan, category_id: int) -> None:
+        pagination: tuple[int, int] | None = None
         for page_number in range(1, MAX_NEKSIO_PAGES_PER_CATEGORY + 1):
             try:
                 page = NeksioCatalogPage.model_validate_json(
                     fetch_page_content(
-                        endpoint,
+                        scan.endpoint,
                         _catalog_request(category_id, page_number),
                     ),
                 )
             except ValidationError:
                 raise FeedFetchError(NEKSIO_LABEL, "InvalidResponse") from None
+            page_pagination = (page.no_of_pages, page.no_of_products)
+            if pagination is not None and page_pagination != pagination:
+                raise FeedFetchError(NEKSIO_LABEL, "PaginationMetadataDrift")
+            pagination = page_pagination
             _validate_page(page, category_id, page_number)
             for product_card in page.product_cards:
-                product = product_card.observe(observed_at)
-                existing_product = seen_products.get(product.id)
+                product = product_card.observe(scan.observed_at)
+                existing_product = scan.seen_products.get(product.product_id)
                 if existing_product is None:
-                    if len(products) >= MAX_NEKSIO_PRODUCTS:
+                    if len(scan.products) >= MAX_NEKSIO_PRODUCTS:
                         raise FeedFetchError(NEKSIO_LABEL, "ProductLimitExceeded")
-                    seen_products[product.id] = product
-                    products.append(product)
+                    scan.seen_products[product.product_id] = product
+                    scan.products.append(product)
                 elif existing_product != product:
                     raise FeedFetchError(NEKSIO_LABEL, "DuplicateProductId")
             if page.no_of_products == 0 or page_number == page.no_of_pages:
@@ -113,6 +120,8 @@ def _category_ids(content: bytes) -> tuple[int, ...]:
         if match is None:
             raise FeedFetchError(NEKSIO_LABEL, "MalformedCategoryMarkup")
         category_id = int(match.group(1))
+        if category_id > MAX_NEKSIO_CATEGORY_ID:
+            raise FeedFetchError(NEKSIO_LABEL, "MalformedCategoryMarkup")
         if category_id not in seen_categories:
             seen_categories.add(category_id)
             categories.append(category_id)

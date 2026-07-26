@@ -3,7 +3,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import requests
 
@@ -37,7 +37,7 @@ class ProductCardPayload(TypedDict):
     manufacturer: str
     priceWTax: int | Decimal
     priceWTax_f: str
-    old_PriceWTax: str | None
+    old_PriceWTax: NotRequired[str | None]
     imagePath: str
     quantity: int
 

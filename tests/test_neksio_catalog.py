@@ -41,9 +41,10 @@ def test_fetch_catalog_extracts_categories_and_preserves_request_and_api_order(
     products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
 
     # Then
-    assert [product.id for product in products] == [*range(100, 200), 1, 9]
+    assert [product.product_id for product in products] == [*range(100, 200), 1, 9]
     assert post.bodies == [catalog_request(5, 1), catalog_request(5, 2), catalog_request(3, 1)]
-    assert products[0].amount == Decimal(1200)
+    assert products[0].product_name == "Product 100"
+    assert products[0].price_with_tax == Decimal(1200)
     assert products[-1].old_formatted_price == "1.500 ден."
     assert {product.observed_at for product in products} == {products[0].observed_at}
     assert products[0].observed_at.tzinfo is UTC
@@ -67,7 +68,7 @@ def test_fetch_catalog_collapses_identical_products_from_different_categories(
     products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
 
     # Then
-    assert [product.id for product in products] == [7]
+    assert [product.product_id for product in products] == [7]
 
 
 def test_fetch_catalog_rejects_conflicting_duplicate_product_ids(
