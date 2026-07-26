@@ -97,7 +97,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, Neksio, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
