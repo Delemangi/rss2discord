@@ -167,7 +167,7 @@ def make_monitor(
     )
 
 
-def snapshots_by_product(store: DeliveryStore) -> dict[int, PriceSnapshot]:
+def snapshots_by_product(store: DeliveryStore) -> dict[str, PriceSnapshot]:
     return {
         snapshot.product_id: snapshot
         for snapshot in store.load_price_snapshots("anhoch")

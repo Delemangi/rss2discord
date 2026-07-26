@@ -29,7 +29,7 @@ def test_scan_seeds_first_and_later_unseen_products_silently(tmp_path: Path) -> 
 
         # Then
         assert sender.messages == []
-        assert set(snapshots_by_product(store)) == {1, 2}
+        assert set(snapshots_by_product(store)) == {"1", "2"}
 
 
 def test_scan_ignores_numerically_equal_canonical_selling_price(tmp_path: Path) -> None:
@@ -52,7 +52,7 @@ def test_scan_ignores_numerically_equal_canonical_selling_price(tmp_path: Path) 
 
         # Then
         assert sender.messages == []
-        assert snapshots_by_product(store)[1].amount == Decimal("1.2")
+        assert snapshots_by_product(store)["1"].amount == Decimal("1.2")
 
 
 def test_initial_scan_persists_canonical_high_scale_nonzero_price(
@@ -77,7 +77,7 @@ def test_initial_scan_persists_canonical_high_scale_nonzero_price(
         monitor.scan()
 
         # Then
-        persisted_amount = snapshots_by_product(store)[1].amount
+        persisted_amount = snapshots_by_product(store)["1"].amount
         assert persisted_amount == 1
         assert persisted_amount.as_tuple().exponent == 0
 
@@ -99,9 +99,8 @@ def test_initial_scan_persists_max_sqlite_signed_product_id(tmp_path: Path) -> N
         monitor.scan()
 
         # Then
-        assert (
-            snapshots_by_product(store)[maximum_product_id].product_id
-            == maximum_product_id
+        assert snapshots_by_product(store)[str(maximum_product_id)].product_id == str(
+            maximum_product_id
         )
 
 
@@ -125,7 +124,7 @@ def test_scan_refreshes_formatting_without_an_alert(tmp_path: Path) -> None:
 
         # Then
         assert sender.messages == []
-        assert snapshots_by_product(store)[1].formatted == "100.00 ден."
+        assert snapshots_by_product(store)["1"].formatted == "100.00 ден."
 
 
 def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None:
@@ -197,13 +196,13 @@ def test_failed_send_retries_and_successful_snapshot_survives_reopen(
         monitor.scan()
 
         # Then
-        assert snapshots_by_product(store)[1].formatted == "100 den"
+        assert snapshots_by_product(store)["1"].formatted == "100 den"
 
         # When
         monitor.scan()
 
         # Then
-        assert snapshots_by_product(store)[1].formatted == "90 den"
+        assert snapshots_by_product(store)["1"].formatted == "90 den"
 
     with DeliveryStore(database_path) as reopened_store:
         sender_after_reopen = RecordingSender([])
@@ -255,9 +254,9 @@ def test_failed_product_does_not_suppress_later_changes_or_remove_missing_histor
             "Product 3",
         ]
         snapshots = snapshots_by_product(store)
-        assert snapshots[1].formatted == "100 den"
-        assert snapshots[2].formatted == "200 den"
-        assert snapshots[3].formatted == "290 den"
+        assert snapshots["1"].formatted == "100 den"
+        assert snapshots["2"].formatted == "200 den"
+        assert snapshots["3"].formatted == "290 den"
 
 
 def test_scan_delays_only_between_accepted_alerts(tmp_path: Path) -> None:

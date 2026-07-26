@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, assert_never
 
@@ -11,7 +11,6 @@ from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     DiscordSender,
-    SleepCallback,
     WebhookMessage,
 )
 from rss2discord.models import EntryData, SourceMetric
@@ -22,6 +21,10 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.anhoch_catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
 from rss2discord.transports.anhoch_models import AnhochProduct
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceSnapshotStore,
+)
 
 
 class AnhochCatalog(Protocol):
@@ -34,25 +37,6 @@ class AnhochCatalog(Protocol):
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[AnhochProduct, ...]: ...
-
-
-class PriceSnapshotStore(Protocol):
-    """Persist Anhoch selling-price snapshots for one feed."""
-
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]: ...
-
-    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None: ...
-
-    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class PriceAlertDelivery:
-    """Control sequential Discord delivery and observe runtime shutdown state."""
-
-    sleep: SleepCallback
-    delay_between_posts: float
-    is_shutdown_requested: Callable[[], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +91,7 @@ class AnhochPriceMonitor:
 
         for product in products:
             current = self._snapshot(product)
-            previous = snapshots_by_product.get(product.id)
+            previous = snapshots_by_product.get(str(product.id))
             if previous is None:
                 silent_updates.append(current)
                 continue
@@ -163,7 +147,7 @@ class AnhochPriceMonitor:
     def _snapshot(self, product: AnhochProduct) -> PriceSnapshot:
         return PriceSnapshot(
             feed_id=self._feed.id,
-            product_id=product.id,
+            product_id=str(product.id),
             amount=product.selling_price.amount,
             formatted=product.selling_price.formatted,
             currency=product.selling_price.currency,
