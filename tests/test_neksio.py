@@ -39,7 +39,10 @@ def test_neksio_strategy_fetches_catalog_and_returns_source_title(
     # Given
     product = make_product()
 
-    def fetch_catalog(client: NeksioCatalogClient, url: str) -> tuple[NeksioProduct, ...]:
+    def fetch_catalog(
+        client: NeksioCatalogClient,
+        url: str,
+    ) -> tuple[NeksioProduct, ...]:
         del client
         assert url == CATALOG_URL
         return (product,)

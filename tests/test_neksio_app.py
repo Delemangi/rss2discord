@@ -50,7 +50,10 @@ def test_neksio_first_fetch_seeds_current_products_before_later_delivery(
     )
     products = [first_product]
 
-    def fetch_catalog(client: NeksioCatalogClient, url: str) -> tuple[NeksioProduct, ...]:
+    def fetch_catalog(
+        client: NeksioCatalogClient,
+        url: str,
+    ) -> tuple[NeksioProduct, ...]:
         del client
         assert url == "https://g.store.neksio.mk/"
         return tuple(products)
