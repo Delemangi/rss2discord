@@ -1,6 +1,7 @@
 import pytest
 import requests
 
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, neksio_catalog
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
 from tests.neksio_helpers import (
@@ -92,6 +93,31 @@ def test_fetch_catalog_normalizes_negative_stock_to_zero(
 
     # Then
     assert products[0].stock_quantity == 0
+
+
+def test_fetch_catalog_stops_before_the_next_page_when_shutdown_is_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    first_page_products = [product_card(product_id) for product_id in range(1, 101)]
+    get = RecordingGet([StubResponse(homepage_payload([1]))])
+    post = RecordingPost(
+        [
+            StubResponse(page_payload(1, 1, 2, 101, first_page_products)),
+            StubResponse(page_payload(1, 2, 2, 101, [product_card(101)])),
+        ],
+    )
+    shutdown_checks = iter((False, True))
+    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(requests, "post", post)
+
+    # When / Then
+    with pytest.raises(FeedFetchInterruptedError):
+        NeksioCatalogClient().fetch_catalog(
+            CATALOG_URL,
+            is_shutdown_requested=lambda: next(shutdown_checks),
+        )
+    assert len(post.urls) == 1
 
 
 def test_fetch_catalog_rejects_oversized_category_ids_before_requests(

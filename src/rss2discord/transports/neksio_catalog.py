@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
@@ -11,6 +12,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.neksio_catalog_http import (
     NEKSIO_LABEL,
@@ -46,7 +48,12 @@ class _CatalogScan:
 class NeksioCatalogClient:
     """Fetch every validated Neksio catalog card in deterministic API order."""
 
-    def fetch_catalog(self, url: str) -> tuple[NeksioProduct, ...]:
+    def fetch_catalog(
+        self,
+        url: str,
+        *,
+        is_shutdown_requested: Callable[[], bool] | None = None,
+    ) -> tuple[NeksioProduct, ...]:
         """Fetch the complete catalog for every homepage category within fixed bounds."""
         origin = origin_url(url)
         observed_at = datetime.now(UTC)
@@ -61,13 +68,19 @@ class NeksioCatalogClient:
             seen_products={},
         )
         for category_id in categories:
-            self._append_category_products(scan, category_id)
+            self._append_category_products(scan, category_id, is_shutdown_requested)
         return tuple(scan.products)
 
     @staticmethod
-    def _append_category_products(scan: _CatalogScan, category_id: int) -> None:
+    def _append_category_products(
+        scan: _CatalogScan,
+        category_id: int,
+        is_shutdown_requested: Callable[[], bool] | None,
+    ) -> None:
         pagination: tuple[int, int] | None = None
         for page_number in range(1, MAX_NEKSIO_PAGES_PER_CATEGORY + 1):
+            if is_shutdown_requested is not None and is_shutdown_requested():
+                raise FeedFetchInterruptedError
             try:
                 page = NeksioCatalogPage.model_validate_json(
                     fetch_page_content(
