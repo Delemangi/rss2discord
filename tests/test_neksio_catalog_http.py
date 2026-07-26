@@ -21,7 +21,11 @@ _FILTER_URL = "https://g.store.neksio.mk/FilterAndPaginateProducts"
 
 
 def _install_successful_catalog_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -67,7 +71,9 @@ def test_fetch_catalog_rejects_cross_origin_scheme_port_and_credential_redirects
     location: str,
 ) -> None:
     # Given
-    get = RecordingGet([StubResponse(b"", status_code=302, headers={"Location": location})])
+    get = RecordingGet(
+        [StubResponse(b"", status_code=302, headers={"Location": location})],
+    )
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
@@ -137,7 +143,11 @@ def test_fetch_catalog_rejects_oversized_streamed_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -153,11 +163,17 @@ def test_fetch_catalog_classifies_numeric_retry_after_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
-        RecordingPost([StubResponse(b"failure", status_code=429, headers={"Retry-After": "2.5"})]),
+        RecordingPost(
+            [StubResponse(b"failure", status_code=429, headers={"Retry-After": "2.5"})],
+        ),
     )
 
     # When
@@ -173,7 +189,11 @@ def test_fetch_catalog_classifies_http_date_retry_after_metadata(
 ) -> None:
     # Given
     retry_at = datetime(2099, 7, 26, 15, 0, tzinfo=UTC)
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",
@@ -203,7 +223,11 @@ def test_fetch_catalog_marks_request_transport_interruptions_retryable(
     error: requests.RequestException,
 ) -> None:
     # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(requests, "post", RaisingPost(error))
 
     # When
@@ -219,7 +243,11 @@ def test_fetch_catalog_marks_stream_interruptions_retryable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(homepage_payload([1]))]))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
     monkeypatch.setattr(
         requests,
         "post",

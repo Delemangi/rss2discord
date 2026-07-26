@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import math
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from types import MappingProxyType
 from typing import Final, TypedDict
 from urllib.parse import urljoin, urlsplit
 
 import requests
 
+from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
 
 NEKSIO_LABEL: Final = "Neksio"
@@ -177,7 +175,9 @@ def _fetch_content(
                         retryable=(
                             status_code in {408, 429} or 500 <= status_code < 600
                         ),
-                        retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+                        retry_after=parse_retry_after(
+                            response.headers.get("Retry-After"),
+                        ),
                     ) from None
                 return _read_content(response, budget)
         raise FeedFetchError(NEKSIO_LABEL, "TooManyRedirects")
@@ -231,7 +231,9 @@ def _read_content(
         if declared_bytes > MAX_NEKSIO_RESPONSE_BYTES:
             raise FeedFetchError(NEKSIO_LABEL, "ResponseTooLarge")
     content = bytearray()
-    chunks: Iterator[bytes] = response.iter_content(chunk_size=NEKSIO_STREAM_CHUNK_BYTES)
+    chunks: Iterator[bytes] = response.iter_content(
+        chunk_size=NEKSIO_STREAM_CHUNK_BYTES,
+    )
     for chunk in chunks:
         if len(content) + len(chunk) > MAX_NEKSIO_RESPONSE_BYTES:
             raise FeedFetchError(NEKSIO_LABEL, "ResponseTooLarge")
@@ -239,19 +241,3 @@ def _read_content(
             budget.consume_bytes(len(chunk))
         content.extend(chunk)
     return bytes(content)
-
-
-def _parse_retry_after(value: str | None) -> float | None:
-    if value is None:
-        return None
-    try:
-        retry_after = float(value)
-    except ValueError:
-        try:
-            retry_at = parsedate_to_datetime(value)
-        except (TypeError, ValueError):
-            return None
-        if retry_at.tzinfo is None:
-            retry_at = retry_at.replace(tzinfo=UTC)
-        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
-    return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
