@@ -58,9 +58,7 @@ class RecordingSender:
             DiscordDeliveryResult.DELIVERED
             if isinstance(outcome, bool) and outcome
             else (
-                DiscordDeliveryResult.FAILED
-                if isinstance(outcome, bool)
-                else outcome
+                DiscordDeliveryResult.FAILED if isinstance(outcome, bool) else outcome
             )
         )
 

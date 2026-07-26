@@ -176,8 +176,7 @@ class NeksioPriceMonitor:
             entry=EntryData(
                 title=product.product_name,
                 link=(
-                    f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}"
-                    f"{product.product_id}"
+                    f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}{product.product_id}"
                 ),
                 description=self._description_for(change),
                 author="",

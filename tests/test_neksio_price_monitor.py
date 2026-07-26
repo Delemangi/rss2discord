@@ -43,7 +43,9 @@ def test_scan_treats_equal_decimal_prices_as_formatting_only_changes(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
-            make_feed(), CatalogStub([(baseline,), (refreshed,)]), store,
+            make_feed(),
+            CatalogStub([(baseline,), (refreshed,)]),
+            store,
             RecordingSender([]),
         )
         monitor.scan()
@@ -79,7 +81,8 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         monitor.scan()
 
     assert [message.entry.title for message in sender.messages] == [
-        "Product 30", "Product 10",
+        "Product 30",
+        "Product 10",
     ]
     assert [message.entry.description for message in sender.messages] == [
         "Price decreased from 100 MKD to 90 MKD",
@@ -108,8 +111,10 @@ def test_failed_delivery_retries_and_persists_after_reopen(tmp_path: Path) -> No
 
     with DeliveryStore(database_path) as store:
         monitor = make_monitor(
-            make_feed(), CatalogStub([(baseline,), (changed,), (changed,)]),
-            store, sender,
+            make_feed(),
+            CatalogStub([(baseline,), (changed,), (changed,)]),
+            store,
+            sender,
         )
         monitor.scan()
         monitor.scan()
@@ -120,7 +125,10 @@ def test_failed_delivery_retries_and_persists_after_reopen(tmp_path: Path) -> No
     with DeliveryStore(database_path) as store:
         reopened_sender = RecordingSender([])
         make_monitor(
-            make_feed(), CatalogStub([(changed,)]), store, reopened_sender,
+            make_feed(),
+            CatalogStub([(changed,)]),
+            store,
+            reopened_sender,
         ).scan()
         assert reopened_sender.messages == []
 
@@ -146,7 +154,8 @@ def test_failed_delivery_does_not_suppress_later_changes(tmp_path: Path) -> None
         snapshots = snapshots_by_product(store)
 
     assert [message.entry.title for message in sender.messages] == [
-        "Product 1", "Product 3",
+        "Product 1",
+        "Product 3",
     ]
     assert snapshots[1].formatted == "100 MKD"
     assert snapshots[3].formatted == "290 MKD"
@@ -154,11 +163,19 @@ def test_failed_delivery_does_not_suppress_later_changes(tmp_path: Path) -> None
 
 def test_scan_delays_only_after_accepted_alerts(tmp_path: Path) -> None:
     before = tuple(
-        make_product(product_id, amount=str(product_id * 100), formatted=f"{product_id}00 MKD")
+        make_product(
+            product_id,
+            amount=str(product_id * 100),
+            formatted=f"{product_id}00 MKD",
+        )
         for product_id in (1, 2, 3)
     )
     after = tuple(
-        make_product(product_id, amount=str(product_id * 100 - 1), formatted=f"{product_id}99 MKD")
+        make_product(
+            product_id,
+            amount=str(product_id * 100 - 1),
+            formatted=f"{product_id}99 MKD",
+        )
         for product_id in (1, 2, 3)
     )
     delays: list[float] = []
@@ -169,7 +186,9 @@ def test_scan_delays_only_after_accepted_alerts(tmp_path: Path) -> None:
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
-            make_feed(), CatalogStub([before, after]), store,
+            make_feed(),
+            CatalogStub([before, after]),
+            store,
             RecordingSender([True, False, True]),
             sleep=record_delay,
             delay_between_posts=2.5,
@@ -187,7 +206,10 @@ def test_shutdown_before_fetch_stops_without_loading_snapshots(tmp_path: Path) -
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
-            make_feed(), catalog, store, sender,
+            make_feed(),
+            catalog,
+            store,
+            sender,
             is_shutdown_requested=lambda: True,
         )
         with pytest.raises(FeedFetchInterruptedError):
@@ -234,11 +256,19 @@ def test_shutdown_after_fetch_stops_before_delivery(tmp_path: Path) -> None:
     sender = RecordingSender([True])
 
     with DeliveryStore(tmp_path / "state.db") as store:
-        baseline = make_monitor(make_feed(), CatalogStub([(before,)]), store, RecordingSender([]))
+        baseline = make_monitor(
+            make_feed(),
+            CatalogStub([(before,)]),
+            store,
+            RecordingSender([]),
+        )
         baseline.scan()
         with pytest.raises(FeedFetchInterruptedError):
             make_monitor(
-                make_feed(), CatalogStub([(after,)]), store, sender,
+                make_feed(),
+                CatalogStub([(after,)]),
+                store,
+                sender,
                 is_shutdown_requested=shutdown_after_fetch,
             ).scan()
         assert sender.messages == []
@@ -249,11 +279,19 @@ def test_interrupted_delivery_stops_later_alerts_and_preserves_snapshot(
     tmp_path: Path,
 ) -> None:
     before = tuple(
-        make_product(product_id, amount=str(product_id * 100), formatted=f"{product_id}00 MKD")
+        make_product(
+            product_id,
+            amount=str(product_id * 100),
+            formatted=f"{product_id}00 MKD",
+        )
         for product_id in (1, 2)
     )
     after = tuple(
-        make_product(product_id, amount=str(product_id * 100 - 1), formatted=f"{product_id}99 MKD")
+        make_product(
+            product_id,
+            amount=str(product_id * 100 - 1),
+            formatted=f"{product_id}99 MKD",
+        )
         for product_id in (1, 2)
     )
     sender = RecordingSender([DiscordDeliveryResult.INTERRUPTED])
