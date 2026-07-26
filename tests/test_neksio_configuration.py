@@ -1,8 +1,5 @@
 from pathlib import Path
 
-import pytest
-from pydantic import ValidationError
-
 from rss2discord.configuration import load_config
 
 
@@ -33,7 +30,7 @@ def test_load_config_parses_neksio_strategy(tmp_path: Path) -> None:
     assert config.feeds[0].strategy == "neksio"
 
 
-def test_load_config_rejects_price_check_interval_for_neksio_feed(
+def test_load_config_parses_positive_neksio_price_check_interval(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -47,6 +44,8 @@ def test_load_config_rejects_price_check_interval_for_neksio_feed(
         "    price_check_interval: 3600\n",
     )
 
-    # When / Then
-    with pytest.raises(ValidationError):
-        load_config(config_path)
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].price_check_interval == 3600

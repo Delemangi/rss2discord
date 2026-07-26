@@ -47,8 +47,11 @@ class FeedConfig(BaseModel):
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
-        if self.price_check_interval is not None and self.strategy != "anhoch":
-            msg = "price_check_interval requires the anhoch strategy"
+        if self.price_check_interval is not None and self.strategy not in {
+            "anhoch",
+            "neksio",
+        }:
+            msg = "price_check_interval requires the anhoch or neksio strategy"
             raise ValueError(msg)
         return self
 
