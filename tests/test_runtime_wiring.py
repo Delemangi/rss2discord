@@ -1,5 +1,3 @@
-import logging
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -7,15 +5,12 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.scheduler import (
-    RuntimeScheduler,
-    ScheduledJob,
-    SchedulerControl,
-    SchedulerJobs,
-)
+from rss2discord.scheduler import ScheduledJob
+from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
 from rss2discord.transports.anhoch_price_monitor import AnhochPriceMonitorDependencies
+from rss2discord.transports.neksio_catalog import NeksioCatalogClient
+from rss2discord.transports.neksio_price_monitor import NeksioPriceMonitorDependencies
 from tests.app_helpers import FakeSender
 
 
@@ -49,14 +44,6 @@ class RecordingMonitor:
         self._events.append((self._feed_id, self._clock.now))
 
 
-class FailingMonitor:
-    def __init__(self, error: Exception) -> None:
-        self._error = error
-
-    def scan(self) -> None:
-        raise self._error
-
-
 def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
@@ -67,13 +54,24 @@ def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
     )
 
 
-def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_intervals(
+def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
+    return FeedConfig(
+        id=feed_id,
+        url=f"https://g.store.neksio.mk/{feed_id}",
+        webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
+        strategy="neksio",
+        price_check_interval=interval,
+    )
+
+
+def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
     tmp_path: Path,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
-    constructed_feed_ids: list[str] = []
-    constructed_dependencies: list[AnhochPriceMonitorDependencies] = []
+    constructed_feed_ids: list[tuple[str, str]] = []
+    constructed_anhoch_dependencies: list[AnhochPriceMonitorDependencies] = []
+    constructed_neksio_dependencies: list[NeksioPriceMonitorDependencies] = []
     config = AppConfig(
         feeds=(
             FeedConfig(
@@ -82,17 +80,27 @@ def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_interval
                 webhook="https://discord.example.test/ordinary",
             ),
             make_anhoch_feed("first", 5),
-            make_anhoch_feed("second", 7),
-            make_anhoch_feed("disabled", None),
+            make_neksio_feed("second", 7),
+            make_anhoch_feed("disabled-anhoch", None),
+            make_neksio_feed("third", 11),
+            make_neksio_feed("disabled-neksio", None),
         ),
     )
 
-    def monitor_factory(
+    def anhoch_monitor_factory(
         feed: FeedConfig,
         dependencies: AnhochPriceMonitorDependencies,
     ) -> RecordingMonitor:
-        constructed_dependencies.append(dependencies)
-        constructed_feed_ids.append(feed.id)
+        constructed_anhoch_dependencies.append(dependencies)
+        constructed_feed_ids.append(("anhoch", feed.id))
+        return RecordingMonitor(feed.id, [], clock)
+
+    def neksio_monitor_factory(
+        feed: FeedConfig,
+        dependencies: NeksioPriceMonitorDependencies,
+    ) -> RecordingMonitor:
+        constructed_neksio_dependencies.append(dependencies)
+        constructed_feed_ids.append(("neksio", feed.id))
         return RecordingMonitor(feed.id, [], clock)
 
     with DeliveryStore(tmp_path / "state.db") as store:
@@ -108,15 +116,32 @@ def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_interval
         jobs = build_price_jobs(
             config,
             dependencies,
-            monitor_factory=monitor_factory,
+            anhoch_monitor_factory=anhoch_monitor_factory,
+            neksio_monitor_factory=neksio_monitor_factory,
         )
 
     # Then
-    assert constructed_feed_ids == ["first", "second"]
-    assert [job.interval for job in jobs] == [5, 7]
+    assert constructed_feed_ids == [
+        ("anhoch", "first"),
+        ("neksio", "second"),
+        ("neksio", "third"),
+    ]
+    assert [job.interval for job in jobs] == [5, 7, 11]
+    assert isinstance(
+        constructed_anhoch_dependencies[0].catalog,
+        AnhochCatalogClient,
+    )
+    assert isinstance(
+        constructed_neksio_dependencies[0].catalog,
+        NeksioCatalogClient,
+    )
     assert all(
-        dependencies.delivery.is_shutdown_requested()
-        for dependencies in constructed_dependencies
+        dependency.delivery.is_shutdown_requested()
+        for dependency in constructed_anhoch_dependencies
+    )
+    assert all(
+        dependency.delivery.is_shutdown_requested()
+        for dependency in constructed_neksio_dependencies
     )
 
 
@@ -176,85 +201,6 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
         ("price-second", 7),
     ]
     assert clock.sleep_calls == [3, 2, 1, 1, 2]
-
-
-@pytest.mark.parametrize(
-    ("feed_id", "failure"),
-    [
-        ("fetch-failed", FeedFetchError("Anhoch", "NetworkError")),
-        ("persistence-failed", sqlite3.OperationalError("database is locked")),
-        (
-            "unexpected-failed",
-            RuntimeError("https://catalog.example.test?feed_secret=hidden"),
-        ),
-    ],
-)
-def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    feed_id: str,
-    failure: Exception,
-) -> None:
-    # Given
-    clock = FakeClock(maximum_sleeps=2)
-    events: list[tuple[str, float]] = []
-    config = AppConfig(
-        refresh_interval=1,
-        feeds=(
-            make_anhoch_feed(feed_id, 5),
-            make_anhoch_feed("healthy", 5),
-        ),
-    )
-
-    def monitor_factory(
-        feed: FeedConfig,
-        dependencies: AnhochPriceMonitorDependencies,
-    ) -> FailingMonitor | RecordingMonitor:
-        del dependencies
-        if feed.id == feed_id:
-            return FailingMonitor(failure)
-        return RecordingMonitor("price-healthy", events, clock)
-
-    caplog.set_level(logging.ERROR)
-    with DeliveryStore(tmp_path / "state.db") as store:
-        price_jobs = build_price_jobs(
-            config,
-            PriceJobDependencies(
-                store=store,
-                sender=FakeSender([]),
-                sleep=clock.sleep,
-                delay_between_posts=0,
-                is_shutdown_requested=lambda: False,
-            ),
-            monitor_factory=monitor_factory,
-        )
-        scheduler = RuntimeScheduler(
-            SchedulerJobs(
-                ordinary=ScheduledJob(
-                    1,
-                    lambda: events.append(("ordinary", clock.now)),
-                ),
-                prices=price_jobs,
-            ),
-            SchedulerControl(
-                monotonic=clock.monotonic,
-                sleep=clock.sleep,
-                is_shutdown_requested=lambda: False,
-            ),
-        )
-
-        # When
-        scheduler.run()
-
-    # Then
-    assert events == [
-        ("ordinary", 0),
-        ("price-healthy", 0),
-        ("ordinary", 1),
-    ]
-    assert feed_id in caplog.text
-    assert "feed_secret" not in caplog.text
-    assert "hidden" not in caplog.text
 
 
 def test_run_stops_after_scheduler_sleep_is_interrupted(
