@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from types import MappingProxyType
@@ -22,6 +24,9 @@ NEKSIO_PAGE_SIZE: Final = 100
 MAX_NEKSIO_RESPONSE_BYTES: Final = 1_048_576
 NEKSIO_STREAM_CHUNK_BYTES: Final = 65_536
 MAX_NEKSIO_REDIRECTS: Final = 10
+MAX_NEKSIO_SCAN_RESPONSES: Final = 128
+MAX_NEKSIO_SCAN_BYTES: Final = 33_554_432
+MAX_NEKSIO_SCAN_SECONDS: Final = 300
 NEKSIO_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
 _HOMEPAGE_HEADERS: Final[Mapping[str, str]] = MappingProxyType(
     {"Accept": "text/html", "User-Agent": NEKSIO_USER_AGENT},
@@ -55,6 +60,35 @@ class NeksioCatalogRequest(TypedDict):
 type _RequestSender = Callable[[str], AbstractContextManager[requests.Response]]
 
 
+@dataclass(slots=True)
+class NeksioScanBudget:
+    """Mutable response, byte, and elapsed-time budget shared by one catalog scan."""
+
+    responses_remaining: int
+    bytes_remaining: int
+    expires_at: float
+
+    @classmethod
+    def for_catalog_scan(cls) -> NeksioScanBudget:
+        return cls(
+            responses_remaining=MAX_NEKSIO_SCAN_RESPONSES,
+            bytes_remaining=MAX_NEKSIO_SCAN_BYTES,
+            expires_at=time.monotonic() + MAX_NEKSIO_SCAN_SECONDS,
+        )
+
+    def consume_response(self) -> None:
+        if time.monotonic() >= self.expires_at:
+            raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded")
+        if self.responses_remaining <= 0:
+            raise FeedFetchError(NEKSIO_LABEL, "ScanResponseLimitExceeded")
+        self.responses_remaining -= 1
+
+    def consume_bytes(self, size: int) -> None:
+        if size > self.bytes_remaining:
+            raise FeedFetchError(NEKSIO_LABEL, "ScanByteLimitExceeded")
+        self.bytes_remaining -= size
+
+
 def origin_url(url: str) -> str:
     """Return a credential-free source origin with a root path."""
     try:
@@ -76,7 +110,7 @@ def origin_url(url: str) -> str:
     return NEKSIO_ORIGIN
 
 
-def fetch_homepage(origin: str) -> bytes:
+def fetch_homepage(origin: str, *, budget: NeksioScanBudget | None = None) -> bytes:
     """Fetch the capped source homepage without automatic redirects."""
     return _fetch_content(
         origin,
@@ -87,10 +121,16 @@ def fetch_homepage(origin: str) -> bytes:
             stream=True,
             allow_redirects=False,
         ),
+        budget,
     )
 
 
-def fetch_page_content(endpoint: str, body: NeksioCatalogRequest) -> bytes:
+def fetch_page_content(
+    endpoint: str,
+    body: NeksioCatalogRequest,
+    *,
+    budget: NeksioScanBudget | None = None,
+) -> bytes:
     """Post one catalog page request and return its capped response bytes."""
     return _fetch_content(
         endpoint,
@@ -102,19 +142,26 @@ def fetch_page_content(endpoint: str, body: NeksioCatalogRequest) -> bytes:
             allow_redirects=False,
             json=body,
         ),
+        budget,
     )
 
 
-def _fetch_content(url: str, send: _RequestSender) -> bytes:
+def _fetch_content(
+    url: str,
+    send: _RequestSender,
+    budget: NeksioScanBudget | None,
+) -> bytes:
     try:
         current_url = url
         for _ in range(MAX_NEKSIO_REDIRECTS + 1):
+            if budget is not None:
+                budget.consume_response()
             with send(current_url) as response:
                 if 300 <= response.status_code < 400:
                     location = response.headers.get("Location")
                     if location is None:
                         raise FeedFetchError(NEKSIO_LABEL, "InvalidRedirect")
-                    _read_content(response)
+                    _read_content(response, budget)
                     current_url = _same_origin_redirect_url(current_url, location)
                     continue
                 try:
@@ -130,7 +177,7 @@ def _fetch_content(url: str, send: _RequestSender) -> bytes:
                         ),
                         retry_after=_parse_retry_after(response.headers.get("Retry-After")),
                     ) from None
-                return _read_content(response)
+                return _read_content(response, budget)
         raise FeedFetchError(NEKSIO_LABEL, "TooManyRedirects")
     except ValueError:
         raise FeedFetchError(NEKSIO_LABEL, "InvalidUrl") from None
@@ -169,7 +216,10 @@ def _same_origin_redirect_url(current_url: str, location: str) -> str:
     return redirected_url
 
 
-def _read_content(response: requests.Response) -> bytes:
+def _read_content(
+    response: requests.Response,
+    budget: NeksioScanBudget | None,
+) -> bytes:
     content_length = response.headers.get("Content-Length")
     if content_length is not None:
         try:
@@ -183,6 +233,8 @@ def _read_content(response: requests.Response) -> bytes:
     for chunk in chunks:
         if len(content) + len(chunk) > MAX_NEKSIO_RESPONSE_BYTES:
             raise FeedFetchError(NEKSIO_LABEL, "ResponseTooLarge")
+        if budget is not None:
+            budget.consume_bytes(len(chunk))
         content.extend(chunk)
     return bytes(content)
 

@@ -18,6 +18,7 @@ from rss2discord.transports.neksio_catalog_http import (
     NEKSIO_LABEL,
     NEKSIO_PAGE_SIZE,
     NeksioCatalogRequest,
+    NeksioScanBudget,
     fetch_homepage,
     fetch_page_content,
     origin_url,
@@ -43,6 +44,7 @@ class _CatalogScan:
     observed_at: datetime
     products: list[NeksioProduct]
     seen_products: dict[int, NeksioProduct]
+    budget: NeksioScanBudget
 
 
 class NeksioCatalogClient:
@@ -57,7 +59,8 @@ class NeksioCatalogClient:
         """Fetch the complete catalog for every homepage category within fixed bounds."""
         origin = origin_url(url)
         observed_at = datetime.now(UTC)
-        categories = _category_ids(fetch_homepage(origin))
+        budget = NeksioScanBudget.for_catalog_scan()
+        categories = _category_ids(fetch_homepage(origin, budget=budget))
         if len(categories) > MAX_NEKSIO_CATEGORIES:
             raise FeedFetchError(NEKSIO_LABEL, "CategoryLimitExceeded")
 
@@ -66,6 +69,7 @@ class NeksioCatalogClient:
             observed_at=observed_at,
             products=[],
             seen_products={},
+            budget=budget,
         )
         for category_id in categories:
             self._append_category_products(scan, category_id, is_shutdown_requested)
@@ -86,6 +90,7 @@ class NeksioCatalogClient:
                     fetch_page_content(
                         scan.endpoint,
                         _catalog_request(category_id, page_number),
+                        budget=scan.budget,
                     ),
                 )
             except ValidationError:
