@@ -3,15 +3,23 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from html import unescape
-from typing import Annotated, ClassVar, Literal, Self, cast
+from typing import Annotated, ClassVar, Final, Literal, Self, cast
 from urllib.parse import urljoin, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
 from rss2discord.price_amount import canonicalize_price_amount
 
 type DDStoreStockStatus = Literal["IN_STOCK", "OUT_OF_STOCK"]
 DDSTORE_PRODUCT_BASE_URL = "https://ddstore.mk/"
+MAX_DDSTORE_CATEGORIES_PER_PRODUCT: Final = 64
 
 
 class _DDStoreMoney(BaseModel):
@@ -86,8 +94,22 @@ class DDStoreProduct(BaseModel):
     created_at: datetime
     stock_status: DDStoreStockStatus
     small_image: _DDStoreImage | None = None
-    categories: tuple[DDStoreCategory, ...] | None = None
+    categories: Annotated[
+        tuple[DDStoreCategory, ...],
+        Field(max_length=MAX_DDSTORE_CATEGORIES_PER_PRODUCT),
+    ] | None = None
     price_range: _DDStorePriceRange
+
+    @field_validator("categories", mode="before")
+    @classmethod
+    def require_bounded_categories(cls, categories: JsonValue) -> JsonValue:
+        if (
+            isinstance(categories, list)
+            and len(categories) > MAX_DDSTORE_CATEGORIES_PER_PRODUCT
+        ):
+            msg = "too many product categories"
+            raise ValueError(msg)
+        return categories
 
     @field_validator("created_at")
     @classmethod
