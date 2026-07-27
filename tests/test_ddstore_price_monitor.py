@@ -8,6 +8,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.ddstore_models import DDStoreProduct
@@ -172,7 +173,32 @@ def test_ddstore_price_monitor_retains_history_while_seeding_current_products(
         } == {"old-1", "old-2", "new"}
 
 
-def test_ddstore_price_monitor_delivers_more_than_one_hundred_changes(
+def test_ddstore_price_monitor_delivers_one_hundred_changes(tmp_path: Path) -> None:
+    # Given
+    baseline = tuple(make_product(str(index), amount=100) for index in range(100))
+    changed = tuple(make_product(str(index), amount=90) for index in range(100))
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([baseline, changed]),
+            store,
+            sender,
+        )
+        monitor.scan()
+
+        # When
+        monitor.scan()
+
+        # Then
+        assert len(sender.messages) == 100
+        assert {
+            snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
+        } == {Decimal(90)}
+
+
+def test_ddstore_price_monitor_rejects_more_than_one_hundred_changes(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -187,11 +213,16 @@ def test_ddstore_price_monitor_delivers_more_than_one_hundred_changes(
         monitor = make_monitor(make_feed(), catalog, store, sender)
         monitor.scan()
 
-        # When
-        monitor.scan()
+        # When / Then
+        with pytest.raises(FeedFetchError) as error:
+            monitor.scan()
 
-        # Then
-        assert len(sender.messages) == 101
+        assert error.value.strategy == "DDStore"
+        assert error.value.cause_type == "PriceChangeLimitExceeded"
+        assert sender.messages == []
+        assert {
+            snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
+        } == {Decimal(100)}
 
 
 @pytest.mark.parametrize(

@@ -2,12 +2,13 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, assert_never
+from typing import Final, Protocol, assert_never
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult, DiscordSender
 from rss2discord.discord.message import WebhookMessage
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -18,6 +19,8 @@ from rss2discord.transports.ddstore import format_ddstore_mkd, format_ddstore_st
 from rss2discord.transports.ddstore_http import DDSTORE_LABEL
 from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+
+MAX_DDSTORE_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
 class DDStoreCatalog(Protocol):
@@ -94,6 +97,8 @@ class DDStorePriceMonitor:
                     silent_updates.append(current)
             else:
                 changes.append(_PriceChange(product, previous, current))
+        if len(changes) > MAX_DDSTORE_PRICE_CHANGES_PER_SCAN:
+            raise FeedFetchError(DDSTORE_LABEL, "PriceChangeLimitExceeded")
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         if silent_updates:
