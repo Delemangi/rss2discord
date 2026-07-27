@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, ClassVar, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from rss2discord.anhoch_money import (
     MAX_ANHOCH_MONEY_DECIMAL_PLACES,
@@ -14,6 +15,14 @@ from rss2discord.anhoch_money import (
 )
 
 MAX_SQLITE_SIGNED_INTEGER: Final = 2**63 - 1
+_CONTROL_CHARACTER_PATTERN: Final = re.compile(r"[\x00-\x1f\x7f]+")
+
+
+def _normalize_display_text(value: str) -> str:
+    return _CONTROL_CHARACTER_PATTERN.sub(" ", value).strip()
+
+
+type NeksioDisplayText = Annotated[str, AfterValidator(_normalize_display_text)]
 
 
 class NeksioProduct(BaseModel):
@@ -22,11 +31,11 @@ class NeksioProduct(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     product_id: Annotated[int, Field(ge=1, le=MAX_SQLITE_SIGNED_INTEGER)]
-    product_name: Annotated[str, Field(min_length=1)]
-    product_code: str
-    category: str
-    subcategory: str
-    manufacturer: str
+    product_name: Annotated[NeksioDisplayText, Field(min_length=1)]
+    product_code: NeksioDisplayText
+    category: NeksioDisplayText
+    subcategory: NeksioDisplayText
+    manufacturer: NeksioDisplayText
     price_with_tax: Annotated[
         Decimal,
         Field(
@@ -36,8 +45,10 @@ class NeksioProduct(BaseModel):
             allow_inf_nan=False,
         ),
     ]
-    formatted_price: Annotated[str, Field(min_length=1, max_length=128)]
-    old_formatted_price: Annotated[str | None, Field(max_length=128)] = None
+    formatted_price: Annotated[NeksioDisplayText, Field(min_length=1, max_length=128)]
+    old_formatted_price: Annotated[NeksioDisplayText | None, Field(max_length=128)] = (
+        None
+    )
     image_path: Annotated[str, Field(min_length=1)]
     stock_quantity: Annotated[int, Field(ge=0)]
     observed_at: datetime
@@ -52,11 +63,17 @@ class NeksioProductCard(BaseModel):
         int,
         Field(validation_alias="productId", ge=1, le=MAX_SQLITE_SIGNED_INTEGER),
     ]
-    product_name: Annotated[str, Field(validation_alias="productName", min_length=1)]
-    product_code: Annotated[str, Field(validation_alias="productCode")]
-    category: str
-    subcategory: Annotated[str | None, Field(validation_alias="subCategory")] = None
-    manufacturer: str | None = None
+    product_name: Annotated[
+        NeksioDisplayText,
+        Field(validation_alias="productName", min_length=1),
+    ]
+    product_code: Annotated[NeksioDisplayText, Field(validation_alias="productCode")]
+    category: NeksioDisplayText
+    subcategory: Annotated[
+        NeksioDisplayText | None,
+        Field(validation_alias="subCategory"),
+    ] = None
+    manufacturer: NeksioDisplayText | None = None
     price_with_tax: Annotated[
         Decimal,
         Field(
@@ -68,11 +85,11 @@ class NeksioProductCard(BaseModel):
         ),
     ]
     formatted_price: Annotated[
-        str,
+        NeksioDisplayText,
         Field(validation_alias="priceWTax_f", min_length=1, max_length=128),
     ]
     old_formatted_price: Annotated[
-        str | None,
+        NeksioDisplayText | None,
         Field(validation_alias="old_PriceWTax", max_length=128),
     ] = None
     image_path: Annotated[str, Field(validation_alias="imagePath", min_length=1)]
