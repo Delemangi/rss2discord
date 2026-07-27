@@ -119,7 +119,7 @@ def test_neksio_empty_first_fetch_does_not_initialize_the_feed(
         assert not store.is_feed_initialized(feed.id)
 
 
-def test_neksio_rejects_too_many_new_products_before_delivery(
+def test_neksio_repeatedly_rejects_too_many_new_products_without_delivery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -159,13 +159,17 @@ def test_neksio_rejects_too_many_new_products_before_delivery(
         store.seed_feed(feed.id, ())
         sender = FakeSender([True, True])
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, sender)
-        with pytest.raises(FeedFetchError, match="NewEntryLimitExceeded"):
-            app.process_feed(feed)
+        for _ in range(2):
+            with pytest.raises(FeedFetchError) as error_info:
+                app.process_feed(feed)
+            assert error_info.value.strategy == "Feed"
+            assert error_info.value.cause_type == "NewEntryLimitExceeded"
         assert sender.messages == []
         assert not store.has_delivered(feed.id, "1")
+        assert not store.has_delivered(feed.id, "2")
 
 
-def test_neksio_rejects_delivery_history_growth_past_the_cap(
+def test_neksio_repeatedly_rejects_delivery_history_growth_without_delivery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -201,7 +205,10 @@ def test_neksio_rejects_delivery_history_growth_past_the_cap(
         store.seed_feed(feed.id, ("1", "2"))
         sender = FakeSender([True])
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, sender)
-        with pytest.raises(FeedFetchError, match="DeliveryHistoryLimitExceeded"):
-            app.process_feed(feed)
+        for _ in range(2):
+            with pytest.raises(FeedFetchError) as error_info:
+                app.process_feed(feed)
+            assert error_info.value.strategy == "Feed"
+            assert error_info.value.cause_type == "DeliveryHistoryLimitExceeded"
         assert sender.messages == []
         assert not store.has_delivered(feed.id, "3")
