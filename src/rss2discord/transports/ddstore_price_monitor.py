@@ -20,6 +20,7 @@ from rss2discord.transports.ddstore_http import DDSTORE_LABEL
 from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
 
+MAX_DDSTORE_RETAINED_SNAPSHOTS: Final = 50_000
 MAX_DDSTORE_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
@@ -35,12 +36,21 @@ class DDStoreCatalog(Protocol):
     ) -> tuple[DDStoreProduct, ...]: ...
 
 
+class DDStorePriceSnapshotStore(PriceSnapshotStore, Protocol):
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DDStorePriceMonitorDependencies:
     """Typed collaborators used by one DDStore price-monitor scan."""
 
     catalog: DDStoreCatalog
-    snapshots: PriceSnapshotStore
+    snapshots: DDStorePriceSnapshotStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -77,11 +87,20 @@ class DDStorePriceMonitor:
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         persisted_snapshots = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(self._feed.id),
+            lambda: self._dependencies.snapshots.load_price_snapshots(
+                self._feed.id,
+                limit=MAX_DDSTORE_RETAINED_SNAPSHOTS + 1,
+            ),
         )
+        if len(persisted_snapshots) > MAX_DDSTORE_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
         snapshots_by_product = {
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
+        retained_product_ids = set(snapshots_by_product)
+        retained_product_ids.update(product.uid for product in products)
+        if len(retained_product_ids) > MAX_DDSTORE_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
         for product in products:
