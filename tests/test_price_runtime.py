@@ -15,6 +15,7 @@ from rss2discord.scheduler import (
     SchedulerJobs,
 )
 from rss2discord.transports.anhoch_price_monitor import AnhochPriceMonitorDependencies
+from rss2discord.transports.neksio_price_monitor import NeksioPriceMonitorDependencies
 from rss2discord.transports.setec_price_monitor import SetecPriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
@@ -34,6 +35,16 @@ def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
         url=f"https://catalog.example.test/{feed_id}?feed_secret=hidden",
         webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
         strategy="anhoch",
+        price_check_interval=interval,
+    )
+
+
+def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
+    return FeedConfig(
+        id=feed_id,
+        url=f"https://g.store.neksio.mk/{feed_id}",
+        webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
+        strategy="neksio",
         price_check_interval=interval,
     )
 
@@ -108,6 +119,7 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
     clock = FakeClock(maximum_sleeps=1)
     constructed_sources: list[str] = []
     anhoch_dependencies: list[AnhochPriceMonitorDependencies] = []
+    neksio_dependencies: list[NeksioPriceMonitorDependencies] = []
     setec_dependencies: list[SetecPriceMonitorDependencies] = []
     config = AppConfig(
         feeds=(
@@ -117,6 +129,7 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
                 url="https://example.test/feed.xml",
                 webhook="https://discord.example.test/ordinary",
             ),
+            make_neksio_feed("neksio", 6),
             make_setec_feed("setec", 7),
         ),
     )
@@ -137,6 +150,14 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
         constructed_sources.append(f"setec:{feed.id}")
         return RecordingMonitor(feed.id, [], clock)
 
+    def neksio_monitor_factory(
+        feed: FeedConfig,
+        dependencies: NeksioPriceMonitorDependencies,
+    ) -> RecordingMonitor:
+        neksio_dependencies.append(dependencies)
+        constructed_sources.append(f"neksio:{feed.id}")
+        return RecordingMonitor(feed.id, [], clock)
+
     with DeliveryStore(tmp_path / "state.db") as store:
         dependencies = PriceJobDependencies(
             store=store,
@@ -151,13 +172,15 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
             config,
             dependencies,
             anhoch_monitor_factory=anhoch_monitor_factory,
+            neksio_monitor_factory=neksio_monitor_factory,
             setec_monitor_factory=setec_monitor_factory,
         )
 
     # Then
-    assert constructed_sources == ["anhoch:anhoch", "setec:setec"]
-    assert [job.interval for job in jobs] == [5, 7]
+    assert constructed_sources == ["anhoch:anhoch", "neksio:neksio", "setec:setec"]
+    assert [job.interval for job in jobs] == [5, 6, 7]
     assert len(anhoch_dependencies) == 1
+    assert len(neksio_dependencies) == 1
     assert len(setec_dependencies) == 1
 
 

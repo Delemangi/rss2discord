@@ -91,7 +91,7 @@ class DiscordWebhookClient:
                 return DiscordDeliveryResult.FAILED
             if result.action is _DeliveryAction.DELIVERED:
                 logger.info(
-                    "Sent entry %s to Discord for feed %s",
+                    "Sent entry %.256r to Discord for feed %s",
                     message.entry.title,
                     message.feed.id,
                 )

@@ -5,6 +5,7 @@ from typing import Any, Final
 
 from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
 from .configuration import AppConfig, FeedConfig
+from .delivery_limits import enforce_delivery_limits
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, WebhookMessage
 from .models import EntryData, EntryId
@@ -20,6 +21,7 @@ from .transports import (
     AnhochStrategy,
     FeedFetchError,
     ITMkOglasnikStrategy,
+    NeksioStrategy,
     RSSStrategy,
     ScraperStrategy,
     SetecStrategy,
@@ -47,6 +49,7 @@ class RSSToDiscord:
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
+            "neksio": NeksioStrategy(self.is_shutdown_requested),
             "rss": RSSStrategy(),
             "setec": SetecStrategy(),
             "xenforo": XenForoStrategy(),
@@ -74,9 +77,12 @@ class RSSToDiscord:
                 for entry in entries
                 if (entry_id := strategy.get_entry_id(entry)) is not None
             }
+            if not entry_ids and strategy.require_entries_for_initialization:
+                return
             if self._store.seed_feed(feed.id, entry_ids):
                 logger.info("Initialized feed %s with existing entries", feed.id)
                 return
+        enforce_delivery_limits(feed.id, entries, strategy, self._store)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None

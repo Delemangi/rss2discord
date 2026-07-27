@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
 import random
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Final, Protocol, TypeVar
 
 from .fetch_errors import FeedFetchError
@@ -20,6 +23,23 @@ SQLITE_TRANSIENT_ERROR_CODES: Final = frozenset(
 )
 
 T = TypeVar("T")
+
+
+def parse_retry_after(value: str | None) -> float | None:
+    """Parse a Retry-After header as non-negative seconds."""
+    if value is None:
+        return None
+    try:
+        retry_after = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
+    return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
 
 
 class RetrySleep(Protocol):

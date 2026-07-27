@@ -11,7 +11,14 @@ FeedIdValue = Annotated[
 NonEmptyString = Annotated[str, Field(min_length=1)]
 WebhookName = Annotated[str, Field(min_length=1, max_length=80)]
 FeedAdapterName = Literal["hackernews", "reddit"]
-FeedStrategyName = Literal["rss", "xenforo", "itmk_oglasnik", "anhoch", "setec"]
+FeedStrategyName = Literal[
+    "rss",
+    "xenforo",
+    "itmk_oglasnik",
+    "anhoch",
+    "setec",
+    "neksio",
+]
 
 
 class FeedConfig(BaseModel):
@@ -42,10 +49,13 @@ class FeedConfig(BaseModel):
             raise ValueError(msg)
         if self.price_check_interval is not None:
             match self.strategy:
-                case "anhoch" | "setec":
+                case "anhoch" | "neksio" | "setec":
                     pass
                 case "rss" | "xenforo" | "itmk_oglasnik":
-                    msg = "price_check_interval requires the anhoch or setec strategy"
+                    msg = (
+                        "price_check_interval requires the anhoch, neksio, or setec "
+                        "strategy"
+                    )
                     raise ValueError(msg)
                 case unreachable:
                     assert_never(unreachable)

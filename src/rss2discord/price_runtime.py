@@ -25,6 +25,11 @@ from .transports.anhoch_price_monitor import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .transports.neksio_catalog import NeksioCatalogClient
+from .transports.neksio_price_monitor import (
+    NeksioPriceMonitor,
+    NeksioPriceMonitorDependencies,
+)
 from .transports.price_monitor import PriceAlertDelivery
 from .transports.setec_catalog import SetecCatalogClient
 from .transports.setec_price_monitor import (
@@ -43,6 +48,10 @@ class PriceMonitor(Protocol):
 
 type AnhochPriceMonitorFactory = Callable[
     [FeedConfig, AnhochPriceMonitorDependencies],
+    PriceMonitor,
+]
+type NeksioPriceMonitorFactory = Callable[
+    [FeedConfig, NeksioPriceMonitorDependencies],
     PriceMonitor,
 ]
 type SetecPriceMonitorFactory = Callable[
@@ -84,6 +93,7 @@ def build_price_jobs(
     dependencies: PriceJobDependencies,
     *,
     anhoch_monitor_factory: AnhochPriceMonitorFactory = AnhochPriceMonitor,
+    neksio_monitor_factory: NeksioPriceMonitorFactory = NeksioPriceMonitor,
     setec_monitor_factory: SetecPriceMonitorFactory = SetecPriceMonitor,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
@@ -104,6 +114,26 @@ def build_price_jobs(
                     feed,
                     AnhochPriceMonitorDependencies(
                         catalog=AnhochCatalogClient(),
+                        snapshots=shared_dependencies.snapshots,
+                        sender=shared_dependencies.sender,
+                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
+                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
+                        delivery=shared_dependencies.delivery,
+                    ),
+                )
+            case "neksio":
+                interval = feed.price_check_interval
+                if interval is None:
+                    continue
+                shared_dependencies = _shared_monitor_dependencies(
+                    feed,
+                    dependencies,
+                    retry_sleep,
+                )
+                monitor = neksio_monitor_factory(
+                    feed,
+                    NeksioPriceMonitorDependencies(
+                        catalog=NeksioCatalogClient(),
                         snapshots=shared_dependencies.snapshots,
                         sender=shared_dependencies.sender,
                         fetch_retry_policy=shared_dependencies.fetch_retry_policy,
@@ -135,7 +165,6 @@ def build_price_jobs(
                 continue
             case unreachable:
                 assert_never(unreachable)
-
         jobs.append(
             ScheduledJob(interval, partial(_scan_price_monitor, monitor, feed.id)),
         )

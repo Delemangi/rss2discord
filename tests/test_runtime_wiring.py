@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -5,10 +6,158 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies
+from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.scheduler import ScheduledJob
+from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
+from rss2discord.transports.anhoch_price_monitor import (
+    AnhochPriceMonitor,
+    AnhochPriceMonitorDependencies,
+)
+from rss2discord.transports.neksio_catalog import NeksioCatalogClient
+from rss2discord.transports.neksio_price_monitor import (
+    NeksioPriceMonitor,
+    NeksioPriceMonitorDependencies,
+)
 from tests.app_helpers import FakeSender
-from tests.runtime_helpers import FakeClock
+from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+
+def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
+    return FeedConfig(
+        id=feed_id,
+        url=f"https://catalog.example.test/{feed_id}?feed_secret=hidden",
+        webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
+        strategy="anhoch",
+        price_check_interval=interval,
+    )
+
+
+def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
+    return FeedConfig(
+        id=feed_id,
+        url=f"https://g.store.neksio.mk/{feed_id}",
+        webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
+        strategy="neksio",
+        price_check_interval=interval,
+    )
+
+
+def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
+    tmp_path: Path,
+) -> None:
+    # Given
+    clock = FakeClock(maximum_sleeps=1)
+    constructed_feed_ids: list[tuple[str, str]] = []
+    constructed_anhoch_dependencies: list[AnhochPriceMonitorDependencies] = []
+    constructed_neksio_dependencies: list[NeksioPriceMonitorDependencies] = []
+    config = AppConfig(
+        feeds=(
+            FeedConfig(
+                id="ordinary",
+                url="https://example.test/feed.xml",
+                webhook="https://discord.example.test/ordinary",
+            ),
+            make_anhoch_feed("first", 5),
+            make_neksio_feed("second", 7),
+            make_anhoch_feed("disabled-anhoch", None),
+            make_neksio_feed("third", 11),
+            make_neksio_feed("disabled-neksio", None),
+        ),
+    )
+
+    def anhoch_monitor_factory(
+        feed: FeedConfig,
+        dependencies: AnhochPriceMonitorDependencies,
+    ) -> RecordingMonitor:
+        constructed_anhoch_dependencies.append(dependencies)
+        constructed_feed_ids.append(("anhoch", feed.id))
+        return RecordingMonitor(feed.id, [], clock)
+
+    def neksio_monitor_factory(
+        feed: FeedConfig,
+        dependencies: NeksioPriceMonitorDependencies,
+    ) -> RecordingMonitor:
+        constructed_neksio_dependencies.append(dependencies)
+        constructed_feed_ids.append(("neksio", feed.id))
+        return RecordingMonitor(feed.id, [], clock)
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        dependencies = PriceJobDependencies(
+            store=store,
+            sender=FakeSender([]),
+            sleep=clock.sleep,
+            delay_between_posts=0,
+            is_shutdown_requested=lambda: True,
+        )
+
+        # When
+        jobs = build_price_jobs(
+            config,
+            dependencies,
+            anhoch_monitor_factory=anhoch_monitor_factory,
+            neksio_monitor_factory=neksio_monitor_factory,
+        )
+
+    # Then
+    assert constructed_feed_ids == [
+        ("anhoch", "first"),
+        ("neksio", "second"),
+        ("neksio", "third"),
+    ]
+    assert [job.interval for job in jobs] == [5, 7, 11]
+    assert isinstance(
+        constructed_anhoch_dependencies[0].catalog,
+        AnhochCatalogClient,
+    )
+    assert isinstance(
+        constructed_neksio_dependencies[0].catalog,
+        NeksioCatalogClient,
+    )
+    assert all(
+        dependency.delivery.is_shutdown_requested()
+        for dependency in constructed_anhoch_dependencies
+    )
+    assert all(
+        dependency.delivery.is_shutdown_requested()
+        for dependency in constructed_neksio_dependencies
+    )
+
+
+def test_build_price_jobs_defaults_select_exact_provider_monitors(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config = AppConfig(
+        feeds=(
+            make_anhoch_feed("anhoch", 5),
+            make_neksio_feed("neksio", 7),
+        ),
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        dependencies = PriceJobDependencies(
+            store=store,
+            sender=FakeSender([]),
+            sleep=lambda _seconds: True,
+            delay_between_posts=0,
+            is_shutdown_requested=lambda: False,
+        )
+
+        # When
+        jobs = build_price_jobs(config, dependencies)
+
+    # Then
+    assert [job.interval for job in jobs] == [5, 7]
+    assert isinstance(jobs[0].run, partial)
+    assert isinstance(jobs[1].run, partial)
+    anhoch_monitor = jobs[0].run.args[0]
+    neksio_monitor = jobs[1].run.args[0]
+    assert type(anhoch_monitor) is AnhochPriceMonitor
+    assert type(anhoch_monitor._dependencies) is AnhochPriceMonitorDependencies
+    assert type(anhoch_monitor._dependencies.catalog) is AnhochCatalogClient
+    assert type(neksio_monitor) is NeksioPriceMonitor
+    assert type(neksio_monitor._dependencies) is NeksioPriceMonitorDependencies
+    assert type(neksio_monitor._dependencies.catalog) is NeksioCatalogClient
 
 
 def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(

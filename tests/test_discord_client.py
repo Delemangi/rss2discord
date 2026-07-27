@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 import requests
@@ -311,6 +311,29 @@ def test_request_failure_does_not_log_webhook_url(
     assert not delivered
     assert webhook_url not in caplog.text
     assert "ConnectionError" in caplog.text
+
+
+def test_success_log_escapes_control_characters_from_entry_title(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    session = requests.Session()
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(message.entry, title="forged\nline\x1b[31m"),
+    )
+    monkeypatch.setattr(session, "post", lambda url, **kwargs: make_response(200))
+    caplog.set_level(logging.INFO)
+
+    # When
+    DiscordWebhookClient(session).send(message, lambda _: True)
+
+    # Then
+    log_message = caplog.records[-1].getMessage()
+    assert "\n" not in log_message
+    assert "\x1b" not in log_message
 
 
 def test_connection_error_is_retried_before_success(
