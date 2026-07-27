@@ -1,7 +1,7 @@
 import math
 
 import pytest
-import requests
+from curl_cffi import requests
 
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.neksio_catalog_http import (

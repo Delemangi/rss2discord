@@ -1,11 +1,10 @@
 import json
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import NotRequired, TypedDict
 
-import requests
+from curl_cffi import CurlOpt, requests
 
 CATALOG_URL = "https://g.store.neksio.mk/not-the-homepage?ignored=true"
 PAGE_SIZE = 100
@@ -112,17 +111,16 @@ class StubResponse:
     status_code: int = 200
     headers: Mapping[str, str] = field(default_factory=dict[str, str])
     chunks: tuple[bytes, ...] | None = None
-    interruption: requests.RequestException | None = None
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
+    interruption: requests.RequestsError | None = None
 
     def iter_content(self, chunk_size: int) -> Iterator[bytes]:
         del chunk_size
         yield from self.chunks if self.chunks is not None else (self.content,)
         if self.interruption is not None:
             raise self.interruption
+
+    def close(self) -> None:
+        return None
 
 
 class RecordingGet:
@@ -139,11 +137,12 @@ class RecordingGet:
         timeout: float,
         stream: bool,
         allow_redirects: bool,
-    ) -> AbstractContextManager[StubResponse]:
-        del headers, stream, allow_redirects
+        curl_options: Mapping[CurlOpt, int],
+    ) -> StubResponse:
+        del headers, stream, allow_redirects, curl_options
         self.urls.append(url)
         self.timeouts.append(timeout)
-        return nullcontext(self.responses.pop(0))
+        return self.responses.pop(0)
 
 
 class RecordingPost:
@@ -162,17 +161,18 @@ class RecordingPost:
         stream: bool,
         allow_redirects: bool,
         json: CatalogRequestPayload,
-    ) -> AbstractContextManager[StubResponse]:
-        del headers, stream, allow_redirects
+        curl_options: Mapping[CurlOpt, int],
+    ) -> StubResponse:
+        del headers, stream, allow_redirects, curl_options
         self.urls.append(url)
         self.bodies.append(json)
         self.timeouts.append(timeout)
-        return nullcontext(self.responses.pop(0))
+        return self.responses.pop(0)
 
 
 @dataclass(frozen=True, slots=True)
 class RaisingPost:
-    error: requests.RequestException
+    error: requests.RequestsError
 
     def __call__(
         self,
@@ -183,6 +183,7 @@ class RaisingPost:
         stream: bool,
         allow_redirects: bool,
         json: CatalogRequestPayload,
-    ) -> AbstractContextManager[StubResponse]:
-        del url, headers, timeout, stream, allow_redirects, json
+        curl_options: Mapping[CurlOpt, int],
+    ) -> StubResponse:
+        del url, headers, timeout, stream, allow_redirects, json, curl_options
         raise self.error

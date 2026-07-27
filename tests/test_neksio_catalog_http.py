@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from email.utils import format_datetime
 
 import pytest
-import requests
+from curl_cffi import requests
 
 from rss2discord.transports import FeedFetchError, neksio_catalog_http
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
@@ -257,10 +257,13 @@ def test_fetch_catalog_classifies_http_date_retry_after_metadata(
     assert fetch_error.value.retry_after > 0
 
 
-@pytest.mark.parametrize("error", [requests.ConnectionError(), requests.Timeout()])
+@pytest.mark.parametrize(
+    "error",
+    [requests.RequestsError("connection"), requests.RequestsError("timeout")],
+)
 def test_fetch_catalog_marks_request_transport_interruptions_retryable(
     monkeypatch: pytest.MonkeyPatch,
-    error: requests.RequestException,
+    error: requests.RequestsError,
 ) -> None:
     # Given
     monkeypatch.setattr(
@@ -295,7 +298,7 @@ def test_fetch_catalog_marks_stream_interruptions_retryable(
             [
                 StubResponse(
                     b"",
-                    interruption=requests.exceptions.ChunkedEncodingError(),
+                    interruption=requests.RequestsError("stream interrupted"),
                 ),
             ],
         ),
@@ -307,4 +310,4 @@ def test_fetch_catalog_marks_stream_interruptions_retryable(
 
     # Then
     assert fetch_error.value.retryable
-    assert fetch_error.value.cause_type == "ChunkedEncodingError"
+    assert fetch_error.value.cause_type == "RequestException"

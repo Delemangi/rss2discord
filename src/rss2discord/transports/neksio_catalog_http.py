@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, closing
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, TypedDict
 from urllib.parse import urljoin, urlsplit
 
-import requests
+from curl_cffi import CurlOpt, requests
 
-from rss2discord.retries import parse_retry_after
+from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
 from rss2discord.transports.base import FeedFetchError
 
 NEKSIO_LABEL: Final = "Neksio"
@@ -65,16 +66,23 @@ class NeksioScanBudget:
     responses_remaining: int
     bytes_remaining: int
     expires_at: float
+    is_shutdown_requested: Callable[[], bool] | None = None
 
     @classmethod
-    def for_catalog_scan(cls) -> NeksioScanBudget:
+    def for_catalog_scan(
+        cls,
+        is_shutdown_requested: Callable[[], bool] | None = None,
+    ) -> NeksioScanBudget:
         return cls(
             responses_remaining=MAX_NEKSIO_SCAN_RESPONSES,
             bytes_remaining=MAX_NEKSIO_SCAN_BYTES,
             expires_at=time.monotonic() + MAX_NEKSIO_SCAN_SECONDS,
+            is_shutdown_requested=is_shutdown_requested,
         )
 
     def consume_response(self) -> float:
+        if self.is_shutdown_requested is not None and self.is_shutdown_requested():
+            raise FeedFetchInterruptedError
         remaining_seconds = self.expires_at - time.monotonic()
         if remaining_seconds <= 0:
             raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded")
@@ -84,6 +92,8 @@ class NeksioScanBudget:
         return min(30.0, remaining_seconds)
 
     def consume_bytes(self, size: int) -> None:
+        if self.is_shutdown_requested is not None and self.is_shutdown_requested():
+            raise FeedFetchInterruptedError
         if time.monotonic() >= self.expires_at:
             raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded")
         if size > self.bytes_remaining:
@@ -116,12 +126,15 @@ def fetch_homepage(origin: str, *, budget: NeksioScanBudget | None = None) -> by
     """Fetch the capped source homepage without automatic redirects."""
     return _fetch_content(
         origin,
-        lambda current_url, timeout: requests.get(
-            current_url,
-            headers=_HOMEPAGE_HEADERS,
-            timeout=timeout,
-            stream=True,
-            allow_redirects=False,
+        lambda current_url, timeout: closing(
+            requests.get(
+                current_url,
+                headers=_HOMEPAGE_HEADERS,
+                timeout=timeout,
+                stream=True,
+                allow_redirects=False,
+                curl_options=_curl_options(timeout),
+            ),
         ),
         budget,
     )
@@ -136,13 +149,16 @@ def fetch_page_content(
     """Post one catalog page request and return its capped response bytes."""
     return _fetch_content(
         endpoint,
-        lambda current_url, timeout: requests.post(
-            current_url,
-            headers=_CATALOG_HEADERS,
-            timeout=timeout,
-            stream=True,
-            allow_redirects=False,
-            json=body,
+        lambda current_url, timeout: closing(
+            requests.post(
+                current_url,
+                headers=_CATALOG_HEADERS,
+                timeout=timeout,
+                stream=True,
+                allow_redirects=False,
+                json=dict(body),
+                curl_options=_curl_options(timeout),
+            ),
         ),
         budget,
     )
@@ -165,9 +181,7 @@ def _fetch_content(
                     _read_content(response, budget)
                     current_url = _same_origin_redirect_url(current_url, location)
                     continue
-                try:
-                    response.raise_for_status()
-                except requests.HTTPError:
+                if response.status_code >= 400:
                     status_code = response.status_code
                     raise FeedFetchError(
                         NEKSIO_LABEL,
@@ -179,23 +193,29 @@ def _fetch_content(
                         retry_after=parse_retry_after(
                             response.headers.get("Retry-After"),
                         ),
-                    ) from None
+                    )
                 return _read_content(response, budget)
         raise FeedFetchError(NEKSIO_LABEL, "TooManyRedirects")
     except ValueError:
         raise FeedFetchError(NEKSIO_LABEL, "InvalidUrl") from None
-    except (
-        requests.ConnectionError,
-        requests.Timeout,
-        requests.exceptions.ChunkedEncodingError,
-    ) as error:
+    except requests.RequestsError as error:
+        if budget is not None:
+            if (
+                budget.is_shutdown_requested is not None
+                and budget.is_shutdown_requested()
+            ):
+                raise FeedFetchInterruptedError from None
+            if time.monotonic() >= budget.expires_at:
+                raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded") from None
         raise FeedFetchError(
             NEKSIO_LABEL,
             type(error).__name__,
             retryable=True,
         ) from None
-    except requests.RequestException as error:
-        raise FeedFetchError(NEKSIO_LABEL, type(error).__name__) from None
+
+
+def _curl_options(timeout: float) -> dict[CurlOpt, int]:
+    return {CurlOpt.TIMEOUT_MS: max(1, math.ceil(timeout * 1000))}
 
 
 def _same_origin_redirect_url(current_url: str, location: str) -> str:
