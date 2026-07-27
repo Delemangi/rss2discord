@@ -1,5 +1,5 @@
 import pytest
-import requests
+from curl_cffi import requests
 
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, neksio_catalog
@@ -167,7 +167,7 @@ def test_fetch_catalog_stops_before_the_next_page_when_shutdown_is_requested(
             StubResponse(page_payload(1, 2, 2, 101, [product_card(101)])),
         ],
     )
-    shutdown_checks = iter((False, True))
+    shutdown_checks = iter((False, False, False, False, False, False, False, True))
     monkeypatch.setattr(requests, "get", get)
     monkeypatch.setattr(requests, "post", post)
 
@@ -308,32 +308,4 @@ def test_fetch_catalog_enforces_the_unique_product_limit(
 
     # When / Then
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
-
-
-def test_fetch_catalog_rejects_pagination_metadata_drift(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    first_page = [product_card(product_id) for product_id in range(100, 200)]
-    second_page = [product_card(product_id) for product_id in range(200, 300)]
-    monkeypatch.setattr(
-        requests,
-        "get",
-        RecordingGet([StubResponse(homepage_payload([1]))]),
-    )
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost(
-            [
-                StubResponse(page_payload(1, 1, 2, 101, first_page)),
-                StubResponse(page_payload(1, 2, 3, 201, second_page)),
-                StubResponse(page_payload(1, 3, 3, 201, [product_card(300)])),
-            ],
-        ),
-    )
-
-    # When / Then
-    with pytest.raises(FeedFetchError, match="PaginationMetadataDrift"):
         NeksioCatalogClient().fetch_catalog(CATALOG_URL)

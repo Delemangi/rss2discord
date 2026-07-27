@@ -59,7 +59,7 @@ class NeksioCatalogClient:
         """Fetch the complete catalog for every homepage category within fixed bounds."""
         origin = origin_url(url)
         observed_at = datetime.now(UTC)
-        budget = NeksioScanBudget.for_catalog_scan()
+        budget = NeksioScanBudget.for_catalog_scan(is_shutdown_requested)
         categories = _category_ids(fetch_homepage(origin, budget=budget))
         if len(categories) > MAX_NEKSIO_CATEGORIES:
             raise FeedFetchError(NEKSIO_LABEL, "CategoryLimitExceeded")
@@ -73,6 +73,8 @@ class NeksioCatalogClient:
         )
         for category_id in categories:
             self._append_category_products(scan, category_id, is_shutdown_requested)
+        if not scan.products:
+            raise FeedFetchError(NEKSIO_LABEL, "EmptyCatalog")
         return tuple(scan.products)
 
     @staticmethod
@@ -97,7 +99,11 @@ class NeksioCatalogClient:
                 raise FeedFetchError(NEKSIO_LABEL, "InvalidResponse") from None
             page_pagination = (page.no_of_pages, page.no_of_products)
             if pagination is not None and page_pagination != pagination:
-                raise FeedFetchError(NEKSIO_LABEL, "PaginationMetadataDrift")
+                raise FeedFetchError(
+                    NEKSIO_LABEL,
+                    "PaginationMetadataDrift",
+                    retryable=True,
+                )
             pagination = page_pagination
             _validate_page(page, category_id, page_number)
             for product_card in page.product_cards:

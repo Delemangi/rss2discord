@@ -2,7 +2,7 @@ from datetime import UTC
 from decimal import Decimal
 
 import pytest
-import requests
+from curl_cffi import requests
 
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
@@ -124,6 +124,26 @@ def test_fetch_catalog_rejects_empty_category_enumeration(
 
     # When / Then
     with pytest.raises(FeedFetchError, match="EmptyCategoryEnumeration"):
+        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+
+def test_fetch_catalog_rejects_a_complete_zero_product_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setattr(
+        requests,
+        "get",
+        RecordingGet([StubResponse(homepage_payload([1]))]),
+    )
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingPost([StubResponse(page_payload(1, 1, 0, 0, []))]),
+    )
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="EmptyCatalog"):
         NeksioCatalogClient().fetch_catalog(CATALOG_URL)
 
 
