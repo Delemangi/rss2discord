@@ -25,6 +25,11 @@ from .transports.anhoch_price_monitor import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .transports.ddstore_catalog import DDStoreCatalogClient
+from .transports.ddstore_price_monitor import (
+    DDStorePriceMonitor,
+    DDStorePriceMonitorDependencies,
+)
 from .transports.neksio_catalog import NeksioCatalogClient
 from .transports.neksio_price_monitor import (
     NeksioPriceMonitor,
@@ -56,6 +61,10 @@ type NeksioPriceMonitorFactory = Callable[
 ]
 type SetecPriceMonitorFactory = Callable[
     [FeedConfig, SetecPriceMonitorDependencies],
+    PriceMonitor,
+]
+type DDStorePriceMonitorFactory = Callable[
+    [FeedConfig, DDStorePriceMonitorDependencies],
     PriceMonitor,
 ]
 
@@ -95,6 +104,7 @@ def build_price_jobs(
     anhoch_monitor_factory: AnhochPriceMonitorFactory = AnhochPriceMonitor,
     neksio_monitor_factory: NeksioPriceMonitorFactory = NeksioPriceMonitor,
     setec_monitor_factory: SetecPriceMonitorFactory = SetecPriceMonitor,
+    ddstore_monitor_factory: DDStorePriceMonitorFactory = DDStorePriceMonitor,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
@@ -154,6 +164,26 @@ def build_price_jobs(
                     feed,
                     SetecPriceMonitorDependencies(
                         catalog=SetecCatalogClient(),
+                        snapshots=shared_dependencies.snapshots,
+                        sender=shared_dependencies.sender,
+                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
+                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
+                        delivery=shared_dependencies.delivery,
+                    ),
+                )
+            case "ddstore":
+                interval = feed.price_check_interval
+                if interval is None:
+                    continue
+                shared_dependencies = _shared_monitor_dependencies(
+                    feed,
+                    dependencies,
+                    retry_sleep,
+                )
+                monitor = ddstore_monitor_factory(
+                    feed,
+                    DDStorePriceMonitorDependencies(
+                        catalog=DDStoreCatalogClient(),
                         snapshots=shared_dependencies.snapshots,
                         sender=shared_dependencies.sender,
                         fetch_retry_policy=shared_dependencies.fetch_retry_policy,
