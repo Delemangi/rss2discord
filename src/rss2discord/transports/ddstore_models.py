@@ -94,10 +94,13 @@ class DDStoreProduct(BaseModel):
     created_at: datetime
     stock_status: DDStoreStockStatus
     small_image: _DDStoreImage | None = None
-    categories: Annotated[
-        tuple[DDStoreCategory, ...],
-        Field(max_length=MAX_DDSTORE_CATEGORIES_PER_PRODUCT),
-    ] | None = None
+    categories: (
+        Annotated[
+            tuple[DDStoreCategory, ...],
+            Field(max_length=MAX_DDSTORE_CATEGORIES_PER_PRODUCT),
+        ]
+        | None
+    ) = None
     price_range: _DDStorePriceRange
 
     @field_validator("categories", mode="before")
