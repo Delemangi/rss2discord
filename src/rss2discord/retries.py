@@ -54,6 +54,12 @@ class FetchRetryLogger(Protocol):
     def __call__(self, error: FeedFetchError, delay: float) -> None: ...
 
 
+class FetchRetryGuard(Protocol):
+    """Reject a retry delay that violates caller-owned limits."""
+
+    def __call__(self, delay: float) -> None: ...
+
+
 class SQLiteRetryLogger(Protocol):
     """Report a SQLite retry using caller-owned, sanitized context."""
 
@@ -75,7 +81,12 @@ class FetchRetryPolicy:
     sleep: RetrySleep
     on_retry: FetchRetryLogger
 
-    def execute(self, operation: Callable[[], T]) -> T:
+    def execute(
+        self,
+        operation: Callable[[], T],
+        *,
+        retry_guard: FetchRetryGuard | None = None,
+    ) -> T:
         """Run an operation up to three times for retryable fetch errors."""
         for attempt in range(1, FETCH_MAX_ATTEMPTS + 1):
             try:
@@ -84,6 +95,8 @@ class FetchRetryPolicy:
                 if not error.retryable or attempt == FETCH_MAX_ATTEMPTS:
                     raise
                 delay = _fetch_retry_delay(error, attempt - 1)
+                if retry_guard is not None:
+                    retry_guard(delay)
                 self.on_retry(error, delay)
                 if not self.sleep(delay):
                     raise FeedFetchInterruptedError from None
