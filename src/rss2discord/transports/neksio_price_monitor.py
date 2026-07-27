@@ -28,6 +28,7 @@ from rss2discord.transports.neksio_models import NeksioProduct
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
 
 MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
+MAX_NEKSIO_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
 class NeksioCatalog(Protocol):
@@ -112,6 +113,9 @@ class NeksioPriceMonitor:
                     silent_updates.append(current)
                 continue
             changes.append(_PriceChange(product, previous, current))
+
+        if len(changes) > MAX_NEKSIO_PRICE_CHANGES_PER_SCAN:
+            raise FeedFetchError(NEKSIO_LABEL, "PriceChangeLimitExceeded")
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
