@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from decimal import Decimal
-from typing import assert_never, final, override
+from typing import Final, assert_never, final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
@@ -10,6 +10,8 @@ from rss2discord.transports.base import ScraperStrategy
 from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
 from rss2discord.transports.ddstore_http import DDSTORE_LABEL
 from rss2discord.transports.ddstore_models import DDStoreProduct, DDStoreStockStatus
+
+DDSTORE_UNAVAILABLE_PRICE_LABEL: Final = "Ask for price"
 
 
 @final
@@ -42,16 +44,22 @@ class DDStoreStrategy(ScraperStrategy):
     def get_entry_data(self, entry: DDStoreProduct) -> EntryData:
         """Map a validated DDStore catalog product to Discord entry data."""
         minimum_price = entry.price_range.minimum_price
+        final_price = minimum_price.final_price
         metrics = [
             SourceMetric(
                 label="Price",
-                value=format_ddstore_mkd(minimum_price.final_price.value),
+                value=(
+                    format_ddstore_mkd(final_price.value)
+                    if is_ddstore_price_available(final_price.value)
+                    else DDSTORE_UNAVAILABLE_PRICE_LABEL
+                ),
             ),
         ]
         regular_price = minimum_price.regular_price
         if (
-            regular_price is not None
-            and regular_price.value != minimum_price.final_price.value
+            is_ddstore_price_available(final_price.value)
+            and regular_price is not None
+            and regular_price.value != final_price.value
         ):
             metrics.append(
                 SourceMetric(
@@ -79,6 +87,10 @@ class DDStoreStrategy(ScraperStrategy):
             ),
             source_metrics=tuple(metrics),
         )
+
+
+def is_ddstore_price_available(amount: Decimal) -> bool:
+    return amount > 0
 
 
 def format_ddstore_mkd(amount: int | Decimal) -> str:

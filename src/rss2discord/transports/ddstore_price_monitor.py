@@ -15,7 +15,11 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.ddstore import format_ddstore_mkd, format_ddstore_stock
+from rss2discord.transports.ddstore import (
+    format_ddstore_mkd,
+    format_ddstore_stock,
+    is_ddstore_price_available,
+)
 from rss2discord.transports.ddstore_http import DDSTORE_LABEL
 from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
@@ -97,13 +101,20 @@ class DDStorePriceMonitor:
         snapshots_by_product = {
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
+        available_products = tuple(
+            product
+            for product in products
+            if is_ddstore_price_available(
+                product.price_range.minimum_price.final_price.value,
+            )
+        )
         retained_product_ids = set(snapshots_by_product)
-        retained_product_ids.update(product.uid for product in products)
+        retained_product_ids.update(product.uid for product in available_products)
         if len(retained_product_ids) > MAX_DDSTORE_RETAINED_SNAPSHOTS:
             raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
-        for product in products:
+        for product in available_products:
             current = self._snapshot(product)
             previous = snapshots_by_product.get(product.uid)
             if previous is None:
