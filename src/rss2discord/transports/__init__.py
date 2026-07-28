@@ -2,6 +2,7 @@
 
 from .anhoch import AnhochStrategy
 from .base import FeedFetchError, ScraperStrategy
+from .ddstore import DDStoreStrategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
 from .neksio import NeksioStrategy
 from .rss import RSSStrategy
@@ -10,6 +11,7 @@ from .xenforo import XenForoStrategy
 
 __all__ = [
     "AnhochStrategy",
+    "DDStoreStrategy",
     "FeedFetchError",
     "ITMkOglasnikStrategy",
     "NeksioStrategy",

@@ -6,6 +6,7 @@ from rss2discord.configuration import FeedConfig
 SOURCE_LABEL_FORUM: Final = "Forum"
 SOURCE_LABEL_GITHUB: Final = "GitHub"
 SOURCE_LABEL_ANHOCH: Final = "Anhoch"
+SOURCE_LABEL_DDSTORE: Final = "DDStore"
 SOURCE_LABEL_SETEC: Final = "Setec"
 SOURCE_LABEL_NEKSIO: Final = "Neksio"
 SOURCE_LABEL_ITMK_OGLASNIK: Final = "IT.mk Oglasnik"
@@ -26,6 +27,8 @@ def source_label(feed: FeedConfig) -> str:
     match feed.strategy:
         case "anhoch":
             return SOURCE_LABEL_ANHOCH
+        case "ddstore":
+            return SOURCE_LABEL_DDSTORE
         case "setec":
             return SOURCE_LABEL_SETEC
         case "neksio":

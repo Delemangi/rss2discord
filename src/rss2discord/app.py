@@ -19,6 +19,7 @@ from .retries import (
 from .scheduler import RuntimeScheduler, ScheduledJob, SchedulerControl, SchedulerJobs
 from .transports import (
     AnhochStrategy,
+    DDStoreStrategy,
     FeedFetchError,
     ITMkOglasnikStrategy,
     NeksioStrategy,
@@ -48,6 +49,7 @@ class RSSToDiscord:
         self._sender = sender
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
+            "ddstore": DDStoreStrategy(self.is_shutdown_requested),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "neksio": NeksioStrategy(self.is_shutdown_requested),
             "rss": RSSStrategy(),

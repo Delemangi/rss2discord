@@ -681,6 +681,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
+    { name = "certifi" },
     { name = "curl-cffi" },
     { name = "feedparser" },
     { name = "forumscraper" },
@@ -701,6 +702,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
+    { name = "certifi", specifier = ">=2025.10.5" },
     { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "feedparser", specifier = ">=6.0.12" },
     { name = "forumscraper", specifier = ">=0.1.21" },

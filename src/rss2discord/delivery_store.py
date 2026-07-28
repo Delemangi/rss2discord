@@ -89,13 +89,19 @@ class DeliveryStore:
             )
         return True
 
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]:
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]:
         rows = self._connection.execute(
             "SELECT product_id, amount, formatted, currency "
             "FROM price_snapshots "
             "WHERE feed_id = ? "
-            "ORDER BY product_id",
-            (feed_id,),
+            "ORDER BY product_id "
+            "LIMIT ?",
+            (feed_id, -1 if limit is None else limit),
         )
         return tuple(
             PriceSnapshot(
