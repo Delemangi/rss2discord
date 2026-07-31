@@ -240,7 +240,7 @@ def test_thumbnail_fallback_remains_selected_after_connection_error(
     # Then
     assert delivered
     assert ["files" in attempt for attempt in attempts] == [True, False, False]
-    assert delays == [2.0]
+    assert delays == [0, 2.0]
 
 
 def test_delivery_requests_components_and_server_confirmation(
