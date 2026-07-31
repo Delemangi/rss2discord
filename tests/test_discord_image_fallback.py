@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import pytest
@@ -28,6 +28,17 @@ class StaticImageDownloader:
 
     def download(self, url: str) -> DownloadedImage | None:
         assert url == IMAGE_URL
+        return self.image
+
+
+@dataclass(frozen=True, slots=True)
+class CallbackImageDownloader:
+    image: DownloadedImage
+    on_download: Callable[[], None]
+
+    def download(self, url: str) -> DownloadedImage | None:
+        assert url == IMAGE_URL
+        self.on_download()
         return self.image
 
 
@@ -123,7 +134,7 @@ def test_default_image_downloader_receives_delivery_sleep(
 
     def delivery_sleep(seconds: float) -> bool:
         del seconds
-        return False
+        return True
 
     def post(url: str, **kwargs: str) -> requests.Response:
         del url, kwargs
@@ -148,6 +159,45 @@ def test_default_image_downloader_receives_delivery_sleep(
     # Then
     assert delivered
     assert captured_sleep == [delivery_sleep]
+
+
+def test_shutdown_during_successful_image_download_stops_discord_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    session = requests.Session()
+    posts: list[str] = []
+    shutdown_requested = False
+
+    def request_shutdown() -> None:
+        nonlocal shutdown_requested
+        shutdown_requested = True
+
+    def poll_shutdown(seconds: float) -> bool:
+        assert seconds == 0
+        return not shutdown_requested
+
+    def post(url: str, **kwargs: str) -> requests.Response:
+        del kwargs
+        posts.append(url)
+        return successful_response()
+
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+    monkeypatch.setattr(session, "post", post)
+
+    # When
+    result = DiscordWebhookClient(
+        session,
+        image_downloader=CallbackImageDownloader(image, request_shutdown),
+    ).send(make_anhoch_message(), poll_shutdown)
+
+    # Then
+    assert result is DiscordDeliveryResult.INTERRUPTED
+    assert posts == []
 
 
 def test_interrupted_image_retry_stops_discord_delivery(

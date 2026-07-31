@@ -141,12 +141,7 @@ class DiscordWebhookClient:
         image_downloader = self._image_downloader
         if image_downloader is None:
             image_downloader = AnhochImageDownloader(sleep=sleep)
-        delivery = prepare_delivery(message, image_downloader)
-        if message.feed.strategy == "anhoch" and (
-            message.entry.image_url is not None and delivery.request.image is None
-        ):
-            logger.warning("Anhoch thumbnail unavailable for feed %s", message.feed.id)
-        return delivery
+        return prepare_delivery(message, image_downloader, sleep)
 
     def _handle_retryable_request_error(
         self,
