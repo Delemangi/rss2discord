@@ -8,6 +8,7 @@ from typing import Final, Protocol
 import requests
 
 from rss2discord.discord.components import JSONValue, build_components_v2_payload
+from rss2discord.discord.image_retries import ImageDownloadInterruptedError
 from rss2discord.discord.images import AnhochImageDownloader, ImageDownloader
 from rss2discord.discord.message import (
     PreparedDelivery,
@@ -64,18 +65,17 @@ class DiscordWebhookClient:
         image_downloader: ImageDownloader | None = None,
     ) -> None:
         self._session = session or requests.Session()
-        self._image_downloader = (
-            image_downloader
-            if image_downloader is not None
-            else AnhochImageDownloader()
-        )
+        self._image_downloader = image_downloader
 
     def send(
         self,
         message: WebhookMessage,
         sleep: SleepCallback,
     ) -> DiscordDeliveryResult:
-        delivery = self._prepare_delivery(message)
+        try:
+            delivery = self._prepare_delivery(message, sleep)
+        except ImageDownloadInterruptedError:
+            return DiscordDeliveryResult.INTERRUPTED
 
         for attempt in range(MAX_RETRIES):
             result = self._attempt_delivery(delivery, attempt)
@@ -133,8 +133,15 @@ class DiscordWebhookClient:
         result = self._classify_response(message, response, attempt)
         return _DeliveryResult(result.action, result.wait_time, drop_image)
 
-    def _prepare_delivery(self, message: WebhookMessage) -> PreparedDelivery:
-        return prepare_delivery(message, self._image_downloader)
+    def _prepare_delivery(
+        self,
+        message: WebhookMessage,
+        sleep: SleepCallback,
+    ) -> PreparedDelivery:
+        image_downloader = self._image_downloader
+        if image_downloader is None:
+            image_downloader = AnhochImageDownloader(sleep=sleep)
+        return prepare_delivery(message, image_downloader, sleep)
 
     def _handle_retryable_request_error(
         self,

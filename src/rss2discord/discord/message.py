@@ -1,10 +1,14 @@
+import logging
 from dataclasses import dataclass, replace
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.components import build_components_v2_payload
+from rss2discord.discord.image_retries import ImageDownloadInterruptedError, RetrySleep
 from rss2discord.discord.images import DownloadedImage, ImageDownloader
 from rss2discord.discord.request import DiscordRequest
 from rss2discord.models import EntryData
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,12 +28,17 @@ class PreparedDelivery:
 def prepare_delivery(
     message: WebhookMessage,
     image_downloader: ImageDownloader,
+    sleep: RetrySleep,
 ) -> PreparedDelivery:
     image: DownloadedImage | None = None
     rendered_entry = message.entry
     if message.feed.strategy == "anhoch" and message.entry.image_url is not None:
         image = image_downloader.download(message.entry.image_url)
+        if not sleep(0):
+            raise ImageDownloadInterruptedError
         rendered_entry = replace(message.entry, image_url=None)
+        if image is None:
+            logger.warning("Anhoch thumbnail unavailable for feed %s", message.feed.id)
     payload = build_components_v2_payload(
         message.feed,
         rendered_entry,

@@ -1,17 +1,23 @@
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final, Literal, Protocol
+from time import monotonic
+from typing import Final, Literal, Protocol, final
 from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
 from curl_cffi import CurlOpt
 from curl_cffi import requests as curl_requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
+from rss2discord.discord.image_retries import (
+    ImageRetryBudget,
+    RetrySleep,
+    is_retryable_image_request_error,
+)
+
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 MAX_IMAGE_BYTES: Final = 8 * 1024 * 1024
 MAX_IMAGE_REDIRECTS: Final = 3
-IMAGE_TIMEOUT_MS: Final = 30_000
 IMAGE_EXTENSIONS: Final[Mapping[str, str]] = {
     "image/gif": "gif",
     "image/jpeg": "jpg",
@@ -121,20 +127,59 @@ class _CurlCffiImageSession:
         )
 
 
+@final
 class AnhochImageDownloader:
-    def __init__(self, session: ImageSession | None = None) -> None:
+    def __init__(
+        self,
+        session: ImageSession | None = None,
+        sleep: RetrySleep | None = None,
+        monotonic_clock: Callable[[], float] = monotonic,
+    ) -> None:
         self._session: ImageSession = (
             session if session is not None else _CurlCffiImageSession()
         )
+        self._sleep = sleep
+        self._monotonic = monotonic_clock
 
     def download(self, url: str) -> DownloadedImage | None:
         current_url = _canonical_anhoch_image_url(url)
         if current_url is None:
             return None
 
-        for _ in range(MAX_IMAGE_REDIRECTS + 1):
-            content = _BoundedImageContent()
+        retry_budget = ImageRetryBudget(self._sleep, self._monotonic)
+        redirects_remaining = MAX_IMAGE_REDIRECTS
+        while True:
+            request_result = self._request_current_url(current_url, retry_budget)
+            if request_result is None:
+                return None
+            response, content = request_result
+            if response.status_code in {408, 429} or 500 <= response.status_code < 600:
+                retry_after = _header(response.headers, "retry-after")
+                if not retry_budget.wait_for_retry(retry_after):
+                    return None
+                continue
+            if not 300 <= response.status_code < 400:
+                return _read_image(response, content)
+            redirected_url = _redirected_image_url(
+                response,
+                current_url,
+                redirects_remaining,
+            )
+            if redirected_url is None:
+                return None
+            current_url = redirected_url
+            redirects_remaining -= 1
 
+    def _request_current_url(
+        self,
+        current_url: str,
+        retry_budget: ImageRetryBudget,
+    ) -> tuple[ImageResponse, bytes] | None:
+        while True:
+            timeout_ms = retry_budget.transfer_timeout_ms()
+            if timeout_ms is None:
+                return None
+            content = _BoundedImageContent()
             try:
                 response = self._session.get(
                     current_url,
@@ -142,27 +187,36 @@ class AnhochImageDownloader:
                     timeout=30,
                     allow_redirects=False,
                     content_callback=content.write,
-                    curl_options={CurlOpt.TIMEOUT_MS: IMAGE_TIMEOUT_MS},
+                    curl_options={CurlOpt.TIMEOUT_MS: timeout_ms},
                 )
-            except curl_requests.RequestsError:
+            except curl_requests.RequestsError as error:
+                if (
+                    content.exceeded_limit
+                    or not is_retryable_image_request_error(error)
+                    or not retry_budget.wait_for_retry()
+                ):
+                    return None
+                continue
+            if (
+                not retry_budget.has_time_remaining()
+                or content.exceeded_limit
+                or _canonical_anhoch_image_url(response.url) != current_url
+            ):
                 return None
-            if content.exceeded_limit:
-                return None
-            response_url = _canonical_anhoch_image_url(response.url)
-            if response_url != current_url:
-                return None
-            if not 300 <= response.status_code < 400:
-                return _read_image(response, bytes(content.content))
-            location = _header(response.headers, "location")
-            if location is None:
-                return None
-            redirected_url = _canonical_anhoch_image_url(
-                urljoin(current_url, location),
-            )
-            if redirected_url is None:
-                return None
-            current_url = redirected_url
+            return response, bytes(content.content)
+
+
+def _redirected_image_url(
+    response: ImageResponse,
+    current_url: str,
+    redirects_remaining: int,
+) -> str | None:
+    if redirects_remaining == 0:
         return None
+    location = _header(response.headers, "location")
+    if location is None:
+        return None
+    return _canonical_anhoch_image_url(urljoin(current_url, location))
 
 
 def _read_image(response: ImageResponse, content: bytes) -> DownloadedImage | None:

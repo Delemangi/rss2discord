@@ -132,8 +132,10 @@ def test_retry_interruption_stops_before_later_alert_and_preserves_prior_accepta
             raise requests.ConnectionError("connection reset")
         raise AssertionError("later price alert must not be sent")
 
-    def request_shutdown(_seconds: float) -> bool:
+    def request_shutdown(seconds: float) -> bool:
         nonlocal shutdown_requested
+        if seconds == 0:
+            return True
         shutdown_requested = True
         return False
 
@@ -202,8 +204,10 @@ def test_retry_interruption_stops_before_the_next_changed_product(
             raise AssertionError("next changed product must not be sent")
         raise requests.ConnectionError("connection reset")
 
-    def request_shutdown(_seconds: float) -> bool:
+    def request_shutdown(seconds: float) -> bool:
         nonlocal shutdown_requested
+        if seconds == 0:
+            return True
         shutdown_requested = True
         return False
 
