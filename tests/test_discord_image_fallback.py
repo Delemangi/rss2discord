@@ -1,16 +1,21 @@
 import logging
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 import pytest
 import requests
+from curl_cffi import CurlOpt
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult, DiscordWebhookClient
-from rss2discord.discord.image_retries import (
-    ImageDownloadInterruptedError,
-    RetrySleep,
+from rss2discord.discord.image_retries import RetrySleep
+from rss2discord.discord.images import (
+    AnhochImageDownloader,
+    BrowserImpersonation,
+    ContentCallback,
+    DownloadedImage,
+    ImageResponse,
 )
-from rss2discord.discord.images import DownloadedImage
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData
 
@@ -27,10 +32,29 @@ class StaticImageDownloader:
 
 
 @dataclass(frozen=True, slots=True)
-class InterruptedImageDownloader:
-    def download(self, url: str) -> DownloadedImage | None:
-        assert url == IMAGE_URL
-        raise ImageDownloadInterruptedError
+class TransientImageResponse:
+    status_code: int = 503
+    headers: Mapping[str, str] = field(default_factory=dict)
+    url: str = IMAGE_URL
+
+
+@dataclass(frozen=True, slots=True)
+class TransientImageSession:
+    calls: list[str]
+
+    def get(
+        self,
+        url: str,
+        *,
+        impersonate: BrowserImpersonation,
+        timeout: int,
+        allow_redirects: bool,
+        content_callback: ContentCallback,
+        curl_options: Mapping[CurlOpt, int],
+    ) -> ImageResponse:
+        del impersonate, timeout, allow_redirects, content_callback, curl_options
+        self.calls.append(url)
+        return TransientImageResponse(headers={})
 
 
 def make_anhoch_message() -> WebhookMessage:
@@ -132,20 +156,33 @@ def test_interrupted_image_retry_stops_discord_delivery(
     # Given
     session = requests.Session()
     posts: list[str] = []
+    image_session = TransientImageSession(calls=[])
+
+    def interrupt_retry(seconds: float) -> bool:
+        del seconds
+        return False
 
     def post(url: str, **kwargs: str) -> requests.Response:
         del kwargs
         posts.append(url)
         return successful_response()
 
+    def make_image_downloader(*, sleep: RetrySleep) -> AnhochImageDownloader:
+        return AnhochImageDownloader(image_session, sleep=sleep)
+
     monkeypatch.setattr(session, "post", post)
+    monkeypatch.setattr(
+        "rss2discord.discord.client.AnhochImageDownloader",
+        make_image_downloader,
+    )
 
     # When
-    result = DiscordWebhookClient(
-        session,
-        image_downloader=InterruptedImageDownloader(),
-    ).send(make_anhoch_message(), lambda _: True)
+    result = DiscordWebhookClient(session).send(
+        make_anhoch_message(),
+        interrupt_retry,
+    )
 
     # Then
     assert result is DiscordDeliveryResult.INTERRUPTED
+    assert image_session.calls == [IMAGE_URL]
     assert posts == []

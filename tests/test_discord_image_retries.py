@@ -8,7 +8,6 @@ from curl_cffi import requests as curl_requests
 from curl_cffi.const import CurlECode
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.discord.image_retries import ImageDownloadInterruptedError
 from rss2discord.discord.images import (
     AnhochImageDownloader,
     BrowserImpersonation,
@@ -154,25 +153,6 @@ def test_anhoch_image_download_honors_retry_after_for_transient_response(
     # Then
     assert image is not None
     assert clock.delays == [2.5]
-
-
-def test_anhoch_image_download_stops_when_retry_sleep_is_interrupted() -> None:
-    # Given
-    clock = FakeClock(continue_sleep=False)
-    session = SequenceImageSession(outcomes=[StubImageResponse(status_code=503)])
-
-    # When
-    downloader = AnhochImageDownloader(
-        session,
-        sleep=clock.sleep,
-        monotonic_clock=clock.monotonic,
-    )
-
-    # Then
-    with pytest.raises(ImageDownloadInterruptedError):
-        downloader.download(IMAGE_URL)
-    assert clock.delays == [1.0]
-    assert len(session.calls) == 1
 
 
 def test_anhoch_image_download_rejects_retry_beyond_total_deadline() -> None:
