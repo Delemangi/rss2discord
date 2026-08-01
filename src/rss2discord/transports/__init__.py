@@ -5,6 +5,7 @@ from .base import FeedFetchError, ScraperStrategy
 from .ddstore import DDStoreStrategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
 from .neksio import NeksioStrategy
+from .reklama5 import Reklama5Strategy
 from .rss import RSSStrategy
 from .setec import SetecStrategy
 from .xenforo import XenForoStrategy
@@ -16,6 +17,7 @@ __all__ = [
     "ITMkOglasnikStrategy",
     "NeksioStrategy",
     "RSSStrategy",
+    "Reklama5Strategy",
     "ScraperStrategy",
     "SetecStrategy",
     "XenForoStrategy",
