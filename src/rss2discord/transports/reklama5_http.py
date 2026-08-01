@@ -100,7 +100,8 @@ def _parse_search_url(url: str) -> _ParsedSearchUrl | None:
     try:
         parsed = urlsplit(url)
         host = parsed.hostname
-        port = parsed.port or 443
+        parsed_port = parsed.port
+        port = 443 if parsed_port is None else parsed_port
     except ValueError:
         return None
     if (
@@ -110,7 +111,7 @@ def _parse_search_url(url: str) -> _ParsedSearchUrl | None:
         or parsed.username is not None
         or parsed.password is not None
         or parsed.path not in _ALLOWED_PATHS
-        or parsed.fragment
+        or "#" in url
     ):
         return None
     if host is None:

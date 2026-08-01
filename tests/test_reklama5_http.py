@@ -26,6 +26,20 @@ def test_reklama5_scope_rejects_urls_outside_the_search_boundary(url: str) -> No
     assert "secret" not in str(fetch_error.value)
 
 
+def test_reklama5_scope_rejects_explicit_port_zero() -> None:
+    with pytest.raises(FeedFetchError) as fetch_error:
+        Reklama5SearchScope.from_url("https://reklama5.mk:0/Search?cat=584")
+
+    assert fetch_error.value.cause_type == "InvalidUrl"
+
+
+def test_reklama5_scope_rejects_explicit_empty_fragment() -> None:
+    with pytest.raises(FeedFetchError) as fetch_error:
+        Reklama5SearchScope.from_url("https://reklama5.mk/Search?cat=584#")
+
+    assert fetch_error.value.cause_type == "InvalidUrl"
+
+
 @pytest.mark.parametrize(
     ("url", "host", "path"),
     [
@@ -132,6 +146,28 @@ def test_reklama5_redirect_rejects_apex_to_www_switch() -> None:
     )
 
     assert not accepted
+
+
+def test_reklama5_redirect_rejects_explicit_port_zero() -> None:
+    scope = Reklama5SearchScope.from_url("https://reklama5.mk/Search?cat=584")
+    request = scope.page_request(1)
+
+    assert not scope.accepts_redirect(
+        request,
+        "https://reklama5.mk:0/Search?"
+        "cat=584&SortByPrice=2&pageView=1&page=1",
+    )
+
+
+def test_reklama5_redirect_rejects_explicit_empty_fragment() -> None:
+    scope = Reklama5SearchScope.from_url("https://reklama5.mk/Search?cat=584")
+    request = scope.page_request(1)
+
+    assert not scope.accepts_redirect(
+        request,
+        "https://reklama5.mk/Search?"
+        "cat=584&SortByPrice=2&pageView=1&page=1#",
+    )
 
 
 @pytest.mark.parametrize(
