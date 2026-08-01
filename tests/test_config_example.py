@@ -41,3 +41,14 @@ def test_checked_in_config_example_enables_hourly_setec_price_monitoring() -> No
 
     # Then
     assert setec_feed.price_check_interval == 3600
+
+
+def test_checked_in_config_example_documents_neptun_category_monitoring() -> None:
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+
+    config = load_config(example_path)
+    neptun_feed = next(feed for feed in config.feeds if feed.id == "neptun-computers")
+
+    assert neptun_feed.url == "https://www.neptun.mk/KOMPJUTERI.nspx"
+    assert neptun_feed.strategy == "neptun"
+    assert neptun_feed.price_check_interval == 3600
