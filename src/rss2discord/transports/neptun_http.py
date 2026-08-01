@@ -54,11 +54,12 @@ class NeptunHttpClient:
             or port is not None
             or parsed.username is not None
             or parsed.password is not None
+            or parsed.query
             or parsed.fragment
             or not parsed.path
         ):
             raise FeedFetchError(NEPTUN_LABEL, "InvalidUrl")
-        return urlunsplit(("https", "www.neptun.mk", parsed.path, parsed.query, ""))
+        return urlunsplit(("https", "www.neptun.mk", parsed.path, "", ""))
 
     def fetch_category_model(
         self,

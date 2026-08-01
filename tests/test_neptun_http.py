@@ -18,10 +18,7 @@ from tests.neptun_helpers import (
     ("url", "expected"),
     [
         (CATEGORY_URL, CATEGORY_URL),
-        (
-            "https://neptun.mk/KOMPJUTERI.nspx?brand=Lenovo",
-            "https://www.neptun.mk/KOMPJUTERI.nspx?brand=Lenovo",
-        ),
+        ("https://neptun.mk/KOMPJUTERI.nspx", CATEGORY_URL),
     ],
 )
 def test_category_url_is_normalized_only_for_exact_neptun_hosts(
@@ -29,6 +26,13 @@ def test_category_url_is_normalized_only_for_exact_neptun_hosts(
     expected: str,
 ) -> None:
     assert NeptunHttpClient().normalize_category_url(url) == expected
+
+
+def test_category_url_rejects_query_filters() -> None:
+    with pytest.raises(FeedFetchError, match="InvalidUrl"):
+        NeptunHttpClient().normalize_category_url(
+            "https://www.neptun.mk/KOMPJUTERI.nspx?brand=Lenovo",
+        )
 
 
 @pytest.mark.parametrize(
