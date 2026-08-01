@@ -76,11 +76,7 @@ class RSSToDiscord:
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
         if strategy.seed_existing_on_first_fetch:
-            entry_ids = {
-                entry_id
-                for entry in entries
-                if (entry_id := strategy.get_entry_id(entry)) is not None
-            }
+            entry_ids = strategy.get_initialization_entry_ids(entries)
             if not entry_ids and strategy.require_entries_for_initialization:
                 return
             if self._store.seed_feed(feed.id, entry_ids):
