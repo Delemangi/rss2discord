@@ -91,7 +91,10 @@ def test_price_monitor_silently_baselines_then_delivers_actual_price_change(
         monitor.scan()
 
         assert len(sender.messages) == 1
-        assert sender.messages[0].entry.description == "Price decreased from 100 ден. to 90 ден."
+        assert (
+            sender.messages[0].entry.description
+            == "Price decreased from 100 ден. to 90 ден."
+        )
         assert sender.messages[0].entry.source_metrics[:2] == (
             SourceMetric("Price", "90 ден."),
             SourceMetric("Previous", "100 ден."),
@@ -100,7 +103,9 @@ def test_price_monitor_silently_baselines_then_delivers_actual_price_change(
         assert store.load_price_snapshots("neptun")[0].currency == "MKD"
 
 
-def test_price_monitor_preserves_last_real_price_while_unavailable(tmp_path: Path) -> None:
+def test_price_monitor_preserves_last_real_price_while_unavailable(
+    tmp_path: Path,
+) -> None:
     sender = RecordingSender([])
     with DeliveryStore(tmp_path / "state.db") as store:
         snapshot = PriceSnapshot("neptun", "1", Decimal(100), "100 ден.", "MKD")
@@ -146,7 +151,9 @@ def test_price_monitor_rejects_more_than_one_hundred_changes_without_mutation(
             monitor.scan()
 
         assert sender.messages == []
-        assert {snapshot.amount for snapshot in store.load_price_snapshots("neptun")} == {Decimal(100)}
+        assert {
+            snapshot.amount for snapshot in store.load_price_snapshots("neptun")
+        } == {Decimal(100)}
 
 
 def test_price_monitor_rejects_snapshot_capacity_before_mutation(
@@ -166,7 +173,9 @@ def test_price_monitor_rejects_snapshot_capacity_before_mutation(
                 RecordingSender([]),
             ).scan()
 
-        assert [snapshot.product_id for snapshot in store.load_price_snapshots("neptun")] == ["old"]
+        assert [
+            snapshot.product_id for snapshot in store.load_price_snapshots("neptun")
+        ] == ["old"]
 
 
 def test_price_monitor_persists_silent_additions_but_not_interrupted_changes(

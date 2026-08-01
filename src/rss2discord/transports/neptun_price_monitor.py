@@ -102,7 +102,10 @@ class NeptunPriceMonitor:
             previous = by_product.get(current.product_id)
             if previous is None:
                 silent_updates.append(current)
-            elif previous.amount != current.amount or previous.currency != current.currency:
+            elif (
+                previous.amount != current.amount
+                or previous.currency != current.currency
+            ):
                 changes.append(_PriceChange(product, previous, current))
             elif previous.formatted != current.formatted:
                 silent_updates.append(current)
@@ -114,7 +117,9 @@ class NeptunPriceMonitor:
             raise FeedFetchInterruptedError
         if silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(silent_updates),
+                lambda: self._dependencies.snapshots.upsert_price_snapshots(
+                    silent_updates,
+                ),
             )
         self._deliver_changes(changes)
 
@@ -168,14 +173,21 @@ class NeptunPriceMonitor:
         base_entry = NeptunStrategy().get_entry_data(change.product)
         action = "changed"
         if change.previous.currency == change.current.currency:
-            action = "decreased" if change.current.amount < change.previous.amount else "increased"
+            action = (
+                "decreased"
+                if change.current.amount < change.previous.amount
+                else "increased"
+            )
         metrics = [
             SourceMetric("Price", change.current.formatted),
             SourceMetric("Previous", change.previous.formatted),
         ]
         if change.product.regular_price != change.product.actual_price:
             metrics.append(
-                SourceMetric("Original", format_neptun_mkd(change.product.regular_price)),
+                SourceMetric(
+                    "Original",
+                    format_neptun_mkd(change.product.regular_price),
+                ),
             )
         metrics.extend(
             (
