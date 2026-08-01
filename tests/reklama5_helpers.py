@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from types import TracebackType
@@ -7,10 +8,29 @@ from typing import Final
 
 import requests
 
+from rss2discord.transports.reklama5_http import (
+    MAX_REKLAMA5_ATTEMPT_BYTES,
+    Reklama5ScanBudget,
+    Reklama5SearchScope,
+)
+
 SEARCH_URL: Final = (
     "https://reklama5.mk/Search?"
     "cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
 )
+
+
+def search_scope() -> Reklama5SearchScope:
+    return Reklama5SearchScope.from_url(SEARCH_URL)
+
+
+def scan_budget(
+    *,
+    bytes_remaining: int = MAX_REKLAMA5_ATTEMPT_BYTES,
+    redirects_remaining: int = 10,
+    expires_at: float = math.inf,
+) -> Reklama5ScanBudget:
+    return Reklama5ScanBudget(bytes_remaining, redirects_remaining, expires_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +64,7 @@ class RecordingGet:
     def __init__(self, responses: list[StubResponse]) -> None:
         self.responses = responses
         self.urls: list[str] = []
+        self.headers: list[Mapping[str, str]] = []
         self.timeouts: list[float] = []
         self.allow_redirects: list[bool] = []
         self.stream: list[bool] = []
@@ -57,8 +78,8 @@ class RecordingGet:
         allow_redirects: bool,
         stream: bool,
     ) -> StubResponse:
-        del headers
         self.urls.append(url)
+        self.headers.append(headers)
         self.timeouts.append(timeout)
         self.allow_redirects.append(allow_redirects)
         self.stream.append(stream)
