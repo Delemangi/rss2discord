@@ -12,6 +12,7 @@ from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL, Reklama5PageRe
 REKLAMA5_APPLICATION_ERROR_TEXT: Final = (
     "Настана грешка. Оваа грешка е испратена до нашиот технички оддел."
 )
+_PAGINATOR_PAGE_SUFFIX: Final = " prev-nextPage"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +85,10 @@ def _validate_paginator_link(
     parsed = urlsplit(absolute_url)
     query = parse_qsl(parsed.query, keep_blank_values=True)
     page_values = [value for key, value in query if key.casefold() == "page"]
-    if len(page_values) != 1 or not _is_positive_decimal(page_values[0]):
+    if len(page_values) != 1:
+        raise FeedFetchError(REKLAMA5_LABEL, "InvalidPaginator")
+    paginator_page = _parse_paginator_page(page_values[0])
+    if paginator_page is None:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPaginator")
     current_query = [
         (key, str(request.page) if key.casefold() == "page" else value)
@@ -93,7 +97,7 @@ def _validate_paginator_link(
     current_page_url = urlunsplit((*parsed[:3], urlencode(current_query), parsed.fragment))
     if not request.scope.accepts_redirect(request, current_page_url):
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPaginator")
-    return int(page_values[0])
+    return paginator_page
 
 
 def _attribute(node: Tag, name: str) -> str | None:
@@ -105,3 +109,10 @@ def _attribute(node: Tag, name: str) -> str | None:
 
 def _is_positive_decimal(value: str | None) -> bool:
     return value is not None and value.isdecimal() and int(value) > 0
+
+
+def _parse_paginator_page(value: str) -> int | None:
+    decimal = value.removesuffix(_PAGINATOR_PAGE_SUFFIX)
+    if not _is_positive_decimal(decimal):
+        return None
+    return int(decimal)

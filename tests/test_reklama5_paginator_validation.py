@@ -59,8 +59,8 @@ def test_reklama5_parser_rejects_untrusted_paginator_scope(href: str) -> None:
 
 @pytest.mark.parametrize(
     "page_values",
-    [[], ["2", "3"], ["0"], ["-1"], ["2.5"]],
-    ids=["missing", "duplicate", "zero", "negative", "non-decimal"],
+    [[], ["2", "3"], [""], ["0"], ["-1"], ["2.5"], ["2 arbitrary"]],
+    ids=["missing", "duplicate", "empty", "zero", "negative", "non-decimal", "suffix"],
 )
 def test_reklama5_parser_requires_one_positive_decimal_paginator_page(page_values: list[str]) -> None:
     request_url = search_scope().page_request(2).url
@@ -85,6 +85,28 @@ def test_reklama5_parser_accepts_reordered_filter_equivalent_paginator_links() -
     page = parse_reklama5_page(html, page_request(), FIXED_NOW)
 
     assert page.terminal is False
+
+
+def test_reklama5_parser_accepts_live_previous_page_link_suffix() -> None:
+    request = search_scope().page_request(2)
+    previous_page_href = search_scope().page_request(1).url.replace(
+        "page=1",
+        "page=1%20prev-nextPage",
+    )
+    html = replace_paginator_hrefs(
+        search_page(
+            2,
+            [Reklama5Card().html()],
+            page_links=[1],
+            result_count=1,
+            active_page=2,
+        ),
+        [previous_page_href],
+    )
+
+    page = parse_reklama5_page(html, request, FIXED_NOW)
+
+    assert page.terminal is True
 
 
 @pytest.mark.parametrize(
