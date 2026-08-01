@@ -11,6 +11,10 @@ from bs4 import BeautifulSoup, Tag
 
 from rss2discord.models import EntryId
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.reklama5_page_validation import (
+    normalized_text,
+    validate_reklama5_page,
+)
 from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL, Reklama5PageRequest
 
 SKOPJE: Final = ZoneInfo("Europe/Skopje")
@@ -63,6 +67,7 @@ class Reklama5Listing:
 class Reklama5Page:
     listings: tuple[Reklama5Listing, ...]
     organic_ids: frozenset[EntryId]
+    terminal: bool
 
 
 def parse_reklama5_page(
@@ -74,12 +79,13 @@ def parse_reklama5_page(
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidClock")
     local_now = now.astimezone(SKOPJE)
     soup = BeautifulSoup(html, "html.parser")
+    evidence = validate_reklama5_page(soup, request)
     listings: list[Reklama5Listing] = []
     organic_ids: set[EntryId] = set()
     for card in soup.select("#sr-holder > .ad-top-div"):
         promotion = card.select_one(".promotedBtn")
         if promotion is not None:
-            if _text(promotion) == "Промовирано":
+            if normalized_text(promotion) == "Промовирано":
                 continue
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
 
@@ -88,11 +94,14 @@ def parse_reklama5_page(
             continue
         link, entry_id, canonical_url = identity
         organic_ids.add(entry_id)
-        title = _text(link)
-        activity_at = _parse_activity(_text(card.select_one(".ad-date-div-1")), local_now)
+        title = normalized_text(link)
+        activity_at = _parse_activity(
+            normalized_text(card.select_one(".ad-date-div-1")),
+            local_now,
+        )
         if not title or activity_at is None:
             continue
-        summary = _text(card.select_one(".searchAdDesc"))
+        summary = normalized_text(card.select_one(".searchAdDesc"))
         if len(summary) > _SUMMARY_LENGTH:
             summary = f"{summary[: _SUMMARY_LENGTH - 3]}..."
         listings.append(
@@ -101,14 +110,24 @@ def parse_reklama5_page(
                 url=canonical_url,
                 title=title,
                 summary=summary,
-                price=_text(card.select_one(".search-ad-price")),
-                location=_text(card.select_one(".city-span")),
-                category=_text(card.select_one(".ad-category-div small")),
+                price=normalized_text(card.select_one(".search-ad-price")),
+                location=normalized_text(card.select_one(".city-span")),
+                category=normalized_text(card.select_one(".ad-category-div small")),
                 activity_at=activity_at,
                 image_url=_image_url(card, request),
             ),
         )
-    return Reklama5Page(tuple(listings), frozenset(organic_ids))
+    frozen_ids = frozenset(organic_ids)
+    has_paginator_links = bool(evidence.paginator_pages)
+    if evidence.result_count == 0:
+        if frozen_ids or has_paginator_links:
+            raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
+        terminal = True
+    else:
+        terminal = bool(frozen_ids) and not any(
+            page > request.page for page in evidence.paginator_pages
+        )
+    return Reklama5Page(tuple(listings), frozen_ids, terminal)
 
 
 def _listing_identity(
@@ -204,12 +223,6 @@ def _image_url(card: Tag, request: Reklama5PageRequest) -> str | None:
     ):
         return None
     return candidate
-
-
-def _text(node: Tag | None) -> str:
-    if node is None:
-        return ""
-    return " ".join(node.get_text(" ", strip=True).split())
 
 
 def _attribute(node: Tag | None, name: str) -> str | None:

@@ -20,7 +20,17 @@ from tests.reklama5_helpers import (
 
 
 def parse_cards(*cards: Reklama5Card, now: datetime = FIXED_NOW) -> Reklama5Page:
-    return parse_reklama5_page(search_page(*cards), page_request(), now)
+    return parse_reklama5_page(
+        search_page(
+            1,
+            [card.html() for card in cards],
+            page_links=[1],
+            result_count=len(cards),
+            active_page=1,
+        ),
+        page_request(),
+        now,
+    )
 
 
 def test_reklama5_parser_maps_a_rich_generic_card() -> None:

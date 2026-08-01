@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from types import TracebackType
 from typing import Final
 from zoneinfo import ZoneInfo
 
 import requests
+from bs4 import BeautifulSoup
 
 from rss2discord.transports.reklama5_http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
@@ -75,13 +77,72 @@ class Reklama5Card:
         )
 
 
-def search_page(*cards: Reklama5Card) -> bytes:
-    rows = "".join(card.html() for card in cards)
+def search_page(
+    page: int,
+    cards: Sequence[str],
+    *,
+    page_links: Sequence[int],
+    result_count: int,
+    active_page: int | None = None,
+) -> bytes:
+    rows = "".join(cards)
+    links = "".join(
+        f'<li><a href="{escape(search_scope().page_request(link_page).url, quote=True)}">'
+        f"{link_page}</a></li>"
+        for link_page in page_links
+    )
+    active = "" if active_page is None else f'<li class="active">{active_page}</li>'
     return (
-        '<form id="myFrom"><input name="page" value="1"></form>'
+        f'<form id="myFrom"><input name="page" value="{page}"></form>'
         f'<div id="sr-holder">{rows}</div>'
-        '<ul class="pagination"><li class="active">1</li></ul>'
+        '<span class="float-left">'
+        f'<span style="vertical-align: middle">{result_count}</span></span>'
+        f'<ul class="pagination">{active}{links}</ul>'
     ).encode()
+
+
+def replace_form_page_inputs(html: bytes, values: Sequence[str]) -> bytes:
+    soup = BeautifulSoup(html, "html.parser")
+    form = soup.select_one("#myFrom")
+    assert form is not None
+    for page_input in form.select('input[name="page"]'):
+        page_input.decompose()
+    for value in values:
+        page_input = soup.new_tag("input")
+        page_input["name"] = "page"
+        page_input["value"] = value
+        form.append(page_input)
+    return soup.encode()
+
+
+def replace_active_markers(html: bytes, pages: Sequence[int]) -> bytes:
+    soup = BeautifulSoup(html, "html.parser")
+    paginator = soup.select_one("ul.pagination")
+    assert paginator is not None
+    for marker in paginator.select("li.active"):
+        marker.decompose()
+    for page in pages:
+        marker = soup.new_tag("li", attrs={"class": "active"})
+        marker.string = str(page)
+        paginator.append(marker)
+    return soup.encode()
+
+
+def replace_paginator_hrefs(html: bytes, hrefs: Sequence[str]) -> bytes:
+    soup = BeautifulSoup(html, "html.parser")
+    paginator = soup.select_one("ul.pagination")
+    assert paginator is not None
+    for link in paginator.select("a[href]"):
+        parent = link.parent
+        assert parent is not None
+        parent.decompose()
+    for href in hrefs:
+        item = soup.new_tag("li")
+        link = soup.new_tag("a", href=href)
+        link.string = "page"
+        item.append(link)
+        paginator.append(item)
+    return soup.encode()
 
 
 def scan_budget(
