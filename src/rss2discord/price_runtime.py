@@ -35,6 +35,11 @@ from .transports.neksio_price_monitor import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from .transports.neptun_catalog import NeptunCatalogClient
+from .transports.neptun_price_monitor import (
+    NeptunPriceMonitor,
+    NeptunPriceMonitorDependencies,
+)
 from .transports.price_monitor import PriceAlertDelivery
 from .transports.setec_catalog import SetecCatalogClient
 from .transports.setec_price_monitor import (
@@ -57,6 +62,10 @@ type AnhochPriceMonitorFactory = Callable[
 ]
 type NeksioPriceMonitorFactory = Callable[
     [FeedConfig, NeksioPriceMonitorDependencies],
+    PriceMonitor,
+]
+type NeptunPriceMonitorFactory = Callable[
+    [FeedConfig, NeptunPriceMonitorDependencies],
     PriceMonitor,
 ]
 type SetecPriceMonitorFactory = Callable[
@@ -103,6 +112,7 @@ def build_price_jobs(
     *,
     anhoch_monitor_factory: AnhochPriceMonitorFactory = AnhochPriceMonitor,
     neksio_monitor_factory: NeksioPriceMonitorFactory = NeksioPriceMonitor,
+    neptun_monitor_factory: NeptunPriceMonitorFactory = NeptunPriceMonitor,
     setec_monitor_factory: SetecPriceMonitorFactory = SetecPriceMonitor,
     ddstore_monitor_factory: DDStorePriceMonitorFactory = DDStorePriceMonitor,
 ) -> tuple[ScheduledJob, ...]:
@@ -144,6 +154,26 @@ def build_price_jobs(
                     feed,
                     NeksioPriceMonitorDependencies(
                         catalog=NeksioCatalogClient(),
+                        snapshots=shared_dependencies.snapshots,
+                        sender=shared_dependencies.sender,
+                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
+                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
+                        delivery=shared_dependencies.delivery,
+                    ),
+                )
+            case "neptun":
+                interval = feed.price_check_interval
+                if interval is None:
+                    continue
+                shared_dependencies = _shared_monitor_dependencies(
+                    feed,
+                    dependencies,
+                    retry_sleep,
+                )
+                monitor = neptun_monitor_factory(
+                    feed,
+                    NeptunPriceMonitorDependencies(
+                        catalog=NeptunCatalogClient(),
                         snapshots=shared_dependencies.snapshots,
                         sender=shared_dependencies.sender,
                         fetch_retry_policy=shared_dependencies.fetch_retry_policy,
