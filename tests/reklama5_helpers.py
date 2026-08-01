@@ -8,6 +8,7 @@ from html import escape
 from pathlib import Path
 from types import TracebackType
 from typing import Final
+from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -45,6 +46,10 @@ def fixture_html(name: str) -> bytes:
 
 def page_request(url: str = SEARCH_URL) -> Reklama5PageRequest:
     return Reklama5SearchScope.from_url(url).page_request(1)
+
+
+def requested_pages(urls: Sequence[str]) -> list[str]:
+    return [parse_qs(urlsplit(url).query)["page"][0] for url in urls]
 
 
 @dataclass(frozen=True, slots=True)
