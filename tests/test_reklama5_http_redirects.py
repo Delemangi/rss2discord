@@ -1,7 +1,8 @@
 from urllib.parse import urlsplit
 
 import pytest
-import requests
+from curl_cffi import CurlECode
+from curl_cffi import requests as curl_requests
 
 from rss2discord.transports import FeedFetchError, reklama5_http
 from rss2discord.transports.reklama5_http import fetch_reklama5_page
@@ -12,7 +13,7 @@ def test_reklama5_fetch_sends_required_headers_and_stream_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get = RecordingGet([StubResponse(b"page")])
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     content = fetch_reklama5_page(search_scope().page_request(1), scan_budget())
 
@@ -50,7 +51,7 @@ def test_reklama5_fetch_resolves_each_relative_redirect_against_response_url(
             StubResponse(b"page", url=second_url),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     content = fetch_reklama5_page(request, scan_budget())
 
@@ -77,7 +78,7 @@ def test_reklama5_fetch_shares_redirect_limit_across_page_calls(
         responses.append(StubResponse(b"page", url=request.url))
     get = RecordingGet(responses)
     budget = scan_budget()
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     assert fetch_reklama5_page(scope.page_request(1), budget) == b"page"
     with pytest.raises(FeedFetchError, match="TooManyRedirects"):
@@ -103,9 +104,11 @@ def test_reklama5_fetch_rejects_missing_and_untrusted_redirects(
 ) -> None:
     headers = {} if location is None else {"Location": location}
     monkeypatch.setattr(
-        requests,
-        "get",
-        RecordingGet([StubResponse(b"redirect", status_code=302, headers=headers)]),
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
+            [StubResponse(b"redirect", status_code=302, headers=headers)],
+        ),
     )
 
     with pytest.raises(FeedFetchError) as fetch_error:
@@ -117,17 +120,20 @@ def test_reklama5_fetch_rejects_missing_and_untrusted_redirects(
 
 @pytest.mark.parametrize(
     "error",
-    [requests.ConnectionError("connection"), requests.Timeout("timeout")],
+    [
+        curl_requests.RequestsError("connection", CurlECode.COULDNT_CONNECT),
+        curl_requests.RequestsError("timeout", CurlECode.OPERATION_TIMEDOUT),
+    ],
 )
 def test_reklama5_fetch_marks_request_transport_failures_retryable(
     monkeypatch: pytest.MonkeyPatch,
-    error: requests.RequestException,
+    error: curl_requests.RequestsError,
 ) -> None:
-    def raise_request(*args: object, **kwargs: object) -> None:
-        del args, kwargs
-        raise error
-
-    monkeypatch.setattr(requests, "get", raise_request)
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet([], interruption=error),
+    )
 
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(search_scope().page_request(1), scan_budget())
@@ -139,11 +145,17 @@ def test_reklama5_fetch_marks_request_transport_failures_retryable(
 def test_reklama5_fetch_marks_pre_response_invalid_url_permanent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def raise_invalid_url(*args: object, **kwargs: object) -> None:
-        del args, kwargs
-        raise requests.exceptions.InvalidURL("invalid")
-
-    monkeypatch.setattr(requests, "get", raise_invalid_url)
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
+            [],
+            interruption=curl_requests.RequestsError(
+                "invalid",
+                CurlECode.URL_MALFORMAT,
+            ),
+        ),
+    )
 
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(search_scope().page_request(1), scan_budget())
@@ -155,20 +167,20 @@ def test_reklama5_fetch_marks_pre_response_invalid_url_permanent(
 @pytest.mark.parametrize(
     "interruption",
     [
-        requests.ConnectionError("connection interrupted"),
-        requests.Timeout("stream timed out"),
-        requests.RequestException("stream interrupted"),
+        curl_requests.RequestsError("connection interrupted", CurlECode.RECV_ERROR),
+        curl_requests.RequestsError("stream timed out", CurlECode.OPERATION_TIMEDOUT),
+        curl_requests.RequestsError("stream interrupted", CurlECode.PARTIAL_FILE),
     ],
 )
 def test_reklama5_fetch_marks_streamed_request_failures_retryable(
     monkeypatch: pytest.MonkeyPatch,
-    interruption: requests.RequestException,
+    interruption: curl_requests.RequestsError,
 ) -> None:
     budget = scan_budget(bytes_remaining=100)
     monkeypatch.setattr(
-        requests,
-        "get",
-        RecordingGet(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
             [StubResponse(b"", chunks=(b"partial",), interruption=interruption)],
         ),
     )
@@ -194,9 +206,9 @@ def test_reklama5_fetch_propagates_exact_retry_after_result(
 
     monkeypatch.setattr(reklama5_http, "parse_retry_after", parse_retry_after)
     monkeypatch.setattr(
-        requests,
-        "get",
-        RecordingGet(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
             [
                 StubResponse(
                     b"busy",

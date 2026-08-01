@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from html import escape
 from pathlib import Path
-from types import TracebackType
 from typing import Final
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
-import requests
 from bs4 import BeautifulSoup
+from curl_cffi import CurlECode
+from curl_cffi import requests as curl_requests
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.transports.reklama5_http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
@@ -166,47 +167,49 @@ class StubResponse:
     headers: Mapping[str, str] = field(default_factory=dict[str, str])
     url: str = "https://reklama5.mk/Search"
     chunks: tuple[bytes, ...] | None = None
-    interruption: requests.RequestException | None = None
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield from self.chunks if self.chunks is not None else (self.content,)
-        if self.interruption is not None:
-            raise self.interruption
-
-    def __enter__(self) -> StubResponse:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc_type, exc_value, traceback
+    interruption: curl_requests.RequestsError | None = None
 
 
 class RecordingGet:
-    def __init__(self, responses: list[StubResponse]) -> None:
+    def __init__(
+        self,
+        responses: list[StubResponse],
+        interruption: curl_requests.RequestsError | None = None,
+    ) -> None:
         self.responses = responses
+        self.interruption = interruption
         self.urls: list[str] = []
         self.headers: list[Mapping[str, str]] = []
         self.timeouts: list[float] = []
         self.allow_redirects: list[bool] = []
         self.stream: list[bool] = []
 
-    def __call__(
+    def get(
         self,
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout: float,
         allow_redirects: bool,
-        stream: bool,
+        content_callback: Callable[[bytes], int],
+        timeout_ms: int,
     ) -> StubResponse:
         self.urls.append(url)
         self.headers.append(headers)
-        self.timeouts.append(timeout)
+        self.timeouts.append(timeout_ms / 1000)
         self.allow_redirects.append(allow_redirects)
-        self.stream.append(stream)
-        return self.responses.pop(0)
+        self.stream.append(True)
+        if self.interruption is not None:
+            raise self.interruption
+        response = self.responses.pop(0)
+        for chunk in response.chunks if response.chunks is not None else (response.content,):
+            if content_callback(chunk) == CURL_WRITEFUNC_ERROR:
+                raise curl_requests.RequestsError(
+                    "write aborted",
+                    CurlECode.WRITE_ERROR,
+                )
+        if response.interruption is not None:
+            raise response.interruption
+        return response
+
+    def close(self) -> None:
+        pass
