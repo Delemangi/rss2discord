@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-import requests
 
-from rss2discord.transports import FeedFetchError
+from rss2discord.transports import FeedFetchError, reklama5_http
 from rss2discord.transports import reklama5 as reklama5_transport
 from tests.reklama5_helpers import (
     FIXED_NOW,
@@ -50,7 +49,7 @@ def test_reklama5_strategy_fetches_at_most_three_pages_and_returns_oldest_first(
             _response(3, [Reklama5Card(ad_id="100", timestamp="Денес 09:00")], page_links=[1, 2, 3]),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, source_title = _strategy().fetch_entries(SEARCH_URL)
 
@@ -79,7 +78,7 @@ def test_reklama5_strategy_deduplicates_with_first_recent_occurrence_winning(
             ),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -91,7 +90,7 @@ def test_reklama5_strategy_stops_after_explicit_zero_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get = RecordingGet([_response(1, [], page_links=[], result_count=0)])
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -103,7 +102,7 @@ def test_reklama5_strategy_stops_after_non_empty_terminal_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get = RecordingGet([_response(1, [Reklama5Card(ad_id="1")], page_links=[])])
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -124,7 +123,7 @@ def test_reklama5_strategy_continues_when_row_count_alone_is_empty(
             _response(2, [Reklama5Card(ad_id="1")], page_links=[1, 2]),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -141,7 +140,7 @@ def test_reklama5_strategy_rejects_empty_non_terminal_page_before_page_three(
             _response(2, [], page_links=[1, 2, 3], result_count=1),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     with pytest.raises(FeedFetchError) as fetch_error:
         _strategy().fetch_entries(SEARCH_URL)
@@ -163,7 +162,7 @@ def test_reklama5_strategy_rejects_pagination_cycle(
             ),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     with pytest.raises(FeedFetchError) as fetch_error:
         _strategy().fetch_entries(SEARCH_URL)
@@ -181,7 +180,7 @@ def test_reklama5_strategy_rejects_duplicate_only_terminal_later_page_before_bre
             _response(2, [Reklama5Card(ad_id="1")], page_links=[1, 2]),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     with pytest.raises(FeedFetchError) as fetch_error:
         _strategy().fetch_entries(SEARCH_URL)
@@ -203,7 +202,7 @@ def test_reklama5_strategy_allows_later_page_with_at_least_one_new_id(
             ),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -226,7 +225,7 @@ def test_reklama5_strategy_reverses_source_scan_position_for_equal_timestamp_tie
             ),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     entries, _ = _strategy().fetch_entries(SEARCH_URL)
 
@@ -248,7 +247,7 @@ def test_reklama5_strategy_captures_one_aware_clock_value_per_attempt(
             _response(2, [Reklama5Card(ad_id="1")], page_links=[1, 2]),
         ],
     )
-    monkeypatch.setattr(requests, "get", get)
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
 
     reklama5_transport.Reklama5Strategy(clock=clock).fetch_entries(SEARCH_URL)
 
