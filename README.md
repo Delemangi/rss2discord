@@ -8,6 +8,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoc
 - Optional RSS adapters for Hacker News and Reddit
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
+- New Reklama5 ads from generic search URLs
 - New products from Anhoch's catalog and opt-in selling-price alerts
 - New products from Neksio's full public catalog and opt-in selling-price alerts
 - New products from Setec's online catalog and opt-in selling-price alerts
@@ -101,6 +102,13 @@ Common feed types:
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "itmk_oglasnik"
 
+# Reklama5 computer parts and accessories (category 584)
+- id: "reklama5-computer-parts"
+  name: "Reklama5 Computer Parts and Accessories"
+  url: "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "reklama5"
+
 # Anhoch new products and opt-in selling-price monitoring
 - id: "anhoch-new-products"
   name: "Anhoch New Products"
@@ -145,12 +153,12 @@ Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `anhoch`, `ddstore`, `neksio`, and `setec`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `reklama5`, `anhoch`, `ddstore`, `neksio`, and `setec`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. |
-| `price_check_interval` | Anhoch, DDStore, Neksio, or Setec only. Set to `3600` for hourly full-catalog selling-price checks; omit or set to `null` to disable. |
+| `price_check_interval` | Anhoch, DDStore, Neksio, or Setec only; Reklama5 does not support it. Set to `3600` for hourly full-catalog selling-price checks; omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
@@ -161,6 +169,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - The database is created automatically on first startup.
 - RSS, IT.mk, ordinary Anhoch new-product, Setec, and Neksio first-party responses are capped at 1 MiB and transient fetch failures are retried. Neksio accepts only `https://g.store.neksio.mk/`, follows only same-origin redirects, and applies a 30-second request timeout. Anhoch price responses are capped at 2 MiB.
 - IT.mk Oglasnik seeds the first successful fetch without notifications.
+- Reklama5 accepts generic search URLs. The category-584 example tracks computer parts and accessories. Its first successful result window is a silent baseline. Each ordinary feed cycle requests at most three pages, so this is a bounded best-effort future-listing feed rather than a complete current-inventory import. Edits, renewals, reactivations, and price changes for an already seen ad ID remain silent, and `price_check_interval` is not supported.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
 - Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
 - Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.

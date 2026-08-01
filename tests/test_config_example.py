@@ -41,3 +41,17 @@ def test_checked_in_config_example_enables_hourly_setec_price_monitoring() -> No
 
     # Then
     assert setec_feed.price_check_interval == 3600
+
+
+def test_checked_in_config_example_documents_reklama5_computer_parts() -> None:
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+
+    config = load_config(example_path)
+    feed = next(feed for feed in config.feeds if feed.id == "reklama5-computer-parts")
+
+    assert feed.strategy == "reklama5"
+    assert feed.url == (
+        "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0"
+        "&includeOld=1&includeNew=1"
+    )
+    assert feed.price_check_interval is None
