@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
@@ -27,6 +28,7 @@ class Reklama5Strategy(ScraperStrategy):
 
     def __init__(self, clock: Reklama5Clock | None = None) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._observed_organic_ids: frozenset[EntryId] = frozenset()
 
     def fetch_entries(self, url: str) -> tuple[list[Reklama5Listing], str]:
         scope = Reklama5SearchScope.from_url(url)
@@ -74,7 +76,13 @@ class Reklama5Strategy(ScraperStrategy):
                 ),
             )
         ]
+        self._observed_organic_ids = frozenset(seen_ids)
         return entries, REKLAMA5_LABEL
+
+    def get_initialization_entry_ids(self, entries: list[Any]) -> set[EntryId]:
+        return super().get_initialization_entry_ids(entries) | set(
+            self._observed_organic_ids,
+        )
 
     def get_entry_id(self, entry: Reklama5Listing) -> EntryId:
         return entry.entry_id

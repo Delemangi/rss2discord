@@ -10,10 +10,18 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryId
+from rss2discord.transports import reklama5_http
 from rss2discord.transports.reklama5 import Reklama5Listing, Reklama5Strategy
 from tests.app_helpers import FakeSender
 from tests.configuration_helpers import write_config
-from tests.reklama5_helpers import FIXED_NOW, SEARCH_URL
+from tests.reklama5_helpers import (
+    FIXED_NOW,
+    SEARCH_URL,
+    RecordingGet,
+    Reklama5Card,
+    StubResponse,
+    search_page,
+)
 
 
 class SequencedReklama5Strategy(Reklama5Strategy):
@@ -134,6 +142,44 @@ def test_reklama5_non_empty_first_fetch_seeds_without_delivery(tmp_path: Path) -
         app.process_feed(feed)
 
         assert store.is_feed_initialized(feed.id)
+        assert store.has_delivered(feed.id, "123")
+    assert sender.messages == []
+
+
+def test_reklama5_malformed_listing_id_is_seeded_before_later_valid_parse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    feed = _feed()
+    sender = FakeSender([True])
+    get = RecordingGet(
+        [
+            StubResponse(
+                search_page(
+                    1,
+                    [Reklama5Card(ad_id="123", title="").html()],
+                    page_links=[],
+                    result_count=1,
+                ),
+            ),
+            StubResponse(
+                search_page(
+                    1,
+                    [Reklama5Card(ad_id="123").html()],
+                    page_links=[],
+                    result_count=1,
+                ),
+            ),
+        ],
+    )
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = _app(store, sender, Reklama5Strategy(clock=lambda: FIXED_NOW))
+
+        app.process_feed(feed)
+        app.process_feed(feed)
+
         assert store.has_delivered(feed.id, "123")
     assert sender.messages == []
 
