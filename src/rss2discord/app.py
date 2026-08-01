@@ -53,7 +53,9 @@ class RSSToDiscord:
             "ddstore": DDStoreStrategy(self.is_shutdown_requested),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "neksio": NeksioStrategy(self.is_shutdown_requested),
-            "reklama5": Reklama5Strategy(),
+            "reklama5": Reklama5Strategy(
+                is_shutdown_requested=self.is_shutdown_requested,
+            ),
             "rss": RSSStrategy(),
             "setec": SetecStrategy(),
             "xenforo": XenForoStrategy(),

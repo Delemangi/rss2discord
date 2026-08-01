@@ -10,6 +10,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryId
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import reklama5_http
 from rss2discord.transports.reklama5 import Reklama5Listing, Reklama5Strategy
 from tests.app_helpers import FakeSender
@@ -181,6 +182,41 @@ def test_reklama5_malformed_listing_id_is_seeded_before_later_valid_parse(
         app.process_feed(feed)
 
         assert store.has_delivered(feed.id, "123")
+    assert sender.messages == []
+
+
+def test_reklama5_shutdown_during_final_page_does_not_initialize_feed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    feed = _feed()
+    sender = FakeSender([])
+    get = RecordingGet(
+        [
+            StubResponse(
+                search_page(
+                    1,
+                    [Reklama5Card(ad_id="123").html()],
+                    page_links=[],
+                    result_count=1,
+                ),
+            ),
+        ],
+    )
+    shutdown_checks = iter((False, True))
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    strategy = Reklama5Strategy(
+        clock=lambda: FIXED_NOW,
+        is_shutdown_requested=lambda: next(shutdown_checks),
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = _app(store, sender, strategy)
+
+        with pytest.raises(FeedFetchInterruptedError):
+            app.process_feed(feed)
+
+        assert not store.is_feed_initialized(feed.id)
     assert sender.messages == []
 
 

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 from rss2discord.transports.reklama5_http import (
     Reklama5ScanBudget,
@@ -26,8 +27,13 @@ class Reklama5Strategy(ScraperStrategy):
     max_new_entries_per_fetch = None
     max_delivery_history = None
 
-    def __init__(self, clock: Reklama5Clock | None = None) -> None:
+    def __init__(
+        self,
+        clock: Reklama5Clock | None = None,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._is_shutdown_requested = is_shutdown_requested
         self._observed_organic_ids: frozenset[EntryId] = frozenset()
 
     def fetch_entries(self, url: str) -> tuple[list[Reklama5Listing], str]:
@@ -41,6 +47,8 @@ class Reklama5Strategy(ScraperStrategy):
         retained: dict[EntryId, tuple[Reklama5Listing, int]] = {}
         scan_position = 0
         for page_number in range(1, 4):
+            if self._is_shutdown_requested():
+                raise FeedFetchInterruptedError
             request = scope.page_request(page_number)
             page = parse_reklama5_page(
                 fetch_reklama5_page(request, budget),
@@ -66,6 +74,8 @@ class Reklama5Strategy(ScraperStrategy):
             if page.terminal:
                 break
 
+        if self._is_shutdown_requested():
+            raise FeedFetchInterruptedError
         entries = [
             listing
             for listing, _position in sorted(

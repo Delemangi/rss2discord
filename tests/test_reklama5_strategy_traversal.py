@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, reklama5_http
 from rss2discord.transports import reklama5 as reklama5_transport
 from tests.reklama5_helpers import (
@@ -56,6 +57,28 @@ def test_reklama5_strategy_fetches_at_most_three_pages_and_returns_oldest_first(
     assert source_title == "Reklama5"
     assert requested_pages(get.urls) == ["1", "2", "3"]
     assert [entry.entry_id for entry in entries] == ["100", "200", "300"]
+
+
+def test_reklama5_strategy_stops_before_next_page_when_shutdown_is_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [
+            _response(1, [Reklama5Card(ad_id="2")], page_links=[1, 2]),
+            _response(2, [Reklama5Card(ad_id="1")], page_links=[1, 2]),
+        ],
+    )
+    shutdown_checks = iter((False, True))
+    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    strategy = reklama5_transport.Reklama5Strategy(
+        is_shutdown_requested=lambda: next(shutdown_checks),
+        clock=lambda: FIXED_NOW,
+    )
+
+    with pytest.raises(FeedFetchInterruptedError):
+        strategy.fetch_entries(SEARCH_URL)
+
+    assert requested_pages(get.urls) == ["1"]
 
 
 def test_reklama5_strategy_deduplicates_with_first_recent_occurrence_winning(
