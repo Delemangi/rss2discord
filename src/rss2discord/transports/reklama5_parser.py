@@ -144,7 +144,11 @@ def _listing_identity(
         port = 443 if parsed.port is None else parsed.port
     except ValueError:
         return None
-    ad_values = [value for key, value in parse_qsl(parsed.query) if key == "ad"]
+    ad_values = [
+        value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key == "ad"
+    ]
     if (
         parsed.scheme != "https"
         or parsed.hostname != request.scope.host

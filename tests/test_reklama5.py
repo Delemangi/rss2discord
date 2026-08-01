@@ -105,6 +105,14 @@ def test_reklama5_parser_enforces_exact_origin_detail_identity(href: str) -> Non
     assert parse_cards(Reklama5Card(href=href)).listings == ()
 
 
+@pytest.mark.parametrize(
+    "href",
+    ["/AdDetails?ad=&ad=42", "/AdDetails?ad=42&ad="],
+)
+def test_reklama5_parser_rejects_blank_duplicate_detail_ids(href: str) -> None:
+    assert parse_cards(Reklama5Card(href=href)).listings == ()
+
+
 def test_reklama5_parser_treats_missing_promotion_marker_as_organic() -> None:
     assert parse_cards(Reklama5Card()).organic_ids == {"9000001"}
 
