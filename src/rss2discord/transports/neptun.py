@@ -46,7 +46,9 @@ class NeptunStrategy(ScraperStrategy):
             ),
         ]
         if entry.actual_price > 0 and entry.regular_price != entry.actual_price:
-            metrics.append(SourceMetric("Original", format_neptun_mkd(entry.regular_price)))
+            metrics.append(
+                SourceMetric("Original", format_neptun_mkd(entry.regular_price)),
+            )
         metrics.extend(
             (
                 SourceMetric("Manufacturer", entry.manufacturer.name),

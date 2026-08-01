@@ -175,7 +175,9 @@ class NeptunHttpClient:
                             "HTTPError",
                             status_code=status,
                             retryable=status in {408, 429} or 500 <= status < 600,
-                            retry_after=parse_retry_after(response.headers.get("Retry-After")),
+                            retry_after=parse_retry_after(
+                                response.headers.get("Retry-After"),
+                            ),
                         ) from None
                     return content, consumed_bytes
             raise FeedFetchError(NEPTUN_LABEL, "TooManyRedirects")
