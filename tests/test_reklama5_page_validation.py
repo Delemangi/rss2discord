@@ -114,6 +114,17 @@ def test_reklama5_parser_rejects_wrong_non_decimal_or_non_positive_form_reset_va
     _assert_page_error(replace_form_page_inputs(_valid_page(), [value]))
 
 
+def test_reklama5_parser_rejects_oversized_decimal_form_and_count_values() -> None:
+    oversized_decimal = "9" * 5_000
+    _assert_page_error(replace_form_page_inputs(_valid_page(), [oversized_decimal]))
+
+    soup = BeautifulSoup(_valid_page(), "html.parser")
+    count = soup.select_one('span.float-left > span[style*="vertical-align"]')
+    assert count is not None
+    count.string = oversized_decimal
+    _assert_page_error(soup.encode())
+
+
 @pytest.mark.parametrize("pages", [[], [1, 1]], ids=["missing", "duplicate"])
 def test_reklama5_parser_requires_exactly_one_active_marker_when_links_exist(pages: list[int]) -> None:
     _assert_page_error(replace_active_markers(_valid_page(), pages))

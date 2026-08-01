@@ -73,6 +73,17 @@ def test_reklama5_parser_requires_one_positive_decimal_paginator_page(page_value
     _assert_invalid_paginator(href)
 
 
+def test_reklama5_parser_rejects_oversized_decimal_paginator_page() -> None:
+    request_url = search_scope().page_request(2).url
+    parsed = urlsplit(request_url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "page"]
+    href = urlunsplit(
+        (*parsed[:3], urlencode([*query, ("page", "9" * 5_000)]), ""),
+    )
+
+    _assert_invalid_paginator(href)
+
+
 def test_reklama5_parser_accepts_reordered_filter_equivalent_paginator_links() -> None:
     request_url = search_scope().page_request(2).url
     parsed = urlsplit(request_url)

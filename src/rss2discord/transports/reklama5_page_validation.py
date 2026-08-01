@@ -38,16 +38,18 @@ def validate_reklama5_page(
     if len(page_inputs) != 1:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
     page_value = _attribute(page_inputs[0], "value")
-    if page_value is None or not _is_positive_decimal(page_value):
+    page_number = _positive_decimal(page_value)
+    if page_number is None:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
-    if int(page_value) != 1:
+    if page_number != 1:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
 
     count_nodes = soup.select('span.float-left > span[style*="vertical-align"]')
     if len(count_nodes) != 1:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
     count_value = normalized_text(count_nodes[0])
-    if not count_value.isdecimal():
+    result_count = _non_negative_decimal(count_value)
+    if result_count is None:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
 
     paginator = paginators[0]
@@ -60,11 +62,11 @@ def validate_reklama5_page(
         if len(active_markers) != 1:
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
         active_value = normalized_text(active_markers[0])
-        if not _is_positive_decimal(active_value) or int(active_value) != request.page:
+        if _positive_decimal(active_value) != request.page:
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
 
     return Reklama5PageEvidence(
-        result_count=int(count_value),
+        result_count=result_count,
         paginator_pages=paginator_pages,
     )
 
@@ -107,12 +109,20 @@ def _attribute(node: Tag, name: str) -> str | None:
     return value.strip()
 
 
-def _is_positive_decimal(value: str | None) -> bool:
-    return value is not None and value.isdecimal() and int(value) > 0
+def _non_negative_decimal(value: str | None) -> int | None:
+    if value is None or not value.isdecimal():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _positive_decimal(value: str | None) -> int | None:
+    parsed = _non_negative_decimal(value)
+    return parsed if parsed is not None and parsed > 0 else None
 
 
 def _parse_paginator_page(value: str) -> int | None:
     decimal = value.removesuffix(_PAGINATOR_PAGE_SUFFIX)
-    if not _is_positive_decimal(decimal):
-        return None
-    return int(decimal)
+    return _positive_decimal(decimal)
