@@ -96,7 +96,7 @@ Month-only dates use the current `Europe/Skopje` year unless that would place th
 
 A legitimate narrowly filtered search may contain zero organic listings. The strategy therefore keeps `require_entries_for_initialization = False` so an empty initial search initializes correctly and its first later listing is delivered.
 
-Every valid page must contain form `#myFrom`, result container `#sr-holder`, and paginator `ul.pagination`. Live non-empty and zero-result responses both expose the current page through `#myFrom input[name=page]`; it must contain one positive decimal value equal to the requested page. Live non-empty paginated responses also expose `ul.pagination li.active`, which must agree with the requested page whenever paginator links exist. The explicit zero-result response has no active item because it has no paginator links.
+Every valid page must contain form `#myFrom`, result container `#sr-holder`, and paginator `ul.pagination`. Live non-empty and zero-result responses expose exactly one `#myFrom input[name=page]` as a search-reset target; its positive decimal value is always `1` and is not current-page evidence. When paginator links exist, exactly one `ul.pagination li.active` exposes the current page and must agree with the requested page. The explicit zero-result response has no active item because it has no paginator links.
 
 Paginator links are evidence only and are never followed; requests are built independently from the configured URL. Each `ul.pagination a[href]` must resolve to HTTPS, effective port 443, no credentials, no fragment, the exact configured origin, and an accepted search path. Its query must preserve all configured filters plus the forced sort/layout values and contain exactly one positive decimal `page` value; only that page value may differ from the current request.
 
@@ -107,7 +107,7 @@ The fetch fails closed when it receives:
 - Reklama5 application-error text.
 - Challenge, login, homepage, or unrelated redirected HTML.
 - Missing search-result structure without an explicit zero-result state.
-- An inconsistent current-page marker or a paginator link outside the accepted scope.
+- An invalid form reset marker, an inconsistent active current-page marker, or a paginator link outside the accepted scope.
 - A non-terminal page before page 3 that yields no valid organic IDs.
 - A pagination cycle, defined as a later requested page whose complete set of valid organic numeric IDs is non-empty and contains no ID not already seen on earlier requested pages.
 
@@ -143,7 +143,7 @@ All production behavior is introduced test-first.
    - Force sort, layout, and pages 1 through 3.
    - Stop only at selector-backed terminal evidence; row count alone does not stop pagination.
    - Deduplicate IDs with first occurrence winning and return deterministic oldest-first order, including equal timestamps.
-   - Reject inconsistent current-page markers and duplicate-only pagination cycles.
+- Reject invalid form reset markers, inconsistent active current-page markers, and duplicate-only pagination cycles.
    - Restart at page 1 after application-level retry.
 3. HTTP tests:
    - URL/origin/path/fragment validation and case-insensitive replacement of forced query keys.

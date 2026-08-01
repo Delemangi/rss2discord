@@ -11,6 +11,7 @@ from tests.reklama5_helpers import (
     replace_active_markers,
     replace_form_page_inputs,
     search_page,
+    search_scope,
 )
 
 
@@ -84,12 +85,32 @@ def test_reklama5_parser_rejects_missing_or_duplicate_form_page_inputs(values: l
     _assert_page_error(replace_form_page_inputs(_valid_page(), values))
 
 
+def test_reklama5_parser_accepts_page_two_with_form_reset_value_one() -> None:
+    request = search_scope().page_request(2)
+    page = parse_reklama5_page(
+        search_page(
+            2,
+            [Reklama5Card(ad_id="42").html()],
+            page_links=[1, 2, 3],
+            result_count=1,
+            active_page=2,
+        ),
+        request,
+        FIXED_NOW,
+    )
+
+    assert page.organic_ids == {"42"}
+    assert page.terminal is False
+
+
 @pytest.mark.parametrize(
     "value",
     ["2", "wrong", "0", "-1", "1.0"],
-    ids=["wrong", "non-decimal", "zero", "negative", "fraction"],
+    ids=["wrong-reset", "non-decimal", "zero", "negative", "fraction"],
 )
-def test_reklama5_parser_rejects_wrong_non_decimal_or_non_positive_current_page(value: str) -> None:
+def test_reklama5_parser_rejects_wrong_non_decimal_or_non_positive_form_reset_value(
+    value: str,
+) -> None:
     _assert_page_error(replace_form_page_inputs(_valid_page(), [value]))
 
 

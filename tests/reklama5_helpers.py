@@ -98,7 +98,7 @@ def search_page(
     )
     active = "" if active_page is None else f'<li class="active">{active_page}</li>'
     return (
-        f'<form id="myFrom"><input name="page" value="{page}"></form>'
+        '<form id="myFrom"><input name="page" value="1"></form>'
         f'<div id="sr-holder">{rows}</div>'
         '<span class="float-left">'
         f'<span style="vertical-align: middle">{result_count}</span></span>'

@@ -39,7 +39,7 @@ def validate_reklama5_page(
     page_value = _attribute(page_inputs[0], "value")
     if page_value is None or not _is_positive_decimal(page_value):
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
-    if int(page_value) != request.page:
+    if int(page_value) != 1:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
 
     count_nodes = soup.select('span.float-left > span[style*="vertical-align"]')
