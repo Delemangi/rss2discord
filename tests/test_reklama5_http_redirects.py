@@ -118,6 +118,34 @@ def test_reklama5_fetch_rejects_missing_and_untrusted_redirects(
     assert not fetch_error.value.retryable
 
 
+def test_reklama5_fetch_rejects_filter_equivalent_empty_fragment_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = search_scope().page_request(1)
+    location = f"{request.url}#"
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
+            [
+                StubResponse(
+                    b"redirect",
+                    status_code=302,
+                    headers={"Location": location},
+                    url=request.url,
+                ),
+                StubResponse(b"page", url=request.url),
+            ],
+        ),
+    )
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        fetch_reklama5_page(request, scan_budget())
+
+    assert fetch_error.value.cause_type == "InvalidRedirect"
+    assert not fetch_error.value.retryable
+
+
 @pytest.mark.parametrize(
     "error",
     [

@@ -107,7 +107,7 @@ def fetch_reklama5_page(
             response, content = _get_response(session, current_url, budget)
             if 300 <= response.status_code < 400:
                 location = _header(response.headers, "location")
-                if location is None:
+                if location is None or "#" in location:
                     raise _invalid_redirect()
                 target_url = urljoin(response.url, location)
                 if not request.scope.accepts_redirect(request, target_url):

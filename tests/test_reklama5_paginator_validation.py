@@ -57,6 +57,10 @@ def test_reklama5_parser_rejects_untrusted_paginator_scope(href: str) -> None:
     _assert_invalid_paginator(href)
 
 
+def test_reklama5_parser_rejects_filter_equivalent_empty_fragment_paginator() -> None:
+    _assert_invalid_paginator(f"{search_scope().page_request(2).url}#")
+
+
 @pytest.mark.parametrize(
     "page_values",
     [[], ["2", "3"], [""], ["0"], ["-1"], ["2.5"], ["2 arbitrary"]],

@@ -81,7 +81,7 @@ def _validate_paginator_link(
     href: str | None,
     request: Reklama5PageRequest,
 ) -> int:
-    if href is None:
+    if href is None or "#" in href:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPaginator")
     absolute_url = urljoin(request.url, href)
     parsed = urlsplit(absolute_url)
