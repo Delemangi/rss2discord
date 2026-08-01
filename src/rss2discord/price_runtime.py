@@ -191,7 +191,7 @@ def build_price_jobs(
                         delivery=shared_dependencies.delivery,
                     ),
                 )
-            case "rss" | "xenforo" | "itmk_oglasnik":
+            case "rss" | "xenforo" | "itmk_oglasnik" | "reklama5":
                 continue
             case unreachable:
                 assert_never(unreachable)
