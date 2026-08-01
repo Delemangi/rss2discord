@@ -22,7 +22,10 @@ def test_latest_products_requests_newest_thirty_and_returns_oldest_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     requests_spy = RecordingRequests(
-        [StubResponse(category_html()), StubResponse(products_payload(2, [product_payload(2), product_payload(1)]))],
+        [
+            StubResponse(category_html()),
+            StubResponse(products_payload(2, [product_payload(2), product_payload(1)])),
+        ],
     )
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
@@ -238,7 +241,9 @@ def test_complete_category_scan_checks_shutdown_between_pages(
         NeptunCatalogClient().fetch_catalog(
             CATEGORY_URL,
             retry_policy=no_wait_retry_policy(),
-            is_shutdown_requested=lambda: len([call for call in requests_spy.calls if call[0] == "POST"]) == 1,
+            is_shutdown_requested=lambda: (
+                len([call for call in requests_spy.calls if call[0] == "POST"]) == 1
+            ),
         )
 
     assert len([call for call in requests_spy.calls if call[0] == "POST"]) == 1
@@ -256,7 +261,11 @@ def test_complete_category_scan_counts_bytes_across_pages(
         len(category_html()) + len(first_page) + len(second_page) - 1,
     )
     requests_spy = RecordingRequests(
-        [StubResponse(category_html()), StubResponse(first_page), StubResponse(second_page)],
+        [
+            StubResponse(category_html()),
+            StubResponse(first_page),
+            StubResponse(second_page),
+        ],
     )
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)

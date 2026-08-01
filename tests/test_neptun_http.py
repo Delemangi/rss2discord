@@ -55,10 +55,21 @@ def test_category_page_parses_exactly_one_initial_search_model(
 
     model, response_bytes = NeptunHttpClient().fetch_category_model(CATEGORY_URL)
 
-    assert (model.category_id, model.current_page, response_bytes) == (2, 4, len(category_html()))
+    assert (model.category_id, model.current_page, response_bytes) == (
+        2,
+        4,
+        len(category_html()),
+    )
 
 
-@pytest.mark.parametrize("content", [category_html(models=0), category_html(models=2), b"<div id='angularApp' data-initialsearchmodel='not-json'>"])
+@pytest.mark.parametrize(
+    "content",
+    [
+        category_html(models=0),
+        category_html(models=2),
+        b"<div id='angularApp' data-initialsearchmodel='not-json'>",
+    ],
+)
 def test_category_page_rejects_missing_malformed_or_ambiguous_models(
     monkeypatch: pytest.MonkeyPatch,
     content: bytes,
@@ -80,7 +91,12 @@ def test_products_request_uses_observed_payload_and_parses_response(
     fetched = NeptunHttpClient().fetch_products(
         category_url=CATEGORY_URL,
         category_id=2,
-        request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=5 * 1024 * 1024),
+        request=NeptunPageRequest(
+            page=1,
+            page_size=20,
+            sort=7,
+            remaining_scan_bytes=5 * 1024 * 1024,
+        ),
     )
 
     assert fetched.response.batch.items[0].id == 7
@@ -104,7 +120,13 @@ def test_products_request_rejects_off_origin_redirect(
         requests,
         "post",
         RecordingRequests(
-            [StubResponse(b"redirect", status_code=302, headers={"Location": "https://evil.example/steal"})],
+            [
+                StubResponse(
+                    b"redirect",
+                    status_code=302,
+                    headers={"Location": "https://evil.example/steal"},
+                ),
+            ],
         ).post,
     )
 
@@ -112,7 +134,12 @@ def test_products_request_rejects_off_origin_redirect(
         NeptunHttpClient().fetch_products(
             category_url=CATEGORY_URL,
             category_id=2,
-            request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=5 * 1024 * 1024),
+            request=NeptunPageRequest(
+                page=1,
+                page_size=20,
+                sort=7,
+                remaining_scan_bytes=5 * 1024 * 1024,
+            ),
         )
 
 
@@ -129,35 +156,61 @@ def test_products_request_rejects_response_over_five_mib(
         NeptunHttpClient().fetch_products(
             category_url=CATEGORY_URL,
             category_id=2,
-            request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=6 * 1024 * 1024),
+            request=NeptunPageRequest(
+                page=1,
+                page_size=20,
+                sort=7,
+                remaining_scan_bytes=6 * 1024 * 1024,
+            ),
         )
 
 
-@pytest.mark.parametrize("content", [b"not-json", b'{"Batch":{"Config":{"TotalItems":1},"Items":[{}]}}'])
+@pytest.mark.parametrize(
+    "content",
+    [b"not-json", b'{"Batch":{"Config":{"TotalItems":1},"Items":[{}]}}'],
+)
 def test_products_request_rejects_malformed_external_data(
     monkeypatch: pytest.MonkeyPatch,
     content: bytes,
 ) -> None:
-    monkeypatch.setattr(requests, "post", RecordingRequests([StubResponse(content)]).post)
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingRequests([StubResponse(content)]).post,
+    )
 
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
         NeptunHttpClient().fetch_products(
             category_url=CATEGORY_URL,
             category_id=2,
-            request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=5 * 1024 * 1024),
+            request=NeptunPageRequest(
+                page=1,
+                page_size=20,
+                sort=7,
+                remaining_scan_bytes=5 * 1024 * 1024,
+            ),
         )
 
 
 def test_products_request_rejects_total_scan_byte_exhaustion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(requests, "post", RecordingRequests([StubResponse(b"1234")]).post)
+    monkeypatch.setattr(
+        requests,
+        "post",
+        RecordingRequests([StubResponse(b"1234")]).post,
+    )
 
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
         NeptunHttpClient().fetch_products(
             category_url=CATEGORY_URL,
             category_id=2,
-            request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=3),
+            request=NeptunPageRequest(
+                page=1,
+                page_size=20,
+                sort=7,
+                remaining_scan_bytes=3,
+            ),
         )
 
 
@@ -174,7 +227,12 @@ def test_products_request_classifies_truncated_stream_as_retryable(
         NeptunHttpClient().fetch_products(
             category_url=CATEGORY_URL,
             category_id=2,
-            request=NeptunPageRequest(page=1, page_size=20, sort=7, remaining_scan_bytes=5 * 1024 * 1024),
+            request=NeptunPageRequest(
+                page=1,
+                page_size=20,
+                sort=7,
+                remaining_scan_bytes=5 * 1024 * 1024,
+            ),
         )
 
     assert error.value.cause_type == "ChunkedEncodingError"
