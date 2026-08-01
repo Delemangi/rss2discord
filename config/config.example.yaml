@@ -147,10 +147,10 @@ feeds:
 #   - 'neptun': For new products from one Neptun category page
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
-# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, or Setec full-catalog
-#   selling-price scans. Set to 3600 for hourly checks. Omit or set to null to
+# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, or Setec
+#   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
-#   silently creates a full-catalog baseline. Anhoch scans use 500 products per
+#   silently creates a baseline snapshot. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;
 #   a scan fails above 100 categories, 100 pages per category, or 10,000 products.

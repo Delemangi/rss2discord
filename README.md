@@ -149,7 +149,7 @@ Common feed types:
   webhook_name: "Neptun"
 ```
 
-`price_check_interval: 3600` opts an Anhoch, DDStore, Neksio, Neptun, or Setec feed into an immediate, independent full-catalog price scan. The first scan silently stores a baseline; later scans run at the configured interval. Neptun scans only the category named by its feed URL. Omit the key or set it to `null` to disable price monitoring.
+`price_check_interval: 3600` opts an Anhoch, DDStore, Neksio, Neptun, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Neptun scans only the category named by its feed URL. Omit the key or set it to `null` to disable price monitoring.
 
 Useful options:
 
