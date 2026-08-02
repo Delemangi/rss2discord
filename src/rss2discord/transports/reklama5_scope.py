@@ -14,6 +14,8 @@ _ALLOWED_PATHS: Final = frozenset(
     {"/Search", "/Search/", "/Search/Index", "/Search/Index/"},
 )
 _OWNED_QUERY_KEYS: Final = frozenset({"sortbyprice", "pageview", "page"})
+_MAX_DISCOVERY_PAGE: Final = 3
+MAX_REKLAMA5_CATALOG_PAGES: Final = 250
 _CANONICAL_QUERY_KEYS: Final = (
     ("sortbyprice", "SortByPrice"),
     ("pageview", "pageView"),
@@ -51,7 +53,13 @@ class Reklama5SearchScope:
         )
 
     def page_request(self, page: int) -> Reklama5PageRequest:
-        if page not in range(1, 4):
+        return self._page_request(page, _MAX_DISCOVERY_PAGE)
+
+    def catalog_page_request(self, page: int) -> Reklama5PageRequest:
+        return self._page_request(page, MAX_REKLAMA5_CATALOG_PAGES)
+
+    def _page_request(self, page: int, maximum_page: int) -> Reklama5PageRequest:
+        if page not in range(1, maximum_page + 1):
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
         query = (
             *self.caller_query,

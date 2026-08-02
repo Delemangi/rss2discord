@@ -120,6 +120,30 @@ def test_reklama5_page_request_rejects_pages_outside_the_fixed_window(
     assert fetch_error.value.cause_type == "InvalidPage"
 
 
+def test_reklama5_catalog_page_request_accepts_the_full_category_window() -> None:
+    scope = Reklama5SearchScope.from_url(SEARCH_URL)
+
+    request = scope.catalog_page_request(250)
+
+    assert request.page == 250
+    assert parse_qsl(urlsplit(request.url).query, keep_blank_values=True)[-1] == (
+        "page",
+        "250",
+    )
+
+
+@pytest.mark.parametrize("page", [0, 251])
+def test_reklama5_catalog_page_request_rejects_pages_outside_its_bound(
+    page: int,
+) -> None:
+    scope = Reklama5SearchScope.from_url(SEARCH_URL)
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        scope.catalog_page_request(page)
+
+    assert fetch_error.value.cause_type == "InvalidPage"
+
+
 def test_reklama5_redirect_accepts_search_path_and_query_reordering() -> None:
     scope = Reklama5SearchScope.from_url(
         "https://reklama5.mk/Search?cat=584&tag=&tag=x",

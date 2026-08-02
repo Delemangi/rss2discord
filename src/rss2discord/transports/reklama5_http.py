@@ -34,9 +34,11 @@ MAX_REKLAMA5_RESPONSE_BYTES: Final = 2_097_152
 MAX_REKLAMA5_ATTEMPT_BYTES: Final = 6_291_456
 MAX_REKLAMA5_REDIRECTS: Final = 10
 MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
+MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES: Final = 500 * 1024 * 1024
+MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS: Final = 300.0
 
 
-@dataclass(slots=True)
+@dataclass(slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
 class Reklama5ScanBudget:
     """Track mutable byte, redirect, and deadline limits for one fetch attempt."""
 
@@ -50,6 +52,14 @@ class Reklama5ScanBudget:
             bytes_remaining=MAX_REKLAMA5_ATTEMPT_BYTES,
             redirects_remaining=MAX_REKLAMA5_REDIRECTS,
             expires_at=time.monotonic() + MAX_REKLAMA5_ATTEMPT_SECONDS,
+        )
+
+    @classmethod
+    def for_catalog(cls) -> Reklama5ScanBudget:
+        return cls(
+            bytes_remaining=MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES,
+            redirects_remaining=MAX_REKLAMA5_REDIRECTS,
+            expires_at=time.monotonic() + MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS,
         )
 
     def request_timeout(self) -> float:
