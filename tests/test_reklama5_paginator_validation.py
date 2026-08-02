@@ -103,7 +103,7 @@ def test_reklama5_parser_rejects_oversized_decimal_paginator_page() -> None:
     parsed = urlsplit(request_url)
     query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "page"]
     href = urlunsplit(
-        (*parsed[:3], urlencode([*query, ("page", "9" * 5_000)]), ""),
+        (*parsed[:3], urlencode([*query, ("page", "9" * 100)]), ""),
     )
 
     _assert_invalid_paginator(href)
