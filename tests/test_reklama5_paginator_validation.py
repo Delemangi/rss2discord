@@ -15,7 +15,12 @@ from tests.reklama5_helpers import (
 )
 
 
-def _page(*, cards: list[Reklama5Card], page_links: list[int], result_count: int) -> bytes:
+def _page(
+    *,
+    cards: list[Reklama5Card],
+    page_links: list[int],
+    result_count: int,
+) -> bytes:
     return search_page(
         1,
         [card.html() for card in cards],
@@ -51,7 +56,17 @@ def _assert_invalid_paginator(href: str) -> None:
         "https://reklama5.mk/Search?cat=584&cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1&SortByPrice=2&pageView=1&page=2",
         "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1&page=2",
     ],
-    ids=["host", "scheme", "port", "path", "credentials", "fragment", "filter", "duplicate", "forced"],
+    ids=[
+        "host",
+        "scheme",
+        "port",
+        "path",
+        "credentials",
+        "fragment",
+        "filter",
+        "duplicate",
+        "forced",
+    ],
 )
 def test_reklama5_parser_rejects_untrusted_paginator_scope(href: str) -> None:
     _assert_invalid_paginator(href)
@@ -66,12 +81,18 @@ def test_reklama5_parser_rejects_filter_equivalent_empty_fragment_paginator() ->
     [[], ["2", "3"], [""], ["0"], ["-1"], ["2.5"], ["2 arbitrary"]],
     ids=["missing", "duplicate", "empty", "zero", "negative", "non-decimal", "suffix"],
 )
-def test_reklama5_parser_requires_one_positive_decimal_paginator_page(page_values: list[str]) -> None:
+def test_reklama5_parser_requires_one_positive_decimal_paginator_page(
+    page_values: list[str],
+) -> None:
     request_url = search_scope().page_request(2).url
     parsed = urlsplit(request_url)
     query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "page"]
     href = urlunsplit(
-        (*parsed[:3], urlencode([*query, *(("page", value) for value in page_values)]), ""),
+        (
+            *parsed[:3],
+            urlencode([*query, *(("page", value) for value in page_values)]),
+            "",
+        ),
     )
 
     _assert_invalid_paginator(href)
@@ -91,7 +112,9 @@ def test_reklama5_parser_rejects_oversized_decimal_paginator_page() -> None:
 def test_reklama5_parser_accepts_reordered_filter_equivalent_paginator_links() -> None:
     request_url = search_scope().page_request(2).url
     parsed = urlsplit(request_url)
-    reordered = urlunsplit((*parsed[:3], urlencode(list(reversed(parse_qsl(parsed.query)))), ""))
+    reordered = urlunsplit(
+        (*parsed[:3], urlencode(list(reversed(parse_qsl(parsed.query)))), ""),
+    )
     html = replace_paginator_hrefs(
         _page(cards=[Reklama5Card()], page_links=[1, 2], result_count=1),
         [reordered],
@@ -104,9 +127,13 @@ def test_reklama5_parser_accepts_reordered_filter_equivalent_paginator_links() -
 
 def test_reklama5_parser_accepts_live_previous_page_link_suffix() -> None:
     request = search_scope().page_request(2)
-    previous_page_href = search_scope().page_request(1).url.replace(
-        "page=1",
-        "page=1%20prev-nextPage",
+    previous_page_href = (
+        search_scope()
+        .page_request(1)
+        .url.replace(
+            "page=1",
+            "page=1%20prev-nextPage",
+        )
     )
     html = replace_paginator_hrefs(
         search_page(
@@ -153,7 +180,9 @@ def test_reklama5_parser_keeps_empty_non_zero_page_without_links_non_terminal() 
     assert page.terminal is False
 
 
-def test_reklama5_parser_marks_duplicate_id_non_zero_page_without_links_terminal() -> None:
+def test_reklama5_parser_marks_duplicate_id_non_zero_page_without_links_terminal() -> (
+    None
+):
     page = parse_reklama5_page(
         _page(
             cards=[Reklama5Card(ad_id="42"), Reklama5Card(ad_id="42")],

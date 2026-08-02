@@ -141,8 +141,7 @@ def test_reklama5_redirect_rejects_apex_to_www_switch() -> None:
 
     accepted = scope.accepts_redirect(
         request,
-        "https://www.reklama5.mk/Search?"
-        "cat=584&SortByPrice=2&pageView=1&page=1",
+        "https://www.reklama5.mk/Search?cat=584&SortByPrice=2&pageView=1&page=1",
     )
 
     assert not accepted
@@ -154,8 +153,7 @@ def test_reklama5_redirect_rejects_explicit_port_zero() -> None:
 
     assert not scope.accepts_redirect(
         request,
-        "https://reklama5.mk:0/Search?"
-        "cat=584&SortByPrice=2&pageView=1&page=1",
+        "https://reklama5.mk:0/Search?cat=584&SortByPrice=2&pageView=1&page=1",
     )
 
 
@@ -165,8 +163,7 @@ def test_reklama5_redirect_rejects_explicit_empty_fragment() -> None:
 
     assert not scope.accepts_redirect(
         request,
-        "https://reklama5.mk/Search?"
-        "cat=584&SortByPrice=2&pageView=1&page=1#",
+        "https://reklama5.mk/Search?cat=584&SortByPrice=2&pageView=1&page=1#",
     )
 
 
