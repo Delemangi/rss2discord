@@ -23,8 +23,7 @@ from rss2discord.transports.reklama5_http import (
 )
 
 SEARCH_URL: Final = (
-    "https://reklama5.mk/Search?"
-    "cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
+    "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
 )
 FIXED_NOW: Final = datetime(
     2026,
@@ -68,11 +67,25 @@ class Reklama5Card:
     highlighted: bool = False
 
     def html(self) -> str:
-        classes = "ad-top-div OglasResultsHighlighted" if self.highlighted else "ad-top-div"
+        classes = (
+            "ad-top-div OglasResultsHighlighted" if self.highlighted else "ad-top-div"
+        )
         href = self.href or f"/AdDetails?ad={self.ad_id}"
-        title = "" if self.title is None else f'<a class="SearchAdTitle" href="{href}">{self.title}</a>'
-        marker = "" if self.promotion is None else f'<span class="promotedBtn">{self.promotion}</span>'
-        image = "" if self.image is None else f'<div class="ad-image" style="background-image: url(\'{self.image}\')"></div>'
+        title = (
+            ""
+            if self.title is None
+            else f'<a class="SearchAdTitle" href="{href}">{self.title}</a>'
+        )
+        marker = (
+            ""
+            if self.promotion is None
+            else f'<span class="promotedBtn">{self.promotion}</span>'
+        )
+        image = (
+            ""
+            if self.image is None
+            else f'<div class="ad-image" style="background-image: url(\'{self.image}\')"></div>'
+        )
         return (
             f'<div class="{classes}">{marker}{title}'
             f'<div class="searchAdDesc">{self.summary}</div>'
@@ -201,7 +214,9 @@ class RecordingGet:
         if self.interruption is not None:
             raise self.interruption
         response = self.responses.pop(0)
-        for chunk in response.chunks if response.chunks is not None else (response.content,):
+        for chunk in (
+            response.chunks if response.chunks is not None else (response.content,)
+        ):
             if content_callback(chunk) == CURL_WRITEFUNC_ERROR:
                 raise curl_requests.RequestsError(
                     "write aborted",
