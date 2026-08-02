@@ -123,7 +123,7 @@ def test_reklama5_parser_rejects_wrong_non_decimal_or_non_positive_form_reset_va
 
 
 def test_reklama5_parser_rejects_oversized_decimal_form_and_count_values() -> None:
-    oversized_decimal = "9" * 5_000
+    oversized_decimal = "9" * 100
     _assert_page_error(replace_form_page_inputs(_valid_page(), [oversized_decimal]))
 
     soup = BeautifulSoup(_valid_page(), "html.parser")

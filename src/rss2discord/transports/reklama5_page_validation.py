@@ -13,6 +13,7 @@ REKLAMA5_APPLICATION_ERROR_TEXT: Final = (
     "Настана грешка. Оваа грешка е испратена до нашиот технички оддел."
 )
 _PAGINATOR_PAGE_SUFFIX: Final = " prev-nextPage"
+_MAX_DECIMAL_DIGITS: Final = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +113,7 @@ def _attribute(node: Tag, name: str) -> str | None:
 
 
 def _non_negative_decimal(value: str | None) -> int | None:
-    if value is None or not value.isdecimal():
+    if value is None or len(value) > _MAX_DECIMAL_DIGITS or not value.isdecimal():
         return None
     try:
         return int(value)
