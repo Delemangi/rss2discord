@@ -7,12 +7,24 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Protocol, assert_never
 
 from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, SleepCallback
 from .fetch_errors import FeedFetchError
+from .price_monitor_builders import (
+    DEFAULT_PRICE_MONITOR_FACTORIES,
+    AnhochPriceMonitorFactory,
+    DDStorePriceMonitorFactory,
+    NeksioPriceMonitorFactory,
+    NeptunPriceMonitorFactory,
+    PriceMonitor,
+    PriceMonitorFactories,
+    Reklama5PriceMonitorFactory,
+    SetecPriceMonitorFactory,
+    SharedPriceMonitorDependencies,
+    build_provider_price_monitor,
+)
 from .retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -20,62 +32,9 @@ from .retries import (
     SQLiteRetryPolicy,
 )
 from .scheduler import ScheduledJob
-from .transports.anhoch_catalog import AnhochCatalogClient
-from .transports.anhoch_price_monitor import (
-    AnhochPriceMonitor,
-    AnhochPriceMonitorDependencies,
-)
-from .transports.ddstore_catalog import DDStoreCatalogClient
-from .transports.ddstore_price_monitor import (
-    DDStorePriceMonitor,
-    DDStorePriceMonitorDependencies,
-)
-from .transports.neksio_catalog import NeksioCatalogClient
-from .transports.neksio_price_monitor import (
-    NeksioPriceMonitor,
-    NeksioPriceMonitorDependencies,
-)
-from .transports.neptun_catalog import NeptunCatalogClient
-from .transports.neptun_price_monitor import (
-    NeptunPriceMonitor,
-    NeptunPriceMonitorDependencies,
-)
 from .transports.price_monitor import PriceAlertDelivery
-from .transports.setec_catalog import SetecCatalogClient
-from .transports.setec_price_monitor import (
-    SetecPriceMonitor,
-    SetecPriceMonitorDependencies,
-)
 
 logger = logging.getLogger(__name__)
-
-
-class PriceMonitor(Protocol):
-    """Perform one full-catalog price scan."""
-
-    def scan(self) -> None: ...
-
-
-type AnhochPriceMonitorFactory = Callable[
-    [FeedConfig, AnhochPriceMonitorDependencies],
-    PriceMonitor,
-]
-type NeksioPriceMonitorFactory = Callable[
-    [FeedConfig, NeksioPriceMonitorDependencies],
-    PriceMonitor,
-]
-type NeptunPriceMonitorFactory = Callable[
-    [FeedConfig, NeptunPriceMonitorDependencies],
-    PriceMonitor,
-]
-type SetecPriceMonitorFactory = Callable[
-    [FeedConfig, SetecPriceMonitorDependencies],
-    PriceMonitor,
-]
-type DDStorePriceMonitorFactory = Callable[
-    [FeedConfig, DDStorePriceMonitorDependencies],
-    PriceMonitor,
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,15 +46,6 @@ class PriceJobDependencies:
     sleep: SleepCallback
     delay_between_posts: float
     is_shutdown_requested: Callable[[], bool]
-
-
-@dataclass(frozen=True, slots=True)
-class _SharedPriceMonitorDependencies:
-    snapshots: DeliveryStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
 
 
 class _RetrySleepAdapter:
@@ -110,121 +60,36 @@ def build_price_jobs(
     config: AppConfig,
     dependencies: PriceJobDependencies,
     *,
-    anhoch_monitor_factory: AnhochPriceMonitorFactory = AnhochPriceMonitor,
-    neksio_monitor_factory: NeksioPriceMonitorFactory = NeksioPriceMonitor,
-    neptun_monitor_factory: NeptunPriceMonitorFactory = NeptunPriceMonitor,
-    setec_monitor_factory: SetecPriceMonitorFactory = SetecPriceMonitor,
-    ddstore_monitor_factory: DDStorePriceMonitorFactory = DDStorePriceMonitor,
+    anhoch_monitor_factory: AnhochPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.anhoch,
+    neksio_monitor_factory: NeksioPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neksio,
+    neptun_monitor_factory: NeptunPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neptun,
+    reklama5_monitor_factory: Reklama5PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.reklama5,
+    setec_monitor_factory: SetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.setec,
+    ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
     retry_sleep = _RetrySleepAdapter(dependencies.sleep)
+    factories = PriceMonitorFactories(
+        anhoch=anhoch_monitor_factory,
+        ddstore=ddstore_monitor_factory,
+        neksio=neksio_monitor_factory,
+        neptun=neptun_monitor_factory,
+        reklama5=reklama5_monitor_factory,
+        setec=setec_monitor_factory,
+    )
     for feed in config.feeds:
-        match feed.strategy:
-            case "anhoch":
-                interval = feed.price_check_interval
-                if interval is None:
-                    continue
-                shared_dependencies = _shared_monitor_dependencies(
-                    feed,
-                    dependencies,
-                    retry_sleep,
-                )
-                monitor = anhoch_monitor_factory(
-                    feed,
-                    AnhochPriceMonitorDependencies(
-                        catalog=AnhochCatalogClient(),
-                        snapshots=shared_dependencies.snapshots,
-                        sender=shared_dependencies.sender,
-                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
-                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
-                        delivery=shared_dependencies.delivery,
-                    ),
-                )
-            case "neksio":
-                interval = feed.price_check_interval
-                if interval is None:
-                    continue
-                shared_dependencies = _shared_monitor_dependencies(
-                    feed,
-                    dependencies,
-                    retry_sleep,
-                )
-                monitor = neksio_monitor_factory(
-                    feed,
-                    NeksioPriceMonitorDependencies(
-                        catalog=NeksioCatalogClient(),
-                        snapshots=shared_dependencies.snapshots,
-                        sender=shared_dependencies.sender,
-                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
-                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
-                        delivery=shared_dependencies.delivery,
-                    ),
-                )
-            case "neptun":
-                interval = feed.price_check_interval
-                if interval is None:
-                    continue
-                shared_dependencies = _shared_monitor_dependencies(
-                    feed,
-                    dependencies,
-                    retry_sleep,
-                )
-                monitor = neptun_monitor_factory(
-                    feed,
-                    NeptunPriceMonitorDependencies(
-                        catalog=NeptunCatalogClient(),
-                        snapshots=shared_dependencies.snapshots,
-                        sender=shared_dependencies.sender,
-                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
-                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
-                        delivery=shared_dependencies.delivery,
-                    ),
-                )
-            case "setec":
-                interval = feed.price_check_interval
-                if interval is None:
-                    continue
-                shared_dependencies = _shared_monitor_dependencies(
-                    feed,
-                    dependencies,
-                    retry_sleep,
-                )
-                monitor = setec_monitor_factory(
-                    feed,
-                    SetecPriceMonitorDependencies(
-                        catalog=SetecCatalogClient(),
-                        snapshots=shared_dependencies.snapshots,
-                        sender=shared_dependencies.sender,
-                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
-                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
-                        delivery=shared_dependencies.delivery,
-                    ),
-                )
-            case "ddstore":
-                interval = feed.price_check_interval
-                if interval is None:
-                    continue
-                shared_dependencies = _shared_monitor_dependencies(
-                    feed,
-                    dependencies,
-                    retry_sleep,
-                )
-                monitor = ddstore_monitor_factory(
-                    feed,
-                    DDStorePriceMonitorDependencies(
-                        catalog=DDStoreCatalogClient(),
-                        snapshots=shared_dependencies.snapshots,
-                        sender=shared_dependencies.sender,
-                        fetch_retry_policy=shared_dependencies.fetch_retry_policy,
-                        sqlite_retry_policy=shared_dependencies.sqlite_retry_policy,
-                        delivery=shared_dependencies.delivery,
-                    ),
-                )
-            case "rss" | "xenforo" | "itmk_oglasnik" | "reklama5":
-                continue
-            case unreachable:
-                assert_never(unreachable)
+        interval = feed.price_check_interval
+        if interval is None:
+            continue
+        shared_dependencies = _shared_monitor_dependencies(
+            feed,
+            dependencies,
+            retry_sleep,
+        )
+        monitor = build_provider_price_monitor(feed, shared_dependencies, factories)
+        if monitor is None:
+            continue
         jobs.append(
             ScheduledJob(interval, partial(_scan_price_monitor, monitor, feed.id)),
         )
@@ -235,8 +100,8 @@ def _shared_monitor_dependencies(
     feed: FeedConfig,
     dependencies: PriceJobDependencies,
     retry_sleep: _RetrySleepAdapter,
-) -> _SharedPriceMonitorDependencies:
-    return _SharedPriceMonitorDependencies(
+) -> SharedPriceMonitorDependencies:
+    return SharedPriceMonitorDependencies(
         snapshots=dependencies.store,
         sender=dependencies.sender,
         fetch_retry_policy=FetchRetryPolicy(
