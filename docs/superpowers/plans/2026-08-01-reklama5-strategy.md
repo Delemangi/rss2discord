@@ -83,6 +83,7 @@ def test_reklama5_scope_rejects_urls_outside_the_search_boundary(url: str) -> No
     assert fetch_error.value.cause_type == "InvalidUrl"
     assert "secret" not in str(fetch_error.value)
 
+
 def test_reklama5_page_request_preserves_filters_and_replaces_owned_keys() -> None:
     scope = Reklama5SearchScope.from_url(
         "https://www.reklama5.mk/Search/?cat=584&tag=&tag=x&sortbyprice=9&PAGE=8&pageView=7"
@@ -118,6 +119,7 @@ class Reklama5SearchScope:
     port: int
     configured_path: str
     caller_query: tuple[tuple[str, str], ...]
+
 
 @dataclass(frozen=True, slots=True)
 class Reklama5PageRequest:
@@ -172,10 +174,13 @@ Add these named tests to `tests/test_reklama5_http.py`:
 def test_reklama5_fetch_uses_remaining_deadline_as_request_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    budget = Reklama5ScanBudget(bytes_remaining=100, redirects_remaining=10, expires_at=15)
+    budget = Reklama5ScanBudget(
+        bytes_remaining=100, redirects_remaining=10, expires_at=15
+    )
     # monotonic returns 10 before the request
     fetch_reklama5_page(scope.page_request(1), budget)
     assert get.timeouts == [5]
+
 
 @pytest.mark.parametrize("status_code", range(400, 600))
 def test_reklama5_fetch_classifies_http_statuses(
@@ -222,6 +227,7 @@ MAX_REKLAMA5_ATTEMPT_BYTES: Final = 6_291_456
 MAX_REKLAMA5_REDIRECTS: Final = 10
 MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
 REKLAMA5_STREAM_CHUNK_BYTES: Final = 65_536
+
 
 @dataclass(slots=True)
 class Reklama5ScanBudget:
@@ -320,6 +326,7 @@ Use these exact data contracts:
 ```python
 SKOPJE: Final = ZoneInfo("Europe/Skopje")
 
+
 @dataclass(frozen=True, slots=True)
 class Reklama5Listing:
     entry_id: EntryId
@@ -331,6 +338,7 @@ class Reklama5Listing:
     category: str
     activity_at: datetime
     image_url: str | None
+
 
 @dataclass(frozen=True, slots=True)
 class Reklama5Page:
@@ -461,10 +469,13 @@ Extend `RecordingGet` so queued page responses can model page 1 through page 3 a
 def test_reklama5_strategy_fetches_at_most_three_pages_and_returns_oldest_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entries, source_title = Reklama5Strategy(clock=fixed_clock).fetch_entries(SEARCH_URL)
+    entries, source_title = Reklama5Strategy(clock=fixed_clock).fetch_entries(
+        SEARCH_URL
+    )
     assert source_title == "Reklama5"
     assert requested_pages(get.urls) == ["1", "2", "3"]
     assert [entry.entry_id for entry in entries] == ["100", "200", "300"]
+
 
 def test_reklama5_strategy_deduplicates_with_first_recent_occurrence_winning(
     monkeypatch: pytest.MonkeyPatch,
@@ -511,6 +522,7 @@ Use this constructor and class contract:
 
 ```python
 type Reklama5Clock = Callable[[], datetime]
+
 
 class Reklama5Strategy(ScraperStrategy):
     seed_existing_on_first_fetch = True
@@ -710,23 +722,30 @@ from rss2discord.transports.reklama5 import Reklama5Strategy
 from rss2discord.transports import reklama5_http
 
 LIVE_URL = (
-    "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0"
-    "&includeOld=1&includeNew=1"
+    "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
 )
 original_get = reklama5_http.requests.get
 requested_urls: list[str] = []
 
+
 def recording_get(url: str, **kwargs: object):
     requested_urls.append(url)
     return original_get(url, **kwargs)
+
 
 reklama5_http.requests.get = recording_get
 entries, source = Reklama5Strategy().fetch_entries(LIVE_URL)
 assert source == "Reklama5"
 assert entries
 assert 1 <= len(requested_urls) <= 13  # three final pages plus at most ten redirects
-page_requests = [url for url in requested_urls if dict(parse_qsl(urlsplit(url).query)).get("page")]
-assert 1 <= len({dict(parse_qsl(urlsplit(url).query))["page"] for url in page_requests}) <= 3
+page_requests = [
+    url for url in requested_urls if dict(parse_qsl(urlsplit(url).query)).get("page")
+]
+assert (
+    1
+    <= len({dict(parse_qsl(urlsplit(url).query))["page"] for url in page_requests})
+    <= 3
+)
 for url in page_requests:
     pairs = parse_qsl(urlsplit(url).query, keep_blank_values=True)
     assert ("cat", "584") in pairs
@@ -743,7 +762,10 @@ assert len(ids) == len(set(ids))
 assert all(entry.title and entry.url for entry in entries)
 assert all(entry.activity_at.tzinfo is not None for entry in entries)
 assert entries == sorted(entries, key=lambda entry: entry.activity_at)
-assert all(entry.image_url is None or entry.image_url.startswith("https://") for entry in entries)
+assert all(
+    entry.image_url is None or entry.image_url.startswith("https://")
+    for entry in entries
+)
 page_count = len(
     {dict(parse_qsl(urlsplit(url).query))["page"] for url in page_requests}
 )
