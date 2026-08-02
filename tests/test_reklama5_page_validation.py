@@ -42,7 +42,11 @@ def _assert_page_error(html: bytes, cause_type: str = "InvalidPage") -> None:
 
 
 def test_reklama5_parser_accepts_explicit_zero_result_page() -> None:
-    page = parse_reklama5_page(fixture_html("zero_results.html"), page_request(), FIXED_NOW)
+    page = parse_reklama5_page(
+        fixture_html("zero_results.html"),
+        page_request(),
+        FIXED_NOW,
+    )
 
     assert page.listings == ()
     assert page.organic_ids == frozenset()
@@ -67,7 +71,9 @@ def test_reklama5_parser_rejects_exact_application_error_inside_valid_page() -> 
     ],
     ids=["challenge", "login", "homepage", "unrelated"],
 )
-def test_reklama5_parser_rejects_challenge_login_homepage_and_unrelated_html(html: bytes) -> None:
+def test_reklama5_parser_rejects_challenge_login_homepage_and_unrelated_html(
+    html: bytes,
+) -> None:
     _assert_page_error(html)
 
 
@@ -81,7 +87,9 @@ def test_reklama5_parser_requires_form_results_and_paginator(selector: str) -> N
 
 
 @pytest.mark.parametrize("values", [[], ["1", "1"]], ids=["missing", "duplicate"])
-def test_reklama5_parser_rejects_missing_or_duplicate_form_page_inputs(values: list[str]) -> None:
+def test_reklama5_parser_rejects_missing_or_duplicate_form_page_inputs(
+    values: list[str],
+) -> None:
     _assert_page_error(replace_form_page_inputs(_valid_page(), values))
 
 
@@ -126,7 +134,9 @@ def test_reklama5_parser_rejects_oversized_decimal_form_and_count_values() -> No
 
 
 @pytest.mark.parametrize("pages", [[], [1, 1]], ids=["missing", "duplicate"])
-def test_reklama5_parser_requires_exactly_one_active_marker_when_links_exist(pages: list[int]) -> None:
+def test_reklama5_parser_requires_exactly_one_active_marker_when_links_exist(
+    pages: list[int],
+) -> None:
     _assert_page_error(replace_active_markers(_valid_page(), pages))
 
 
@@ -134,7 +144,9 @@ def test_reklama5_parser_requires_active_page_to_match_when_links_exist() -> Non
     _assert_page_error(replace_active_markers(_valid_page(), [2]))
 
 
-def test_reklama5_parser_keeps_valid_ids_from_otherwise_malformed_organic_rows() -> None:
+def test_reklama5_parser_keeps_valid_ids_from_otherwise_malformed_organic_rows() -> (
+    None
+):
     page = parse_reklama5_page(
         search_page(
             1,
