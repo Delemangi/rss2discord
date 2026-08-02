@@ -55,11 +55,7 @@ class Reklama5Strategy(ScraperStrategy):
                 request,
                 now,
             )
-            if (
-                page_number > 1
-                and page.organic_ids
-                and page.organic_ids <= seen_ids
-            ):
+            if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
                 raise FeedFetchError(REKLAMA5_LABEL, "PaginationCycle")
             if page_number < 3 and not page.organic_ids and not page.terminal:
                 raise FeedFetchError(REKLAMA5_LABEL, "EmptyNonTerminalPage")

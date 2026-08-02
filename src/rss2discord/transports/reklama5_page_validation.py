@@ -96,7 +96,9 @@ def _validate_paginator_link(
         (key, str(request.page) if key.casefold() == "page" else value)
         for key, value in query
     ]
-    current_page_url = urlunsplit((*parsed[:3], urlencode(current_query), parsed.fragment))
+    current_page_url = urlunsplit(
+        (*parsed[:3], urlencode(current_query), parsed.fragment),
+    )
     if not request.scope.accepts_redirect(request, current_page_url):
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPaginator")
     return paginator_page

@@ -35,6 +35,7 @@ MAX_REKLAMA5_ATTEMPT_BYTES: Final = 6_291_456
 MAX_REKLAMA5_REDIRECTS: Final = 10
 MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
 
+
 @dataclass(slots=True)
 class Reklama5ScanBudget:
     """Track mutable byte, redirect, and deadline limits for one fetch attempt."""
@@ -157,7 +158,9 @@ def _get_response(
 def _transport_error(
     error: requests.RequestsError,
 ) -> FeedFetchError:
-    cause_type = "InvalidURL" if error.code == CurlECode.URL_MALFORMAT else type(error).__name__
+    cause_type = (
+        "InvalidURL" if error.code == CurlECode.URL_MALFORMAT else type(error).__name__
+    )
     return FeedFetchError(
         REKLAMA5_LABEL,
         cause_type,
@@ -184,6 +187,7 @@ def _validate_declared_content_length(response: Reklama5HttpResponse) -> None:
             declared_bytes = 0
         if declared_bytes > MAX_REKLAMA5_RESPONSE_BYTES:
             raise FeedFetchError(REKLAMA5_LABEL, "ResponseTooLarge")
+
 
 def _invalid_redirect() -> FeedFetchError:
     return FeedFetchError(REKLAMA5_LABEL, "InvalidRedirect")
