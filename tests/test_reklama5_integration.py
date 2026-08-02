@@ -104,7 +104,7 @@ def test_load_config_rejects_adapter_with_reklama5_strategy(tmp_path: Path) -> N
         load_config(config_path)
 
 
-def test_load_config_rejects_price_check_interval_with_reklama5_strategy(
+def test_load_config_accepts_price_check_interval_with_reklama5_strategy(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "config.yaml"
@@ -117,13 +117,9 @@ def test_load_config_rejects_price_check_interval_with_reklama5_strategy(
         "    price_check_interval: 3600\n",
     )
 
-    with pytest.raises(ValidationError) as validation_error:
-        load_config(config_path)
+    config = load_config(config_path)
 
-    assert (
-        "price_check_interval requires the anhoch, ddstore, neksio, neptun, or setec "
-        "strategy" in str(validation_error.value)
-    )
+    assert config.feeds[0].price_check_interval == 3600
 
 
 def test_app_registers_reklama5_strategy(tmp_path: Path) -> None:
