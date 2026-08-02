@@ -121,7 +121,8 @@ def test_load_config_rejects_price_check_interval_with_reklama5_strategy(
         load_config(config_path)
 
     assert (
-        "price_check_interval requires the anhoch, ddstore, neksio, or setec strategy"
+        "price_check_interval requires the anhoch, ddstore, neksio, neptun, or setec "
+        "strategy"
         in str(validation_error.value)
     )
 

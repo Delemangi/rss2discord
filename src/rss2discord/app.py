@@ -23,6 +23,7 @@ from .transports import (
     FeedFetchError,
     ITMkOglasnikStrategy,
     NeksioStrategy,
+    NeptunStrategy,
     Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
@@ -53,6 +54,7 @@ class RSSToDiscord:
             "ddstore": DDStoreStrategy(self.is_shutdown_requested),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "neksio": NeksioStrategy(self.is_shutdown_requested),
+            "neptun": NeptunStrategy(),
             "reklama5": Reklama5Strategy(
                 is_shutdown_requested=self.is_shutdown_requested,
             ),

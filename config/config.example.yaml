@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'reklama5', 'anhoch', 'ddstore', 'neksio', or 'setec'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'reklama5', 'anhoch', 'ddstore', 'neksio', 'neptun', or 'setec'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -86,7 +86,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -109,7 +109,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -120,9 +120,19 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
+
+  # One Neptun category's newest products and opt-in actual-price monitoring
+  - id: "neptun-computers"
+    name: "Neptun Computers"
+    url: "https://www.neptun.mk/KOMPJUTERI.nspx"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "neptun"
+    # Bounded complete-category scan every hour. The first scan is a silent baseline.
+    price_check_interval: 3600
+    webhook_name: "Neptun Bot"
 
   # Example feed 2
   - id: "another-feed"
@@ -148,16 +158,17 @@ feeds:
 #   - 'reklama5': For a bounded best-effort feed from any Reklama5 search URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'neksio': For new products from Neksio's public catalog
+#   - 'neptun': For new products from one Neptun category page
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   Reklama5 seeds the first successful result window silently, requests at most three
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. price_check_interval
 #   is not supported for Reklama5.
-# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, or Setec full-catalog
-#   selling-price scans. Set to 3600 for hourly checks. Omit or set to null to
+# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, or Setec
+#   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
-#   silently creates a full-catalog baseline. Anhoch scans use 500 products per
+#   silently creates a baseline snapshot. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;
 #   a scan fails above 100 categories, 100 pages per category, or 10,000 products.
@@ -167,6 +178,12 @@ feeds:
 #   first-variant price are skipped without deleting prior snapshots. DDStore
 #   scans use 500 products per page, up to 40 pages / 20,000 products, with a
 #   2 MiB per-response cap, an 80 MiB total cap, and a 300-second time bound.
+#   Neptun scans only the configured category, use 50 products per page, and allow
+#   at most 100 pages / 5,000 products. Every category/API response is capped at
+#   5 MiB and the complete scan at 500 MiB. Changed totals, incomplete scans, and
+#   conflicting duplicate IDs fail closed. Only positive ActualPrice values are
+#   snapshotted; at most 10,000 snapshots are retained and 100 changes delivered
+#   per scan. Unavailable prices preserve the previous real snapshot.
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth
