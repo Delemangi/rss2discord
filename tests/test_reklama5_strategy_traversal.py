@@ -45,9 +45,21 @@ def test_reklama5_strategy_fetches_at_most_three_pages_and_returns_oldest_first(
 ) -> None:
     get = RecordingGet(
         [
-            _response(1, [Reklama5Card(ad_id="300", timestamp="Денес 11:00")], page_links=[1, 2, 3]),
-            _response(2, [Reklama5Card(ad_id="200", timestamp="Денес 10:00")], page_links=[1, 2, 3]),
-            _response(3, [Reklama5Card(ad_id="100", timestamp="Денес 09:00")], page_links=[1, 2, 3]),
+            _response(
+                1,
+                [Reklama5Card(ad_id="300", timestamp="Денес 11:00")],
+                page_links=[1, 2, 3],
+            ),
+            _response(
+                2,
+                [Reklama5Card(ad_id="200", timestamp="Денес 10:00")],
+                page_links=[1, 2, 3],
+            ),
+            _response(
+                3,
+                [Reklama5Card(ad_id="100", timestamp="Денес 09:00")],
+                page_links=[1, 2, 3],
+            ),
         ],
     )
     monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)

@@ -100,5 +100,9 @@ def test_reklama5_retry_restarts_with_page_one_and_a_fresh_attempt_budget(
         (MAX_REKLAMA5_ATTEMPT_BYTES, 10.0 + MAX_REKLAMA5_ATTEMPT_SECONDS),
         (MAX_REKLAMA5_ATTEMPT_BYTES, 10.0 + MAX_REKLAMA5_ATTEMPT_SECONDS),
     ]
-    assert all(budget.expires_at == 10.0 + MAX_REKLAMA5_ATTEMPT_SECONDS for budget in budgets)
-    assert all(budget.bytes_remaining < MAX_REKLAMA5_ATTEMPT_BYTES for budget in budgets)
+    assert all(
+        budget.expires_at == 10.0 + MAX_REKLAMA5_ATTEMPT_SECONDS for budget in budgets
+    )
+    assert all(
+        budget.bytes_remaining < MAX_REKLAMA5_ATTEMPT_BYTES for budget in budgets
+    )

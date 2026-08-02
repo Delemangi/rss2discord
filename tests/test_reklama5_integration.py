@@ -122,8 +122,7 @@ def test_load_config_rejects_price_check_interval_with_reklama5_strategy(
 
     assert (
         "price_check_interval requires the anhoch, ddstore, neksio, neptun, or setec "
-        "strategy"
-        in str(validation_error.value)
+        "strategy" in str(validation_error.value)
     )
 
 
@@ -252,7 +251,11 @@ def test_reklama5_same_id_changes_remain_silent(
         price="200 ден.",
         activity_at=FIXED_NOW.replace(hour=13),
     )
-    batches = [[original], [changed]] if existing_state == "seeded" else [[], [original], [changed]]
+    batches = (
+        [[original], [changed]]
+        if existing_state == "seeded"
+        else [[], [original], [changed]]
+    )
     sender = FakeSender([] if existing_state == "seeded" else [True])
     mark_calls: list[tuple[str, EntryId]] = []
 
@@ -274,4 +277,6 @@ def test_reklama5_same_id_changes_remain_silent(
 
         assert store.count_delivered(feed.id) == 1
     assert sender.messages == []
-    assert mark_calls == ([] if existing_state == "seeded" else [(feed.id, EntryId("123"))])
+    assert mark_calls == (
+        [] if existing_state == "seeded" else [(feed.id, EntryId("123"))]
+    )
