@@ -54,7 +54,7 @@ def test_checked_in_config_example_documents_reklama5_computer_parts() -> None:
         "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0"
         "&includeOld=1&includeNew=1"
     )
-    assert feed.price_check_interval is None
+    assert feed.price_check_interval == 3600
 
 
 def test_checked_in_config_example_documents_neptun_category_monitoring() -> None:
