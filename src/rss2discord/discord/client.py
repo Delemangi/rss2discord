@@ -9,7 +9,7 @@ import requests
 
 from rss2discord.discord.components import JSONValue, build_components_v2_payload
 from rss2discord.discord.image_retries import ImageDownloadInterruptedError
-from rss2discord.discord.images import AnhochImageDownloader, ImageDownloader
+from rss2discord.discord.images import ImageDownloader, ProductImageDownloader
 from rss2discord.discord.message import (
     PreparedDelivery,
     WebhookMessage,
@@ -140,7 +140,7 @@ class DiscordWebhookClient:
     ) -> PreparedDelivery:
         image_downloader = self._image_downloader
         if image_downloader is None:
-            image_downloader = AnhochImageDownloader(sleep=sleep)
+            image_downloader = ProductImageDownloader(sleep=sleep)
         return prepare_delivery(message, image_downloader, sleep)
 
     def _handle_retryable_request_error(

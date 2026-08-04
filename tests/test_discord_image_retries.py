@@ -9,10 +9,10 @@ from curl_cffi.const import CurlECode
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.discord.images import (
-    AnhochImageDownloader,
     BrowserImpersonation,
     ContentCallback,
     ImageResponse,
+    ProductImageDownloader,
 )
 
 IMAGE_URL = "https://www.anhoch.com/storage/media/product.jpg"
@@ -94,11 +94,11 @@ def test_anhoch_image_download_retries_transient_server_error() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is not None
@@ -118,11 +118,11 @@ def test_anhoch_image_download_retries_transient_request_error() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is not None
@@ -144,11 +144,11 @@ def test_anhoch_image_download_honors_retry_after_for_transient_response(
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is not None
@@ -163,11 +163,11 @@ def test_anhoch_image_download_rejects_retry_beyond_total_deadline() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is None
@@ -183,11 +183,11 @@ def test_anhoch_image_download_does_not_retry_size_abort() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is None
@@ -209,11 +209,11 @@ def test_anhoch_image_download_rejects_response_after_total_deadline() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is None
@@ -237,11 +237,11 @@ def test_anhoch_image_download_shares_retry_limit_across_redirect() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is None
@@ -267,11 +267,11 @@ def test_anhoch_image_download_does_not_retry_permanent_curl_error() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(
+    image = ProductImageDownloader(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL)
+    ).download(IMAGE_URL, "anhoch")
 
     # Then
     assert image is None

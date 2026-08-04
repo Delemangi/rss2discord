@@ -9,12 +9,13 @@ from curl_cffi import CurlOpt
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult, DiscordWebhookClient
 from rss2discord.discord.image_retries import RetrySleep
+from rss2discord.discord.image_urls import ImageSource
 from rss2discord.discord.images import (
-    AnhochImageDownloader,
     BrowserImpersonation,
     ContentCallback,
     DownloadedImage,
     ImageResponse,
+    ProductImageDownloader,
 )
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData
@@ -26,8 +27,9 @@ IMAGE_URL = "https://www.anhoch.com/storage/media/product.jpg"
 class StaticImageDownloader:
     image: DownloadedImage | None
 
-    def download(self, url: str) -> DownloadedImage | None:
+    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
         assert url == IMAGE_URL
+        assert source == "anhoch"
         return self.image
 
 
@@ -36,8 +38,9 @@ class CallbackImageDownloader:
     image: DownloadedImage
     on_download: Callable[[], None]
 
-    def download(self, url: str) -> DownloadedImage | None:
+    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
         assert url == IMAGE_URL
+        assert source == "anhoch"
         self.on_download()
         return self.image
 
@@ -146,7 +149,7 @@ def test_default_image_downloader_receives_delivery_sleep(
 
     monkeypatch.setattr(session, "post", post)
     monkeypatch.setattr(
-        "rss2discord.discord.client.AnhochImageDownloader",
+        "rss2discord.discord.client.ProductImageDownloader",
         make_image_downloader,
     )
 
@@ -217,12 +220,12 @@ def test_interrupted_image_retry_stops_discord_delivery(
         posts.append(url)
         return successful_response()
 
-    def make_image_downloader(*, sleep: RetrySleep) -> AnhochImageDownloader:
-        return AnhochImageDownloader(image_session, sleep=sleep)
+    def make_image_downloader(*, sleep: RetrySleep) -> ProductImageDownloader:
+        return ProductImageDownloader(image_session, sleep=sleep)
 
     monkeypatch.setattr(session, "post", post)
     monkeypatch.setattr(
-        "rss2discord.discord.client.AnhochImageDownloader",
+        "rss2discord.discord.client.ProductImageDownloader",
         make_image_downloader,
     )
 

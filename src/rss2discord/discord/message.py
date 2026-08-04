@@ -1,14 +1,21 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from typing import Final
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.components import build_components_v2_payload
 from rss2discord.discord.image_retries import ImageDownloadInterruptedError, RetrySleep
+from rss2discord.discord.image_urls import ImageSource
 from rss2discord.discord.images import DownloadedImage, ImageDownloader
 from rss2discord.discord.request import DiscordRequest
 from rss2discord.models import EntryData
 
 logger = logging.getLogger(__name__)
+IMAGE_SOURCE_BY_STRATEGY: Final[Mapping[str, ImageSource]] = {
+    "anhoch": "anhoch",
+    "ddstore": "ddstore",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,18 +39,16 @@ def prepare_delivery(
 ) -> PreparedDelivery:
     image: DownloadedImage | None = None
     rendered_entry = message.entry
-    if (
-        message.feed.strategy in {"anhoch", "ddstore"}
-        and message.entry.image_url is not None
-    ):
-        image = image_downloader.download(message.entry.image_url)
+    image_source = IMAGE_SOURCE_BY_STRATEGY.get(message.feed.strategy)
+    if image_source is not None and message.entry.image_url is not None:
+        image = image_downloader.download(message.entry.image_url, image_source)
         if not sleep(0):
             raise ImageDownloadInterruptedError
         rendered_entry = replace(message.entry, image_url=None)
         if image is None:
             logger.warning(
                 "%s thumbnail unavailable for feed %s",
-                message.feed.name,
+                message.feed.name or message.source_title,
                 message.feed.id,
             )
     payload = build_components_v2_payload(

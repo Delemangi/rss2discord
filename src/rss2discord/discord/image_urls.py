@@ -1,29 +1,31 @@
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 DDSTORE_IMAGE_HOST: Final = "ddstore.mk"
 DDSTORE_IMAGE_PATH_PREFIXES: Final = ("/media/",)
-IMAGE_PATH_PREFIXES_BY_HOST: Final[Mapping[str, tuple[str, ...]]] = {
-    ANHOCH_IMAGE_HOST: ANHOCH_IMAGE_PATH_PREFIXES,
-    DDSTORE_IMAGE_HOST: DDSTORE_IMAGE_PATH_PREFIXES,
+type ImageSource = Literal["anhoch", "ddstore"]
+IMAGE_POLICY_BY_SOURCE: Final[
+    Mapping[ImageSource, tuple[str, tuple[str, ...]]]
+] = {
+    "anhoch": (ANHOCH_IMAGE_HOST, ANHOCH_IMAGE_PATH_PREFIXES),
+    "ddstore": (DDSTORE_IMAGE_HOST, DDSTORE_IMAGE_PATH_PREFIXES),
 }
 
 
-def canonical_product_image_url(url: str) -> str | None:
+def canonical_product_image_url(url: str, source: ImageSource) -> str | None:
     """Return a canonical URL only for an approved first-party image path."""
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError:
         return None
-    hostname = parsed.hostname or ""
-    path_prefixes = IMAGE_PATH_PREFIXES_BY_HOST.get(hostname)
+    hostname, path_prefixes = IMAGE_POLICY_BY_SOURCE[source]
     if (
         parsed.scheme != "https"
-        or path_prefixes is None
+        or parsed.hostname != hostname
         or parsed.username is not None
         or parsed.password is not None
         or port not in {None, 443}

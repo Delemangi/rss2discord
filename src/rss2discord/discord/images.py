@@ -13,7 +13,7 @@ from rss2discord.discord.image_retries import (
     RetrySleep,
     is_retryable_image_request_error,
 )
-from rss2discord.discord.image_urls import canonical_product_image_url
+from rss2discord.discord.image_urls import ImageSource, canonical_product_image_url
 
 MAX_IMAGE_BYTES: Final = 8 * 1024 * 1024
 MAX_IMAGE_REDIRECTS: Final = 3
@@ -64,7 +64,7 @@ class ImageSession(Protocol):
 
 
 class ImageDownloader(Protocol):
-    def download(self, url: str) -> DownloadedImage | None: ...
+    def download(self, url: str, source: ImageSource) -> DownloadedImage | None: ...
 
 
 class _BoundedImageContent:
@@ -127,7 +127,7 @@ class _CurlCffiImageSession:
 
 
 @final
-class AnhochImageDownloader:
+class ProductImageDownloader:
     def __init__(
         self,
         session: ImageSession | None = None,
@@ -140,15 +140,19 @@ class AnhochImageDownloader:
         self._sleep = sleep
         self._monotonic = monotonic_clock
 
-    def download(self, url: str) -> DownloadedImage | None:
-        current_url = canonical_product_image_url(url)
+    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
+        current_url = canonical_product_image_url(url, source)
         if current_url is None:
             return None
 
         retry_budget = ImageRetryBudget(self._sleep, self._monotonic)
         redirects_remaining = MAX_IMAGE_REDIRECTS
         while True:
-            request_result = self._request_current_url(current_url, retry_budget)
+            request_result = self._request_current_url(
+                current_url,
+                retry_budget,
+                source,
+            )
             if request_result is None:
                 return None
             response, content = request_result
@@ -158,11 +162,15 @@ class AnhochImageDownloader:
                     return None
                 continue
             if not 300 <= response.status_code < 400:
-                return _read_image(response, content)
-            redirected_url = _redirected_image_url(
-                response,
-                current_url,
-                redirects_remaining,
+                return _read_image(response, content, source)
+            if redirects_remaining == 0:
+                return None
+            location = _header(response.headers, "location")
+            if location is None:
+                return None
+            redirected_url = canonical_product_image_url(
+                urljoin(current_url, location),
+                source,
             )
             if redirected_url is None:
                 return None
@@ -173,6 +181,7 @@ class AnhochImageDownloader:
         self,
         current_url: str,
         retry_budget: ImageRetryBudget,
+        source: ImageSource,
     ) -> tuple[ImageResponse, bytes] | None:
         while True:
             timeout_ms = retry_budget.transfer_timeout_ms()
@@ -199,27 +208,21 @@ class AnhochImageDownloader:
             if (
                 not retry_budget.has_time_remaining()
                 or content.exceeded_limit
-                or canonical_product_image_url(response.url) != current_url
+                or canonical_product_image_url(response.url, source) != current_url
             ):
                 return None
             return response, bytes(content.content)
 
 
-def _redirected_image_url(
+def _read_image(
     response: ImageResponse,
-    current_url: str,
-    redirects_remaining: int,
-) -> str | None:
-    if redirects_remaining == 0:
-        return None
-    location = _header(response.headers, "location")
-    if location is None:
-        return None
-    return canonical_product_image_url(urljoin(current_url, location))
-
-
-def _read_image(response: ImageResponse, content: bytes) -> DownloadedImage | None:
-    if response.status_code != 200 or canonical_product_image_url(response.url) is None:
+    content: bytes,
+    source: ImageSource,
+) -> DownloadedImage | None:
+    if (
+        response.status_code != 200
+        or canonical_product_image_url(response.url, source) is None
+    ):
         return None
     content_type = (
         (_header(response.headers, "content-type") or "").partition(";")[0].lower()

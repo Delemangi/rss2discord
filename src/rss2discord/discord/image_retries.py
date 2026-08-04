@@ -1,4 +1,4 @@
-"""Bounded retry control for Anhoch thumbnail transfers."""
+"""Bounded retry control for product thumbnail transfers."""
 
 import math
 import time
