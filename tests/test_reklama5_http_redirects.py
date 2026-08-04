@@ -151,6 +151,10 @@ def test_reklama5_fetch_rejects_filter_equivalent_empty_fragment_redirect(
     [
         curl_requests.RequestsError("connection", CurlECode.COULDNT_CONNECT),
         curl_requests.RequestsError("timeout", CurlECode.OPERATION_TIMEDOUT),
+        curl_requests.RequestsError("HTTP/2 framing", CurlECode.HTTP2),
+        curl_requests.RequestsError("HTTP/2 stream", CurlECode.HTTP2_STREAM),
+        curl_requests.RequestsError("HTTP/3 framing", CurlECode.HTTP3),
+        curl_requests.RequestsError("QUIC connection", CurlECode.QUIC_CONNECT_ERROR),
     ],
 )
 def test_reklama5_fetch_marks_request_transport_failures_retryable(

@@ -184,6 +184,10 @@ def _transport_error(
             CurlECode.SEND_ERROR,
             CurlECode.RECV_ERROR,
             CurlECode.PARTIAL_FILE,
+            CurlECode.HTTP2,
+            CurlECode.HTTP2_STREAM,
+            CurlECode.HTTP3,
+            CurlECode.QUIC_CONNECT_ERROR,
         },
     )
 
