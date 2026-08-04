@@ -64,7 +64,7 @@ class ImageSession(Protocol):
 
 
 class ImageDownloader(Protocol):
-    def download(self, url: str, source: ImageSource) -> DownloadedImage | None: ...
+    def download(self, url: str) -> DownloadedImage | None: ...
 
 
 class _BoundedImageContent:
@@ -133,15 +133,18 @@ class ProductImageDownloader:
         session: ImageSession | None = None,
         sleep: RetrySleep | None = None,
         monotonic_clock: Callable[[], float] = monotonic,
+        *,
+        source: ImageSource,
     ) -> None:
         self._session: ImageSession = (
             session if session is not None else _CurlCffiImageSession()
         )
         self._sleep = sleep
         self._monotonic = monotonic_clock
+        self._source: ImageSource = source
 
-    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
-        current_url = canonical_product_image_url(url, source)
+    def download(self, url: str) -> DownloadedImage | None:
+        current_url = canonical_product_image_url(url, self._source)
         if current_url is None:
             return None
 
@@ -151,7 +154,6 @@ class ProductImageDownloader:
             request_result = self._request_current_url(
                 current_url,
                 retry_budget,
-                source,
             )
             if request_result is None:
                 return None
@@ -162,7 +164,7 @@ class ProductImageDownloader:
                     return None
                 continue
             if not 300 <= response.status_code < 400:
-                return _read_image(response, content, source)
+                return _read_image(response, content, self._source)
             if redirects_remaining == 0:
                 return None
             location = _header(response.headers, "location")
@@ -170,7 +172,7 @@ class ProductImageDownloader:
                 return None
             redirected_url = canonical_product_image_url(
                 urljoin(current_url, location),
-                source,
+                self._source,
             )
             if redirected_url is None:
                 return None
@@ -181,7 +183,6 @@ class ProductImageDownloader:
         self,
         current_url: str,
         retry_budget: ImageRetryBudget,
-        source: ImageSource,
     ) -> tuple[ImageResponse, bytes] | None:
         while True:
             timeout_ms = retry_budget.transfer_timeout_ms()
@@ -208,7 +209,7 @@ class ProductImageDownloader:
             if (
                 not retry_budget.has_time_remaining()
                 or content.exceeded_limit
-                or canonical_product_image_url(response.url, source) != current_url
+                or canonical_product_image_url(response.url, self._source) != current_url
             ):
                 return None
             return response, bytes(content.content)

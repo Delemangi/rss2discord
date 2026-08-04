@@ -98,7 +98,8 @@ def test_anhoch_image_download_retries_transient_server_error() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is not None
@@ -122,7 +123,8 @@ def test_anhoch_image_download_retries_transient_request_error() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is not None
@@ -148,7 +150,8 @@ def test_anhoch_image_download_honors_retry_after_for_transient_response(
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is not None
@@ -167,7 +170,8 @@ def test_anhoch_image_download_rejects_retry_beyond_total_deadline() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -187,7 +191,8 @@ def test_anhoch_image_download_does_not_retry_size_abort() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -213,7 +218,8 @@ def test_anhoch_image_download_rejects_response_after_total_deadline() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -241,7 +247,8 @@ def test_anhoch_image_download_shares_retry_limit_across_redirect() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -271,7 +278,8 @@ def test_anhoch_image_download_does_not_retry_permanent_curl_error() -> None:
         session,
         sleep=clock.sleep,
         monotonic_clock=clock.monotonic,
-    ).download(IMAGE_URL, "anhoch")
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None

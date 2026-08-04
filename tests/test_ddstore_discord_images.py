@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from curl_cffi import CurlOpt
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.discord.image_urls import ImageSource
 from rss2discord.discord.images import (
     BrowserImpersonation,
     ContentCallback,
@@ -26,9 +25,8 @@ DDSTORE_MEDIA_IMAGE_URL = "https://ddstore.mk/media/1.webp"
 class StaticDDStoreImageDownloader:
     image: DownloadedImage
 
-    def download(self, url: str, source: ImageSource) -> DownloadedImage:
+    def download(self, url: str) -> DownloadedImage:
         assert url == DDSTORE_IMAGE_URL
-        assert source == "ddstore"
         return self.image
 
 
@@ -108,7 +106,9 @@ def test_image_downloader_accepts_ddstore_catalog_image() -> None:
     session = DDStoreImageSession(calls=[])
 
     # When
-    image = ProductImageDownloader(session).download(DDSTORE_IMAGE_URL, "ddstore")
+    image = ProductImageDownloader(session, source="ddstore").download(
+        DDSTORE_IMAGE_URL,
+    )
 
     # Then
     assert image == DownloadedImage(
@@ -124,9 +124,8 @@ def test_image_downloader_accepts_existing_ddstore_media_path() -> None:
     session = DDStoreImageSession(calls=[], response_url=DDSTORE_MEDIA_IMAGE_URL)
 
     # When
-    image = ProductImageDownloader(session).download(
+    image = ProductImageDownloader(session, source="ddstore").download(
         DDSTORE_MEDIA_IMAGE_URL,
-        "ddstore",
     )
 
     # Then

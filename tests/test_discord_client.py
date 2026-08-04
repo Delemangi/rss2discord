@@ -7,7 +7,6 @@ import requests
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordWebhookClient, JSONValue, WebhookMessage
-from rss2discord.discord.image_urls import ImageSource
 from rss2discord.discord.images import DownloadedImage
 from rss2discord.models import EntryData
 
@@ -19,9 +18,8 @@ type PostArgument = int | dict[str, str] | dict[str, JSONValue] | dict[str, File
 class StaticImageDownloader:
     image: DownloadedImage | None
 
-    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
+    def download(self, url: str) -> DownloadedImage | None:
         assert url == "https://www.anhoch.com/storage/media/product.jpg"
-        assert source == "anhoch"
         return self.image
 
 

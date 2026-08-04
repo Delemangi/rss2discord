@@ -27,9 +27,8 @@ IMAGE_URL = "https://www.anhoch.com/storage/media/product.jpg"
 class StaticImageDownloader:
     image: DownloadedImage | None
 
-    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
+    def download(self, url: str) -> DownloadedImage | None:
         assert url == IMAGE_URL
-        assert source == "anhoch"
         return self.image
 
 
@@ -38,9 +37,8 @@ class CallbackImageDownloader:
     image: DownloadedImage
     on_download: Callable[[], None]
 
-    def download(self, url: str, source: ImageSource) -> DownloadedImage | None:
+    def download(self, url: str) -> DownloadedImage | None:
         assert url == IMAGE_URL
-        assert source == "anhoch"
         self.on_download()
         return self.image
 
@@ -71,11 +69,11 @@ class TransientImageSession:
         return TransientImageResponse(headers={})
 
 
-def make_anhoch_message() -> WebhookMessage:
+def make_anhoch_message(name: str | None = "Anhoch") -> WebhookMessage:
     return WebhookMessage(
         feed=FeedConfig(
             id="anhoch",
-            name="Anhoch",
+            name=name,
             url="https://www.anhoch.com/products",
             webhook="https://discord.test/api/webhooks/id/token",
             strategy="anhoch",
@@ -128,6 +126,34 @@ def test_unavailable_thumbnail_logs_fallback(
     )
 
 
+def test_unavailable_thumbnail_log_uses_source_title_without_feed_name(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    session = requests.Session()
+
+    def post(url: str, **kwargs: str) -> requests.Response:
+        del url, kwargs
+        return successful_response()
+
+    monkeypatch.setattr(session, "post", post)
+    caplog.set_level(logging.WARNING)
+
+    # When
+    delivered = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(None),
+    ).send(make_anhoch_message(name=None), lambda _: True)
+
+    # Then
+    assert delivered
+    assert (
+        caplog.records[-1].getMessage()
+        == "Anhoch thumbnail unavailable for feed anhoch"
+    )
+
+
 def test_default_image_downloader_receives_delivery_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -143,7 +169,12 @@ def test_default_image_downloader_receives_delivery_sleep(
         del url, kwargs
         return successful_response()
 
-    def make_image_downloader(*, sleep: RetrySleep) -> StaticImageDownloader:
+    def make_image_downloader(
+        *,
+        sleep: RetrySleep,
+        source: ImageSource,
+    ) -> StaticImageDownloader:
+        assert source == "anhoch"
         captured_sleep.append(sleep)
         return StaticImageDownloader(None)
 
@@ -220,8 +251,12 @@ def test_interrupted_image_retry_stops_discord_delivery(
         posts.append(url)
         return successful_response()
 
-    def make_image_downloader(*, sleep: RetrySleep) -> ProductImageDownloader:
-        return ProductImageDownloader(image_session, sleep=sleep)
+    def make_image_downloader(
+        *,
+        sleep: RetrySleep,
+        source: ImageSource,
+    ) -> ProductImageDownloader:
+        return ProductImageDownloader(image_session, sleep=sleep, source=source)
 
     monkeypatch.setattr(session, "post", post)
     monkeypatch.setattr(

@@ -13,6 +13,10 @@ IMAGE_POLICY_BY_SOURCE: Final[
     "anhoch": (ANHOCH_IMAGE_HOST, ANHOCH_IMAGE_PATH_PREFIXES),
     "ddstore": (DDSTORE_IMAGE_HOST, DDSTORE_IMAGE_PATH_PREFIXES),
 }
+IMAGE_SOURCE_BY_STRATEGY: Final[Mapping[str, ImageSource]] = {
+    "anhoch": "anhoch",
+    "ddstore": "ddstore",
+}
 
 
 def canonical_product_image_url(url: str, source: ImageSource) -> str | None:
