@@ -32,13 +32,20 @@ def prepare_delivery(
 ) -> PreparedDelivery:
     image: DownloadedImage | None = None
     rendered_entry = message.entry
-    if message.feed.strategy == "anhoch" and message.entry.image_url is not None:
+    if (
+        message.feed.strategy in {"anhoch", "ddstore"}
+        and message.entry.image_url is not None
+    ):
         image = image_downloader.download(message.entry.image_url)
         if not sleep(0):
             raise ImageDownloadInterruptedError
         rendered_entry = replace(message.entry, image_url=None)
         if image is None:
-            logger.warning("Anhoch thumbnail unavailable for feed %s", message.feed.id)
+            logger.warning(
+                "%s thumbnail unavailable for feed %s",
+                message.feed.name,
+                message.feed.id,
+            )
     payload = build_components_v2_payload(
         message.feed,
         rendered_entry,
