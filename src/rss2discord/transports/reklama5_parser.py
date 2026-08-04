@@ -93,7 +93,6 @@ def parse_reklama5_page(
             if normalized_text(promotion) == "Промовирано":
                 continue
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
-        organic_row_count += 1
 
         identity = _listing_identity(card, request)
         if identity is None:
@@ -124,6 +123,7 @@ def parse_reklama5_page(
                 image_url=_image_url(card, request),
             ),
         )
+        organic_row_count += 1
     frozen_ids = frozenset(organic_ids)
     has_paginator_links = bool(evidence.paginator_pages)
     if evidence.result_count == 0:

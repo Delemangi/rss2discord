@@ -138,6 +138,50 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
     assert fetch_error.value.retryable
 
 
+@pytest.mark.parametrize(
+    "malformed_card",
+    [
+        pytest.param(Reklama5Card(ad_id="2", title=""), id="empty-title"),
+        pytest.param(
+            Reklama5Card(
+                ad_id="2",
+                href="https://example.com/AdDetails?ad=2",
+            ),
+            id="cross-origin-url",
+        ),
+        pytest.param(
+            Reklama5Card(ad_id="2", timestamp="not-a-date"),
+            id="invalid-timestamp",
+        ),
+    ],
+)
+def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
+    monkeypatch: pytest.MonkeyPatch,
+    malformed_card: Reklama5Card,
+) -> None:
+    html = search_page(
+        1,
+        [Reklama5Card(ad_id="1").html(), malformed_card.html()],
+        page_links=[],
+        result_count=2,
+    )
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet([StubResponse(html) for _attempt in range(3)]),
+    )
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+            SEARCH_URL,
+            retry_policy=_retry_policy(),
+            is_shutdown_requested=lambda: False,
+        )
+
+    assert fetch_error.value.cause_type == "IncompleteCatalog"
+    assert fetch_error.value.retryable
+
+
 def test_reklama5_catalog_rejects_changed_advertised_result_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
