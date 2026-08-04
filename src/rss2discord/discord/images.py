@@ -2,7 +2,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from time import monotonic
 from typing import Final, Literal, Protocol, final
-from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin
 
 from curl_cffi import CurlOpt
 from curl_cffi import requests as curl_requests
@@ -13,9 +13,8 @@ from rss2discord.discord.image_retries import (
     RetrySleep,
     is_retryable_image_request_error,
 )
+from rss2discord.discord.image_urls import canonical_product_image_url
 
-ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
-ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 MAX_IMAGE_BYTES: Final = 8 * 1024 * 1024
 MAX_IMAGE_REDIRECTS: Final = 3
 IMAGE_EXTENSIONS: Final[Mapping[str, str]] = {
@@ -142,7 +141,7 @@ class AnhochImageDownloader:
         self._monotonic = monotonic_clock
 
     def download(self, url: str) -> DownloadedImage | None:
-        current_url = _canonical_anhoch_image_url(url)
+        current_url = canonical_product_image_url(url)
         if current_url is None:
             return None
 
@@ -200,7 +199,7 @@ class AnhochImageDownloader:
             if (
                 not retry_budget.has_time_remaining()
                 or content.exceeded_limit
-                or _canonical_anhoch_image_url(response.url) != current_url
+                or canonical_product_image_url(response.url) != current_url
             ):
                 return None
             return response, bytes(content.content)
@@ -216,11 +215,11 @@ def _redirected_image_url(
     location = _header(response.headers, "location")
     if location is None:
         return None
-    return _canonical_anhoch_image_url(urljoin(current_url, location))
+    return canonical_product_image_url(urljoin(current_url, location))
 
 
 def _read_image(response: ImageResponse, content: bytes) -> DownloadedImage | None:
-    if response.status_code != 200 or _canonical_anhoch_image_url(response.url) is None:
+    if response.status_code != 200 or canonical_product_image_url(response.url) is None:
         return None
     content_type = (
         (_header(response.headers, "content-type") or "").partition(";")[0].lower()
@@ -243,34 +242,6 @@ def _read_image(response: ImageResponse, content: bytes) -> DownloadedImage | No
         content_type=content_type,
         content=content,
     )
-
-
-def _canonical_anhoch_image_url(url: str) -> str | None:
-    try:
-        parsed = urlsplit(url)
-        port = parsed.port
-    except ValueError:
-        return None
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != ANHOCH_IMAGE_HOST
-        or parsed.username is not None
-        or parsed.password is not None
-        or port not in {None, 443}
-        or parsed.fragment
-    ):
-        return None
-    decoded_path = unquote(parsed.path)
-    if (
-        "\\" in parsed.path
-        or "\\" in decoded_path
-        or decoded_path.count("/") != parsed.path.count("/")
-        or any(segment in {".", ".."} for segment in decoded_path.split("/"))
-        or not decoded_path.startswith(ANHOCH_IMAGE_PATH_PREFIXES)
-    ):
-        return None
-    canonical_path = quote(decoded_path, safe="/-._~")
-    return urlunsplit(("https", ANHOCH_IMAGE_HOST, canonical_path, parsed.query, ""))
 
 
 def _has_image_signature(content_type: str, content: bytes) -> bool:
