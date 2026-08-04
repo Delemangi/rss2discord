@@ -48,6 +48,8 @@ _IMAGE_PATTERN: Final = re.compile(
     re.IGNORECASE,
 )
 _SUMMARY_LENGTH: Final = 2_000
+_NEW_AD_BADGE_SUFFIX: Final = " НОВ ОГЛАС"
+_MAX_YEARLESS_DATE_LOOKBACK_YEARS: Final = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,8 @@ class Reklama5Listing:
 class Reklama5Page:
     listings: tuple[Reklama5Listing, ...]
     organic_ids: frozenset[EntryId]
+    organic_row_count: int
+    result_count: int
     terminal: bool
 
 
@@ -82,12 +86,14 @@ def parse_reklama5_page(
     evidence = validate_reklama5_page(soup, request)
     listings: list[Reklama5Listing] = []
     organic_ids: set[EntryId] = set()
+    organic_row_count = 0
     for card in soup.select("#sr-holder > .ad-top-div"):
         promotion = card.select_one(".promotedBtn")
         if promotion is not None:
             if normalized_text(promotion) == "Промовирано":
                 continue
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
+        organic_row_count += 1
 
         identity = _listing_identity(card, request)
         if identity is None:
@@ -95,8 +101,9 @@ def parse_reklama5_page(
         link, entry_id, canonical_url = identity
         organic_ids.add(entry_id)
         title = normalized_text(link)
+        activity_text = normalized_text(card.select_one(".ad-date-div-1"))
         activity_at = _parse_activity(
-            normalized_text(card.select_one(".ad-date-div-1")),
+            activity_text.removesuffix(_NEW_AD_BADGE_SUFFIX),
             local_now,
         )
         if not title or activity_at is None:
@@ -127,7 +134,13 @@ def parse_reklama5_page(
         terminal = bool(frozen_ids) and not any(
             page > request.page for page in evidence.paginator_pages
         )
-    return Reklama5Page(tuple(listings), frozen_ids, terminal)
+    return Reklama5Page(
+        listings=tuple(listings),
+        organic_ids=frozen_ids,
+        organic_row_count=organic_row_count,
+        result_count=evidence.result_count,
+        terminal=terminal,
+    )
 
 
 def _listing_identity(
@@ -177,14 +190,20 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
                 int(match.group("day")),
             )
         elif match := _MONTH_PATTERN.fullmatch(value):
-            wall_date = date(
-                local_now.year,
-                _MONTHS[match.group("month")],
-                int(match.group("day")),
-            )
-            candidate = _localize(wall_date, match)
-            if candidate is not None and candidate > local_now:
-                wall_date = wall_date.replace(year=wall_date.year - 1)
+            month = _MONTHS[match.group("month")]
+            day = int(match.group("day"))
+            oldest_year = local_now.year - _MAX_YEARLESS_DATE_LOOKBACK_YEARS
+            for year in range(local_now.year, oldest_year - 1, -1):
+                try:
+                    wall_date = date(year, month, day)
+                except ValueError:
+                    continue
+                candidate = _localize(wall_date, match)
+                if candidate is None:
+                    continue
+                if candidate.astimezone(UTC) <= local_now.astimezone(UTC):
+                    return candidate
+            return None
         else:
             return None
         return _localize(wall_date, match)

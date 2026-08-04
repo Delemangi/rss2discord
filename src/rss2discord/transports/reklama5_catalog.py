@@ -52,6 +52,8 @@ class Reklama5CatalogClient:
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidClock")
         seen_ids: set[EntryId] = set()
         listings: dict[EntryId, Reklama5Listing] = {}
+        expected_result_count: int | None = None
+        organic_row_count = 0
         for page_number in range(1, MAX_REKLAMA5_CATALOG_PAGES + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
@@ -61,6 +63,14 @@ class Reklama5CatalogClient:
                 request,
                 now,
             )
+            if expected_result_count is None:
+                expected_result_count = page.result_count
+            elif page.result_count != expected_result_count:
+                raise FeedFetchError(
+                    REKLAMA5_LABEL,
+                    "ChangedResultCount",
+                    retryable=True,
+                )
             if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
                 raise FeedFetchError(
                     REKLAMA5_LABEL,
@@ -78,7 +88,14 @@ class Reklama5CatalogClient:
             for listing in page.listings:
                 listings.setdefault(listing.entry_id, listing)
             seen_ids.update(page.organic_ids)
+            organic_row_count += page.organic_row_count
             if page.terminal:
+                if organic_row_count != expected_result_count:
+                    raise FeedFetchError(
+                        REKLAMA5_LABEL,
+                        "IncompleteCatalog",
+                        retryable=True,
+                    )
                 if is_shutdown_requested():
                     raise FeedFetchInterruptedError
                 return tuple(listings.values())

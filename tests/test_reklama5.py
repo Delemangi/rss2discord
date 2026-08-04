@@ -206,6 +206,51 @@ def test_reklama5_parser_parses_relative_and_calendar_timestamps(
     )
 
 
+def test_reklama5_parser_ignores_new_ad_badge_when_parsing_activity() -> None:
+    listing = parse_cards(
+        Reklama5Card(
+            timestamp='Денес 06:28<div class="isLatestBtn">НОВ ОГЛАС</div>',
+        ),
+    ).listings[0]
+
+    assert listing.activity_at == datetime(2026, 8, 1, 6, 28, tzinfo=SKOPJE)
+
+
+def test_reklama5_parser_resolves_leap_day_to_most_recent_valid_year() -> None:
+    listing = parse_cards(Reklama5Card(timestamp="29 фев 22:03")).listings[0]
+
+    assert listing.activity_at == datetime(2024, 2, 29, 22, 3, tzinfo=SKOPJE)
+
+
+def test_reklama5_parser_resolves_leap_day_across_century_gap() -> None:
+    now = datetime(2104, 1, 1, 12, 0, tzinfo=SKOPJE)
+    listing = parse_cards(Reklama5Card(timestamp="29 фев 22:03"), now=now).listings[0]
+
+    assert listing.activity_at == datetime(2096, 2, 29, 22, 3, tzinfo=SKOPJE)
+
+
+def test_reklama5_parser_falls_back_past_nonexistent_yearless_time() -> None:
+    now = datetime(2024, 1, 1, 12, 0, tzinfo=SKOPJE)
+    listing = parse_cards(Reklama5Card(timestamp="31 мар 02:30"), now=now).listings[0]
+
+    assert listing.activity_at == datetime(2023, 3, 31, 2, 30, tzinfo=SKOPJE)
+
+
+def test_reklama5_parser_compares_ambiguous_yearless_time_in_utc() -> None:
+    now = datetime(2026, 10, 25, 2, 15, tzinfo=SKOPJE, fold=1)
+    listing = parse_cards(Reklama5Card(timestamp="25 окт 02:30"), now=now).listings[0]
+
+    assert listing.activity_at == datetime(
+        2026,
+        10,
+        25,
+        2,
+        30,
+        tzinfo=SKOPJE,
+        fold=0,
+    )
+
+
 @pytest.mark.parametrize(
     ("token", "month", "year"),
     [
