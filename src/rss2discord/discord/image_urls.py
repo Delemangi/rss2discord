@@ -5,7 +5,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 DDSTORE_IMAGE_HOST: Final = "ddstore.mk"
-DDSTORE_IMAGE_PATH_PREFIXES: Final = ("/media/catalog/product/",)
+DDSTORE_IMAGE_PATH_PREFIXES: Final = ("/media/",)
 IMAGE_PATH_PREFIXES_BY_HOST: Final[Mapping[str, tuple[str, ...]]] = {
     ANHOCH_IMAGE_HOST: ANHOCH_IMAGE_PATH_PREFIXES,
     DDSTORE_IMAGE_HOST: DDSTORE_IMAGE_PATH_PREFIXES,
