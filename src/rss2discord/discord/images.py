@@ -68,16 +68,22 @@ class ImageDownloader(Protocol):
 
 
 class _BoundedImageContent:
-    """Accumulate one response while enforcing the upload-size boundary."""
+    """Accumulate response bytes within one download-wide size boundary."""
 
     def __init__(self) -> None:
         self.content = bytearray()
         self.exceeded_limit = False
+        self._remaining_bytes = MAX_IMAGE_BYTES
+
+    def start_response(self) -> None:
+        self.content.clear()
+        self.exceeded_limit = False
 
     def write(self, chunk: bytes) -> int:
-        if len(self.content) + len(chunk) > MAX_IMAGE_BYTES:
+        if len(chunk) > self._remaining_bytes:
             self.exceeded_limit = True
             return CURL_WRITEFUNC_ERROR
+        self._remaining_bytes -= len(chunk)
         self.content.extend(chunk)
         return len(chunk)
 
@@ -149,11 +155,13 @@ class ProductImageDownloader:
             return None
 
         retry_budget = ImageRetryBudget(self._sleep, self._monotonic)
+        response_content = _BoundedImageContent()
         redirects_remaining = MAX_IMAGE_REDIRECTS
         while True:
             request_result = self._request_current_url(
                 current_url,
                 retry_budget,
+                response_content,
             )
             if request_result is None:
                 return None
@@ -195,12 +203,13 @@ class ProductImageDownloader:
         self,
         current_url: str,
         retry_budget: ImageRetryBudget,
+        content: _BoundedImageContent,
     ) -> tuple[ImageResponse, bytes] | None:
         while True:
             timeout_ms = retry_budget.transfer_timeout_ms()
             if timeout_ms is None:
                 return None
-            content = _BoundedImageContent()
+            content.start_response()
             try:
                 response = self._session.get(
                     current_url,

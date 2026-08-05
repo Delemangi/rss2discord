@@ -9,6 +9,7 @@ from curl_cffi.const import CurlECode
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.discord.images import (
+    MAX_IMAGE_BYTES,
     BrowserImpersonation,
     ContentCallback,
     ImageResponse,
@@ -198,6 +199,32 @@ def test_anhoch_image_download_does_not_retry_size_abort() -> None:
     assert image is None
     assert clock.delays == []
     assert len(session.calls) == 1
+
+
+def test_anhoch_image_download_caps_bytes_across_retries() -> None:
+    # Given
+    clock = FakeClock()
+    first_response_bytes = b"x" * (MAX_IMAGE_BYTES // 2 + 1)
+    final_response_bytes = b"\xff\xd8\xff" + b"x" * (MAX_IMAGE_BYTES // 2)
+    session = SequenceImageSession(
+        outcomes=[
+            StubImageResponse(chunks=(first_response_bytes,), status_code=503),
+            StubImageResponse(chunks=(final_response_bytes,)),
+        ],
+    )
+
+    # When
+    image = ProductImageDownloader(
+        session,
+        sleep=clock.sleep,
+        monotonic_clock=clock.monotonic,
+        source="anhoch",
+    ).download(IMAGE_URL)
+
+    # Then
+    assert image is None
+    assert clock.delays == [1.0]
+    assert len(session.calls) == 2
 
 
 def test_anhoch_image_download_rejects_response_after_total_deadline() -> None:
