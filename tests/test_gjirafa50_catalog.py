@@ -4,7 +4,10 @@ import pytest
 import requests
 
 from rss2discord.transports import FeedFetchError, gjirafa50_catalog
-from rss2discord.transports.gjirafa50_catalog import Gjirafa50CatalogClient
+from rss2discord.transports.gjirafa50_catalog import (
+    Gjirafa50CatalogClient,
+    _OperationBudget,
+)
 from tests.gjirafa50_helpers import (
     ROOT_URL,
     RecordingGet,
@@ -128,3 +131,31 @@ def test_catalog_request_budget_is_shared_across_retries(
         )
 
     assert len(get.params) == 3
+
+
+def test_catalog_product_budget_accumulates_across_retry_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRODUCTS", 3)
+    budget = _OperationBudget(lambda: False)
+
+    budget.consume_products(2)
+
+    with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
+        budget.consume_products(2)
+
+
+def test_catalog_shard_budget_accumulates_across_retry_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARDS", 1)
+    budget = _OperationBudget(lambda: False)
+
+    budget.consume_shard()
+
+    with pytest.raises(FeedFetchError, match="ShardLimitExceeded"):
+        budget.consume_shard()
+
+
+def test_catalog_shards_are_strictly_below_nine_thousand_products() -> None:
+    assert gjirafa50_catalog.MAX_GJIRAFA50_SHARD_PRODUCTS == 8_999

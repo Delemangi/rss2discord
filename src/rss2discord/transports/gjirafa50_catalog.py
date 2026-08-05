@@ -23,7 +23,7 @@ from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
 GJIRAFA50_WINDOW_SIZE: Final = 30
 GJIRAFA50_PAGE_SIZE: Final = 24
 MAX_GJIRAFA50_PRICE: Final = 2_147_483_647
-MAX_GJIRAFA50_SHARD_PRODUCTS: Final = 9_000
+MAX_GJIRAFA50_SHARD_PRODUCTS: Final = 8_999
 MAX_GJIRAFA50_PRODUCTS: Final = 100_000
 MAX_GJIRAFA50_PAGES: Final = 5_000
 MAX_GJIRAFA50_SHARDS: Final = 128
@@ -37,7 +37,9 @@ class _OperationBudget:
     def __init__(self, is_shutdown_requested: Callable[[], bool]) -> None:
         self.is_shutdown_requested = is_shutdown_requested
         self.response_bytes = 0
+        self.products = 0
         self.requests = 0
+        self.shards = 0
         self.deadline = time.monotonic() + MAX_GJIRAFA50_SCAN_SECONDS
 
     def before_request(self) -> None:
@@ -53,6 +55,16 @@ class _OperationBudget:
         self.response_bytes += response_bytes
         if self.response_bytes > MAX_GJIRAFA50_SCAN_BYTES:
             raise FeedFetchError(GJIRAFA50_LABEL, "ScanResponseTooLarge")
+
+    def consume_products(self, products: int) -> None:
+        self.products += products
+        if self.products > MAX_GJIRAFA50_PRODUCTS:
+            raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+
+    def consume_shard(self) -> None:
+        self.shards += 1
+        if self.shards > MAX_GJIRAFA50_SHARDS:
+            raise FeedFetchError(GJIRAFA50_LABEL, "ShardLimitExceeded")
 
     def guard_retry(self, delay: float) -> None:
         if time.monotonic() + delay >= self.deadline:
@@ -95,6 +107,7 @@ class _CatalogScan:
             ),
             self.observed_at,
         )
+        self.budget.consume_products(len(fetched.page.products))
         return fetched.page
 
 
@@ -185,6 +198,7 @@ class Gjirafa50CatalogClient:
         while queue:
             price_range, total = queue.popleft()
             if total <= MAX_GJIRAFA50_SHARD_PRODUCTS:
+                scan.budget.consume_shard()
                 shards.append((price_range, total))
                 continue
             if price_range.minimum == price_range.maximum:
