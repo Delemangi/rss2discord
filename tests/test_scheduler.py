@@ -165,3 +165,30 @@ def test_scheduler_stops_when_its_sleep_is_interrupted() -> None:
     # Then
     assert events == [0]
     assert clock.sleep_calls == [300]
+
+
+def test_scheduler_closes_price_jobs_after_shutdown() -> None:
+    clock = FakeSchedulerClock()
+    clock.interrupt_next_sleep()
+    events: list[str] = []
+    scheduler = RuntimeScheduler(
+        jobs=SchedulerJobs(
+            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            prices=(
+                ScheduledJob(
+                    interval=3600,
+                    run=lambda: events.append("run"),
+                    close=lambda: events.append("close"),
+                ),
+            ),
+        ),
+        control=SchedulerControl(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+    scheduler.run()
+
+    assert events == ["run", "close"]
