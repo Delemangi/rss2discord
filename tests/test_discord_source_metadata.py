@@ -3,6 +3,7 @@ from typing import Literal
 
 import pytest
 
+from rss2discord.configuration import FeedStrategyName
 from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import get_metadata_content, make_message
@@ -15,6 +16,11 @@ from tests.discord_components_helpers import get_metadata_content, make_message
         ("itmk_oglasnik", "https://forum.it.mk/oglasnik/", "IT.mk Oglasnik"),
         ("anhoch", "https://www.anhoch.com/products", "Anhoch"),
         ("setec", "https://setec.mk/e-prodazba", "Setec"),
+        (
+            "reklama5",
+            "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1",
+            "Reklama5",
+        ),
         ("rss", "https://www.reddit.com/r/python/.rss", "Reddit"),
         ("rss", "https://reddit.com/r/python/.rss", "Reddit"),
         ("rss", "https://old.reddit.com/r/python/.rss", "Reddit"),
@@ -27,6 +33,7 @@ from tests.discord_components_helpers import get_metadata_content, make_message
         "itmk-oglasnik",
         "anhoch",
         "setec",
+        "reklama5",
         "reddit-www",
         "reddit-bare",
         "reddit-subdomain",
@@ -36,7 +43,7 @@ from tests.discord_components_helpers import get_metadata_content, make_message
     ],
 )
 def test_components_v2_payload_renders_source_label(
-    strategy: Literal["rss", "xenforo", "itmk_oglasnik", "anhoch", "setec"],
+    strategy: FeedStrategyName,
     url: str,
     expected_label: str,
 ) -> None:

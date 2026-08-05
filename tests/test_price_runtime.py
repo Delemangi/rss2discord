@@ -29,6 +29,33 @@ class FailingMonitor:
         raise self._error
 
 
+def test_build_price_jobs_omits_reklama5_feed(tmp_path: Path) -> None:
+    config = AppConfig(
+        feeds=(
+            FeedConfig(
+                id="reklama5",
+                url="https://reklama5.mk/Search?cat=584",
+                webhook="https://discord.example.test/reklama5",
+                strategy="reklama5",
+            ),
+        ),
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        jobs = build_price_jobs(
+            config,
+            PriceJobDependencies(
+                store=store,
+                sender=FakeSender([]),
+                sleep=lambda _seconds: True,
+                delay_between_posts=0,
+                is_shutdown_requested=lambda: False,
+            ),
+        )
+
+    assert jobs == ()
+
+
 def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
     return FeedConfig(
         id=feed_id,

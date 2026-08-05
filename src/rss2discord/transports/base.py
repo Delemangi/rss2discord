@@ -54,6 +54,14 @@ class ScraperStrategy(ABC):
             The normalized entry data
         """
 
+    def get_initialization_entry_ids(self, entries: list[Any]) -> set[EntryId]:
+        """Return all stable IDs that belong in the first-fetch baseline."""
+        return {
+            entry_id
+            for entry in entries
+            if (entry_id := self.get_entry_id(entry)) is not None
+        }
+
     @staticmethod
     def _clean_html(text: str) -> str:
         if not text:

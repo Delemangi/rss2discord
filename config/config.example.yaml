@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'anhoch', 'ddstore', 'neksio', 'neptun', or 'setec'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'reklama5', 'anhoch', 'ddstore', 'neksio', 'neptun', or 'setec'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -67,6 +67,19 @@ feeds:
     strategy: "itmk_oglasnik"
     webhook_name: "Oglasnik Bot"
 
+  # Reklama5 accepts generic search URLs; this category-584 example tracks computer parts and accessories.
+  # The first successful result window is a silent baseline. Later checks are a bounded best-effort
+  # future-listing feed, not a complete current-inventory import, and request at most three pages.
+  # Edits, renewals, and reactivations for an already seen ad ID remain silent in the ordinary feed.
+  # The independent price scan traverses the complete category within fixed safety bounds.
+  - id: "reklama5-computer-parts"
+    name: "Reklama5 Computer Parts and Accessories"
+    url: "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "reklama5"
+    price_check_interval: 3600
+    webhook_name: "Reklama5 Bot"
+
   # Anhoch new products plus opt-in selling-price monitoring
   - id: "anhoch-new-products"
     name: "Anhoch New Products"
@@ -74,7 +87,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -97,7 +110,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -108,7 +121,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -134,7 +147,8 @@ feeds:
 # - id: Stable unique ID containing lowercase letters, numbers, '.', '_', or '-' (required)
 #   Delivery history is keyed by this value, so changing it will make old entries new again.
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
-# - url: The RSS/Atom feed, XenForo thread, marketplace page, or product catalog URL (required)
+# - url: The RSS/Atom feed, XenForo thread, marketplace page, Reklama5 search URL,
+#   or product catalog URL (required). Generic Reklama5 search URLs are accepted.
 #   Public GitHub release feeds use https://github.com/OWNER/REPOSITORY/releases.atom
 #   and render with a GitHub source label. They do not require an adapter.
 # - webhook: Discord webhook URL for posting updates (required)
@@ -142,12 +156,17 @@ feeds:
 #   - 'rss': For RSS/Atom feeds (default)
 #   - 'xenforo': For XenForo forum threads
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
+#   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'neksio': For new products from Neksio's public catalog
 #   - 'neptun': For new products from one Neptun category page
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
-# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, or Setec
+#   Reklama5 seeds the first successful result window silently, requests at most three
+#   pages per ordinary cycle, and does not import complete current inventory. Changes,
+#   renewals, and reactivations of the same ad ID remain silent. Its independent price
+#   scan can traverse the complete configured category without changing discovery behavior.
+# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Anhoch scans use 500 products per
@@ -166,6 +185,10 @@ feeds:
 #   conflicting duplicate IDs fail closed. Only positive ActualPrice values are
 #   snapshotted; at most 10,000 snapshots are retained and 100 changes delivered
 #   per scan. Unavailable prices preserve the previous real snapshot.
+#   Reklama5 price scans traverse at most 250 pages / 10,000 ads, cap each response
+#   at 2 MiB and each attempt at 500 MiB / 300 seconds, and retry from page one.
+#   Only positive MKD prices are compared; unavailable prices preserve the previous
+#   numeric snapshot. At most 10,000 snapshots are retained and 100 changes delivered.
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth
