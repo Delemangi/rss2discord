@@ -19,6 +19,7 @@ FeedStrategyName = Literal[
     "ddstore",
     "neksio",
     "neptun",
+    "pazar3",
     "reklama5",
     "setec",
 ]
@@ -52,12 +53,20 @@ class FeedConfig(BaseModel):
             raise ValueError(msg)
         if self.price_check_interval is not None:
             match self.strategy:
-                case "anhoch" | "ddstore" | "neksio" | "neptun" | "reklama5" | "setec":
+                case (
+                    "anhoch"
+                    | "ddstore"
+                    | "neksio"
+                    | "neptun"
+                    | "pazar3"
+                    | "reklama5"
+                    | "setec"
+                ):
                     pass
                 case "rss" | "xenforo" | "itmk_oglasnik":
                     msg = (
                         "price_check_interval requires the anhoch, ddstore, neksio, "
-                        "neptun, reklama5, or setec "
+                        "neptun, pazar3, reklama5, or setec "
                         "strategy"
                     )
                     raise ValueError(msg)
