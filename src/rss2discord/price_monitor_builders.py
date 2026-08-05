@@ -16,6 +16,9 @@ from .transports.ddstore_price_monitor import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
+from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
+from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
 from .transports.hivetec_catalog import HivetecCatalogClient
 from .transports.hivetec_price_monitor import (
     HivetecPriceMonitor,
@@ -66,6 +69,10 @@ type HivetecPriceMonitorFactory = Callable[
     [FeedConfig, HivetecPriceMonitorDependencies],
     PriceMonitor,
 ]
+type Gjirafa50PriceMonitorFactory = Callable[
+    [FeedConfig, Gjirafa50PriceMonitorDependencies],
+    PriceMonitor,
+]
 type NeksioPriceMonitorFactory = Callable[
     [FeedConfig, NeksioPriceMonitorDependencies],
     PriceMonitor,
@@ -93,6 +100,7 @@ class PriceMonitorFactories:
     anhoch: AnhochPriceMonitorFactory = AnhochPriceMonitor
     ddstore: DDStorePriceMonitorFactory = DDStorePriceMonitor
     hivetec: HivetecPriceMonitorFactory = HivetecPriceMonitor
+    gjirafa50: Gjirafa50PriceMonitorFactory = Gjirafa50BackgroundPriceMonitor
     neksio: NeksioPriceMonitorFactory = NeksioPriceMonitor
     neptun: NeptunPriceMonitorFactory = NeptunPriceMonitor
     pazar3: Pazar3PriceMonitorFactory = Pazar3PriceMonitor
@@ -153,6 +161,19 @@ def build_provider_price_monitor(
                     fetch_retry_policy=dependencies.fetch_retry_policy,
                     sqlite_retry_policy=dependencies.sqlite_retry_policy,
                     delivery=dependencies.delivery,
+                ),
+            )
+        case "gjirafa50":
+            return factories.gjirafa50(
+                feed,
+                Gjirafa50PriceMonitorDependencies(
+                    catalog=Gjirafa50CatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                    database_path=dependencies.snapshots.database_path,
                 ),
             )
         case "neksio":

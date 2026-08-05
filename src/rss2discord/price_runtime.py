@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
+from typing import Protocol, runtime_checkable
 
 from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
@@ -17,6 +18,7 @@ from .price_monitor_builders import (
     DEFAULT_PRICE_MONITOR_FACTORIES,
     AnhochPriceMonitorFactory,
     DDStorePriceMonitorFactory,
+    Gjirafa50PriceMonitorFactory,
     HivetecPriceMonitorFactory,
     NeksioPriceMonitorFactory,
     NeptunPriceMonitorFactory,
@@ -39,6 +41,11 @@ from .transports.pazar3_pacing import Pazar3RequestPacer
 from .transports.price_monitor import PriceAlertDelivery
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class _ClosablePriceMonitor(Protocol):
+    def close(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +80,7 @@ def build_price_jobs(
     setec_monitor_factory: SetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.setec,
     ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
     hivetec_monitor_factory: HivetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.hivetec,
+    gjirafa50_monitor_factory: Gjirafa50PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.gjirafa50,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
@@ -82,6 +90,7 @@ def build_price_jobs(
         anhoch=anhoch_monitor_factory,
         ddstore=ddstore_monitor_factory,
         hivetec=hivetec_monitor_factory,
+        gjirafa50=gjirafa50_monitor_factory,
         neksio=neksio_monitor_factory,
         neptun=neptun_monitor_factory,
         pazar3=pazar3_monitor_factory,
@@ -101,8 +110,13 @@ def build_price_jobs(
         monitor = build_provider_price_monitor(feed, shared_dependencies, factories)
         if monitor is None:
             continue
+        close = monitor.close if isinstance(monitor, _ClosablePriceMonitor) else None
         jobs.append(
-            ScheduledJob(interval, partial(_scan_price_monitor, monitor, feed.id)),
+            ScheduledJob(
+                interval,
+                partial(_scan_price_monitor, monitor, feed.id),
+                close,
+            ),
         )
     return tuple(jobs)
 
