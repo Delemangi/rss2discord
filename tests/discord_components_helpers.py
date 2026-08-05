@@ -1,6 +1,4 @@
-from typing import Literal
-
-from rss2discord.configuration import FeedAdapterName, FeedConfig
+from rss2discord.configuration import FeedAdapterName, FeedConfig, FeedStrategyName
 from rss2discord.discord.client import DiscordWebhookClient, WebhookMessage
 from rss2discord.discord.components import JSONValue
 from rss2discord.models import EntryData
@@ -9,7 +7,7 @@ from rss2discord.models import EntryData
 def make_message(
     *,
     embed_color: int | None = None,
-    strategy: Literal["rss", "xenforo", "itmk_oglasnik", "anhoch", "setec"] = "rss",
+    strategy: FeedStrategyName = "rss",
     adapter: FeedAdapterName | None = None,
     url: str = "https://example.test/feed.xml",
     webhook_name: str | None = "RSS Bot",

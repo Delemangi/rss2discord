@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoch, DDStore, Neksio, Neptun, or Setec product updates to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik and Reklama5 listings, and Anhoch, DDStore, Neksio, Neptun, or Setec product updates to Discord webhooks.
 
 ## What it supports
 
@@ -8,12 +8,13 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik listings, and Anhoc
 - Optional RSS adapters for Hacker News and Reddit
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
+- New Reklama5 ads from generic search URLs and opt-in category price alerts
 - New products from Anhoch's catalog and opt-in selling-price alerts
 - New products from Neksio's full public catalog and opt-in selling-price alerts
 - New products from Setec's online catalog and opt-in selling-price alerts
 - New products from DDStore's public GraphQL catalog and opt-in selling-price alerts
 - New products from one Neptun category and opt-in actual-price alerts
-- SQLite delivery history and persistent price snapshots for Anhoch, DDStore, Neksio, Neptun, and Setec
+- SQLite delivery history and persistent price snapshots for Anhoch, DDStore, Neksio, Neptun, Reklama5, and Setec
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 
 ## Docker Compose setup
@@ -102,6 +103,14 @@ Common feed types:
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "itmk_oglasnik"
 
+# Reklama5 computer parts and accessories (category 584)
+- id: "reklama5-computer-parts"
+  name: "Reklama5 Computer Parts and Accessories"
+  url: "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "reklama5"
+  price_check_interval: 3600
+
 # Anhoch new products and opt-in selling-price monitoring
 - id: "anhoch-new-products"
   name: "Anhoch New Products"
@@ -149,18 +158,18 @@ Common feed types:
   webhook_name: "Neptun"
 ```
 
-`price_check_interval: 3600` opts an Anhoch, DDStore, Neksio, Neptun, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Neptun scans only the category named by its feed URL. Omit the key or set it to `null` to disable price monitoring.
+`price_check_interval: 3600` opts an Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Neptun and Reklama5 scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
 
 Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `anhoch`, `ddstore`, `neksio`, `neptun`, and `setec`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `reklama5`, `anhoch`, `ddstore`, `neksio`, `neptun`, and `setec`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. |
-| `price_check_interval` | Anhoch, DDStore, Neksio, Neptun, or Setec only. Set to `3600` for hourly price checks; omit or set to `null` to disable. |
+| `price_check_interval` | Anhoch, DDStore, Neksio, Neptun, Reklama5, or Setec only. Set to `3600` for hourly price checks; omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
@@ -171,6 +180,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - The database is created automatically on first startup.
 - RSS, IT.mk, ordinary Anhoch new-product, Setec, and Neksio first-party responses are capped at 1 MiB and transient fetch failures are retried. Neksio accepts only `https://g.store.neksio.mk/`, follows only same-origin redirects, and applies a 30-second request timeout. Anhoch price responses are capped at 2 MiB.
 - IT.mk Oglasnik seeds the first successful fetch without notifications.
+- Reklama5 accepts generic search URLs. The category-584 example tracks computer parts and accessories. Its first successful result window is a silent baseline. Each ordinary feed cycle requests at most three pages, so this is a bounded best-effort future-listing feed rather than a complete current-inventory import. Edits, renewals, reactivations, and price changes for an already seen ad ID remain silent in that ordinary feed. Optional price monitoring runs as a separate complete-category job.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
 - Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
 - Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.
@@ -178,9 +188,10 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Setec checks at most the latest 30 products and seeds the first successful fetch without notifications.
 - DDStore performs a bounded traversal of its public GraphQL catalog, then selects the latest 30 products by `created_at` and stable product UID in oldest-to-newest delivery order. The first successful fetch seeds without notifications. As a fail-closed integration policy, a zero GraphQL price is treated as unavailable and labeled `Ask for price` rather than displayed as free.
 - Neptun accepts only credential-free, query-free, fragment-free HTTPS category URLs on exact host `neptun.mk` or `www.neptun.mk`; requests normalize to `https://www.neptun.mk` and redirects must remain on that origin. Discovery reads the category's embedded initial search model, requests exactly newest sort `7`, page 1, and 30 products, then delivers API-newest results oldest first. Each category/API response is capped at 5 MiB. The first successful non-empty window seeds without notifications, and delivery history is capped at 10,000 entries.
-- Enabled Anhoch, DDStore, Neksio, Neptun, and Setec price scans run immediately and independently, then at `price_check_interval`; the initial price snapshot is silent. Anhoch full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total). DDStore scans request 500 products per page and allow at most 20,000 products across 40 pages, with a 2 MiB per-response cap, an 80 MiB total response cap, and a 300-second absolute scan bound across requests, redirects, transfers, and retry handling. DDStore also rejects products with more than 64 categories and retains at most 50,000 price snapshots per feed. Zero-valued unavailable prices do not consume snapshot capacity or replace the last real price. Full-catalog price retries share that one deadline and byte budget. Ordinary discovery uses the app's generic retry policy, where each retry is a separate fetch attempt with a fresh bounded scan budget. Neksio price scans use the same full-category bounds as discovery, with each response capped at 1 MiB. Setec full-catalog scans request 250 products per page, allow up to 100 pages (25,000 products), cap each response at 5 MiB, and allow 500 MiB total. Setec products without a current first-variant price are skipped without deleting prior snapshots.
+- Enabled Anhoch, DDStore, Neksio, Neptun, Reklama5, and Setec price scans run immediately and independently, then at `price_check_interval`; the initial price snapshot is silent. Anhoch full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total). DDStore scans request 500 products per page and allow at most 20,000 products across 40 pages, with a 2 MiB per-response cap, an 80 MiB total response cap, and a 300-second absolute scan bound across requests, redirects, transfers, and retry handling. DDStore also rejects products with more than 64 categories and retains at most 50,000 price snapshots per feed. Zero-valued unavailable prices do not consume snapshot capacity or replace the last real price. Full-catalog price retries share that one deadline and byte budget. Ordinary discovery uses the app's generic retry policy, where each retry is a separate fetch attempt with a fresh bounded scan budget. Neksio price scans use the same full-category bounds as discovery, with each response capped at 1 MiB. Setec full-catalog scans request 250 products per page, allow up to 100 pages (25,000 products), cap each response at 5 MiB, and allow 500 MiB total. Setec products without a current first-variant price are skipped without deleting prior snapshots.
 - DDStore price monitoring delivers at most 100 changes from one scan. If 101 or more prices change together, the scan sends no alerts and advances no affected snapshots, so it retries against the same baseline later. The integration also applies a 50,000-entry discovery delivery-history safety limit per feed. A feed that reaches the price-change, snapshot, or delivery-history limit remains fail-closed. To reset a legitimate catalog-wide repricing or oversized snapshot history, stop the service and delete that feed's `price_snapshots` rows. To reset delivery history, stop the service and delete that feed's rows from both `delivered_entries` and `initialized_feeds` in one SQLite transaction; the next fetch will silently seed the current product window.
 - Neptun price monitoring traverses only the configured category with 50 products per page, at most 100 pages / 5,000 products, a 5 MiB per-response cap, and a 500 MiB total cap. Retries restart at page one. Changed totals, incomplete traversal, oversized pages, and conflicting duplicate IDs fail closed. Only positive `ActualPrice` values are compared; unavailable values never replace a previous real snapshot. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
+- Reklama5 price monitoring traverses the configured search scope independently from three-page discovery, at most 250 pages / 10,000 organic ads, with a 2 MiB per-response cap and a 500 MiB / 300-second attempt bound. Retries restart at page one. Cycles, incomplete traversal, and bound violations fail closed. Only positive MKD prices are compared; negotiable, missing, malformed, zero, and other-currency prices do not replace the last numeric snapshot. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
 - A Discord delivery is recorded immediately after Discord accepts the message.
 - If a database write is interrupted after delivery, that entry may be posted again on the next startup.
 - External feed mentions are not expanded in Discord messages.
