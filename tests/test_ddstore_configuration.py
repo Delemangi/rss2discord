@@ -68,7 +68,7 @@ def test_load_config_rejects_price_check_interval_for_rss_with_ddstore_in_error(
     with pytest.raises(
         ValidationError,
         match=(
-            "price_check_interval requires the anhoch, ddstore, hivetec, neksio, "
+            "price_check_interval requires anhoch, ddstore, hivetec, neksio, "
             "neptun, pazar3, reklama5, or setec strategy"
         ),
     ):

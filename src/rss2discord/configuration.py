@@ -67,7 +67,7 @@ class FeedConfig(BaseModel):
                     pass
                 case "rss" | "xenforo" | "itmk_oglasnik":
                     msg = (
-                        "price_check_interval requires the anhoch, ddstore, hivetec, "
+                        "price_check_interval requires anhoch, ddstore, hivetec, "
                         "neksio, neptun, pazar3, reklama5, or setec "
                         "strategy"
                     )
