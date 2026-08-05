@@ -3,6 +3,7 @@
 from .anhoch import AnhochStrategy
 from .base import FeedFetchError, ScraperStrategy
 from .ddstore import DDStoreStrategy
+from .gjirafa50 import Gjirafa50Strategy
 from .hivetec import HivetecStrategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
 from .neksio import NeksioStrategy
@@ -17,6 +18,7 @@ __all__ = [
     "AnhochStrategy",
     "DDStoreStrategy",
     "FeedFetchError",
+    "Gjirafa50Strategy",
     "HivetecStrategy",
     "ITMkOglasnikStrategy",
     "NeksioStrategy",
