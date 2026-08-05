@@ -95,9 +95,10 @@ def _price(value: str | None) -> Decimal:
     try:
         amount = Decimal(value.replace(".", "").replace(",", "."))
         canonicalize_price_amount(amount)
+        quantized = amount.quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidProduct") from None
-    if amount < 0 or amount != amount.to_integral_value():
+    if amount != quantized:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidProduct")
     return amount
 

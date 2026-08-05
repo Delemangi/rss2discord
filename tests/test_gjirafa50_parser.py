@@ -8,8 +8,17 @@ from rss2discord.transports.gjirafa50_parser import parse_gjirafa50_page
 from tests.gjirafa50_helpers import catalog_payload
 
 
-def test_parser_rejects_fractional_price_outside_integer_partition_domain() -> None:
-    payload = catalog_payload(1, [(1, Decimal("1.50"))])
+def test_parser_accepts_fractional_mkd_price_from_live_catalog() -> None:
+    payload = catalog_payload(1, [(1, Decimal("12968.50"))])
+
+    page = parse_gjirafa50_page(payload, datetime.now(UTC))
+
+    assert page.products[0].price == Decimal("12968.50")
+    assert page.products[0].formatted_price == "12.968,50 MKD."
+
+
+def test_parser_rejects_price_below_mkd_cent_precision() -> None:
+    payload = catalog_payload(1, [(1, Decimal("1.50"))]).replace(b"1,50", b"1,505")
 
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
         parse_gjirafa50_page(payload, datetime.now(UTC))
