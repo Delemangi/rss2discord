@@ -2,12 +2,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from functools import partial
-from typing import Final, Protocol, assert_never
+from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordDeliveryResult, DiscordSender
+from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
 from rss2discord.retries import (
@@ -19,7 +18,11 @@ from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.neptun import NeptunStrategy, format_neptun_mkd
 from rss2discord.transports.neptun_http import NEPTUN_LABEL
 from rss2discord.transports.neptun_models import NeptunProduct
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceSnapshotStore,
+    deliver_price_changes,
+)
 
 MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
 MAX_NEPTUN_PRICE_CHANGES_PER_SCAN: Final = 100
@@ -124,39 +127,7 @@ class NeptunPriceMonitor:
         self._deliver_changes(changes)
 
     def _deliver_changes(self, changes: list[_PriceChange]) -> None:
-        delay_before_next = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay_before_next
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            delay_before_next = False
-            result = self._dependencies.sender.send(
-                self._message_for(change),
-                self._dependencies.delivery.sleep,
-            )
-            match result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._dependencies.sqlite_retry_policy.execute(
-                        partial(
-                            self._dependencies.snapshots.upsert_price_snapshot,
-                            change.current,
-                        ),
-                    )
-                    delay_before_next = True
-                case DiscordDeliveryResult.FAILED:
-                    if self._dependencies.delivery.is_shutdown_requested():
-                        return
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case unreachable:
-                    assert_never(unreachable)
+        deliver_price_changes(changes, self._dependencies, self._message_for)
 
     def _snapshot(self, product: NeptunProduct) -> PriceSnapshot | None:
         if product.actual_price <= 0:
