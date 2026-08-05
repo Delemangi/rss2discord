@@ -9,12 +9,13 @@ from curl_cffi import CurlOpt
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult, DiscordWebhookClient
 from rss2discord.discord.image_retries import RetrySleep
+from rss2discord.discord.image_urls import ImageSource
 from rss2discord.discord.images import (
-    AnhochImageDownloader,
     BrowserImpersonation,
     ContentCallback,
     DownloadedImage,
     ImageResponse,
+    ProductImageDownloader,
 )
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData
@@ -68,11 +69,11 @@ class TransientImageSession:
         return TransientImageResponse(headers={})
 
 
-def make_anhoch_message() -> WebhookMessage:
+def make_anhoch_message(name: str | None = "Anhoch") -> WebhookMessage:
     return WebhookMessage(
         feed=FeedConfig(
             id="anhoch",
-            name="Anhoch",
+            name=name,
             url="https://www.anhoch.com/products",
             webhook="https://discord.test/api/webhooks/id/token",
             strategy="anhoch",
@@ -125,6 +126,34 @@ def test_unavailable_thumbnail_logs_fallback(
     )
 
 
+def test_unavailable_thumbnail_log_uses_source_title_without_feed_name(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    session = requests.Session()
+
+    def post(url: str, **kwargs: str) -> requests.Response:
+        del url, kwargs
+        return successful_response()
+
+    monkeypatch.setattr(session, "post", post)
+    caplog.set_level(logging.WARNING)
+
+    # When
+    delivered = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(None),
+    ).send(make_anhoch_message(name=None), lambda _: True)
+
+    # Then
+    assert delivered
+    assert (
+        caplog.records[-1].getMessage()
+        == "Anhoch thumbnail unavailable for feed anhoch"
+    )
+
+
 def test_default_image_downloader_receives_delivery_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -140,13 +169,18 @@ def test_default_image_downloader_receives_delivery_sleep(
         del url, kwargs
         return successful_response()
 
-    def make_image_downloader(*, sleep: RetrySleep) -> StaticImageDownloader:
+    def make_image_downloader(
+        *,
+        sleep: RetrySleep,
+        source: ImageSource,
+    ) -> StaticImageDownloader:
+        assert source == "anhoch"
         captured_sleep.append(sleep)
         return StaticImageDownloader(None)
 
     monkeypatch.setattr(session, "post", post)
     monkeypatch.setattr(
-        "rss2discord.discord.client.AnhochImageDownloader",
+        "rss2discord.discord.client.ProductImageDownloader",
         make_image_downloader,
     )
 
@@ -217,12 +251,16 @@ def test_interrupted_image_retry_stops_discord_delivery(
         posts.append(url)
         return successful_response()
 
-    def make_image_downloader(*, sleep: RetrySleep) -> AnhochImageDownloader:
-        return AnhochImageDownloader(image_session, sleep=sleep)
+    def make_image_downloader(
+        *,
+        sleep: RetrySleep,
+        source: ImageSource,
+    ) -> ProductImageDownloader:
+        return ProductImageDownloader(image_session, sleep=sleep, source=source)
 
     monkeypatch.setattr(session, "post", post)
     monkeypatch.setattr(
-        "rss2discord.discord.client.AnhochImageDownloader",
+        "rss2discord.discord.client.ProductImageDownloader",
         make_image_downloader,
     )
 

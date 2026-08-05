@@ -5,11 +5,11 @@ from curl_cffi import CurlOpt
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.discord.images import (
-    AnhochImageDownloader,
     BrowserImpersonation,
     ContentCallback,
     DownloadedImage,
     ImageResponse,
+    ProductImageDownloader,
 )
 
 IMAGE_URL = "https://www.anhoch.com/storage/media/product.jpg"
@@ -85,7 +85,7 @@ def test_anhoch_image_downloader_returns_bounded_jpeg() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(session).download(IMAGE_URL)
+    image = ProductImageDownloader(session, source="anhoch").download(IMAGE_URL)
 
     # Then
     assert image == DownloadedImage(
@@ -107,7 +107,9 @@ def test_anhoch_image_downloader_accepts_catalog_image_path() -> None:
     session = RecordingImageSession(response)
 
     # When
-    image = AnhochImageDownloader(session).download(CATALOG_IMAGE_URL)
+    image = ProductImageDownloader(session, source="anhoch").download(
+        CATALOG_IMAGE_URL,
+    )
 
     # Then
     assert image is not None
@@ -124,7 +126,10 @@ def test_anhoch_image_downloader_rejects_html_response() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(RecordingImageSession(response)).download(IMAGE_URL)
+    image = ProductImageDownloader(
+        RecordingImageSession(response),
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -138,7 +143,10 @@ def test_anhoch_image_downloader_rejects_cross_origin_redirect() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(RecordingImageSession(response)).download(IMAGE_URL)
+    image = ProductImageDownloader(
+        RecordingImageSession(response),
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -152,7 +160,10 @@ def test_anhoch_image_downloader_rejects_oversized_content() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(RecordingImageSession(response)).download(IMAGE_URL)
+    image = ProductImageDownloader(
+        RecordingImageSession(response),
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -163,7 +174,10 @@ def test_anhoch_image_downloader_aborts_unknown_length_oversize() -> None:
     response = StubImageResponse(chunks=(b"x" * (8 * 1024 * 1024 + 1),))
 
     # When
-    image = AnhochImageDownloader(RecordingImageSession(response)).download(IMAGE_URL)
+    image = ProductImageDownloader(
+        RecordingImageSession(response),
+        source="anhoch",
+    ).download(IMAGE_URL)
 
     # Then
     assert image is None
@@ -174,8 +188,22 @@ def test_anhoch_image_downloader_does_not_request_untrusted_url() -> None:
     session = RecordingImageSession(StubImageResponse(chunks=(b"image",)))
 
     # When
-    image = AnhochImageDownloader(session).download(
+    image = ProductImageDownloader(session, source="anhoch").download(
         "https://example.test/storage/media/product.jpg",
+    )
+
+    # Then
+    assert image is None
+    assert session.calls == []
+
+
+def test_anhoch_image_downloader_does_not_request_ddstore_url() -> None:
+    # Given
+    session = RecordingImageSession(StubImageResponse(chunks=(b"image",)))
+
+    # When
+    image = ProductImageDownloader(session, source="anhoch").download(
+        "https://ddstore.mk/media/catalog/product/product.jpg",
     )
 
     # Then
@@ -198,11 +226,36 @@ def test_anhoch_image_downloader_follows_same_origin_redirect() -> None:
     )
 
     # When
-    image = AnhochImageDownloader(session).download(IMAGE_URL)
+    image = ProductImageDownloader(session, source="anhoch").download(IMAGE_URL)
 
     # Then
     assert image is not None
     assert session.calls == [IMAGE_URL, redirected_url]
+
+
+def test_anhoch_image_downloader_rejects_cross_provider_redirect() -> None:
+    # Given
+    ddstore_image_url = "https://ddstore.mk/media/catalog/product/product.jpg"
+    session = SequenceImageSession(
+        responses=[
+            StubImageResponse(
+                chunks=(),
+                status_code=302,
+                headers={"Location": ddstore_image_url},
+            ),
+            StubImageResponse(
+                chunks=(b"\xff\xd8\xffimage",),
+                url=ddstore_image_url,
+            ),
+        ],
+    )
+
+    # When
+    image = ProductImageDownloader(session, source="anhoch").download(IMAGE_URL)
+
+    # Then
+    assert image is None
+    assert session.calls == [IMAGE_URL]
 
 
 def test_anhoch_image_downloader_rejects_alternate_port_before_request() -> None:
@@ -210,7 +263,7 @@ def test_anhoch_image_downloader_rejects_alternate_port_before_request() -> None
     session = RecordingImageSession(StubImageResponse(chunks=(b"image",)))
 
     # When
-    image = AnhochImageDownloader(session).download(
+    image = ProductImageDownloader(session, source="anhoch").download(
         "https://www.anhoch.com:444/storage/media/product.jpg",
     )
 
@@ -224,7 +277,7 @@ def test_anhoch_image_downloader_rejects_encoded_traversal_before_request() -> N
     session = RecordingImageSession(StubImageResponse(chunks=(b"image",)))
 
     # When
-    image = AnhochImageDownloader(session).download(
+    image = ProductImageDownloader(session, source="anhoch").download(
         "https://www.anhoch.com/storage/media/%2e%2e/admin",
     )
 
@@ -238,7 +291,7 @@ def test_anhoch_image_downloader_rejects_mismatched_image_signature() -> None:
     session = RecordingImageSession(StubImageResponse(chunks=(b"not-a-jpeg",)))
 
     # When
-    image = AnhochImageDownloader(session).download(IMAGE_URL)
+    image = ProductImageDownloader(session, source="anhoch").download(IMAGE_URL)
 
     # Then
     assert image is None

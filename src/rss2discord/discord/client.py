@@ -9,7 +9,8 @@ import requests
 
 from rss2discord.discord.components import JSONValue, build_components_v2_payload
 from rss2discord.discord.image_retries import ImageDownloadInterruptedError
-from rss2discord.discord.images import AnhochImageDownloader, ImageDownloader
+from rss2discord.discord.image_urls import IMAGE_SOURCE_BY_STRATEGY
+from rss2discord.discord.images import ImageDownloader, ProductImageDownloader
 from rss2discord.discord.message import (
     PreparedDelivery,
     WebhookMessage,
@@ -64,8 +65,8 @@ class DiscordWebhookClient:
         session: requests.Session | None = None,
         image_downloader: ImageDownloader | None = None,
     ) -> None:
-        self._session = session or requests.Session()
-        self._image_downloader = image_downloader
+        self._session: requests.Session = session or requests.Session()
+        self._anhoch_image_downloader: ImageDownloader | None = image_downloader
 
     def send(
         self,
@@ -138,9 +139,13 @@ class DiscordWebhookClient:
         message: WebhookMessage,
         sleep: SleepCallback,
     ) -> PreparedDelivery:
-        image_downloader = self._image_downloader
-        if image_downloader is None:
-            image_downloader = AnhochImageDownloader(sleep=sleep)
+        image_source = IMAGE_SOURCE_BY_STRATEGY.get(message.feed.strategy)
+        image_downloader = self._anhoch_image_downloader
+        if image_source != "anhoch" or image_downloader is None:
+            image_downloader = ProductImageDownloader(
+                sleep=sleep,
+                source=image_source or "anhoch",
+            )
         return prepare_delivery(message, image_downloader, sleep)
 
     def _handle_retryable_request_error(
