@@ -150,6 +150,21 @@ def test_pazar3_parser_accepts_canonical_page_one_paginator_link() -> None:
     assert page.organic_ids == {"9086886"}
 
 
+def test_pazar3_parser_accepts_relative_paginator_link() -> None:
+    cards = [
+        Pazar3Card(product_id=str(product_id)).html() for product_id in range(1, 51)
+    ]
+    html = listing_page(1, cards, total=51).replace(
+        f"{SEARCH_URL}?Page=2".encode(),
+        b"?Page=2",
+        1,
+    )
+
+    page = parse_pazar3_page(html, page_request(), FIXED_NOW)
+
+    assert page.result_count == 51
+
+
 def test_pazar3_parser_rejects_more_than_three_promoted_rows() -> None:
     with pytest.raises(FeedFetchError) as fetch_error:
         parse_pazar3_page(

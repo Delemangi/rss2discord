@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Final
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 
@@ -94,7 +94,7 @@ def _validate_paginator_link(link: Tag, request: Pazar3PageRequest) -> int:
     page_number = _positive_decimal(_attribute(link, "page-no"))
     if href is None or page_number is None or "#" in href:
         raise FeedFetchError(PAZAR3_LABEL, "InvalidPaginator")
-    parsed = urlsplit(href)
+    parsed = urlsplit(urljoin(request.url, href))
     query = parse_qsl(parsed.query, keep_blank_values=True)
     page_values = [value for key, value in query if key.casefold() == "page"]
     if not page_values and page_number == 1:
