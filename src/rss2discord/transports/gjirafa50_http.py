@@ -4,6 +4,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
+from http.cookiejar import DefaultCookiePolicy
 from threading import Lock
 from types import TracebackType
 from typing import Final, Protocol, Self
@@ -77,6 +78,11 @@ class FetchedGjirafa50Page:
 class Gjirafa50HttpClient:
     def __init__(self) -> None:
         self._session = requests.Session()
+        self._session.cookies.set_policy(
+            DefaultCookiePolicy(
+                blocked_domains=("gjirafa50.mk", ".gjirafa50.mk"),
+            ),
+        )
 
     def __enter__(self) -> Self:
         return self
@@ -228,12 +234,20 @@ def _read_content(
     budget: Gjirafa50HttpBudget,
 ) -> bytes:
     content = bytearray()
+    response_bytes = sum(
+        len(name.encode("latin-1")) + len(value.encode("latin-1")) + 4
+        for name, value in response.headers.items()
+    )
+    budget.consume_bytes(response_bytes)
+    if response_bytes > GJIRAFA50_RESPONSE_BYTES:
+        raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
     chunks: Iterator[bytes] = response.iter_content(GJIRAFA50_STREAM_CHUNK_BYTES)
     for chunk in chunks:
         if time.monotonic() >= budget.deadline:
             raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
-        if len(content) + len(chunk) > GJIRAFA50_RESPONSE_BYTES:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
         budget.consume_bytes(len(chunk))
+        response_bytes += len(chunk)
+        if response_bytes > GJIRAFA50_RESPONSE_BYTES:
+            raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
         content.extend(chunk)
     return bytes(content)
