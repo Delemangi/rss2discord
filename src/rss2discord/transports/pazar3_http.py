@@ -109,7 +109,7 @@ def fetch_pazar3_page(
     try:
         current_url = request.url
         while True:
-            pacer.wait(sleep, is_shutdown_requested)
+            pacer.wait(sleep, is_shutdown_requested, budget.expires_at)
             response, content = _get_response(session, current_url, budget)
             if 300 <= response.status_code < 400:
                 location = _header(response.headers, "location")

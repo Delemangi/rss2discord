@@ -90,3 +90,34 @@ def test_pazar3_http_paces_every_redirect_request(
     assert content == b"page"
     assert waits == [20.0]
     assert get.urls == [target, target]
+
+
+def test_pazar3_http_rejects_pacing_wait_beyond_attempt_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = page_request().url
+    get = RecordingGet(
+        [StubResponse(b"redirect", status_code=302, headers={"Location": target})],
+    )
+    now = [100.0]
+    pacer = Pazar3RequestPacer(lambda: now[0])
+    waits: list[float] = []
+    monkeypatch.setattr(pazar3_http, "_create_session", lambda: get)
+    monkeypatch.setattr(pazar3_http.time, "monotonic", lambda: now[0])
+
+    def record_sleep(seconds: float) -> bool:
+        waits.append(seconds)
+        return True
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        pazar3_http.fetch_pazar3_page(
+            page_request(),
+            scan_budget(expires_at=105.0),
+            pacer,
+            record_sleep,
+            lambda: False,
+        )
+
+    assert fetch_error.value.cause_type == "ScanTimeLimitExceeded"
+    assert waits == []
+    assert get.urls == [target]
