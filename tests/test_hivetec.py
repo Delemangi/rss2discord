@@ -157,6 +157,28 @@ def test_hivetec_strategy_stops_a_slow_stream_at_the_absolute_deadline(
         HivetecStrategy().fetch_entries(SHOP_URL)
 
 
+def test_hivetec_recording_get_invokes_hook_for_each_content_chunk() -> None:
+    calls: list[None] = []
+    get = RecordingGet(
+        [
+            StubResponse(
+                b"",
+                chunks=(b"first", b"second"),
+                on_chunk=lambda: calls.append(None),
+            ),
+        ],
+    )
+
+    _ = get(
+        SHOP_URL,
+        timeout_ms=1,
+        header_callback=len,
+        content_callback=len,
+    )
+
+    assert len(calls) == 2
+
+
 def test_hivetec_strategy_rejects_cross_origin_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -120,9 +120,9 @@ class RecordingGet:
         for chunk in header_chunks:
             if header_callback(chunk) == CURL_WRITEFUNC_ERROR:
                 return HivetecCurlResponse(response.status_code, url)
-        if response.on_chunk is not None:
-            response.on_chunk()
         for chunk in response.chunks or (response.content,):
+            if response.on_chunk is not None:
+                response.on_chunk()
             if content_callback(chunk) == CURL_WRITEFUNC_ERROR:
                 break
         return HivetecCurlResponse(response.status_code, url)
