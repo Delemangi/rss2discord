@@ -17,6 +17,7 @@ from .price_monitor_builders import (
     DEFAULT_PRICE_MONITOR_FACTORIES,
     AnhochPriceMonitorFactory,
     DDStorePriceMonitorFactory,
+    HivetecPriceMonitorFactory,
     NeksioPriceMonitorFactory,
     NeptunPriceMonitorFactory,
     Pazar3PriceMonitorFactory,
@@ -71,6 +72,7 @@ def build_price_jobs(
     reklama5_monitor_factory: Reklama5PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.reklama5,
     setec_monitor_factory: SetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.setec,
     ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
+    hivetec_monitor_factory: HivetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.hivetec,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
@@ -79,6 +81,7 @@ def build_price_jobs(
     factories = PriceMonitorFactories(
         anhoch=anhoch_monitor_factory,
         ddstore=ddstore_monitor_factory,
+        hivetec=hivetec_monitor_factory,
         neksio=neksio_monitor_factory,
         neptun=neptun_monitor_factory,
         pazar3=pazar3_monitor_factory,

@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'ddstore', 'neksio', 'neptun', or 'setec'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'ddstore', 'hivetec', 'neksio', 'neptun', or 'setec'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -98,7 +98,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -114,6 +114,18 @@ feeds:
     price_check_interval: 3600
     webhook_name: "Neksio Bot"
 
+  # Hivetec latest products plus opt-in full-catalog price monitoring.
+  # Only the exact credential-free HTTPS shop URL is accepted. Discovery compares the
+  # latest 30 Store API products with WordPress publication timestamps and fails closed
+  # if their IDs or order disagree. The immediate first scan stores a silent baseline.
+  - id: "hivetec-products"
+    name: "Hivetec Products"
+    url: "https://hivetec.mk/shop/"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "hivetec"
+    price_check_interval: 3600
+    webhook_name: "Hivetec Bot"
+
   # Setec new products and opt-in selling-price monitoring; the first successful fetch seeds without notifications
   - id: "setec-new-products"
     name: "Setec New Products"
@@ -121,7 +133,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -132,7 +144,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, DDStore, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -170,6 +182,7 @@ feeds:
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
 #   - 'anhoch': For new products from Anhoch's public catalog
+#   - 'hivetec': For new products from Hivetec's public WooCommerce catalog
 #   - 'neksio': For new products from Neksio's public catalog
 #   - 'neptun': For new products from one Neptun category page
 #   - 'setec': For new products from Setec's public catalog
@@ -178,13 +191,18 @@ feeds:
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
-# - price_check_interval: Optional seconds between Anhoch, DDStore, Neksio, Neptun, Pazar3, Reklama5, or Setec
+# - price_check_interval: Optional seconds between Anhoch, DDStore, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;
 #   a scan fails above 100 categories, 100 pages per category, or 10,000 products.
+#   Hivetec scans use 100 products per page, at most 50 pages / 5,000 products,
+#   a 1 MiB per-response cap, a retry-wide 20 MiB header-and-body cap, a 300-second
+#   absolute deadline, and aggregate caps of 20,000 images and 20,000 categories.
+#   Changed pagination totals, incomplete traversal, duplicate IDs, and aggregate
+#   metadata excess fail closed.
 #   Setec scans use
 #   250 products per page, up to 100 pages / 25,000 products, with a 5 MiB
 #   per-response cap and a 500 MiB total cap. Setec products without a current

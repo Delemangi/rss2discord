@@ -21,6 +21,7 @@ from .transports import (
     AnhochStrategy,
     DDStoreStrategy,
     FeedFetchError,
+    HivetecStrategy,
     ITMkOglasnikStrategy,
     NeksioStrategy,
     NeptunStrategy,
@@ -56,6 +57,7 @@ class RSSToDiscord:
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
             "ddstore": DDStoreStrategy(self.is_shutdown_requested),
+            "hivetec": HivetecStrategy(self.is_shutdown_requested),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "neksio": NeksioStrategy(self.is_shutdown_requested),
             "neptun": NeptunStrategy(),

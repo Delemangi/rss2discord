@@ -16,6 +16,11 @@ from .transports.ddstore_price_monitor import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from .transports.hivetec_catalog import HivetecCatalogClient
+from .transports.hivetec_price_monitor import (
+    HivetecPriceMonitor,
+    HivetecPriceMonitorDependencies,
+)
 from .transports.neksio_catalog import NeksioCatalogClient
 from .transports.neksio_price_monitor import (
     NeksioPriceMonitor,
@@ -57,6 +62,10 @@ type DDStorePriceMonitorFactory = Callable[
     [FeedConfig, DDStorePriceMonitorDependencies],
     PriceMonitor,
 ]
+type HivetecPriceMonitorFactory = Callable[
+    [FeedConfig, HivetecPriceMonitorDependencies],
+    PriceMonitor,
+]
 type NeksioPriceMonitorFactory = Callable[
     [FeedConfig, NeksioPriceMonitorDependencies],
     PriceMonitor,
@@ -83,6 +92,7 @@ type SetecPriceMonitorFactory = Callable[
 class PriceMonitorFactories:
     anhoch: AnhochPriceMonitorFactory = AnhochPriceMonitor
     ddstore: DDStorePriceMonitorFactory = DDStorePriceMonitor
+    hivetec: HivetecPriceMonitorFactory = HivetecPriceMonitor
     neksio: NeksioPriceMonitorFactory = NeksioPriceMonitor
     neptun: NeptunPriceMonitorFactory = NeptunPriceMonitor
     pazar3: Pazar3PriceMonitorFactory = Pazar3PriceMonitor
@@ -126,6 +136,18 @@ def build_provider_price_monitor(
                 feed,
                 DDStorePriceMonitorDependencies(
                     catalog=DDStoreCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
+        case "hivetec":
+            return factories.hivetec(
+                feed,
+                HivetecPriceMonitorDependencies(
+                    catalog=HivetecCatalogClient(),
                     snapshots=dependencies.snapshots,
                     sender=dependencies.sender,
                     fetch_retry_policy=dependencies.fetch_retry_policy,
