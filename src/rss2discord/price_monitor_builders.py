@@ -26,6 +26,12 @@ from .transports.neptun_price_monitor import (
     NeptunPriceMonitor,
     NeptunPriceMonitorDependencies,
 )
+from .transports.pazar3_catalog import Pazar3CatalogClient
+from .transports.pazar3_pacing import Pazar3RequestPacer
+from .transports.pazar3_price_monitor import (
+    Pazar3PriceMonitor,
+    Pazar3PriceMonitorDependencies,
+)
 from .transports.price_monitor import PriceAlertDelivery
 from .transports.reklama5_catalog import Reklama5CatalogClient
 from .transports.reklama5_price_monitor import (
@@ -59,6 +65,10 @@ type NeptunPriceMonitorFactory = Callable[
     [FeedConfig, NeptunPriceMonitorDependencies],
     PriceMonitor,
 ]
+type Pazar3PriceMonitorFactory = Callable[
+    [FeedConfig, Pazar3PriceMonitorDependencies],
+    PriceMonitor,
+]
 type Reklama5PriceMonitorFactory = Callable[
     [FeedConfig, Reklama5PriceMonitorDependencies],
     PriceMonitor,
@@ -75,6 +85,7 @@ class PriceMonitorFactories:
     ddstore: DDStorePriceMonitorFactory = DDStorePriceMonitor
     neksio: NeksioPriceMonitorFactory = NeksioPriceMonitor
     neptun: NeptunPriceMonitorFactory = NeptunPriceMonitor
+    pazar3: Pazar3PriceMonitorFactory = Pazar3PriceMonitor
     reklama5: Reklama5PriceMonitorFactory = Reklama5PriceMonitor
     setec: SetecPriceMonitorFactory = SetecPriceMonitor
 
@@ -89,6 +100,7 @@ class SharedPriceMonitorDependencies:
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
     delivery: PriceAlertDelivery
+    pazar3_pacer: Pazar3RequestPacer
 
 
 def build_provider_price_monitor(
@@ -138,6 +150,21 @@ def build_provider_price_monitor(
                 feed,
                 NeptunPriceMonitorDependencies(
                     catalog=NeptunCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
+        case "pazar3":
+            return factories.pazar3(
+                feed,
+                Pazar3PriceMonitorDependencies(
+                    catalog=Pazar3CatalogClient(
+                        dependencies.pazar3_pacer,
+                        dependencies.delivery.sleep,
+                    ),
                     snapshots=dependencies.snapshots,
                     sender=dependencies.sender,
                     fetch_retry_policy=dependencies.fetch_retry_policy,

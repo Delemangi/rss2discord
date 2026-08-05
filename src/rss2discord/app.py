@@ -24,12 +24,14 @@ from .transports import (
     ITMkOglasnikStrategy,
     NeksioStrategy,
     NeptunStrategy,
+    Pazar3Strategy,
     Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
     SetecStrategy,
     XenForoStrategy,
 )
+from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
@@ -49,12 +51,19 @@ class RSSToDiscord:
         self._config = config
         self._store = store
         self._sender = sender
+        self._shutdown_requested = False
+        self._pazar3_pacer = Pazar3RequestPacer(time.monotonic)
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
             "ddstore": DDStoreStrategy(self.is_shutdown_requested),
             "itmk_oglasnik": ITMkOglasnikStrategy(),
             "neksio": NeksioStrategy(self.is_shutdown_requested),
             "neptun": NeptunStrategy(),
+            "pazar3": Pazar3Strategy(
+                pacer=self._pazar3_pacer,
+                sleep=self._interruptible_sleep,
+                is_shutdown_requested=self.is_shutdown_requested,
+            ),
             "reklama5": Reklama5Strategy(
                 is_shutdown_requested=self.is_shutdown_requested,
             ),
@@ -66,7 +75,6 @@ class RSSToDiscord:
             "hackernews": HackerNewsAdapter(),
             "reddit": RedditAdapter(),
         }
-        self._shutdown_requested = False
 
     def request_shutdown(self) -> None:
         logger.info("Shutdown requested")
@@ -168,6 +176,7 @@ class RSSToDiscord:
                         sleep=self._interruptible_sleep,
                         delay_between_posts=self._config.delay_between_posts,
                         is_shutdown_requested=self.is_shutdown_requested,
+                        pazar3_pacer=self._pazar3_pacer,
                     ),
                 ),
             ),

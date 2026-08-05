@@ -10,6 +10,7 @@ SOURCE_LABEL_DDSTORE: Final = "DDStore"
 SOURCE_LABEL_SETEC: Final = "Setec"
 SOURCE_LABEL_NEKSIO: Final = "Neksio"
 SOURCE_LABEL_NEPTUN: Final = "Neptun"
+SOURCE_LABEL_PAZAR3: Final = "Pazar3"
 SOURCE_LABEL_REKLAMA5: Final = "Reklama5"
 SOURCE_LABEL_ITMK_OGLASNIK: Final = "IT.mk Oglasnik"
 SOURCE_LABEL_REDDIT: Final = "Reddit"
@@ -37,6 +38,8 @@ def source_label(feed: FeedConfig) -> str:
             return SOURCE_LABEL_NEKSIO
         case "neptun":
             return SOURCE_LABEL_NEPTUN
+        case "pazar3":
+            return SOURCE_LABEL_PAZAR3
         case "reklama5":
             return SOURCE_LABEL_REKLAMA5
         case "xenforo":

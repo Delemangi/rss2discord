@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -18,6 +19,7 @@ from .price_monitor_builders import (
     DDStorePriceMonitorFactory,
     NeksioPriceMonitorFactory,
     NeptunPriceMonitorFactory,
+    Pazar3PriceMonitorFactory,
     PriceMonitor,
     PriceMonitorFactories,
     Reklama5PriceMonitorFactory,
@@ -32,6 +34,7 @@ from .retries import (
     SQLiteRetryPolicy,
 )
 from .scheduler import ScheduledJob
+from .transports.pazar3_pacing import Pazar3RequestPacer
 from .transports.price_monitor import PriceAlertDelivery
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,7 @@ class PriceJobDependencies:
     sleep: SleepCallback
     delay_between_posts: float
     is_shutdown_requested: Callable[[], bool]
+    pazar3_pacer: Pazar3RequestPacer | None = None
 
 
 class _RetrySleepAdapter:
@@ -63,6 +67,7 @@ def build_price_jobs(
     anhoch_monitor_factory: AnhochPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.anhoch,
     neksio_monitor_factory: NeksioPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neksio,
     neptun_monitor_factory: NeptunPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neptun,
+    pazar3_monitor_factory: Pazar3PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.pazar3,
     reklama5_monitor_factory: Reklama5PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.reklama5,
     setec_monitor_factory: SetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.setec,
     ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
@@ -70,11 +75,13 @@ def build_price_jobs(
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
     retry_sleep = _RetrySleepAdapter(dependencies.sleep)
+    pazar3_pacer = dependencies.pazar3_pacer or Pazar3RequestPacer(time.monotonic)
     factories = PriceMonitorFactories(
         anhoch=anhoch_monitor_factory,
         ddstore=ddstore_monitor_factory,
         neksio=neksio_monitor_factory,
         neptun=neptun_monitor_factory,
+        pazar3=pazar3_monitor_factory,
         reklama5=reklama5_monitor_factory,
         setec=setec_monitor_factory,
     )
@@ -86,6 +93,7 @@ def build_price_jobs(
             feed,
             dependencies,
             retry_sleep,
+            pazar3_pacer,
         )
         monitor = build_provider_price_monitor(feed, shared_dependencies, factories)
         if monitor is None:
@@ -100,6 +108,7 @@ def _shared_monitor_dependencies(
     feed: FeedConfig,
     dependencies: PriceJobDependencies,
     retry_sleep: _RetrySleepAdapter,
+    pazar3_pacer: Pazar3RequestPacer,
 ) -> SharedPriceMonitorDependencies:
     return SharedPriceMonitorDependencies(
         snapshots=dependencies.store,
@@ -117,6 +126,7 @@ def _shared_monitor_dependencies(
             delay_between_posts=dependencies.delay_between_posts,
             is_shutdown_requested=dependencies.is_shutdown_requested,
         ),
+        pazar3_pacer=pazar3_pacer,
     )
 
 
