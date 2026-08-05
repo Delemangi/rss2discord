@@ -4,6 +4,7 @@ import logging
 import sqlite3
 from dataclasses import replace
 from threading import Lock, Thread
+from typing import ClassVar
 
 import requests
 
@@ -21,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class Gjirafa50BackgroundPriceMonitor:
-    """Launch at most one thread using a thread-local SQLite connection."""
+    """Serialize provider scans while isolating each feed's worker resources."""
+
+    _scan_lock: ClassVar[Lock] = Lock()
 
     def __init__(
         self,
@@ -45,37 +48,38 @@ class Gjirafa50BackgroundPriceMonitor:
             self._thread.start()
 
     def _run(self) -> None:
-        try:
-            with (
-                DeliveryStore(self._dependencies.database_path) as store,
-                requests.Session() as discord_session,
-            ):
-                dependencies = replace(
-                    self._dependencies,
-                    snapshots=store,
-                    sender=DiscordWebhookClient(session=discord_session),
+        with self._scan_lock:
+            try:
+                with (
+                    DeliveryStore(self._dependencies.database_path) as store,
+                    requests.Session() as discord_session,
+                ):
+                    dependencies = replace(
+                        self._dependencies,
+                        snapshots=store,
+                        sender=DiscordWebhookClient(session=discord_session),
+                    )
+                    Gjirafa50PriceMonitor(self._feed, dependencies).scan()
+            except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
+                return
+            except FeedFetchError as error:
+                logger.exception(
+                    "Gjirafa50 price scan failed for feed %s (%s)",
+                    self._feed.id,
+                    error.cause_type,
                 )
-                Gjirafa50PriceMonitor(self._feed, dependencies).scan()
-        except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
-            return
-        except FeedFetchError as error:
-            logger.exception(
-                "Gjirafa50 price scan failed for feed %s (%s)",
-                self._feed.id,
-                error.cause_type,
-            )
-        except sqlite3.Error as error:
-            logger.exception(
-                "Gjirafa50 price persistence failed for feed %s (%s)",
-                self._feed.id,
-                type(error).__name__,
-            )
-        except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK
-            logger.exception(
-                "Unexpected Gjirafa50 price scan failure for feed %s (%s)",
-                self._feed.id,
-                type(error).__name__,
-            )
+            except sqlite3.Error as error:
+                logger.exception(
+                    "Gjirafa50 price persistence failed for feed %s (%s)",
+                    self._feed.id,
+                    type(error).__name__,
+                )
+            except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK
+                logger.exception(
+                    "Unexpected Gjirafa50 price scan failure for feed %s (%s)",
+                    self._feed.id,
+                    type(error).__name__,
+                )
 
     def close(self) -> None:
         with self._lock:
