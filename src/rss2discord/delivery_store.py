@@ -20,6 +20,7 @@ class PriceSnapshot:
 
 class DeliveryStore:
     def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
         database_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(database_path)
         try:
@@ -27,6 +28,10 @@ class DeliveryStore:
         except sqlite3.Error:
             self._connection.close()
             raise
+
+    @property
+    def database_path(self) -> Path:
+        return self._database_path
 
     def __enter__(self) -> Self:
         return self
