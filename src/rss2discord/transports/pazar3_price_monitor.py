@@ -28,7 +28,7 @@ MAX_PAZAR3_PRICE_CHANGES_PER_SCAN: Final = 100
 _MAX_PRICE_DIGITS: Final = 10
 _PRICE_PATTERN: Final = re.compile(
     r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))\s*"
-    r"(?P<currency>ден\.?|МКД|MKD|EUR|€)",
+    r"(?P<currency>ден\.?|МКД|MKD|EUR|ЕУР|€)",
     re.IGNORECASE,
 )
 
@@ -175,7 +175,7 @@ class Pazar3PriceMonitor:
         if amount <= 0:
             return None
         currency_token = match.group("currency").casefold()
-        currency = "EUR" if currency_token in {"eur", "€"} else "MKD"
+        currency = "EUR" if currency_token in {"eur", "еур", "€"} else "MKD"
         return PriceSnapshot(
             self._feed.id,
             str(listing.entry_id),

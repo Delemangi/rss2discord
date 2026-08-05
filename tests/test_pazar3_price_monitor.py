@@ -84,7 +84,7 @@ def test_pazar3_price_monitor_baselines_then_delivers_currency_change(
     catalog = CatalogStub(
         [
             (priced("1", "1.200 МКД"),),
-            (priced("1", "20 EUR"),),
+            (priced("1", "20 ЕУР"),),
         ],
     )
 
@@ -96,10 +96,10 @@ def test_pazar3_price_monitor_baselines_then_delivers_currency_change(
         price_monitor.scan()
 
         assert sender.messages[0].entry.description == (
-            "Price changed from 1.200 МКД to 20 EUR"
+            "Price changed from 1.200 МКД to 20 ЕУР"
         )
         assert store.load_price_snapshots("pazar3") == (
-            PriceSnapshot("pazar3", "1", Decimal(20), "20 EUR", "EUR"),
+            PriceSnapshot("pazar3", "1", Decimal(20), "20 ЕУР", "EUR"),
         )
 
 
