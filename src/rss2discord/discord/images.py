@@ -165,19 +165,31 @@ class ProductImageDownloader:
                 continue
             if not 300 <= response.status_code < 400:
                 return _read_image(response, content, self._source)
-            if redirects_remaining == 0:
-                return None
-            location = _header(response.headers, "location")
-            if location is None:
-                return None
-            redirected_url = canonical_product_image_url(
-                urljoin(current_url, location),
-                self._source,
+            redirected_url = self._redirected_image_url(
+                response,
+                current_url,
+                redirects_remaining,
             )
             if redirected_url is None:
                 return None
             current_url = redirected_url
             redirects_remaining -= 1
+
+    def _redirected_image_url(
+        self,
+        response: ImageResponse,
+        current_url: str,
+        redirects_remaining: int,
+    ) -> str | None:
+        if redirects_remaining == 0:
+            return None
+        location = _header(response.headers, "location")
+        if location is None:
+            return None
+        return canonical_product_image_url(
+            urljoin(current_url, location),
+            self._source,
+        )
 
     def _request_current_url(
         self,
@@ -209,7 +221,8 @@ class ProductImageDownloader:
             if (
                 not retry_budget.has_time_remaining()
                 or content.exceeded_limit
-                or canonical_product_image_url(response.url, self._source) != current_url
+                or canonical_product_image_url(response.url, self._source)
+                != current_url
             ):
                 return None
             return response, bytes(content.content)

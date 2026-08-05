@@ -7,9 +7,7 @@ ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 DDSTORE_IMAGE_HOST: Final = "ddstore.mk"
 DDSTORE_IMAGE_PATH_PREFIXES: Final = ("/media/",)
 type ImageSource = Literal["anhoch", "ddstore"]
-IMAGE_POLICY_BY_SOURCE: Final[
-    Mapping[ImageSource, tuple[str, tuple[str, ...]]]
-] = {
+IMAGE_POLICY_BY_SOURCE: Final[Mapping[ImageSource, tuple[str, tuple[str, ...]]]] = {
     "anhoch": (ANHOCH_IMAGE_HOST, ANHOCH_IMAGE_PATH_PREFIXES),
     "ddstore": (DDSTORE_IMAGE_HOST, DDSTORE_IMAGE_PATH_PREFIXES),
 }
