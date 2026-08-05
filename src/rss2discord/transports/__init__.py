@@ -6,6 +6,7 @@ from .ddstore import DDStoreStrategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
 from .neksio import NeksioStrategy
 from .neptun import NeptunStrategy
+from .pazar3 import Pazar3Strategy
 from .reklama5 import Reklama5Strategy
 from .rss import RSSStrategy
 from .setec import SetecStrategy
@@ -18,6 +19,7 @@ __all__ = [
     "ITMkOglasnikStrategy",
     "NeksioStrategy",
     "NeptunStrategy",
+    "Pazar3Strategy",
     "RSSStrategy",
     "Reklama5Strategy",
     "ScraperStrategy",

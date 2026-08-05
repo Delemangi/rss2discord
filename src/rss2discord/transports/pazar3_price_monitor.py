@@ -17,35 +17,36 @@ from rss2discord.retries import (
     SQLiteRetryPolicy,
 )
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.pazar3 import Pazar3Strategy
+from rss2discord.transports.pazar3_models import Pazar3Listing
+from rss2discord.transports.pazar3_scope import PAZAR3_LABEL
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
     deliver_price_changes,
 )
-from rss2discord.transports.reklama5_parser import Reklama5Listing
-from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL
-from rss2discord.transports.reklama5_strategy import Reklama5Strategy
 
-MAX_REKLAMA5_RETAINED_SNAPSHOTS: Final = 10_000
-MAX_REKLAMA5_PRICE_CHANGES_PER_SCAN: Final = 100
+MAX_PAZAR3_RETAINED_SNAPSHOTS: Final = 10_000
+MAX_PAZAR3_PRICE_CHANGES_PER_SCAN: Final = 100
 _MAX_PRICE_DIGITS: Final = 10
-_MKD_PRICE_PATTERN: Final = re.compile(
-    r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))\s*(?:ден\.?|МКД)",
+_PRICE_PATTERN: Final = re.compile(
+    r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))\s*"
+    r"(?P<currency>ден\.?|МКД|MKD|EUR|ЕУР|€)",
     re.IGNORECASE,
 )
 
 
-class Reklama5Catalog(Protocol):
+class Pazar3Catalog(Protocol):
     def fetch_catalog(
         self,
         url: str,
         *,
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
-    ) -> tuple[Reklama5Listing, ...]: ...
+    ) -> tuple[Pazar3Listing, ...]: ...
 
 
-class Reklama5PriceSnapshotStore(PriceSnapshotStore, Protocol):
+class Pazar3PriceSnapshotStore(PriceSnapshotStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -55,9 +56,9 @@ class Reklama5PriceSnapshotStore(PriceSnapshotStore, Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class Reklama5PriceMonitorDependencies:
-    catalog: Reklama5Catalog
-    snapshots: Reklama5PriceSnapshotStore
+class Pazar3PriceMonitorDependencies:
+    catalog: Pazar3Catalog
+    snapshots: Pazar3PriceSnapshotStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -66,16 +67,16 @@ class Reklama5PriceMonitorDependencies:
 
 @dataclass(frozen=True, slots=True)
 class _PriceChange:
-    listing: Reklama5Listing
+    listing: Pazar3Listing
     previous: PriceSnapshot
     current: PriceSnapshot
 
 
-class Reklama5PriceMonitor:
+class Pazar3PriceMonitor:
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: Reklama5PriceMonitorDependencies,
+        dependencies: Pazar3PriceMonitorDependencies,
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies
@@ -93,20 +94,20 @@ class Reklama5PriceMonitor:
         persisted = self._dependencies.sqlite_retry_policy.execute(
             lambda: self._dependencies.snapshots.load_price_snapshots(
                 self._feed.id,
-                limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS + 1,
+                limit=MAX_PAZAR3_RETAINED_SNAPSHOTS + 1,
             ),
         )
-        if len(persisted) > MAX_REKLAMA5_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(REKLAMA5_LABEL, "SnapshotLimitExceeded")
+        if len(persisted) > MAX_PAZAR3_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(PAZAR3_LABEL, "SnapshotLimitExceeded")
         by_listing = {snapshot.product_id: snapshot for snapshot in persisted}
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
-        numeric_listing_ids: set[str] = set()
+        valid_listing_ids: set[str] = set()
         for listing in listings:
             current = self._snapshot(listing)
             if current is None:
                 continue
-            numeric_listing_ids.add(current.product_id)
+            valid_listing_ids.add(current.product_id)
             previous = by_listing.get(current.product_id)
             if previous is None:
                 silent_updates.append(current)
@@ -117,10 +118,10 @@ class Reklama5PriceMonitor:
                 changes.append(_PriceChange(listing, previous, current))
             elif previous.formatted != current.formatted:
                 silent_updates.append(current)
-        if len(set(by_listing) | numeric_listing_ids) > MAX_REKLAMA5_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(REKLAMA5_LABEL, "SnapshotLimitExceeded")
-        if len(changes) > MAX_REKLAMA5_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(REKLAMA5_LABEL, "PriceChangeLimitExceeded")
+        if len(set(by_listing) | valid_listing_ids) > MAX_PAZAR3_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(PAZAR3_LABEL, "SnapshotLimitExceeded")
+        if len(changes) > MAX_PAZAR3_PRICE_CHANGES_PER_SCAN:
+            raise FeedFetchError(PAZAR3_LABEL, "PriceChangeLimitExceeded")
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         if silent_updates:
@@ -134,8 +135,8 @@ class Reklama5PriceMonitor:
     def _deliver_changes(self, changes: list[_PriceChange]) -> None:
         deliver_price_changes(changes, self._dependencies, self._message_for)
 
-    def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:
-        match = _MKD_PRICE_PATTERN.fullmatch(listing.price.strip())
+    def _snapshot(self, listing: Pazar3Listing) -> PriceSnapshot | None:
+        match = _PRICE_PATTERN.fullmatch(listing.price.strip())
         if match is None:
             return None
         digits = re.sub(r"[ .,\u00a0]", "", match.group("amount"))
@@ -144,21 +145,24 @@ class Reklama5PriceMonitor:
         amount = Decimal(digits)
         if amount <= 0:
             return None
+        currency_token = match.group("currency").casefold()
+        currency = "EUR" if currency_token in {"eur", "еур", "€"} else "MKD"
         return PriceSnapshot(
             self._feed.id,
             str(listing.entry_id),
             amount,
             listing.price,
-            "MKD",
+            currency,
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        base_entry = Reklama5Strategy().get_entry_data(change.listing)
-        action = (
-            "decreased"
-            if change.current.amount < change.previous.amount
-            else "increased"
-        )
+        base_entry = Pazar3Strategy().get_entry_data(change.listing)
+        if change.previous.currency != change.current.currency:
+            action = "changed"
+        elif change.current.amount < change.previous.amount:
+            action = "decreased"
+        else:
+            action = "increased"
         metrics = (
             SourceMetric("Price", change.current.formatted),
             SourceMetric("Previous", change.previous.formatted),
@@ -178,5 +182,5 @@ class Reklama5PriceMonitor:
                 ),
                 source_metrics=metrics,
             ),
-            source_title=self._feed.name or REKLAMA5_LABEL,
+            source_title=self._feed.name or PAZAR3_LABEL,
         )
