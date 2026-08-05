@@ -217,7 +217,8 @@ feeds:
 #   metadata excess fail closed.
 #   Gjirafa50 scans accept only https://gjirafa50.mk/, use 24 products per page,
 #   recursively split integer MKD price ranges below 9,000 products, and allow at
-#   most 5,000 requests / 100,000 products / 500 MiB / 30 minutes per attempt.
+#   most 5,000 requests / 100,000 products / 128 shards / 500 MiB / 30 minutes
+#   per operation, including retries.
 #   Counts, identities, prices, terminal pages, and post-scan totals must reconcile.
 #   Setec scans use
 #   250 products per page, up to 100 pages / 25,000 products, with a 5 MiB
