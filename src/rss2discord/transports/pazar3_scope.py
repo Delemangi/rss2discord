@@ -19,6 +19,7 @@ PAZAR3_LABEL: Final = "Pazar3"
 MAX_PAZAR3_CATALOG_PAGES: Final = 10
 _MAX_DISCOVERY_PAGE: Final = 3
 _ALLOWED_HOSTS: Final = frozenset({"pazar3.mk", "www.pazar3.mk"})
+_CANONICAL_HOST: Final = "www.pazar3.mk"
 _OWNED_QUERY_KEYS: Final = frozenset({"page"})
 _INVALID_PERCENT_ESCAPE: Final = re.compile(r"%(?![0-9a-fA-F]{2})")
 
@@ -38,10 +39,10 @@ class Pazar3SearchScope:
         trusted_url = _parse_listing_url(url)
         if trusted_url is None:
             raise FeedFetchError(PAZAR3_LABEL, "InvalidUrl")
-        parsed, host, port = trusted_url
+        parsed, _host, port = trusted_url
         return cls(
             scheme=parsed.scheme,
-            host=host,
+            host=_CANONICAL_HOST,
             port=port,
             configured_path=parsed.path,
             caller_query=tuple(

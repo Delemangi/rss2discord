@@ -43,10 +43,11 @@ def test_pazar3_scope_accepts_listing_paths_and_preserves_filters(host: str) -> 
     )
 
     assert scope.scheme == "https"
-    assert scope.host == host
+    assert scope.host == "www.pazar3.mk"
     assert scope.port == 443
     assert scope.configured_path == "/oglasi/elektronika/q-monitor"
     assert scope.caller_query == (("Private", "False"), ("Prop", "1-2"))
+    assert scope.page_request(1).url.startswith("https://www.pazar3.mk/")
 
 
 def test_pazar3_page_request_replaces_page_and_preserves_filter_multimap() -> None:
