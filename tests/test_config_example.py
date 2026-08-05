@@ -43,6 +43,17 @@ def test_checked_in_config_example_enables_hourly_setec_price_monitoring() -> No
     assert setec_feed.price_check_interval == 3600
 
 
+def test_checked_in_config_example_documents_hivetec_monitoring() -> None:
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+
+    config = load_config(example_path)
+    hivetec_feed = next(feed for feed in config.feeds if feed.id == "hivetec-products")
+
+    assert hivetec_feed.url == "https://hivetec.mk/shop/"
+    assert hivetec_feed.strategy == "hivetec"
+    assert hivetec_feed.price_check_interval == 3600
+
+
 def test_checked_in_config_example_documents_reklama5_computer_parts() -> None:
     example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
 
