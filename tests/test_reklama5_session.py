@@ -21,7 +21,7 @@ def test_reklama5_session_isolates_each_bounded_transfer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_options: list[Mapping[CurlOpt, int | str]] = []
-    captured_requests: list[tuple[bool, bytes]] = []
+    captured_requests: list[tuple[bool, str, bytes]] = []
     closed: list[bool] = []
 
     class SessionStub:
@@ -32,11 +32,12 @@ def test_reklama5_session_isolates_each_bounded_transfer(
             headers: Mapping[str, str],
             allow_redirects: bool,
             content_callback: Callable[[bytes], int],
+            impersonate: str,
         ) -> SessionResponse:
             del url, headers
             chunk = b"page"
             content_callback(chunk)
-            captured_requests.append((allow_redirects, chunk))
+            captured_requests.append((allow_redirects, impersonate, chunk))
             return SessionResponse()
 
         def close(self) -> None:
@@ -71,7 +72,7 @@ def test_reklama5_session_isolates_each_bounded_transfer(
     )
 
     assert response.headers == {"content-type": "text/html"}
-    assert captured_requests == [(False, b"page")]
+    assert captured_requests == [(False, "chrome", b"page")]
     assert captured_options == [
         {
             CurlOpt.TIMEOUT_MS: 5_000,

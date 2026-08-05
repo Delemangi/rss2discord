@@ -91,6 +91,7 @@ class CurlCffiReklama5Session:
                     headers=headers,
                     allow_redirects=allow_redirects,
                     content_callback=content_callback,
+                    impersonate="chrome",
                 ),
             )
         finally:
