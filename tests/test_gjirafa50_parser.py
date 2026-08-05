@@ -33,3 +33,14 @@ def test_parser_rejects_image_url_with_credentials_or_fragment() -> None:
 
     with pytest.raises(FeedFetchError, match="InvalidImageUrl"):
         parse_gjirafa50_page(payload, datetime.now(UTC))
+
+
+def test_parser_derives_display_price_from_validated_numeric_price() -> None:
+    payload = catalog_payload(1, [(1, 1_234)]).replace(
+        b"1234,00 MKD.",
+        b"[click](https://attacker.example)",
+    )
+
+    page = parse_gjirafa50_page(payload, datetime.now(UTC))
+
+    assert page.products[0].formatted_price == "1.234,00 MKD."

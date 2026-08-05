@@ -21,7 +21,6 @@ GJIRAFA50_ORIGIN: Final = "https://gjirafa50.mk"
 GJIRAFA50_IMAGE_HOST: Final = "50cdn.gjirafamall.tech"
 MAX_GJIRAFA50_TEXT_LENGTH: Final = 500
 MAX_GJIRAFA50_URL_LENGTH: Final = 2_048
-MAX_GJIRAFA50_PRICE_TEXT_LENGTH: Final = 100
 
 
 class _CatalogEnvelope(BaseModel):
@@ -61,10 +60,8 @@ def _parse_product(card: Tag, observed_at: datetime) -> Gjirafa50Product:
     link = _product_url(href)
     image = card.select_one(".picture img[src]")
     image_url = _image_url(_attribute(image, "src")) if image is not None else None
-    price_text = card.select_one(".price.main")
-    formatted = price_text.get_text(" ", strip=True) if price_text is not None else ""
-    if not formatted or len(formatted) > MAX_GJIRAFA50_PRICE_TEXT_LENGTH:
-        raise FeedFetchError(GJIRAFA50_LABEL, "InvalidProduct")
+    major, minor = f"{price:,.2f}".split(".")
+    formatted = f"{major.replace(',', '.')},{minor} MKD."
     return Gjirafa50Product(
         product_id,
         title,
