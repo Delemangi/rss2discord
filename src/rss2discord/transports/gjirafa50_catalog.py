@@ -43,13 +43,16 @@ class _OperationBudget:
         self.deadline = time.monotonic() + MAX_GJIRAFA50_SCAN_SECONDS
 
     def before_request(self) -> None:
+        self.check_active()
+        self.requests += 1
+        if self.requests > MAX_GJIRAFA50_PAGES:
+            raise FeedFetchError(GJIRAFA50_LABEL, "PageLimitExceeded")
+
+    def check_active(self) -> None:
         if self.is_shutdown_requested():
             raise FeedFetchInterruptedError
         if time.monotonic() >= self.deadline:
             raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
-        self.requests += 1
-        if self.requests > MAX_GJIRAFA50_PAGES:
-            raise FeedFetchError(GJIRAFA50_LABEL, "PageLimitExceeded")
 
     def consume_bytes(self, response_bytes: int) -> None:
         self.response_bytes += response_bytes

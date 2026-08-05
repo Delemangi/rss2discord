@@ -7,6 +7,7 @@ from urllib.request import Request
 import pytest
 import requests
 
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, gjirafa50_http
 from rss2discord.transports.gjirafa50_catalog import _OperationBudget
 from rss2discord.transports.gjirafa50_http import (
@@ -183,3 +184,28 @@ def test_http_session_rejects_response_cookies() -> None:
     )
 
     assert not client._session.cookies
+
+
+def test_http_session_ignores_ambient_netrc_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        requests.sessions,
+        "get_netrc_auth",
+        lambda url: ("ambient-user", "ambient-secret"),
+    )
+    client = Gjirafa50HttpClient()
+
+    prepared = client._session.prepare_request(
+        requests.Request("GET", "https://gjirafa50.mk/product/search"),
+    )
+
+    assert client._session.trust_env is False
+    assert "Authorization" not in prepared.headers
+
+
+def test_response_stream_stops_when_shutdown_is_requested() -> None:
+    budget = _OperationBudget(lambda: True)
+
+    with pytest.raises(FeedFetchInterruptedError):
+        _read_content(SlowResponse(), budget=budget)

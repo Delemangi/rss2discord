@@ -37,6 +37,8 @@ class Gjirafa50HttpBudget(Protocol):
 
     def before_request(self) -> None: ...
 
+    def check_active(self) -> None: ...
+
     def consume_bytes(self, response_bytes: int) -> None: ...
 
 
@@ -78,6 +80,7 @@ class FetchedGjirafa50Page:
 class Gjirafa50HttpClient:
     def __init__(self) -> None:
         self._session = requests.Session()
+        self._session.trust_env = False
         self._session.cookies.set_policy(
             DefaultCookiePolicy(
                 blocked_domains=("gjirafa50.mk", ".gjirafa50.mk"),
@@ -243,8 +246,7 @@ def _read_content(
         raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
     chunks: Iterator[bytes] = response.iter_content(GJIRAFA50_STREAM_CHUNK_BYTES)
     for chunk in chunks:
-        if time.monotonic() >= budget.deadline:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
+        budget.check_active()
         budget.consume_bytes(len(chunk))
         response_bytes += len(chunk)
         if response_bytes > GJIRAFA50_RESPONSE_BYTES:
