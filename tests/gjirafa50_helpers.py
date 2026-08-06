@@ -1,9 +1,8 @@
 import json
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
-from types import TracebackType
 
-import requests
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.retries import FetchRetryPolicy
 
@@ -48,45 +47,32 @@ class StubResponse:
         self.headers: dict[str, str] = {}
         self.url = "https://gjirafa50.mk/product/search"
 
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc_type, exc, traceback
-
-    def iter_content(self, _chunk_size: int) -> Iterator[bytes]:
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            response = requests.Response()
-            response.status_code = self.status_code
-            raise requests.HTTPError(response=response)
-
-
 class RecordingGet:
     def __init__(self, responses: list[StubResponse]) -> None:
         self.responses = responses
         self.params: list[Mapping[str, str | int]] = []
+        self.timeouts: list[int] = []
 
-    def __call__(
+    def get(
         self,
         url: str,
         *,
         params: Mapping[str, str | int],
         headers: Mapping[str, str],
-        timeout: int,
-        stream: bool,
         allow_redirects: bool,
+        content_callback: Callable[[bytes], int],
+        timeout_ms: int,
     ) -> StubResponse:
-        del url, headers, timeout, stream, allow_redirects
+        del url, headers, allow_redirects
         self.params.append(params)
-        return self.responses.pop(0)
+        self.timeouts.append(timeout_ms)
+        response = self.responses.pop(0)
+        if content_callback(response.content) == CURL_WRITEFUNC_ERROR:
+            return response
+        return response
+
+    def close(self) -> None:
+        return
 
 
 def no_wait_retry_policy() -> FetchRetryPolicy:

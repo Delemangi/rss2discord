@@ -1,18 +1,18 @@
 """Bounded HTTP boundary for Gjirafa50 catalog pages."""
 
+import math
 import time
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from http.cookiejar import DefaultCookiePolicy
 from threading import Lock
 from types import TracebackType
 from typing import Final, Protocol, Self
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-import requests
+from curl_cffi import requests
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.retries import parse_retry_after
+from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.gjirafa50_models import (
     Gjirafa50CatalogPage,
@@ -23,13 +23,18 @@ from rss2discord.transports.gjirafa50_parser import (
     GJIRAFA50_ORIGIN,
     parse_gjirafa50_page,
 )
+from rss2discord.transports.gjirafa50_session import (
+    Gjirafa50HttpResponse,
+    Gjirafa50HttpSession,
+    create_gjirafa50_session,
+)
 
 GJIRAFA50_SEARCH_URL: Final = f"{GJIRAFA50_ORIGIN}/product/search"
 GJIRAFA50_RESPONSE_BYTES: Final = 5 * 1024 * 1024
-GJIRAFA50_STREAM_CHUNK_BYTES: Final = 64 * 1024
 GJIRAFA50_USER_AGENT: Final = "Mozilla/5.0 (compatible; rss2discord/0.1)"
 MAX_GJIRAFA50_REDIRECTS: Final = 3
 GJIRAFA50_REQUEST_INTERVAL_SECONDS: Final = 0.05
+MAX_GJIRAFA50_TRANSFER_SECONDS: Final = 30
 
 
 class Gjirafa50HttpBudget(Protocol):
@@ -77,15 +82,37 @@ class FetchedGjirafa50Page:
     response_bytes: int
 
 
+class _BoundedContent:
+    """Accumulate one transfer while preserving its exact local abort cause."""
+
+    def __init__(self, budget: Gjirafa50HttpBudget) -> None:
+        self.content = bytearray()
+        self.budget = budget
+        self.response_bytes = 0
+        self.abort_error: FeedFetchError | FeedFetchInterruptedError | None = None
+
+    def write(self, chunk: bytes) -> int:
+        try:
+            self.budget.check_active()
+            self.budget.consume_bytes(len(chunk))
+        except (FeedFetchError, FeedFetchInterruptedError) as error:
+            self.abort_error = error
+            return CURL_WRITEFUNC_ERROR
+        self.response_bytes += len(chunk)
+        if self.response_bytes > GJIRAFA50_RESPONSE_BYTES:
+            self.abort_error = FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
+            return CURL_WRITEFUNC_ERROR
+        self.content.extend(chunk)
+        return len(chunk)
+
+
+def _create_session() -> Gjirafa50HttpSession:
+    return create_gjirafa50_session()
+
+
 class Gjirafa50HttpClient:
-    def __init__(self) -> None:
-        self._session = requests.Session()
-        self._session.trust_env = False
-        self._session.cookies.set_policy(
-            DefaultCookiePolicy(
-                blocked_domains=("gjirafa50.mk", ".gjirafa50.mk"),
-            ),
-        )
+    def __init__(self, session: Gjirafa50HttpSession | None = None) -> None:
+        self._session = _create_session() if session is None else session
 
     def __enter__(self) -> Self:
         return self
@@ -139,8 +166,7 @@ class Gjirafa50HttpClient:
             budget=request.budget,
         )
         page = parse_gjirafa50_page(content, observed_at)
-        if time.monotonic() >= request.budget.deadline:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
+        request.budget.check_active()
         return FetchedGjirafa50Page(page, response_bytes)
 
     def _request(
@@ -152,13 +178,15 @@ class Gjirafa50HttpClient:
     ) -> tuple[bytes, int]:
         current_url = GJIRAFA50_SEARCH_URL
         consumed_bytes = 0
-        try:
-            for _ in range(MAX_GJIRAFA50_REDIRECTS + 1):
-                _HOST_PACER.before_request(budget)
-                remaining_seconds = budget.deadline - time.monotonic()
-                if remaining_seconds <= 0:
-                    raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
-                response_context = self._session.get(
+        content = _BoundedContent(budget)
+        for _ in range(MAX_GJIRAFA50_REDIRECTS + 1):
+            _HOST_PACER.before_request(budget)
+            remaining_seconds = budget.deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
+            content = _BoundedContent(budget)
+            try:
+                response = self._session.get(
                     current_url,
                     params=params,
                     headers={
@@ -166,49 +194,51 @@ class Gjirafa50HttpClient:
                         "Referer": root_url,
                         "User-Agent": GJIRAFA50_USER_AGENT,
                     },
-                    timeout=min(30, remaining_seconds),
-                    stream=True,
                     allow_redirects=False,
+                    content_callback=content.write,
+                    timeout_ms=max(
+                        1,
+                        math.ceil(
+                            min(remaining_seconds, MAX_GJIRAFA50_TRANSFER_SECONDS)
+                            * 1000,
+                        ),
+                    ),
                 )
-                with response_context as response:
-                    content = _read_content(
-                        response,
-                        budget=budget,
-                    )
-                    consumed_bytes += len(content)
-                    if time.monotonic() >= budget.deadline:
-                        raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
-                    if 300 <= response.status_code < 400:
-                        location = response.headers.get("Location")
-                        if location is None:
-                            raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
-                        current_url = _same_origin_redirect(current_url, location)
-                        continue
-                    try:
-                        response.raise_for_status()
-                    except requests.HTTPError:
-                        status = response.status_code
-                        raise FeedFetchError(
-                            GJIRAFA50_LABEL,
-                            "HTTPError",
-                            status_code=status,
-                            retryable=status in {408, 429} or 500 <= status < 600,
-                            retry_after=parse_retry_after(response.headers.get("Retry-After")),
-                        ) from None
-                    return content, consumed_bytes
-            raise FeedFetchError(GJIRAFA50_LABEL, "TooManyRedirects")
-        except (
-            requests.ConnectionError,
-            requests.Timeout,
-            requests.exceptions.ChunkedEncodingError,
-        ) as error:
-            raise FeedFetchError(
-                GJIRAFA50_LABEL,
-                type(error).__name__,
-                retryable=True,
-            ) from None
-        except requests.RequestException as error:
-            raise FeedFetchError(GJIRAFA50_LABEL, type(error).__name__) from None
+            except requests.RequestsError as error:
+                if content.abort_error is not None:
+                    raise content.abort_error from None
+                budget.check_active()
+                raise FeedFetchError(
+                    GJIRAFA50_LABEL,
+                    type(error).__name__,
+                    retryable=True,
+                ) from None
+            if content.abort_error is not None:
+                raise content.abort_error
+            header_bytes = _response_header_bytes(response)
+            budget.consume_bytes(header_bytes)
+            content.response_bytes += header_bytes
+            if content.response_bytes > GJIRAFA50_RESPONSE_BYTES:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
+            consumed_bytes += content.response_bytes
+            budget.check_active()
+            if 300 <= response.status_code < 400:
+                location = _header(response, "location")
+                if location is None:
+                    raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
+                current_url = _same_origin_redirect(current_url, location)
+                continue
+            if response.status_code >= 400:
+                status = response.status_code
+                raise FeedFetchError(
+                    GJIRAFA50_LABEL,
+                    "HTTPError",
+                    status_code=status,
+                    retryable=status in {408, 429} or 500 <= status < 600,
+                    retry_after=parse_retry_after(_header(response, "retry-after")),
+                )
+            return bytes(content.content), consumed_bytes
+        raise FeedFetchError(GJIRAFA50_LABEL, "TooManyRedirects")
 
 
 def _same_origin_redirect(current_url: str, location: str) -> str:
@@ -231,25 +261,16 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
     return redirected_url
 
 
-def _read_content(
-    response: requests.Response,
-    *,
-    budget: Gjirafa50HttpBudget,
-) -> bytes:
-    content = bytearray()
-    response_bytes = sum(
+def _response_header_bytes(response: Gjirafa50HttpResponse) -> int:
+    return sum(
         len(name.encode("latin-1")) + len(value.encode("latin-1")) + 4
         for name, value in response.headers.items()
     )
-    budget.consume_bytes(response_bytes)
-    if response_bytes > GJIRAFA50_RESPONSE_BYTES:
-        raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
-    chunks: Iterator[bytes] = response.iter_content(GJIRAFA50_STREAM_CHUNK_BYTES)
-    for chunk in chunks:
-        budget.check_active()
-        budget.consume_bytes(len(chunk))
-        response_bytes += len(chunk)
-        if response_bytes > GJIRAFA50_RESPONSE_BYTES:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
-        content.extend(chunk)
-    return bytes(content)
+
+
+def _header(response: Gjirafa50HttpResponse, name: str) -> str | None:
+    expected = name.casefold()
+    return next(
+        (value for key, value in response.headers.items() if key.casefold() == expected),
+        None,
+    )

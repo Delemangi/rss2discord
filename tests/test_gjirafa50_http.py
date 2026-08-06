@@ -1,43 +1,22 @@
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from http.cookiejar import Cookie
-from urllib.request import Request
 
 import pytest
-import requests
+from curl_cffi import CurlOpt
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import FeedFetchError, gjirafa50_http
+from rss2discord.transports import FeedFetchError, gjirafa50_http, gjirafa50_session
 from rss2discord.transports.gjirafa50_catalog import _OperationBudget
 from rss2discord.transports.gjirafa50_http import (
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
-    _read_content,
+    _BoundedContent,
 )
 from rss2discord.transports.gjirafa50_models import Gjirafa50CatalogPage
 from tests.gjirafa50_helpers import RecordingGet, StubResponse, catalog_payload
-
-
-class SlowResponse(requests.Response):
-    def iter_content(
-        self,
-        chunk_size: int | None = 1,
-        decode_unicode: bool = False,
-    ) -> Iterator[bytes]:
-        del chunk_size, decode_unicode
-        yield b"first"
-        yield b"second"
-
-
-class EmptyResponse(requests.Response):
-    def iter_content(
-        self,
-        chunk_size: int | None = 1,
-        decode_unicode: bool = False,
-    ) -> Iterator[bytes]:
-        del chunk_size, decode_unicode
-        return iter(())
 
 
 def test_http_rejects_unsafe_root_url() -> None:
@@ -50,11 +29,12 @@ def test_response_stream_enforces_absolute_scan_deadline(
 ) -> None:
     budget = _OperationBudget(lambda: False)
     budget.deadline = 1.0
-    times = iter((0.0, 2.0))
-    monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: 2.0)
+    content = _BoundedContent(budget)
 
-    with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
-        _read_content(SlowResponse(), budget=budget)
+    assert content.write(b"chunk") == CURL_WRITEFUNC_ERROR
+    assert isinstance(content.abort_error, FeedFetchError)
+    assert "ScanTimeLimitExceeded" in str(content.abort_error)
 
 
 def test_http_budget_counts_every_redirect_request_and_response_byte(
@@ -65,8 +45,7 @@ def test_http_budget_counts_every_redirect_request_and_response_byte(
     redirect.headers["Location"] = "/product/search"
     payload = catalog_payload(0, ())
     get = RecordingGet([redirect, StubResponse(payload)])
-    client = Gjirafa50HttpClient()
-    monkeypatch.setattr(client._session, "get", get)
+    client = Gjirafa50HttpClient(get)
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
 
     fetched = client.fetch_page(
@@ -75,11 +54,11 @@ def test_http_budget_counts_every_redirect_request_and_response_byte(
         datetime.now(UTC),
     )
 
-    assert fetched.response_bytes == len(b"redirect") + len(payload)
-    assert budget.requests == 2
-    assert budget.response_bytes == fetched.response_bytes + len(
+    assert fetched.response_bytes == len(b"redirect") + len(payload) + len(
         b"Location: /product/search\r\n",
     )
+    assert budget.requests == 2
+    assert budget.response_bytes == fetched.response_bytes
 
 
 def test_http_budget_keeps_failed_response_bytes(
@@ -87,8 +66,7 @@ def test_http_budget_keeps_failed_response_bytes(
 ) -> None:
     budget = _OperationBudget(lambda: False)
     get = RecordingGet([StubResponse(b"failure", status_code=500)])
-    client = Gjirafa50HttpClient()
-    monkeypatch.setattr(client._session, "get", get)
+    client = Gjirafa50HttpClient(get)
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
 
     with pytest.raises(FeedFetchError, match="HTTP 500"):
@@ -107,8 +85,7 @@ def test_http_enforces_deadline_after_parsing(
 ) -> None:
     budget = _OperationBudget(lambda: False)
     payload = catalog_payload(0, ())
-    client = Gjirafa50HttpClient()
-    monkeypatch.setattr(client._session, "get", RecordingGet([StubResponse(payload)]))
+    client = Gjirafa50HttpClient(RecordingGet([StubResponse(payload)]))
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
     parse = gjirafa50_http.parse_gjirafa50_page
 
@@ -135,77 +112,100 @@ def test_response_stream_charges_chunk_that_crosses_response_limit(
 ) -> None:
     budget = _OperationBudget(lambda: False)
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_RESPONSE_BYTES", 5)
+    content = _BoundedContent(budget)
 
-    with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        _read_content(SlowResponse(), budget=budget)
+    assert content.write(b"first") == 5
+    assert content.write(b"second") == CURL_WRITEFUNC_ERROR
 
     assert budget.response_bytes == len(b"firstsecond")
+    assert isinstance(content.abort_error, FeedFetchError)
+    assert "ResponseTooLarge" in str(content.abort_error)
 
 
 def test_response_headers_are_charged_to_operation_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     budget = _OperationBudget(lambda: False)
-    response = EmptyResponse()
+    response = StubResponse(b"")
     response.headers["X-Test"] = "abc"
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_RESPONSE_BYTES", 5)
+    client = Gjirafa50HttpClient(RecordingGet([response]))
 
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        _read_content(response, budget=budget)
+        client._request({}, root_url="https://gjirafa50.mk/", budget=budget)
 
     assert budget.response_bytes == len(b"X-Test: abc\r\n")
 
 
-def test_http_session_rejects_response_cookies() -> None:
-    client = Gjirafa50HttpClient()
-    cookie = Cookie(
-        version=0,
-        name="untrusted",
-        value="value",
-        port=None,
-        port_specified=False,
-        domain="gjirafa50.mk",
-        domain_specified=True,
-        domain_initial_dot=False,
-        path="/product/search",
-        path_specified=True,
-        secure=True,
-        expires=None,
-        discard=True,
-        comment=None,
-        comment_url=None,
-        rest={},
-        rfc2109=False,
-    )
-
-    client._session.cookies.set_cookie_if_ok(
-        cookie,
-        Request("https://gjirafa50.mk/product/search"),
-    )
-
-    assert not client._session.cookies
-
-
-def test_http_session_ignores_ambient_netrc_credentials(
+def test_http_session_enforces_total_timeout_and_environment_isolation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        requests.sessions,
-        "get_netrc_auth",
-        lambda url: ("ambient-user", "ambient-secret"),
-    )
-    client = Gjirafa50HttpClient()
+    captured_options: list[Mapping[CurlOpt, int | str]] = []
+    captured_session_options: list[tuple[bool, bool, bool]] = []
 
-    prepared = client._session.prepare_request(
-        requests.Request("GET", "https://gjirafa50.mk/product/search"),
+    @dataclass(frozen=True, slots=True)
+    class SessionResponse:
+        status_code: int = 200
+        headers: Mapping[str, str] = field(default_factory=dict)
+
+    class SessionStub:
+        def get(
+            self,
+            url: str,
+            *,
+            params: Mapping[str, str | int],
+            headers: Mapping[str, str],
+            allow_redirects: bool,
+            content_callback: Callable[[bytes], int],
+            impersonate: str,
+        ) -> SessionResponse:
+            del url, params, headers, allow_redirects, impersonate
+            content_callback(b"payload")
+            return SessionResponse()
+
+        def close(self) -> None:
+            return
+
+    def create_session(
+        *,
+        trust_env: bool,
+        discard_cookies: bool,
+        default_headers: bool,
+        curl_options: Mapping[CurlOpt, int | str],
+    ) -> SessionStub:
+        captured_session_options.append(
+            (trust_env, discard_cookies, default_headers),
+        )
+        captured_options.append(curl_options)
+        return SessionStub()
+
+    monkeypatch.setattr(gjirafa50_session.requests, "Session", create_session)
+    content = bytearray()
+
+    def write_content(chunk: bytes) -> int:
+        content.extend(chunk)
+        return len(chunk)
+
+    response = gjirafa50_session.create_gjirafa50_session().get(
+        "https://gjirafa50.mk/product/search",
+        params={"pagenumber": 1},
+        headers={"Accept": "application/json"},
+        allow_redirects=False,
+        content_callback=write_content,
+        timeout_ms=1234,
     )
 
-    assert client._session.trust_env is False
-    assert "Authorization" not in prepared.headers
+    assert response.status_code == 200
+    assert content == b"payload"
+    assert captured_session_options == [(False, True, False)]
+    assert captured_options[0][CurlOpt.TIMEOUT_MS] == 1234
+    assert captured_options[0][CurlOpt.PROXY] == ""
+    assert captured_options[0][CurlOpt.NETRC] == 0
 
 
 def test_response_stream_stops_when_shutdown_is_requested() -> None:
     budget = _OperationBudget(lambda: True)
+    content = _BoundedContent(budget)
 
-    with pytest.raises(FeedFetchInterruptedError):
-        _read_content(SlowResponse(), budget=budget)
+    assert content.write(b"chunk") == CURL_WRITEFUNC_ERROR
+    assert isinstance(content.abort_error, FeedFetchInterruptedError)
