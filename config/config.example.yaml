@@ -216,7 +216,7 @@ feeds:
 #   Changed pagination totals, incomplete traversal, duplicate IDs, and aggregate
 #   metadata excess fail closed.
 #   Gjirafa50 scans accept only https://gjirafa50.mk/, use 24 products per page,
-#   recursively split integer MKD price ranges below 9,000 products, and allow at
+#   recursively split cent-precise MKD ranges below 9,000 products, and allow at
 #   most 5,000 requests / 100,000 products / 128 shards / 500 MiB / 30 minutes
 #   per operation, including retries.
 #   Counts, identities, prices, terminal pages, and post-scan totals must reconcile.
