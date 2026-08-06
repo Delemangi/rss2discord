@@ -1,5 +1,6 @@
 """Gjirafa50 newest-product strategy."""
 
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Final, final, override
 
@@ -23,9 +24,23 @@ class Gjirafa50Strategy(ScraperStrategy):
     max_new_entries_per_fetch: int | None = GJIRAFA50_WINDOW_SIZE
     max_delivery_history: int | None = MAX_GJIRAFA50_DELIVERY_HISTORY
 
+    def __init__(
+        self,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> None:
+        self._is_shutdown_requested = is_shutdown_requested
+
     @override
     def fetch_entries(self, url: str) -> tuple[list[Gjirafa50Product], str]:
-        return list(Gjirafa50CatalogClient().fetch_latest_products(url)), GJIRAFA50_LABEL
+        return (
+            list(
+                Gjirafa50CatalogClient().fetch_latest_products(
+                    url,
+                    is_shutdown_requested=self._is_shutdown_requested,
+                ),
+            ),
+            GJIRAFA50_LABEL,
+        )
 
     @override
     def get_entry_id(self, entry: Gjirafa50Product) -> EntryId:
