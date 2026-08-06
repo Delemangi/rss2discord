@@ -22,7 +22,7 @@ from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
 
 GJIRAFA50_WINDOW_SIZE: Final = 30
 GJIRAFA50_PAGE_SIZE: Final = 24
-MAX_GJIRAFA50_PRICE: Final = 2_147_483_647
+MAX_GJIRAFA50_PRICE_CENTS: Final = 2_147_483_647 * 100
 MAX_GJIRAFA50_SHARD_PRODUCTS: Final = 8_999
 MAX_GJIRAFA50_PRODUCTS: Final = 100_000
 MAX_GJIRAFA50_PAGES: Final = 5_000
@@ -192,7 +192,7 @@ class Gjirafa50CatalogClient:
         scan: _CatalogScan,
         root_total: int,
     ) -> tuple[tuple[Gjirafa50PriceRange, int], ...]:
-        entire_range = Gjirafa50PriceRange(0, MAX_GJIRAFA50_PRICE)
+        entire_range = Gjirafa50PriceRange(0, MAX_GJIRAFA50_PRICE_CENTS)
         entire_total = scan.fetch(1, entire_range).total_hits
         if entire_total != root_total:
             raise FeedFetchError(GJIRAFA50_LABEL, "IncompletePriceRange", retryable=True)
@@ -204,11 +204,11 @@ class Gjirafa50CatalogClient:
                 scan.budget.consume_shard()
                 shards.append((price_range, total))
                 continue
-            if price_range.minimum == price_range.maximum:
+            if price_range.minimum_cents == price_range.maximum_cents:
                 raise FeedFetchError(GJIRAFA50_LABEL, "PriceBucketLimitExceeded")
-            midpoint = (price_range.minimum + price_range.maximum) // 2
-            lower = Gjirafa50PriceRange(price_range.minimum, midpoint)
-            upper = Gjirafa50PriceRange(midpoint + 1, price_range.maximum)
+            midpoint = (price_range.minimum_cents + price_range.maximum_cents) // 2
+            lower = Gjirafa50PriceRange(price_range.minimum_cents, midpoint)
+            upper = Gjirafa50PriceRange(midpoint + 1, price_range.maximum_cents)
             lower_total = scan.fetch(1, lower).total_hits
             upper_total = scan.fetch(1, upper).total_hits
             if lower_total + upper_total != total:
@@ -216,7 +216,7 @@ class Gjirafa50CatalogClient:
             queue.extend(((lower, lower_total), (upper, upper_total)))
             if len(queue) + len(shards) > MAX_GJIRAFA50_SHARDS:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ShardLimitExceeded")
-        return tuple(sorted(shards, key=lambda item: item[0].minimum))
+        return tuple(sorted(shards, key=lambda item: item[0].minimum_cents))
 
     def _scan_shard(
         self,
@@ -235,7 +235,12 @@ class Gjirafa50CatalogClient:
             if len(page.products) != expected:
                 raise FeedFetchError(GJIRAFA50_LABEL, "IncompleteCatalog", retryable=True)
             for product in page.products:
-                if not price_range.minimum <= product.price <= price_range.maximum:
+                price_cents = int(product.price * 100)
+                if not (
+                    price_range.minimum_cents
+                    <= price_cents
+                    <= price_range.maximum_cents
+                ):
                     raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
             self._append_unique(products, seen, page.products)
         sentinel = scan.fetch(pages + 1, price_range)

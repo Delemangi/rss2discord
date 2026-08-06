@@ -8,6 +8,7 @@ from rss2discord.transports.gjirafa50_catalog import (
     Gjirafa50CatalogClient,
     _OperationBudget,
 )
+from rss2discord.transports.gjirafa50_models import Gjirafa50PriceRange
 from tests.gjirafa50_helpers import (
     ROOT_URL,
     RecordingGet,
@@ -40,24 +41,30 @@ def test_latest_products_reads_two_pages_and_returns_oldest_first(
     assert all(params["orderby"] == 16 for params in get.params)
 
 
+def test_price_range_renders_exact_cent_boundaries_for_storefront_filter() -> None:
+    price_range = Gjirafa50PriceRange(1_296_850, 1_296_900)
+
+    assert str(price_range) == "12968,50-12969"
+
+
 def test_catalog_recursively_shards_prices_and_reconciles_all_products(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 2)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE", 3)
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 3)
     responses = [
-        catalog_payload(4, [(4, 3)]),
-        catalog_payload(4, [(4, 3)]),
-        catalog_payload(2, [(1, 0), (2, 1)]),
-        catalog_payload(2, [(3, 2), (4, 3)]),
-        catalog_payload(2, [(1, 0), (2, 1)]),
+        catalog_payload(4, [(4, Decimal("0.03"))]),
+        catalog_payload(4, [(4, Decimal("0.03"))]),
+        catalog_payload(2, [(1, Decimal(0)), (2, Decimal("0.01"))]),
+        catalog_payload(2, [(3, Decimal("0.02")), (4, Decimal("0.03"))]),
+        catalog_payload(2, [(1, Decimal(0)), (2, Decimal("0.01"))]),
         catalog_payload(2, [], total_pages=1),
-        catalog_payload(2, [(3, 2), (4, 3)]),
+        catalog_payload(2, [(3, Decimal("0.02")), (4, Decimal("0.03"))]),
         catalog_payload(2, [], total_pages=1),
-        catalog_payload(4, [(4, 3)]),
-        catalog_payload(2, [(1, 0), (2, 1)]),
-        catalog_payload(2, [(3, 2), (4, 3)]),
+        catalog_payload(4, [(4, Decimal("0.03"))]),
+        catalog_payload(2, [(1, Decimal(0)), (2, Decimal("0.01"))]),
+        catalog_payload(2, [(3, Decimal("0.02")), (4, Decimal("0.03"))]),
     ]
     get = RecordingGet([StubResponse(payload) for payload in responses])
     monkeypatch.setattr(requests.Session, "get", get)
@@ -73,13 +80,13 @@ def test_catalog_recursively_shards_prices_and_reconciles_all_products(
     assert [product.id for product in products] == [1, 2, 3, 4]
     assert [product.price for product in products] == [
         Decimal(0),
-        Decimal(1),
-        Decimal(2),
-        Decimal(3),
+        Decimal("0.01"),
+        Decimal("0.02"),
+        Decimal("0.03"),
     ]
     requested_ranges = [params.get("price") for params in get.params]
-    assert requested_ranges.count("0-1") == 4
-    assert requested_ranges.count("2-3") == 4
+    assert requested_ranges.count("0-0,01") == 4
+    assert requested_ranges.count("0,02-0,03") == 4
 
 
 def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
@@ -87,13 +94,15 @@ def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
 ) -> None:
     # Given
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 2)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE", 3)
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 3)
     get = RecordingGet(
         [
-            StubResponse(catalog_payload(4, [(4, 3)])),
-            StubResponse(catalog_payload(4, [(4, 3)])),
-            StubResponse(catalog_payload(2, [(1, 0), (2, 1)])),
-            StubResponse(catalog_payload(1, [(3, 2)])),
+            StubResponse(catalog_payload(4, [(4, Decimal("0.03"))])),
+            StubResponse(catalog_payload(4, [(4, Decimal("0.03"))])),
+            StubResponse(
+                catalog_payload(2, [(1, Decimal(0)), (2, Decimal("0.01"))]),
+            ),
+            StubResponse(catalog_payload(1, [(3, Decimal("0.02"))])),
         ]
         * 3,
     )
@@ -113,11 +122,11 @@ def test_catalog_request_budget_is_shared_across_retries(
 ) -> None:
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PAGES", 3)
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 1)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE", 1)
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 1)
     get = RecordingGet(
         [
-            StubResponse(catalog_payload(2, [(2, 1)])),
-            StubResponse(catalog_payload(2, [(2, 1)])),
+            StubResponse(catalog_payload(2, [(2, Decimal("0.01"))])),
+            StubResponse(catalog_payload(2, [(2, Decimal("0.01"))])),
             StubResponse(b"retry", status_code=503),
         ],
     )
