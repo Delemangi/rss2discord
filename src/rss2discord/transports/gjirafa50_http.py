@@ -92,18 +92,26 @@ class _BoundedContent:
         self.abort_error: FeedFetchError | FeedFetchInterruptedError | None = None
 
     def write(self, chunk: bytes) -> int:
-        try:
-            self.budget.check_active()
-            self.budget.consume_bytes(len(chunk))
-        except (FeedFetchError, FeedFetchInterruptedError) as error:
-            self.abort_error = error
-            return CURL_WRITEFUNC_ERROR
-        self.response_bytes += len(chunk)
-        if self.response_bytes > GJIRAFA50_RESPONSE_BYTES:
-            self.abort_error = FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
+        if self._consume(len(chunk)) == CURL_WRITEFUNC_ERROR:
             return CURL_WRITEFUNC_ERROR
         self.content.extend(chunk)
         return len(chunk)
+
+    def write_header(self, line: bytes) -> int:
+        return self._consume(len(line))
+
+    def _consume(self, byte_count: int) -> int:
+        try:
+            self.budget.check_active()
+            self.budget.consume_bytes(byte_count)
+        except (FeedFetchError, FeedFetchInterruptedError) as error:
+            self.abort_error = error
+            return CURL_WRITEFUNC_ERROR
+        self.response_bytes += byte_count
+        if self.response_bytes > GJIRAFA50_RESPONSE_BYTES:
+            self.abort_error = FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
+            return CURL_WRITEFUNC_ERROR
+        return byte_count
 
 
 def _create_session() -> Gjirafa50HttpSession:
@@ -196,6 +204,7 @@ class Gjirafa50HttpClient:
                     },
                     allow_redirects=False,
                     content_callback=content.write,
+                    header_callback=content.write_header,
                     timeout_ms=max(
                         1,
                         math.ceil(
@@ -215,11 +224,6 @@ class Gjirafa50HttpClient:
                 ) from None
             if content.abort_error is not None:
                 raise content.abort_error
-            header_bytes = _response_header_bytes(response)
-            budget.consume_bytes(header_bytes)
-            content.response_bytes += header_bytes
-            if content.response_bytes > GJIRAFA50_RESPONSE_BYTES:
-                raise FeedFetchError(GJIRAFA50_LABEL, "ResponseTooLarge")
             consumed_bytes += content.response_bytes
             budget.check_active()
             if 300 <= response.status_code < 400:
@@ -259,13 +263,6 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
     ):
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
     return redirected_url
-
-
-def _response_header_bytes(response: Gjirafa50HttpResponse) -> int:
-    return sum(
-        len(name.encode("latin-1")) + len(value.encode("latin-1")) + 4
-        for name, value in response.headers.items()
-    )
 
 
 def _header(response: Gjirafa50HttpResponse, name: str) -> str | None:

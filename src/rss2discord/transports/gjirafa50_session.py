@@ -26,6 +26,7 @@ class Gjirafa50HttpSession(Protocol):
         headers: Mapping[str, str],
         allow_redirects: bool,
         content_callback: Callable[[bytes], int],
+        header_callback: Callable[[bytes], int],
         timeout_ms: int,
     ) -> Gjirafa50HttpResponse: ...
 
@@ -33,8 +34,13 @@ class Gjirafa50HttpSession(Protocol):
 
 
 class CurlCffiGjirafa50Response:
-    def __init__(self, response: requests.Response) -> None:
+    def __init__(
+        self,
+        response: requests.Response,
+        raw_header_lines: list[bytes],
+    ) -> None:
         self._response = response
+        self._headers = _parse_final_headers(raw_header_lines)
 
     @property
     def status_code(self) -> int:
@@ -42,11 +48,7 @@ class CurlCffiGjirafa50Response:
 
     @property
     def headers(self) -> Mapping[str, str]:
-        return {
-            name.casefold(): value
-            for name, value in self._response.headers.items()
-            if value is not None
-        }
+        return self._headers
 
 
 class CurlCffiGjirafa50Session:
@@ -60,8 +62,17 @@ class CurlCffiGjirafa50Session:
         headers: Mapping[str, str],
         allow_redirects: bool,
         content_callback: Callable[[bytes], int],
+        header_callback: Callable[[bytes], int],
         timeout_ms: int,
     ) -> Gjirafa50HttpResponse:
+        raw_header_lines: list[bytes] = []
+
+        def receive_header(line: bytes) -> int:
+            consumed = header_callback(line)
+            if consumed == len(line):
+                raw_header_lines.append(line)
+            return consumed
+
         session: requests.Session[requests.Response] = requests.Session(
             trust_env=False,
             discard_cookies=True,
@@ -71,6 +82,7 @@ class CurlCffiGjirafa50Session:
                 CurlOpt.PROXY: "",
                 CurlOpt.NETRC: 0,
                 CurlOpt.CAINFO: certifi.where(),
+                CurlOpt.HEADERFUNCTION: receive_header,
             },
         )
         try:
@@ -83,6 +95,7 @@ class CurlCffiGjirafa50Session:
                     content_callback=content_callback,
                     impersonate="chrome",
                 ),
+                raw_header_lines,
             )
         finally:
             session.close()
@@ -93,3 +106,22 @@ class CurlCffiGjirafa50Session:
 
 def create_gjirafa50_session() -> Gjirafa50HttpSession:
     return CurlCffiGjirafa50Session()
+
+
+def _parse_final_headers(raw_lines: list[bytes]) -> Mapping[str, str]:
+    headers: dict[str, str] = {}
+    last_name: str | None = None
+    for raw_line in raw_lines:
+        line = raw_line.rstrip(b"\r\n")
+        if line.startswith(b"HTTP/"):
+            headers = {}
+            last_name = None
+        elif not line:
+            continue
+        elif line[:1] in {b" ", b"\t"} and last_name is not None:
+            headers[last_name] += " " + line.decode("latin-1").strip()
+        elif b":" in line:
+            raw_name, raw_value = line.split(b":", 1)
+            last_name = raw_name.decode("latin-1").strip().casefold()
+            headers[last_name] = raw_value.decode("latin-1").strip()
+    return headers

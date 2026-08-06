@@ -55,7 +55,9 @@ def test_http_budget_counts_every_redirect_request_and_response_byte(
     )
 
     assert fetched.response_bytes == len(b"redirect") + len(payload) + len(
-        b"Location: /product/search\r\n",
+        b"HTTP/1.1 302 Test\r\nLocation: /product/search\r\n\r\n",
+    ) + len(
+        b"HTTP/1.1 200 Test\r\n\r\n",
     )
     assert budget.requests == 2
     assert budget.response_bytes == fetched.response_bytes
@@ -77,7 +79,7 @@ def test_http_budget_keeps_failed_response_bytes(
         )
 
     assert budget.requests == 1
-    assert budget.response_bytes == len(b"failure")
+    assert budget.response_bytes == len(b"HTTP/1.1 500 Test\r\n\r\nfailure")
 
 
 def test_http_enforces_deadline_after_parsing(
@@ -126,15 +128,24 @@ def test_response_headers_are_charged_to_operation_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     budget = _OperationBudget(lambda: False)
-    response = StubResponse(b"")
-    response.headers["X-Test"] = "abc"
-    monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_RESPONSE_BYTES", 5)
+    response = StubResponse(
+        b"",
+        raw_header_lines=(
+            b"HTTP/1.1 200 OK\r\n",
+            b"X-Test: abc\r\n",
+            b"X-Test: def\r\n",
+            b"\r\n",
+        ),
+    )
+    monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_RESPONSE_BYTES", 40)
     client = Gjirafa50HttpClient(RecordingGet([response]))
 
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
         client._request({}, root_url="https://gjirafa50.mk/", budget=budget)
 
-    assert budget.response_bytes == len(b"X-Test: abc\r\n")
+    assert budget.response_bytes == len(
+        b"HTTP/1.1 200 OK\r\nX-Test: abc\r\nX-Test: def\r\n",
+    )
 
 
 def test_http_session_enforces_total_timeout_and_environment_isolation(
@@ -149,6 +160,9 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
         headers: Mapping[str, str] = field(default_factory=dict)
 
     class SessionStub:
+        def __init__(self, curl_options: Mapping[CurlOpt, object]) -> None:
+            self._curl_options = curl_options
+
         def get(
             self,
             url: str,
@@ -160,6 +174,11 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
             impersonate: str,
         ) -> SessionResponse:
             del url, params, headers, allow_redirects, impersonate
+            header_callback = self._curl_options[CurlOpt.HEADERFUNCTION]
+            assert callable(header_callback)
+            header_callback(b"HTTP/1.1 200 OK\r\n")
+            header_callback(b"Content-Type: application/json\r\n")
+            header_callback(b"\r\n")
             content_callback(b"payload")
             return SessionResponse()
 
@@ -177,14 +196,19 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
             (trust_env, discard_cookies, default_headers),
         )
         captured_options.append(curl_options)
-        return SessionStub()
+        return SessionStub(curl_options)
 
     monkeypatch.setattr(gjirafa50_session.requests, "Session", create_session)
     content = bytearray()
+    header_bytes = bytearray()
 
     def write_content(chunk: bytes) -> int:
         content.extend(chunk)
         return len(chunk)
+
+    def write_header(line: bytes) -> int:
+        header_bytes.extend(line)
+        return len(line)
 
     response = gjirafa50_session.create_gjirafa50_session().get(
         "https://gjirafa50.mk/product/search",
@@ -192,11 +216,14 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
         headers={"Accept": "application/json"},
         allow_redirects=False,
         content_callback=write_content,
+        header_callback=write_header,
         timeout_ms=1234,
     )
 
     assert response.status_code == 200
     assert content == b"payload"
+    assert header_bytes == b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
+    assert response.headers == {"content-type": "application/json"}
     assert captured_session_options == [(False, True, False)]
     assert captured_options[0][CurlOpt.TIMEOUT_MS] == 1234
     assert captured_options[0][CurlOpt.PROXY] == ""

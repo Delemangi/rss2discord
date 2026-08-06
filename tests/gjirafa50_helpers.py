@@ -41,10 +41,17 @@ def catalog_payload(
 
 
 class StubResponse:
-    def __init__(self, content: bytes, *, status_code: int = 200) -> None:
+    def __init__(
+        self,
+        content: bytes,
+        *,
+        status_code: int = 200,
+        raw_header_lines: tuple[bytes, ...] | None = None,
+    ) -> None:
         self.content = content
         self.status_code = status_code
         self.headers: dict[str, str] = {}
+        self.raw_header_lines = raw_header_lines
         self.url = "https://gjirafa50.mk/product/search"
 
 class RecordingGet:
@@ -61,12 +68,24 @@ class RecordingGet:
         headers: Mapping[str, str],
         allow_redirects: bool,
         content_callback: Callable[[bytes], int],
+        header_callback: Callable[[bytes], int],
         timeout_ms: int,
     ) -> StubResponse:
         del url, headers, allow_redirects
         self.params.append(params)
         self.timeouts.append(timeout_ms)
         response = self.responses.pop(0)
+        header_lines = response.raw_header_lines or (
+            f"HTTP/1.1 {response.status_code} Test\r\n".encode(),
+            *(
+                f"{name}: {value}\r\n".encode()
+                for name, value in response.headers.items()
+            ),
+            b"\r\n",
+        )
+        for line in header_lines:
+            if header_callback(line) == CURL_WRITEFUNC_ERROR:
+                return response
         if content_callback(response.content) == CURL_WRITEFUNC_ERROR:
             return response
         return response
