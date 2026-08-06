@@ -19,12 +19,12 @@ class Gjirafa50Product:
 @dataclass(frozen=True, slots=True)
 class Gjirafa50PriceRange:
     minimum_cents: int
-    maximum_cents: int
+    maximum_exclusive_cents: int
 
     def __str__(self) -> str:
         return (
             f"{_format_price_cents(self.minimum_cents)}-"
-            f"{_format_price_cents(self.maximum_cents)}"
+            f"{_format_price_cents(self.maximum_exclusive_cents)}"
         )
 
 

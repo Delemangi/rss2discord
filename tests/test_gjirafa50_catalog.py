@@ -1,9 +1,8 @@
 from decimal import Decimal
 
 import pytest
-import requests
 
-from rss2discord.transports import FeedFetchError, gjirafa50_catalog
+from rss2discord.transports import FeedFetchError, gjirafa50_catalog, gjirafa50_http
 from rss2discord.transports.gjirafa50_catalog import (
     Gjirafa50CatalogClient,
     _OperationBudget,
@@ -30,7 +29,7 @@ def test_latest_products_reads_two_pages_and_returns_oldest_first(
             StubResponse(catalog_payload(30, page_two, total_pages=2)),
         ],
     )
-    monkeypatch.setattr(requests.Session, "get", get)
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
     # When
     products = Gjirafa50CatalogClient().fetch_latest_products(ROOT_URL)
@@ -52,7 +51,11 @@ def test_catalog_recursively_shards_prices_and_reconciles_all_products(
 ) -> None:
     # Given
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 2)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 3)
+    monkeypatch.setattr(
+        gjirafa50_catalog,
+        "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
+        4,
+    )
     responses = [
         catalog_payload(4, [(4, Decimal("0.03"))]),
         catalog_payload(4, [(4, Decimal("0.03"))]),
@@ -67,7 +70,7 @@ def test_catalog_recursively_shards_prices_and_reconciles_all_products(
         catalog_payload(2, [(3, Decimal("0.02")), (4, Decimal("0.03"))]),
     ]
     get = RecordingGet([StubResponse(payload) for payload in responses])
-    monkeypatch.setattr(requests.Session, "get", get)
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
     # When
     products = Gjirafa50CatalogClient().fetch_catalog(
@@ -85,8 +88,8 @@ def test_catalog_recursively_shards_prices_and_reconciles_all_products(
         Decimal("0.03"),
     ]
     requested_ranges = [params.get("price") for params in get.params]
-    assert requested_ranges.count("0-0,01") == 4
-    assert requested_ranges.count("0,02-0,03") == 4
+    assert requested_ranges.count("0-0,02") == 4
+    assert requested_ranges.count("0,02-0,04") == 4
 
 
 def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
@@ -94,7 +97,11 @@ def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
 ) -> None:
     # Given
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 2)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 3)
+    monkeypatch.setattr(
+        gjirafa50_catalog,
+        "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
+        4,
+    )
     get = RecordingGet(
         [
             StubResponse(catalog_payload(4, [(4, Decimal("0.03"))])),
@@ -106,10 +113,49 @@ def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
         ]
         * 3,
     )
-    monkeypatch.setattr(requests.Session, "get", get)
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
     # When / Then
     with pytest.raises(FeedFetchError, match="CatalogChanged"):
+        Gjirafa50CatalogClient().fetch_catalog(
+            ROOT_URL,
+            retry_policy=no_wait_retry_policy(),
+            is_shutdown_requested=lambda: False,
+        )
+
+
+def test_catalog_fails_closed_when_individual_shard_count_changes_after_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 2)
+    monkeypatch.setattr(
+        gjirafa50_catalog,
+        "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
+        4,
+    )
+    products = [
+        (1, Decimal(0)),
+        (2, Decimal("0.01")),
+        (3, Decimal("0.02")),
+        (4, Decimal("0.03")),
+    ]
+    responses = [
+        catalog_payload(4, products[:1]),
+        catalog_payload(4, products[:1]),
+        catalog_payload(2, products[:2]),
+        catalog_payload(2, products[2:]),
+        catalog_payload(2, products[:2]),
+        catalog_payload(2, [], total_pages=1),
+        catalog_payload(2, products[2:]),
+        catalog_payload(2, [], total_pages=1),
+        catalog_payload(4, products[:1]),
+        catalog_payload(1, products[:1]),
+        catalog_payload(3, products[1:]),
+    ]
+    get = RecordingGet([StubResponse(payload) for payload in responses * 3])
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
+
+    with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
         Gjirafa50CatalogClient().fetch_catalog(
             ROOT_URL,
             retry_policy=no_wait_retry_policy(),
@@ -122,7 +168,11 @@ def test_catalog_request_budget_is_shared_across_retries(
 ) -> None:
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PAGES", 3)
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 1)
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRICE_CENTS", 1)
+    monkeypatch.setattr(
+        gjirafa50_catalog,
+        "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
+        2,
+    )
     get = RecordingGet(
         [
             StubResponse(catalog_payload(2, [(2, Decimal("0.01"))])),
@@ -130,7 +180,7 @@ def test_catalog_request_budget_is_shared_across_retries(
             StubResponse(b"retry", status_code=503),
         ],
     )
-    monkeypatch.setattr(requests.Session, "get", get)
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
         Gjirafa50CatalogClient().fetch_catalog(
