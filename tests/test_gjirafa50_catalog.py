@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, gjirafa50_catalog, gjirafa50_http
 from rss2discord.transports.gjirafa50_catalog import (
     Gjirafa50CatalogClient,
@@ -38,6 +39,21 @@ def test_latest_products_reads_two_pages_and_returns_oldest_first(
     assert [product.id for product in products] == list(range(1, 31))
     assert [params["pagenumber"] for params in get.params] == [1, 2]
     assert all(params["orderby"] == 16 for params in get.params)
+
+
+def test_latest_products_stops_before_request_when_shutdown_is_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet([])
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
+
+    with pytest.raises(FeedFetchInterruptedError):
+        Gjirafa50CatalogClient().fetch_latest_products(
+            ROOT_URL,
+            is_shutdown_requested=lambda: True,
+        )
+
+    assert get.params == []
 
 
 def test_price_range_renders_exact_cent_boundaries_for_storefront_filter() -> None:

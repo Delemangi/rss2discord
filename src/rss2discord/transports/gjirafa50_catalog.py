@@ -115,13 +115,17 @@ class _CatalogScan:
 
 
 class Gjirafa50CatalogClient:
-    def fetch_latest_products(self, url: str) -> tuple[Gjirafa50Product, ...]:
+    def fetch_latest_products(
+        self,
+        url: str,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[Gjirafa50Product, ...]:
         root_url = Gjirafa50HttpClient.normalize_root_url(url)
         observed_at = datetime.now(UTC)
         products: list[Gjirafa50Product] = []
         seen: set[int] = set()
         expected_total: int | None = None
-        budget = _OperationBudget(lambda: False)
+        budget = _OperationBudget(is_shutdown_requested)
         budget.deadline = time.monotonic() + 60
         with Gjirafa50HttpClient() as http:
             for page_number in (1, 2):
