@@ -88,14 +88,6 @@ class _CatalogScan:
         self.http = http
         self.observed_at = datetime.now(UTC)
 
-    @property
-    def response_bytes(self) -> int:
-        return self.budget.response_bytes
-
-    @property
-    def requests(self) -> int:
-        return self.budget.requests
-
     def fetch(
         self,
         page: int,
@@ -244,7 +236,10 @@ class Gjirafa50CatalogClient:
         pages = ceil(total / GJIRAFA50_PAGE_SIZE)
         for page_number in range(1, pages + 1):
             page = scan.fetch(page_number, price_range)
-            expected = min(GJIRAFA50_PAGE_SIZE, total - (page_number - 1) * 24)
+            expected = min(
+                GJIRAFA50_PAGE_SIZE,
+                total - (page_number - 1) * GJIRAFA50_PAGE_SIZE,
+            )
             if page.total_hits != total or page.total_pages != pages:
                 raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             if len(page.products) != expected:
