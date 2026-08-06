@@ -18,6 +18,8 @@ from rss2discord.transports.gjirafa50_http import (
 from rss2discord.transports.gjirafa50_models import Gjirafa50CatalogPage
 from tests.gjirafa50_helpers import RecordingGet, StubResponse, catalog_payload
 
+type CurlOptionValue = int | str | Callable[[bytes], int]
+
 
 def test_http_rejects_unsafe_root_url() -> None:
     with pytest.raises(FeedFetchError, match="InvalidUrl"):
@@ -151,7 +153,7 @@ def test_response_headers_are_charged_to_operation_budget(
 def test_http_session_enforces_total_timeout_and_environment_isolation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_options: list[Mapping[CurlOpt, int | str]] = []
+    captured_options: list[Mapping[CurlOpt, CurlOptionValue]] = []
     captured_session_options: list[tuple[bool, bool, bool]] = []
 
     @dataclass(frozen=True, slots=True)
@@ -160,7 +162,10 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
         headers: Mapping[str, str] = field(default_factory=dict)
 
     class SessionStub:
-        def __init__(self, curl_options: Mapping[CurlOpt, object]) -> None:
+        def __init__(
+            self,
+            curl_options: Mapping[CurlOpt, CurlOptionValue],
+        ) -> None:
             self._curl_options = curl_options
 
         def get(
@@ -190,7 +195,7 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
         trust_env: bool,
         discard_cookies: bool,
         default_headers: bool,
-        curl_options: Mapping[CurlOpt, int | str],
+        curl_options: Mapping[CurlOpt, CurlOptionValue],
     ) -> SessionStub:
         captured_session_options.append(
             (trust_env, discard_cookies, default_headers),
