@@ -259,6 +259,7 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
         or redirected.username is not None
         or redirected.password is not None
         or redirected.path != "/product/search"
+        or redirected.query
         or redirected.fragment
     ):
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")

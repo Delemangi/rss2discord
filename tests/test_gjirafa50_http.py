@@ -65,6 +65,28 @@ def test_http_budget_counts_every_redirect_request_and_response_byte(
     assert budget.response_bytes == fetched.response_bytes
 
 
+def test_http_rejects_redirect_with_query_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    budget = _OperationBudget(lambda: False)
+    redirect = StubResponse(b"redirect", status_code=302)
+    redirect.headers["Location"] = "/product/search?scope=unexpected"
+    get = RecordingGet([redirect])
+    client = Gjirafa50HttpClient(get)
+    monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="InvalidRedirect"):
+        client.fetch_page(
+            "https://gjirafa50.mk/",
+            Gjirafa50PageRequest(page=1, budget=budget),
+            datetime.now(UTC),
+        )
+
+    assert len(get.params) == 1
+
+
 def test_http_budget_keeps_failed_response_bytes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
