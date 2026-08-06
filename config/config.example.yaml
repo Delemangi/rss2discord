@@ -127,7 +127,7 @@ feeds:
     webhook_name: "Hivetec Bot"
 
   # Gjirafa50 discovery checks the newest 30 in-stock products. The independent
-  # price scan partitions the full catalog by integer MKD price and is expensive,
+  # price scan partitions the full catalog by cent-precise MKD price and is expensive,
   # so use a six-hour or longer interval rather than hourly polling.
   - id: "gjirafa50-products"
     name: "Gjirafa50 Products"
