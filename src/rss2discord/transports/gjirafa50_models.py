@@ -24,7 +24,7 @@ class Gjirafa50PriceRange:
     def __str__(self) -> str:
         return (
             f"{_format_price_cents(self.minimum_cents)}-"
-            f"{_format_price_cents(self.maximum_exclusive_cents)}"
+            f"{_format_price_cents(self.maximum_exclusive_cents - 1)}"
         )
 
 

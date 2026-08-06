@@ -43,7 +43,7 @@ def test_latest_products_reads_two_pages_and_returns_oldest_first(
 def test_price_range_renders_exact_cent_boundaries_for_storefront_filter() -> None:
     price_range = Gjirafa50PriceRange(1_296_850, 1_296_900)
 
-    assert str(price_range) == "12968,50-12969"
+    assert str(price_range) == "12968,50-12968,99"
 
 
 def test_catalog_recursively_shards_prices_and_reconciles_all_products(
@@ -88,8 +88,8 @@ def test_catalog_recursively_shards_prices_and_reconciles_all_products(
         Decimal("0.03"),
     ]
     requested_ranges = [params.get("price") for params in get.params]
-    assert requested_ranges.count("0-0,02") == 4
-    assert requested_ranges.count("0,02-0,04") == 4
+    assert requested_ranges.count("0-0,01") == 4
+    assert requested_ranges.count("0,02-0,03") == 4
 
 
 def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
