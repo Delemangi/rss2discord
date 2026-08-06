@@ -167,7 +167,7 @@ def test_scheduler_stops_when_its_sleep_is_interrupted() -> None:
     assert clock.sleep_calls == [300]
 
 
-def test_scheduler_closes_price_jobs_after_shutdown() -> None:
+def test_scheduler_closes_price_jobs_after_interrupted_sleep() -> None:
     clock = FakeSchedulerClock()
     clock.interrupt_next_sleep()
     events: list[str] = []
