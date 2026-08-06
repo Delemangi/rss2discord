@@ -1,9 +1,11 @@
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import Mock
 
 import pytest
 
-from rss2discord.transports import FeedFetchError
+from rss2discord.transports import FeedFetchError, gjirafa50_parser
 from rss2discord.transports.gjirafa50_parser import parse_gjirafa50_page
 from tests.gjirafa50_helpers import catalog_payload
 
@@ -53,3 +55,30 @@ def test_parser_derives_display_price_from_validated_numeric_price() -> None:
     page = parse_gjirafa50_page(payload, datetime.now(UTC))
 
     assert page.products[0].formatted_price == "1.234,00 MKD."
+
+
+def test_parser_rejects_declared_product_count_above_page_size() -> None:
+    payload = catalog_payload(25, [(product_id, 100) for product_id in range(1, 26)])
+
+    with pytest.raises(FeedFetchError, match="InvalidResponse"):
+        parse_gjirafa50_page(payload, datetime.now(UTC))
+
+
+def test_parser_rejects_nested_card_excess_before_parsing_products(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = json.dumps(
+        {
+            "totalpages": 1,
+            "totalHits": 24,
+            "productsCount": 24,
+            "html": '<div class="product-item">' * 25 + "</div>" * 25,
+        },
+    ).encode()
+    parse_product = Mock(side_effect=AssertionError("product parsing must not start"))
+    monkeypatch.setattr(gjirafa50_parser, "_parse_product", parse_product)
+
+    with pytest.raises(FeedFetchError, match="InvalidCardinality"):
+        parse_gjirafa50_page(payload, datetime.now(UTC))
+
+    parse_product.assert_not_called()

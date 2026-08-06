@@ -21,6 +21,7 @@ GJIRAFA50_ORIGIN: Final = "https://gjirafa50.mk"
 GJIRAFA50_IMAGE_HOST: Final = "50cdn.gjirafamall.tech"
 MAX_GJIRAFA50_TEXT_LENGTH: Final = 500
 MAX_GJIRAFA50_URL_LENGTH: Final = 2_048
+MAX_GJIRAFA50_PAGE_PRODUCTS: Final = 24
 
 
 class _CatalogEnvelope(BaseModel):
@@ -28,7 +29,10 @@ class _CatalogEnvelope(BaseModel):
 
     total_pages: Annotated[int, Field(alias="totalpages", ge=0)]
     total_hits: Annotated[int, Field(alias="totalHits", ge=0)]
-    products_count: Annotated[int, Field(alias="productsCount", ge=0)]
+    products_count: Annotated[
+        int,
+        Field(alias="productsCount", ge=0, le=MAX_GJIRAFA50_PAGE_PRODUCTS),
+    ]
     html: str
 
 
@@ -41,9 +45,10 @@ def parse_gjirafa50_page(
     except ValidationError:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidResponse") from None
     soup = BeautifulSoup(envelope.html, "html.parser")
-    products = tuple(_parse_product(card, observed_at) for card in soup.select(".product-item"))
-    if len(products) != envelope.products_count:
+    cards = soup.select(".product-item")
+    if len(cards) != envelope.products_count:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidCardinality")
+    products = tuple(_parse_product(card, observed_at) for card in cards)
     return Gjirafa50CatalogPage(envelope.total_hits, envelope.total_pages, products)
 
 
