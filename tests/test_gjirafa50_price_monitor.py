@@ -3,11 +3,17 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore
+from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.retries import (
+    FeedFetchInterruptedError,
+    FetchRetryPolicy,
+    SQLiteRetryPolicy,
+)
 from rss2discord.transports.gjirafa50_models import Gjirafa50Product
 from rss2discord.transports.gjirafa50_price_monitor import (
     Gjirafa50PriceMonitor,
@@ -18,8 +24,15 @@ from tests.setec_price_monitor_helpers import RecordingSender
 
 
 class CatalogStub:
-    def __init__(self, batches: list[tuple[Gjirafa50Product, ...]]) -> None:
-        self.batches = batches
+    def __init__(
+        self,
+        batches: list[tuple[Gjirafa50Product, ...]],
+        *,
+        shutdown_after_fetch: bool = False,
+    ) -> None:
+        self.batches: list[tuple[Gjirafa50Product, ...]] = batches
+        self.shutdown_after_fetch: bool = shutdown_after_fetch
+        self.shutdown_requested: bool = False
 
     def fetch_catalog(
         self,
@@ -29,7 +42,24 @@ class CatalogStub:
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[Gjirafa50Product, ...]:
         del url, retry_policy, is_shutdown_requested
-        return self.batches.pop(0)
+        products = self.batches.pop(0)
+        self.shutdown_requested = self.shutdown_after_fetch
+        return products
+
+
+class RecordingStore(DeliveryStore):
+    def __init__(self, database_path: Path) -> None:
+        super().__init__(database_path)
+        self.load_calls: int = 0
+
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]:
+        self.load_calls += 1
+        return super().load_price_snapshots(feed_id, limit=limit)
 
 
 def make_product(product_id: int, price: Decimal | int) -> Gjirafa50Product:
@@ -77,7 +107,7 @@ def make_monitor(
             delivery=PriceAlertDelivery(
                 sleep=lambda seconds: True,
                 delay_between_posts=0,
-                is_shutdown_requested=lambda: False,
+                is_shutdown_requested=lambda: catalog.shutdown_requested,
             ),
             database_path=store.database_path,
         ),
@@ -123,3 +153,20 @@ def test_price_monitor_does_not_advance_snapshot_after_failed_delivery(
         snapshot = store.load_price_snapshots("gjirafa50")[0]
 
     assert snapshot.amount == Decimal(100)
+
+
+def test_price_monitor_stops_before_snapshot_load_after_catalog_shutdown(
+    tmp_path: Path,
+) -> None:
+    catalog = CatalogStub(
+        [(make_product(1, 100),)],
+        shutdown_after_fetch=True,
+    )
+
+    with RecordingStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(catalog, store, RecordingSender([]))
+
+        with pytest.raises(FeedFetchInterruptedError):
+            monitor.scan()
+
+        assert store.load_calls == 0

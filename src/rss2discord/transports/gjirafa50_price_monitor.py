@@ -83,6 +83,8 @@ class Gjirafa50PriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
         persisted = self._dependencies.sqlite_retry_policy.execute(
             lambda: self._dependencies.snapshots.load_price_snapshots(
                 self._feed.id,
@@ -109,7 +111,10 @@ class Gjirafa50PriceMonitor:
             previous = by_product.get(current.product_id)
             if previous is None:
                 silent_updates.append(current)
-            elif previous.amount != current.amount or previous.currency != current.currency:
+            elif (
+                previous.amount != current.amount
+                or previous.currency != current.currency
+            ):
                 changes.append(_PriceChange(product, previous, current))
             elif previous.formatted != current.formatted:
                 silent_updates.append(current)
@@ -121,7 +126,9 @@ class Gjirafa50PriceMonitor:
             raise FeedFetchInterruptedError
         if silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(silent_updates),
+                lambda: self._dependencies.snapshots.upsert_price_snapshots(
+                    silent_updates,
+                ),
             )
         deliver_price_changes(changes, self._dependencies, self._message_for)
 
