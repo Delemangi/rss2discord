@@ -54,6 +54,7 @@ class StubResponse:
         self.raw_header_lines = raw_header_lines
         self.url = "https://gjirafa50.mk/product/search"
 
+
 class RecordingGet:
     def __init__(self, responses: list[StubResponse]) -> None:
         self.responses = responses
