@@ -1,5 +1,6 @@
 """Parse Gjirafa50 catalog JSON and product-card HTML."""
 
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, ClassVar, Final
@@ -9,7 +10,10 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import (
+    MAX_PRICE_AMOUNT_WHOLE_DIGITS,
+    canonicalize_price_amount,
+)
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.gjirafa50_models import (
     Gjirafa50CatalogPage,
@@ -22,6 +26,14 @@ GJIRAFA50_IMAGE_HOST: Final = "50cdn.gjirafamall.tech"
 MAX_GJIRAFA50_TEXT_LENGTH: Final = 500
 MAX_GJIRAFA50_URL_LENGTH: Final = 2_048
 MAX_GJIRAFA50_PAGE_PRODUCTS: Final = 24
+MAX_GJIRAFA50_HTML_TAG_TOKENS: Final = 10_000
+MAX_GJIRAFA50_PRICE_TEXT_LENGTH: Final = 18
+MAX_GJIRAFA50_PRICE_THOUSANDS_GROUPS: Final = (MAX_PRICE_AMOUNT_WHOLE_DIGITS - 1) // 3
+GJIRAFA50_PRICE_PATTERN: Final = re.compile(
+    rf"(?:0|[1-9][0-9]{{0,{MAX_PRICE_AMOUNT_WHOLE_DIGITS - 1}}}|"
+    rf"[1-9][0-9]{{0,2}}(?:\.[0-9]{{3}})"
+    rf"{{1,{MAX_GJIRAFA50_PRICE_THOUSANDS_GROUPS}}}),[0-9]{{2}}",
+)
 
 
 class _CatalogEnvelope(BaseModel):
@@ -44,6 +56,8 @@ def parse_gjirafa50_page(
         envelope = _CatalogEnvelope.model_validate_json(content)
     except ValidationError:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidResponse") from None
+    if envelope.html.count("<") > MAX_GJIRAFA50_HTML_TAG_TOKENS:
+        raise FeedFetchError(GJIRAFA50_LABEL, "HtmlComplexityExceeded")
     soup = BeautifulSoup(envelope.html, "html.parser")
     cards = soup.select(".product-item")
     if len(cards) != envelope.products_count:
@@ -95,7 +109,11 @@ def _positive_int(value: str | None) -> int:
 
 
 def _price(value: str | None) -> Decimal:
-    if value is None:
+    if (
+        value is None
+        or len(value) > MAX_GJIRAFA50_PRICE_TEXT_LENGTH
+        or GJIRAFA50_PRICE_PATTERN.fullmatch(value) is None
+    ):
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidProduct")
     try:
         amount = Decimal(value.replace(".", "").replace(",", "."))
