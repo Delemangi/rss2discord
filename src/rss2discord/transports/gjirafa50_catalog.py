@@ -134,7 +134,11 @@ class Gjirafa50CatalogClient:
                 if expected_total is None:
                     expected_total = page.total_hits
                 elif page.total_hits != expected_total:
-                    raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
+                    raise FeedFetchError(
+                        GJIRAFA50_LABEL,
+                        "CatalogChanged",
+                        retryable=True,
+                    )
                 expected_count = min(
                     GJIRAFA50_PAGE_SIZE,
                     max(page.total_hits - len(products), 0),
@@ -194,7 +198,11 @@ class Gjirafa50CatalogClient:
         entire_range = Gjirafa50PriceRange(0, MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS)
         entire_total = scan.fetch(1, entire_range).total_hits
         if entire_total != root_total:
-            raise FeedFetchError(GJIRAFA50_LABEL, "IncompletePriceRange", retryable=True)
+            raise FeedFetchError(
+                GJIRAFA50_LABEL,
+                "IncompletePriceRange",
+                retryable=True,
+            )
         queue = deque([(entire_range, entire_total)])
         shards: list[tuple[Gjirafa50PriceRange, int]] = []
         while queue:
@@ -203,10 +211,7 @@ class Gjirafa50CatalogClient:
                 scan.budget.consume_shard()
                 shards.append((price_range, total))
                 continue
-            if (
-                price_range.maximum_exclusive_cents - price_range.minimum_cents
-                <= 1
-            ):
+            if price_range.maximum_exclusive_cents - price_range.minimum_cents <= 1:
                 raise FeedFetchError(GJIRAFA50_LABEL, "PriceBucketLimitExceeded")
             midpoint = (
                 price_range.minimum_cents + price_range.maximum_exclusive_cents
@@ -243,7 +248,11 @@ class Gjirafa50CatalogClient:
             if page.total_hits != total or page.total_pages != pages:
                 raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             if len(page.products) != expected:
-                raise FeedFetchError(GJIRAFA50_LABEL, "IncompleteCatalog", retryable=True)
+                raise FeedFetchError(
+                    GJIRAFA50_LABEL,
+                    "IncompleteCatalog",
+                    retryable=True,
+                )
             for product in page.products:
                 price_cents = int(product.price * 100)
                 if not (
@@ -254,7 +263,11 @@ class Gjirafa50CatalogClient:
                     raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
             self._append_unique(products, seen, page.products)
         sentinel = scan.fetch(pages + 1, price_range)
-        if sentinel.total_hits != total or sentinel.total_pages != pages or sentinel.products:
+        if (
+            sentinel.total_hits != total
+            or sentinel.total_pages != pages
+            or sentinel.products
+        ):
             raise FeedFetchError(GJIRAFA50_LABEL, "InvalidTerminalPage", retryable=True)
 
     @staticmethod
@@ -265,6 +278,10 @@ class Gjirafa50CatalogClient:
     ) -> None:
         for product in page_products:
             if product.id in seen:
-                raise FeedFetchError(GJIRAFA50_LABEL, "DuplicateProductId", retryable=True)
+                raise FeedFetchError(
+                    GJIRAFA50_LABEL,
+                    "DuplicateProductId",
+                    retryable=True,
+                )
             seen.add(product.id)
             products.append(product)

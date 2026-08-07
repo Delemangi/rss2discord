@@ -269,6 +269,10 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
 def _header(response: Gjirafa50HttpResponse, name: str) -> str | None:
     expected = name.casefold()
     return next(
-        (value for key, value in response.headers.items() if key.casefold() == expected),
+        (
+            value
+            for key, value in response.headers.items()
+            if key.casefold() == expected
+        ),
         None,
     )
