@@ -3,8 +3,8 @@
 import logging
 import sqlite3
 from dataclasses import replace
-from threading import Lock, Thread
-from typing import ClassVar
+from threading import Event, Lock, Thread
+from typing import ClassVar, Final
 
 import requests
 
@@ -19,6 +19,7 @@ from rss2discord.transports.gjirafa50_price_monitor import (
 )
 
 logger = logging.getLogger(__name__)
+GJIRAFA50_SCAN_LOCK_POLL_SECONDS: Final = 0.1
 
 
 class Gjirafa50BackgroundPriceMonitor:
@@ -33,6 +34,7 @@ class Gjirafa50BackgroundPriceMonitor:
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies
+        self._cancel_requested: Event = Event()
         self._lock = Lock()
         self._thread: Thread | None = None
 
@@ -48,7 +50,14 @@ class Gjirafa50BackgroundPriceMonitor:
             self._thread.start()
 
     def _run(self) -> None:
-        with self._scan_lock:
+        while not self._is_shutdown_requested():
+            if self._scan_lock.acquire(timeout=GJIRAFA50_SCAN_LOCK_POLL_SECONDS):
+                break
+        else:
+            return
+        try:
+            if self._cancel_requested.is_set():
+                return
             try:
                 with (
                     DeliveryStore(self._dependencies.database_path) as store,
@@ -56,6 +65,19 @@ class Gjirafa50BackgroundPriceMonitor:
                 ):
                     dependencies = replace(
                         self._dependencies,
+                        fetch_retry_policy=replace(
+                            self._dependencies.fetch_retry_policy,
+                            sleep=self._sleep,
+                        ),
+                        sqlite_retry_policy=replace(
+                            self._dependencies.sqlite_retry_policy,
+                            sleep=self._sleep,
+                        ),
+                        delivery=replace(
+                            self._dependencies.delivery,
+                            sleep=self._sleep,
+                            is_shutdown_requested=self._is_shutdown_requested,
+                        ),
                         snapshots=store,
                         sender=DiscordWebhookClient(session=discord_session),
                     )
@@ -80,8 +102,25 @@ class Gjirafa50BackgroundPriceMonitor:
                     self._feed.id,
                     type(error).__name__,
                 )
+        finally:
+            self._scan_lock.release()
+
+    def _is_shutdown_requested(self) -> bool:
+        return (
+            self._cancel_requested.is_set()
+            or self._dependencies.delivery.is_shutdown_requested()
+        )
+
+    def _sleep(self, seconds: float) -> bool:
+        if self._is_shutdown_requested():
+            return False
+        return (
+            not self._cancel_requested.wait(seconds)
+            and not self._dependencies.delivery.is_shutdown_requested()
+        )
 
     def close(self) -> None:
+        self._cancel_requested.set()
         with self._lock:
             thread = self._thread
         if thread is not None:
