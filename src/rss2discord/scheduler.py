@@ -40,6 +40,7 @@ class RuntimeScheduler:
         ordinary_deadline = started_at
         price_deadlines = [started_at for _ in self._jobs.prices]
 
+        primary_error: BaseException | None = None
         try:
             while not self._control.is_shutdown_requested():
                 now = self._control.monotonic()
@@ -62,7 +63,21 @@ class RuntimeScheduler:
                     next_deadline = min([ordinary_deadline, *price_deadlines])
                     if not self._control.sleep(max(0.0, next_deadline - now)):
                         return
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
+            cleanup_errors: list[Exception] = []
             for job in self._jobs.prices:
                 if job.close is not None:
-                    job.close()
+                    try:
+                        job.close()
+                    except Exception as error:
+                        cleanup_errors.append(error)
+            if primary_error is not None:
+                for cleanup_error in cleanup_errors:
+                    primary_error.add_note(
+                        f"Price job cleanup failed: {cleanup_error}",
+                    )
+            elif cleanup_errors:
+                raise ExceptionGroup("Price job cleanup failed", cleanup_errors)
