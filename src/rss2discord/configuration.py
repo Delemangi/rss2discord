@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Self, assert_never
+from typing import Annotated, ClassVar, Final, Literal, Self, assert_never
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -17,6 +17,7 @@ FeedStrategyName = Literal[
     "itmk_oglasnik",
     "anhoch",
     "ddstore",
+    "gjirafa50",
     "hivetec",
     "neksio",
     "neptun",
@@ -24,6 +25,7 @@ FeedStrategyName = Literal[
     "reklama5",
     "setec",
 ]
+MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600
 
 
 class FeedConfig(BaseModel):
@@ -53,10 +55,17 @@ class FeedConfig(BaseModel):
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
         if self.price_check_interval is not None:
+            if (
+                self.strategy == "gjirafa50"
+                and self.price_check_interval < MIN_GJIRAFA50_PRICE_CHECK_INTERVAL
+            ):
+                msg = "gjirafa50 price_check_interval must be at least 21600 seconds"
+                raise ValueError(msg)
             match self.strategy:
                 case (
                     "anhoch"
                     | "ddstore"
+                    | "gjirafa50"
                     | "hivetec"
                     | "neksio"
                     | "neptun"
@@ -67,8 +76,8 @@ class FeedConfig(BaseModel):
                     pass
                 case "rss" | "xenforo" | "itmk_oglasnik":
                     msg = (
-                        "price_check_interval requires anhoch, ddstore, hivetec, "
-                        "neksio, neptun, pazar3, reklama5, or setec "
+                        "price_check_interval requires anhoch, ddstore, gjirafa50, "
+                        "hivetec, neksio, neptun, pazar3, reklama5, or setec "
                         "strategy"
                     )
                     raise ValueError(msg)

@@ -220,3 +220,25 @@ def test_load_config_parses_anhoch_strategy(tmp_path: Path) -> None:
 
     # Then
     assert config.feeds[0].strategy == "anhoch"
+
+
+def test_load_config_parses_gjirafa50_strategy_with_price_monitor(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: gjirafa50-products\n"
+        "    url: https://gjirafa50.mk/\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: gjirafa50\n"
+        "    price_check_interval: 21600\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].strategy == "gjirafa50"
+    assert config.feeds[0].price_check_interval == 21600

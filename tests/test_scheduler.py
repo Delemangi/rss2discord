@@ -1,3 +1,5 @@
+import pytest
+
 from rss2discord.scheduler import (
     RuntimeScheduler,
     ScheduledJob,
@@ -165,3 +167,134 @@ def test_scheduler_stops_when_its_sleep_is_interrupted() -> None:
     # Then
     assert events == [0]
     assert clock.sleep_calls == [300]
+
+
+def test_scheduler_closes_price_jobs_after_interrupted_sleep() -> None:
+    clock = FakeSchedulerClock()
+    clock.interrupt_next_sleep()
+    events: list[str] = []
+    scheduler = RuntimeScheduler(
+        jobs=SchedulerJobs(
+            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            prices=(
+                ScheduledJob(
+                    interval=3600,
+                    run=lambda: events.append("run"),
+                    close=lambda: events.append("close"),
+                ),
+            ),
+        ),
+        control=SchedulerControl(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+    scheduler.run()
+
+    assert events == ["run", "close"]
+
+
+def test_scheduler_preserves_run_failure_and_attempts_every_close() -> None:
+    clock = FakeSchedulerClock()
+    closed: list[str] = []
+
+    def fail_run() -> None:
+        raise RuntimeError("run failed")
+
+    def fail_close() -> None:
+        closed.append("first")
+        raise ValueError("first close failed")
+
+    scheduler = RuntimeScheduler(
+        jobs=SchedulerJobs(
+            ordinary=ScheduledJob(interval=300, run=fail_run),
+            prices=(
+                ScheduledJob(interval=3600, run=lambda: None, close=fail_close),
+                ScheduledJob(
+                    interval=3600,
+                    run=lambda: None,
+                    close=lambda: closed.append("second"),
+                ),
+            ),
+        ),
+        control=SchedulerControl(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="run failed") as error:
+        scheduler.run()
+
+    assert closed == ["first", "second"]
+    assert error.value.__notes__ == ["Price job cleanup failed: first close failed"]
+
+
+def test_scheduler_groups_multiple_cleanup_failures_without_primary_failure() -> None:
+    clock = FakeSchedulerClock()
+    clock.interrupt_next_sleep()
+
+    def fail_first_close() -> None:
+        raise ValueError("first close failed")
+
+    def fail_second_close() -> None:
+        raise TypeError("second close failed")
+
+    scheduler = RuntimeScheduler(
+        jobs=SchedulerJobs(
+            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            prices=(
+                ScheduledJob(interval=3600, run=lambda: None, close=fail_first_close),
+                ScheduledJob(interval=3600, run=lambda: None, close=fail_second_close),
+            ),
+        ),
+        control=SchedulerControl(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+    with pytest.raises(ExceptionGroup) as error:
+        scheduler.run()
+
+    assert [str(failure) for failure in error.value.exceptions] == [
+        "first close failed",
+        "second close failed",
+    ]
+
+
+def test_scheduler_does_not_treat_outer_handled_exception_as_primary() -> None:
+    clock = FakeSchedulerClock()
+    clock.interrupt_next_sleep()
+
+    def fail_close() -> None:
+        raise RuntimeError("close failed")
+
+    def fail_outer() -> None:
+        raise ValueError("outer failure")
+
+    scheduler = RuntimeScheduler(
+        jobs=SchedulerJobs(
+            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            prices=(ScheduledJob(interval=3600, run=lambda: None, close=fail_close),),
+        ),
+        control=SchedulerControl(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+    outer_notes: list[str] | None = None
+    try:
+        fail_outer()
+    except ValueError as outer_error:
+        with pytest.raises(ExceptionGroup, match="Price job cleanup failed"):
+            scheduler.run()
+        outer_notes = getattr(outer_error, "__notes__", None)
+
+    assert outer_notes is None

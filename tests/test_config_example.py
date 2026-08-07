@@ -77,3 +77,14 @@ def test_checked_in_config_example_documents_neptun_category_monitoring() -> Non
     assert neptun_feed.url == "https://www.neptun.mk/KOMPJUTERI.nspx"
     assert neptun_feed.strategy == "neptun"
     assert neptun_feed.price_check_interval == 3600
+
+
+def test_checked_in_config_example_documents_gjirafa50_monitoring() -> None:
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+
+    config = load_config(example_path)
+    feed = next(feed for feed in config.feeds if feed.id == "gjirafa50-products")
+
+    assert feed.url == "https://gjirafa50.mk/"
+    assert feed.strategy == "gjirafa50"
+    assert feed.price_check_interval == 21_600
