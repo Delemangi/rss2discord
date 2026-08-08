@@ -62,7 +62,11 @@ class RecordingStore(DeliveryStore):
         return super().load_price_snapshots(feed_id, limit=limit)
 
 
-def make_product(product_id: int, price: Decimal | int) -> Gjirafa50Product:
+def make_product(
+    product_id: int,
+    price: Decimal | int,
+    currency: str = "MKD",
+) -> Gjirafa50Product:
     amount = Decimal(price)
     return Gjirafa50Product(
         product_id,
@@ -70,7 +74,8 @@ def make_product(product_id: int, price: Decimal | int) -> Gjirafa50Product:
         f"https://gjirafa50.mk/product-{product_id}",
         None,
         amount,
-        f"{amount} MKD.",
+        currency,
+        f"{amount} {currency}.",
         datetime(2026, 8, 5, tzinfo=UTC),
     )
 
@@ -138,6 +143,16 @@ def test_price_monitor_silently_baselines_then_delivers_price_change(
         SourceMetric("Previous", "100 MKD."),
     )
     assert snapshots[0].amount == Decimal(90)
+
+
+def test_price_monitor_preserves_product_currency(tmp_path: Path) -> None:
+    catalog = CatalogStub([(make_product(1, 100, "EUR"),)])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        make_monitor(catalog, store, RecordingSender([])).scan()
+        snapshot = store.load_price_snapshots("gjirafa50")[0]
+
+    assert snapshot.currency == "EUR"
 
 
 def test_price_monitor_does_not_advance_snapshot_after_failed_delivery(
