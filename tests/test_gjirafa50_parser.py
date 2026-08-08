@@ -7,16 +7,33 @@ import pytest
 
 from rss2discord.transports import FeedFetchError, gjirafa50_parser
 from rss2discord.transports.gjirafa50_parser import parse_gjirafa50_page
-from tests.gjirafa50_helpers import catalog_payload
+from tests.gjirafa50_helpers import ROOT_URL, catalog_payload
 
 
 def test_parser_accepts_fractional_mkd_price_from_live_catalog() -> None:
     payload = catalog_payload(1, [(1, Decimal("12968.50"))])
 
-    page = parse_gjirafa50_page(payload, datetime.now(UTC))
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     assert page.products[0].price == Decimal("12968.50")
     assert page.products[0].formatted_price == "12.968,50 MKD."
+
+
+def test_parser_accepts_eur_price_from_live_com_catalog() -> None:
+    payload = catalog_payload(1, [(1, Decimal("969.50"))]).replace(
+        b' data-discountedprice=\\"969,50\\"',
+        b' data-discountedprice=\\"969,5000\\"',
+    )
+
+    page = parse_gjirafa50_page(
+        payload,
+        datetime.now(UTC),
+        "https://gjirafa50.com/",
+    )
+
+    assert page.products[0].price == Decimal("969.5000")
+    assert page.products[0].currency == "EUR"
+    assert page.products[0].formatted_price == "969.50 €"
 
 
 def test_parser_accepts_dot_grouped_mkd_price() -> None:
@@ -25,7 +42,7 @@ def test_parser_accepts_dot_grouped_mkd_price() -> None:
         b' data-discountedprice=\\"12.968,50\\"',
     )
 
-    page = parse_gjirafa50_page(payload, datetime.now(UTC))
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     assert page.products[0].price == Decimal("12968.50")
 
@@ -34,7 +51,7 @@ def test_parser_rejects_price_below_mkd_cent_precision() -> None:
     payload = catalog_payload(1, [(1, Decimal("1.50"))]).replace(b"1,50", b"1,505")
 
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
 
 @pytest.mark.parametrize("price", [b"12.34", b"1.2,50", b"1,2"])
@@ -45,7 +62,7 @@ def test_parser_rejects_price_outside_provider_grammar(price: bytes) -> None:
     )
 
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
 
 def test_parser_rejects_oversized_price_before_decimal_conversion(
@@ -62,7 +79,7 @@ def test_parser_rejects_oversized_price_before_decimal_conversion(
     monkeypatch.setattr(gjirafa50_parser, "Decimal", parse_decimal)
 
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     parse_decimal.assert_not_called()
 
@@ -74,7 +91,21 @@ def test_parser_rejects_product_url_with_credentials_or_explicit_port() -> None:
     )
 
     with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+
+
+def test_parser_rejects_product_url_from_other_storefront() -> None:
+    payload = catalog_payload(1, [(1, 100)]).replace(
+        b"/product-1",
+        b"https://gjirafa50.mk/product-1",
+    )
+
+    with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
+        parse_gjirafa50_page(
+            payload,
+            datetime.now(UTC),
+            "https://gjirafa50.com/",
+        )
 
 
 def test_parser_rejects_image_url_with_credentials_or_fragment() -> None:
@@ -84,7 +115,7 @@ def test_parser_rejects_image_url_with_credentials_or_fragment() -> None:
     )
 
     with pytest.raises(FeedFetchError, match="InvalidImageUrl"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
 
 def test_parser_derives_display_price_from_validated_numeric_price() -> None:
@@ -93,7 +124,7 @@ def test_parser_derives_display_price_from_validated_numeric_price() -> None:
         b"[click](https://attacker.example)",
     )
 
-    page = parse_gjirafa50_page(payload, datetime.now(UTC))
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     assert page.products[0].formatted_price == "1.234,00 MKD."
 
@@ -102,7 +133,7 @@ def test_parser_rejects_declared_product_count_above_page_size() -> None:
     payload = catalog_payload(25, [(product_id, 100) for product_id in range(1, 26)])
 
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
 
 def test_parser_rejects_nested_card_excess_before_parsing_products(
@@ -120,7 +151,7 @@ def test_parser_rejects_nested_card_excess_before_parsing_products(
     monkeypatch.setattr(gjirafa50_parser, "_parse_product", parse_product)
 
     with pytest.raises(FeedFetchError, match="InvalidCardinality"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     parse_product.assert_not_called()
 
@@ -141,6 +172,6 @@ def test_parser_rejects_html_over_tag_budget_before_building_tree(
     monkeypatch.setattr(gjirafa50_parser, "BeautifulSoup", parse_html)
 
     with pytest.raises(FeedFetchError, match="HtmlComplexityExceeded"):
-        parse_gjirafa50_page(payload, datetime.now(UTC))
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
     parse_html.assert_not_called()

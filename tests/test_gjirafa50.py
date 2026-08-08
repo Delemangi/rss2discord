@@ -14,6 +14,7 @@ def test_gjirafa50_strategy_maps_product_to_entry() -> None:
         link="https://gjirafa50.mk/laptop",
         image_url="https://50cdn.gjirafamall.tech/laptop.jpg",
         price=Decimal("13990.00"),
+        currency="MKD",
         formatted_price="13.990 MKD.",
         observed_at=datetime(2026, 8, 5, 12, tzinfo=UTC),
     )

@@ -12,6 +12,7 @@ class Gjirafa50Product:
     link: str
     image_url: str | None
     price: Decimal
+    currency: str
     formatted_price: str
     observed_at: datetime
 
