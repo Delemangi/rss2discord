@@ -58,6 +58,7 @@ class StubResponse:
 class RecordingGet:
     def __init__(self, responses: list[StubResponse]) -> None:
         self.responses = responses
+        self.urls: list[str] = []
         self.params: list[Mapping[str, str | int]] = []
         self.timeouts: list[int] = []
 
@@ -72,7 +73,8 @@ class RecordingGet:
         header_callback: Callable[[bytes], int],
         timeout_ms: int,
     ) -> StubResponse:
-        del url, headers, allow_redirects
+        del headers, allow_redirects
+        self.urls.append(url)
         self.params.append(params)
         self.timeouts.append(timeout_ms)
         response = self.responses.pop(0)

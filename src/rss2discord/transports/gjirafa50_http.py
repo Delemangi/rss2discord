@@ -20,7 +20,6 @@ from rss2discord.transports.gjirafa50_models import (
 )
 from rss2discord.transports.gjirafa50_parser import (
     GJIRAFA50_LABEL,
-    GJIRAFA50_ORIGIN,
     parse_gjirafa50_page,
 )
 from rss2discord.transports.gjirafa50_session import (
@@ -29,7 +28,7 @@ from rss2discord.transports.gjirafa50_session import (
     create_gjirafa50_session,
 )
 
-GJIRAFA50_SEARCH_URL: Final = f"{GJIRAFA50_ORIGIN}/product/search"
+GJIRAFA50_HOSTS: Final = frozenset({"gjirafa50.com", "gjirafa50.mk"})
 GJIRAFA50_RESPONSE_BYTES: Final = 5 * 1024 * 1024
 GJIRAFA50_USER_AGENT: Final = "Mozilla/5.0 (compatible; rss2discord/0.1)"
 MAX_GJIRAFA50_REDIRECTS: Final = 3
@@ -143,7 +142,7 @@ class Gjirafa50HttpClient:
             raise FeedFetchError(GJIRAFA50_LABEL, "InvalidUrl") from None
         if (
             parsed.scheme != "https"
-            or parsed.hostname != "gjirafa50.mk"
+            or parsed.hostname not in GJIRAFA50_HOSTS
             or port is not None
             or parsed.username is not None
             or parsed.password is not None
@@ -152,7 +151,7 @@ class Gjirafa50HttpClient:
             or parsed.fragment
         ):
             raise FeedFetchError(GJIRAFA50_LABEL, "InvalidUrl")
-        return urlunsplit(("https", "gjirafa50.mk", "/", "", ""))
+        return urlunsplit(("https", parsed.hostname, "/", "", ""))
 
     def fetch_page(
         self,
@@ -168,12 +167,13 @@ class Gjirafa50HttpClient:
             params["orderby"] = request.order_by
         if request.price_range is not None:
             params["price"] = str(request.price_range)
+        normalized_root_url = self.normalize_root_url(root_url)
         content, response_bytes = self._request(
             params,
-            root_url=self.normalize_root_url(root_url),
+            root_url=normalized_root_url,
             budget=request.budget,
         )
-        page = parse_gjirafa50_page(content, observed_at)
+        page = parse_gjirafa50_page(content, observed_at, normalized_root_url)
         request.budget.check_active()
         return FetchedGjirafa50Page(page, response_bytes)
 
@@ -184,7 +184,7 @@ class Gjirafa50HttpClient:
         root_url: str,
         budget: Gjirafa50HttpBudget,
     ) -> tuple[bytes, int]:
-        current_url = GJIRAFA50_SEARCH_URL
+        current_url = urljoin(root_url, "product/search")
         consumed_bytes = 0
         content = _BoundedContent(budget)
         for _ in range(MAX_GJIRAFA50_REDIRECTS + 1):
@@ -248,13 +248,14 @@ class Gjirafa50HttpClient:
 def _same_origin_redirect(current_url: str, location: str) -> str:
     redirected_url = urljoin(current_url, location)
     try:
+        current = urlsplit(current_url)
         redirected = urlsplit(redirected_url)
         port = redirected.port
     except ValueError:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect") from None
     if (
         redirected.scheme != "https"
-        or redirected.hostname != "gjirafa50.mk"
+        or redirected.hostname != current.hostname
         or port is not None
         or redirected.username is not None
         or redirected.password is not None

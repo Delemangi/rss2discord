@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import pytest
-from curl_cffi import CurlOpt
+from curl_cffi import CurlOpt, requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.retries import FeedFetchInterruptedError
@@ -14,6 +14,7 @@ from rss2discord.transports.gjirafa50_http import (
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
     _BoundedContent,
+    _same_origin_redirect,
 )
 from rss2discord.transports.gjirafa50_models import Gjirafa50CatalogPage
 from tests.gjirafa50_helpers import RecordingGet, StubResponse, catalog_payload
@@ -24,6 +25,39 @@ type CurlOptionValue = int | str | Callable[[bytes], int]
 def test_http_rejects_unsafe_root_url() -> None:
     with pytest.raises(FeedFetchError, match="InvalidUrl"):
         Gjirafa50HttpClient().normalize_root_url("https://user@gjirafa50.mk:444/")
+
+
+@pytest.mark.parametrize("host", ["gjirafa50.mk", "gjirafa50.com"])
+def test_http_accepts_supported_storefront_root(host: str) -> None:
+    root_url = f"https://{host}/"
+
+    assert Gjirafa50HttpClient.normalize_root_url(root_url) == root_url
+
+
+def test_http_uses_selected_storefront_for_search_and_product_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    budget = _OperationBudget(lambda: False)
+    get = RecordingGet([StubResponse(catalog_payload(1, [(1, 100)]))])
+    client = Gjirafa50HttpClient(get)
+    monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
+
+    fetched = client.fetch_page(
+        "https://gjirafa50.com/",
+        Gjirafa50PageRequest(page=1, budget=budget),
+        datetime.now(UTC),
+    )
+
+    assert get.urls == ["https://gjirafa50.com/product/search"]
+    assert fetched.page.products[0].link == "https://gjirafa50.com/product-1"
+
+
+def test_http_rejects_cross_storefront_redirect() -> None:
+    with pytest.raises(FeedFetchError, match="InvalidRedirect"):
+        _same_origin_redirect(
+            "https://gjirafa50.com/product/search",
+            "https://gjirafa50.mk/product/search",
+        )
 
 
 def test_response_stream_enforces_absolute_scan_deadline(
@@ -118,8 +152,9 @@ def test_http_enforces_deadline_after_parsing(
     def parse_after_deadline(
         content: bytes,
         observed_at: datetime,
+        root_url: str,
     ) -> Gjirafa50CatalogPage:
-        page = parse(content, observed_at)
+        page = parse(content, observed_at, root_url)
         budget.deadline = time.monotonic()
         return page
 
@@ -182,6 +217,7 @@ def test_http_session_enforces_total_timeout_and_environment_isolation(
     class SessionResponse:
         status_code: int = 200
         headers: Mapping[str, str] = field(default_factory=dict)
+        cookies: requests.Cookies = field(default_factory=requests.Cookies)
 
     class SessionStub:
         def __init__(
