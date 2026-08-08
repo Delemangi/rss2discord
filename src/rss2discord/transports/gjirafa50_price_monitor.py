@@ -105,7 +105,7 @@ class Gjirafa50PriceMonitor:
                 str(product.id),
                 product.price,
                 product.formatted_price,
-                "MKD",
+                product.currency,
             )
             current_ids.add(current.product_id)
             previous = by_product.get(current.product_id)
