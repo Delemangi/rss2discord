@@ -13,27 +13,30 @@ from rss2discord.transports.setec_catalog_bounds import (
 )
 from rss2discord.transports.setec_catalog_bounds import (
     MAX_SETEC_REDIRECTS,
-    SETEC_API_PATH,
     SETEC_LABEL,
-    SETEC_REGION_ID,
+    SETEC_PRICE_FIELD,
+    SETEC_SEARCH_PAGE_SIZE,
+    SETEC_SEARCH_URL,
     SETEC_STREAM_CHUNK_BYTES,
     SETEC_USER_AGENT,
     SETEC_WINDOW_SIZE,
 )
-from rss2discord.transports.setec_models import SetecProduct
+from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 
 SETEC_PRODUCT_BASE_URL: Final = "https://setec.mk/products/"
 
 __all__ = [
     "MAX_SETEC_REDIRECTS",
     "MAX_SETEC_RESPONSE_BYTES",
-    "SETEC_API_PATH",
     "SETEC_LABEL",
+    "SETEC_PRICE_FIELD",
     "SETEC_PRODUCT_BASE_URL",
-    "SETEC_REGION_ID",
+    "SETEC_SEARCH_PAGE_SIZE",
+    "SETEC_SEARCH_URL",
     "SETEC_STREAM_CHUNK_BYTES",
     "SETEC_USER_AGENT",
     "SETEC_WINDOW_SIZE",
+    "SetecPriceEntry",
     "SetecProduct",
     "SetecStrategy",
     "format_setec_mkd",

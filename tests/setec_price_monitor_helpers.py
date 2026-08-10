@@ -1,5 +1,5 @@
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 
 from rss2discord.configuration import FeedConfig
@@ -13,7 +13,7 @@ from rss2discord.discord.client import (
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
-from rss2discord.transports.setec_models import SetecProduct
+from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 from rss2discord.transports.setec_price_monitor import (
     SetecCatalog,
     SetecPriceMonitor,
@@ -21,32 +21,162 @@ from rss2discord.transports.setec_price_monitor import (
 )
 
 
-class CatalogStub:
-    def __init__(self, batches: list[tuple[SetecProduct, ...]]) -> None:
-        self._batches = batches
-        self.urls: list[str] = []
+def price_entry_for(product: SetecProduct) -> SetecPriceEntry:
+    """Project a product down to what the price index would carry for it."""
+    variants = [
+        {
+            "calculated_price": {
+                "calculated_amount": variant.calculated_price.calculated_amount,
+                "currency_code": variant.calculated_price.currency_code,
+            },
+        }
+        for variant in product.variants
+    ]
+    return SetecPriceEntry.model_validate({"id": product.id, "variants": variants})
 
-    def fetch_catalog(
+
+def make_price_entry(
+    product_id: str,
+    *,
+    calculated_amount: Decimal | int | None = 1_499,
+) -> SetecPriceEntry:
+    """Build a price-index entry directly, optionally carrying no price at all."""
+    variants = (
+        []
+        if calculated_amount is None
+        else [
+            {
+                "calculated_price": {
+                    "calculated_amount": calculated_amount,
+                    "currency_code": "mkd",
+                },
+            },
+        ]
+    )
+    return SetecPriceEntry.model_validate({"id": product_id, "variants": variants})
+
+
+class CatalogStub:
+    """Serve one catalogue per scan as a price index plus display lookups.
+
+    Tests supply whole products; the stub derives the price index from them and
+    answers display lookups from the same catalogue, so a scan sees a consistent
+    view across both phases unless a test deliberately perturbs one.
+    """
+
+    def __init__(
+        self,
+        batches: list[tuple[SetecProduct, ...]],
+        *,
+        hidden_ids: frozenset[str] = frozenset(),
+        extra_products: tuple[SetecProduct, ...] = (),
+        reverse_display: bool = False,
+        display_overrides: dict[str, SetecProduct] | None = None,
+    ) -> None:
+        self._batches = batches
+        self._hidden_ids = hidden_ids
+        self._extra_products = extra_products
+        self._reverse_display = reverse_display
+        self._display_overrides = display_overrides or {}
+        self._catalog: dict[str, SetecProduct] = {}
+        self.urls: list[str] = []
+        self.requested_id_batches: list[tuple[str, ...]] = []
+
+    def fetch_price_index(
         self,
         url: str,
         *,
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
-    ) -> tuple[SetecProduct, ...]:
+    ) -> tuple[SetecPriceEntry, ...]:
         del retry_policy, is_shutdown_requested
         self.urls.append(url)
-        return self._batches.pop(0)
+        products = self._batches.pop(0)
+        self._catalog = {product.id: product for product in products}
+        return tuple(price_entry_for(product) for product in products)
+
+    def fetch_products_by_ids(
+        self,
+        url: str,
+        product_ids: Sequence[str],
+        *,
+        retry_policy: FetchRetryPolicy,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[SetecProduct, ...]:
+        del url, retry_policy, is_shutdown_requested
+        self.requested_id_batches.append(tuple(product_ids))
+        found = [
+            self._display_overrides.get(product_id) or self._catalog[product_id]
+            for product_id in product_ids
+            if product_id in self._catalog and product_id not in self._hidden_ids
+        ]
+        if self._reverse_display:
+            found.reverse()
+        return (*found, *self._extra_products)
 
 
 class RetryingFailureCatalog:
-    def fetch_catalog(
+    """Fail every price-index attempt through the caller's retry policy."""
+
+    def __init__(self) -> None:
+        self.requested_id_batches: list[tuple[str, ...]] = []
+
+    def fetch_price_index(
         self,
         url: str,
+        *,
+        retry_policy: FetchRetryPolicy,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[SetecPriceEntry, ...]:
+        del url, is_shutdown_requested
+        return retry_policy.execute(self._fail)
+
+    def fetch_products_by_ids(
+        self,
+        url: str,
+        product_ids: Sequence[str],
+        *,
+        retry_policy: FetchRetryPolicy,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[SetecProduct, ...]:
+        del url, retry_policy, is_shutdown_requested
+        self.requested_id_batches.append(tuple(product_ids))
+        return ()
+
+    @staticmethod
+    def _fail() -> tuple[SetecPriceEntry, ...]:
+        raise FeedFetchError("Setec", "NetworkError", retryable=True)
+
+
+class RetryingProductFetchCatalog:
+    """Serve a price index once, then fail every display lookup through retries."""
+
+    def __init__(self, entries: tuple[SetecPriceEntry, ...]) -> None:
+        self._entries = entries
+        self.urls: list[str] = []
+        self.requested_id_batches: list[tuple[str, ...]] = []
+
+    def fetch_price_index(
+        self,
+        url: str,
+        *,
+        retry_policy: FetchRetryPolicy,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[SetecPriceEntry, ...]:
+        del retry_policy, is_shutdown_requested
+        self.urls.append(url)
+        return self._entries
+
+    def fetch_products_by_ids(
+        self,
+        url: str,
+        product_ids: Sequence[str],
         *,
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[SetecProduct, ...]:
         del url, is_shutdown_requested
+        self.requested_id_batches.append(tuple(product_ids))
         return retry_policy.execute(self._fail)
 
     @staticmethod
@@ -118,7 +248,7 @@ def make_product(
             "thumbnail": f"https://images.example.test/{product_id}.webp",
             "created_at": "2026-07-23T02:24:28.424Z",
             "variants": variants,
-            "categories": [{"name": "Computers"}, {"name": "Accessories"}],
+            "product_categories": [{"name": "Computers"}, {"name": "Accessories"}],
         },
     )
 

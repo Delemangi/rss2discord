@@ -1,8 +1,8 @@
-"""Sequential calculated-price comparison and Discord delivery for one Setec feed."""
+"""Two-phase calculated-price comparison and Discord delivery for one Setec feed."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol, assert_never
 
@@ -22,15 +22,24 @@ from rss2discord.retries import (
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
 from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
 from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
-from rss2discord.transports.setec_models import SetecProduct
+from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 
 
 class SetecCatalog(Protocol):
-    """Retrieve a validated full Setec catalog in API order."""
+    """Retrieve Setec prices, then display data for selected products only."""
 
-    def fetch_catalog(
+    def fetch_price_index(
         self,
         url: str,
+        *,
+        retry_policy: FetchRetryPolicy,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> tuple[SetecPriceEntry, ...]: ...
+
+    def fetch_products_by_ids(
+        self,
+        url: str,
+        product_ids: Sequence[str],
         *,
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
@@ -50,6 +59,13 @@ class SetecPriceMonitorDependencies:
 
 
 @dataclass(frozen=True, slots=True)
+class _PendingChange:
+    product_id: str
+    previous: PriceSnapshot
+    current: PriceSnapshot
+
+
+@dataclass(frozen=True, slots=True)
 class _PriceChange:
     product: SetecProduct
     previous: PriceSnapshot
@@ -57,7 +73,7 @@ class _PriceChange:
 
 
 class SetecPriceMonitor:
-    """Compare one full catalog against persisted snapshots and alert on changes."""
+    """Compare one price index against persisted snapshots and alert on changes."""
 
     def __init__(
         self,
@@ -68,10 +84,10 @@ class SetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        """Fetch, classify, persist silent updates, then deliver changed prices in order."""
+        """Compare prices, persist silent updates, then alert on changed products."""
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
+        price_entries = self._dependencies.catalog.fetch_price_index(
             self._feed.url,
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
@@ -86,13 +102,13 @@ class SetecPriceMonitor:
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
         silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
+        pending_changes: list[_PendingChange] = []
 
-        for product in products:
-            current = self._snapshot(product)
+        for entry in price_entries:
+            current = self._snapshot(entry)
             if current is None:
                 continue
-            previous = snapshots_by_product.get(product.id)
+            previous = snapshots_by_product.get(entry.id)
             if previous is None:
                 silent_updates.append(current)
                 continue
@@ -103,7 +119,7 @@ class SetecPriceMonitor:
                 if previous.formatted != current.formatted:
                     silent_updates.append(current)
                 continue
-            changes.append(_PriceChange(product, previous, current))
+            pending_changes.append(_PendingChange(entry.id, previous, current))
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -112,6 +128,35 @@ class SetecPriceMonitor:
                 lambda: snapshot_store.upsert_price_snapshots(silent_updates),
             )
 
+        if not pending_changes:
+            return
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        changes = self._resolve_changes(pending_changes)
+        self._deliver(changes)
+
+    def _resolve_changes(
+        self,
+        pending_changes: Sequence[_PendingChange],
+    ) -> list[_PriceChange]:
+        products = self._dependencies.catalog.fetch_products_by_ids(
+            self._feed.url,
+            [pending.product_id for pending in pending_changes],
+            retry_policy=self._dependencies.fetch_retry_policy,
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+        )
+        products_by_id = {product.id: product for product in products}
+        return [
+            _PriceChange(
+                products_by_id[pending.product_id],
+                pending.previous,
+                pending.current,
+            )
+            for pending in pending_changes
+            if pending.product_id in products_by_id
+        ]
+
+    def _deliver(self, changes: Sequence[_PriceChange]) -> None:
         delay_before_next_attempt = False
         for change in changes:
             if self._dependencies.delivery.is_shutdown_requested():
@@ -143,14 +188,13 @@ class SetecPriceMonitor:
                 case unreachable:
                     assert_never(unreachable)
 
-    def _snapshot(self, product: SetecProduct) -> PriceSnapshot | None:
-        if not product.variants:
+    def _snapshot(self, entry: SetecPriceEntry) -> PriceSnapshot | None:
+        calculated_amount = entry.calculated_amount
+        if calculated_amount is None:
             return None
-        calculated_price = product.variants[0].calculated_price
-        calculated_amount = calculated_price.calculated_amount
         return PriceSnapshot(
             feed_id=self._feed.id,
-            product_id=product.id,
+            product_id=entry.id,
             amount=calculated_amount,
             formatted=format_setec_mkd(calculated_amount),
             currency="MKD",
@@ -193,11 +237,17 @@ class SetecPriceMonitor:
 
     @staticmethod
     def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
-        calculated_price = change.product.variants[0].calculated_price
         metrics = [
             SourceMetric(label="Price", value=change.current.formatted),
             SourceMetric(label="Previous", value=change.previous.formatted),
         ]
+        if not change.product.variants:
+            return tuple(metrics)
+        calculated_price = change.product.variants[0].calculated_price
+        if calculated_price.calculated_amount != change.current.amount:
+            # The display fetch saw a different price than the one being reported,
+            # so its original amount does not belong beside this alert's price.
+            return tuple(metrics)
         if calculated_price.original_amount != calculated_price.calculated_amount:
             metrics.append(
                 SourceMetric(

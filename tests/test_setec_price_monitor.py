@@ -33,6 +33,27 @@ def test_scan_seeds_first_and_later_unseen_products_silently(tmp_path: Path) -> 
         assert set(snapshots_by_product(store)) == {"prod-1", "prod-2"}
 
 
+def test_silent_baseline_scan_fetches_no_display_data(tmp_path: Path) -> None:
+    # Given
+    products = tuple(
+        make_product(f"prod-{product_number}", calculated_amount=product_number * 100)
+        for product_number in (1, 2, 3)
+    )
+    catalog = CatalogStub([products])
+    sender = RecordingSender([])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+
+        # Then
+        assert sender.messages == []
+        assert set(snapshots_by_product(store)) == {"prod-1", "prod-2", "prod-3"}
+        assert catalog.requested_id_batches == []
+
+
 def test_initial_scan_persists_exact_fractional_setec_amount_after_reopen(
     tmp_path: Path,
 ) -> None:
@@ -61,19 +82,16 @@ def test_initial_scan_persists_exact_fractional_setec_amount_after_reopen(
     assert snapshot.amount == amount
 
 
-def test_scan_skips_no_variant_until_its_first_price_appears(tmp_path: Path) -> None:
+def test_scan_skips_unpriced_product_until_its_first_price_appears(
+    tmp_path: Path,
+) -> None:
     # Given
-    without_price = make_product("prod-1", calculated_amount=None)
     first_price = make_product("prod-1", calculated_amount=100)
+    catalog = CatalogStub([(), (), (first_price,)])
     sender = RecordingSender([])
 
     with DeliveryStore(tmp_path / "state.db") as store:
-        monitor = make_monitor(
-            make_feed(),
-            CatalogStub([(without_price,), (without_price,), (first_price,)]),
-            store,
-            sender,
-        )
+        monitor = make_monitor(make_feed(), catalog, store, sender)
 
         # When
         monitor.scan()
@@ -82,6 +100,7 @@ def test_scan_skips_no_variant_until_its_first_price_appears(tmp_path: Path) -> 
 
         # Then
         assert sender.messages == []
+        assert catalog.requested_id_batches == []
         snapshot = snapshots_by_product(store)["prod-1"]
         assert snapshot.amount == Decimal(100)
         assert snapshot.formatted == "100 ден."
@@ -176,6 +195,270 @@ def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
         assert sender.messages[0].source_title == "Setec Deals"
 
 
+def test_alert_omits_original_when_display_document_reports_another_price(
+    tmp_path: Path,
+) -> None:
+    # Given
+    baseline = make_product("prod-1", calculated_amount=100)
+    indexed_change = make_product("prod-1", calculated_amount=90)
+    diverged_display = make_product(
+        "prod-1",
+        calculated_amount=95,
+        original_amount=150,
+    )
+    catalog = CatalogStub(
+        [(baseline,), (indexed_change,)],
+        display_overrides={"prod-1": diverged_display},
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert catalog.requested_id_batches == [("prod-1",)]
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-1",
+        ]
+        assert sender.messages[0].entry.source_metrics == (
+            SourceMetric(label="Price", value="90 ден."),
+            SourceMetric(label="Previous", value="100 ден."),
+        )
+        assert sender.messages[0].entry.description == (
+            "Price decreased from 100 ден. to 90 ден."
+        )
+
+
+def test_alert_carries_original_from_display_document_when_prices_agree(
+    tmp_path: Path,
+) -> None:
+    # Given
+    baseline = make_product("prod-1", calculated_amount=100)
+    indexed_change = make_product("prod-1", calculated_amount=90)
+    discounted_display = make_product(
+        "prod-1",
+        calculated_amount=90,
+        original_amount=150,
+    )
+    catalog = CatalogStub(
+        [(baseline,), (indexed_change,)],
+        display_overrides={"prod-1": discounted_display},
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert catalog.requested_id_batches == [("prod-1",)]
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-1",
+        ]
+        assert sender.messages[0].entry.source_metrics == (
+            SourceMetric(label="Price", value="90 ден."),
+            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Original", value="150 ден."),
+        )
+
+
+def test_alert_ships_without_original_when_display_document_has_no_variants(
+    tmp_path: Path,
+) -> None:
+    # Given
+    baseline = make_product("prod-1", calculated_amount=100)
+    indexed_change = make_product("prod-1", calculated_amount=90)
+    unpriced_display = make_product("prod-1", calculated_amount=None)
+    catalog = CatalogStub(
+        [(baseline,), (indexed_change,)],
+        display_overrides={"prod-1": unpriced_display},
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert unpriced_display.variants == ()
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-1",
+        ]
+        assert sender.messages[0].entry.source_metrics == (
+            SourceMetric(label="Price", value="90 ден."),
+            SourceMetric(label="Previous", value="100 ден."),
+        )
+        assert snapshots_by_product(store)["prod-1"].amount == Decimal(90)
+
+
+def test_scan_requests_display_data_only_for_changed_product_ids(
+    tmp_path: Path,
+) -> None:
+    # Given
+    unchanged = make_product("prod-unchanged", calculated_amount=100)
+    changed_before = make_product("prod-changed", calculated_amount=200)
+    changed_after = make_product("prod-changed", calculated_amount=190)
+    appearing = make_product("prod-new", calculated_amount=300)
+    dropped = make_product("prod-dropped", calculated_amount=400)
+    catalog = CatalogStub(
+        [
+            (unchanged, changed_before, dropped),
+            (unchanged, changed_after, appearing),
+        ],
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert catalog.requested_id_batches == [("prod-changed",)]
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-changed",
+        ]
+        snapshots = snapshots_by_product(store)
+        assert snapshots["prod-unchanged"].amount == Decimal(100)
+        assert snapshots["prod-changed"].amount == Decimal(190)
+        assert snapshots["prod-new"].amount == Decimal(300)
+        assert snapshots["prod-dropped"].amount == Decimal(400)
+
+
+def test_product_missing_from_display_fetch_is_skipped_without_persisting_or_sending(
+    tmp_path: Path,
+) -> None:
+    # Given
+    hidden_before = make_product("prod-1", calculated_amount=100)
+    visible_before = make_product("prod-2", calculated_amount=200)
+    hidden_after = make_product("prod-1", calculated_amount=90)
+    visible_after = make_product("prod-2", calculated_amount=190)
+    catalog = CatalogStub(
+        [
+            (hidden_before, visible_before),
+            (hidden_after, visible_after),
+        ],
+        hidden_ids=frozenset({"prod-1"}),
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert catalog.requested_id_batches == [("prod-1", "prod-2")]
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-2",
+        ]
+        snapshots = snapshots_by_product(store)
+        assert snapshots["prod-1"].amount == Decimal(100)
+        assert snapshots["prod-2"].amount == Decimal(190)
+
+
+def test_scan_orders_alerts_by_price_index_not_display_response_order(
+    tmp_path: Path,
+) -> None:
+    # Given
+    first_before = make_product("prod-1", calculated_amount=100)
+    second_before = make_product("prod-2", calculated_amount=200)
+    first_after = make_product("prod-1", calculated_amount=90)
+    second_after = make_product("prod-2", calculated_amount=190)
+    catalog = CatalogStub(
+        [
+            (first_before, second_before),
+            (first_after, second_after),
+        ],
+        reverse_display=True,
+    )
+    sender = RecordingSender(
+        [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.DELIVERED],
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-1",
+            "Product prod-2",
+        ]
+
+
+def test_display_fetch_result_for_unrequested_id_is_ignored(tmp_path: Path) -> None:
+    # Given
+    baseline = make_product("prod-1", calculated_amount=100)
+    changed = make_product("prod-1", calculated_amount=90)
+    catalog = CatalogStub(
+        [(baseline,), (changed,)],
+        extra_products=(make_product("prod-9", calculated_amount=900),),
+    )
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+        monitor.scan()
+
+        # Then
+        assert catalog.requested_id_batches == [("prod-1",)]
+        assert [message.entry.title for message in sender.messages] == [
+            "Product prod-1",
+        ]
+        assert set(snapshots_by_product(store)) == {"prod-1"}
+
+
+def test_scan_repairs_formatting_drift_silently_without_display_fetch(
+    tmp_path: Path,
+) -> None:
+    # Given
+    drifted_snapshot = PriceSnapshot(
+        feed_id="setec",
+        product_id="prod-1",
+        amount=Decimal(100),
+        formatted="100.00 MKD",
+        currency="MKD",
+    )
+    catalog = CatalogStub([(make_product("prod-1", calculated_amount=100),)])
+    sender = RecordingSender([])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        store.upsert_price_snapshot(drifted_snapshot)
+        monitor = make_monitor(make_feed(), catalog, store, sender)
+
+        # When
+        monitor.scan()
+
+        # Then
+        assert sender.messages == []
+        assert catalog.requested_id_batches == []
+        snapshot = snapshots_by_product(store)["prod-1"]
+        assert snapshot.formatted == "100 ден."
+        assert snapshot.amount == Decimal(100)
+        assert snapshot.currency == "MKD"
+
+
 def test_original_price_change_without_calculated_price_change_is_silent(
     tmp_path: Path,
 ) -> None:
@@ -186,15 +469,11 @@ def test_original_price_change_without_calculated_price_change_is_silent(
         calculated_amount=100,
         original_amount=140,
     )
+    catalog = CatalogStub([(baseline,), (original_only_change,)])
     sender = RecordingSender([])
 
     with DeliveryStore(tmp_path / "state.db") as store:
-        monitor = make_monitor(
-            make_feed(),
-            CatalogStub([(baseline,), (original_only_change,)]),
-            store,
-            sender,
-        )
+        monitor = make_monitor(make_feed(), catalog, store, sender)
 
         # When
         monitor.scan()
@@ -202,6 +481,7 @@ def test_original_price_change_without_calculated_price_change_is_silent(
 
         # Then
         assert sender.messages == []
+        assert catalog.requested_id_batches == []
         assert snapshots_by_product(store)["prod-1"].amount == Decimal(100)
 
 
