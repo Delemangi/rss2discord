@@ -139,7 +139,9 @@ feeds:
     price_check_interval: 21600
     webhook_name: "Gjirafa50 Bot"
 
-  # Setec new products and opt-in selling-price monitoring; the first successful fetch seeds without notifications
+  # Setec new products and opt-in selling-price monitoring; the first successful fetch seeds without notifications.
+  # Discovery reads the newest 100 published products in one sorted query, so a product
+  # staged before it goes on sale is still announced when it is published.
   - id: "setec-new-products"
     name: "Setec New Products"
     url: "https://setec.mk/e-prodazba"
@@ -223,10 +225,18 @@ feeds:
 #   most 5,000 requests / 100,000 products / 128 shards / 500 MiB / 30 minutes
 #   per operation, including retries.
 #   Counts, identities, prices, terminal pages, and post-scan totals must reconcile.
-#   Setec scans use
-#   250 products per page, up to 100 pages / 25,000 products, with a 5 MiB
-#   per-response cap and a 500 MiB total cap. Setec products without a current
-#   first-variant price are skipped without deleting prior snapshots. DDStore
+#   Setec queries the storefront's own search index rather than its product API.
+#   A price scan first reads an exact, uncapped facet count, then enumerates the
+#   catalogue by recursively halving the calculated-amount range until every
+#   partition fits inside the index's 1,000-hit ceiling, fetching only product
+#   ids and amounts. Display fields are then fetched for changed products alone,
+#   in batches of 200 ids, so an unchanged catalogue costs one pass of roughly
+#   1.7 MB instead of a full product download. A scan allows at most 25,000
+#   products and 1,000 requests, with a 5 MiB per-response cap and a 500 MiB
+#   total cap, and fails closed when the recovered products do not reconcile
+#   with the facet count. Setec products without a current first-variant price
+#   are skipped without deleting prior snapshots. Only published, web-active
+#   products are indexed, so drafts are neither announced nor monitored. DDStore
 #   scans use 500 products per page, up to 40 pages / 20,000 products, with a
 #   2 MiB per-response cap, an 80 MiB total cap, and a 300-second time bound.
 #   Neptun scans only the configured category, use 50 products per page, and allow
