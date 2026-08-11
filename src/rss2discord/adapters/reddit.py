@@ -1,10 +1,12 @@
 import re
 from collections.abc import Mapping
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Final
 from urllib.parse import urlsplit
 
 from rss2discord.models import EntryData
+
+IMAGE_PATH_SUFFIXES: Final = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
 
 
 class RedditAdapter:
@@ -12,9 +14,18 @@ class RedditAdapter:
         outbound_link = _outbound_link(entry)
         link = data.link
         discussion_url = data.discussion_url
+        image_url = data.image_url
         if outbound_link is not None and outbound_link != data.link:
-            link = outbound_link
-            discussion_url = data.discussion_url or data.link
+            outbound_path = urlsplit(outbound_link).path.casefold()
+            if outbound_link == data.image_url or outbound_path.endswith(
+                IMAGE_PATH_SUFFIXES,
+            ):
+                link = data.discussion_url or data.link
+                discussion_url = None
+                image_url = outbound_link
+            else:
+                link = outbound_link
+                discussion_url = data.discussion_url or data.link
 
         author = re.sub(r"^/?u/", "", data.author, flags=re.IGNORECASE)
         return EntryData(
@@ -24,7 +35,7 @@ class RedditAdapter:
             author=author,
             timestamp=data.timestamp,
             discussion_url=discussion_url,
-            image_url=data.image_url,
+            image_url=image_url,
             categories=data.categories,
             source_metrics=data.source_metrics,
         )

@@ -37,6 +37,26 @@ def test_reddit_adapter_separates_outbound_and_discussion_links() -> None:
     assert result.author == "alice"
 
 
+def test_reddit_adapter_keeps_discussion_primary_for_image_post() -> None:
+    # Given
+    baseline = make_entry()
+    image_url = "https://i.redd.it/example.jpg"
+    entry = {
+        "content": [
+            {"value": f'<a href="{image_url}">[link]</a>'},
+        ],
+    }
+    adapter = RedditAdapter()
+
+    # When
+    result = adapter.adapt(entry, baseline)
+
+    # Then
+    assert result.link == baseline.link
+    assert result.discussion_url is None
+    assert result.image_url == image_url
+
+
 def test_reddit_adapter_keeps_self_post_link_without_duplicate_discussion() -> None:
     # Given
     baseline = make_entry()
