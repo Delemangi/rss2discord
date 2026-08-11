@@ -146,6 +146,26 @@ def test_metrics_beyond_the_render_cap_are_dropped() -> None:
     assert not metrics.endswith("•")
 
 
+def test_render_cap_clears_the_densest_shipped_producer() -> None:
+    # Given - the most metrics any transport emits at once, from the Neptun and
+    # Neksio price alerts: price, previous, original and three product details.
+    densest = 6
+    message = _with_metrics(
+        *(
+            SourceMetric(label=f"L{index}", value=str(index))
+            for index in range(densest)
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - nothing a real producer emits is silently dropped
+    assert densest <= MAX_RENDERED_METRICS
+    for index in range(densest):
+        assert f"L{index}" in metrics
+
+
 def test_entry_without_metrics_renders_no_metrics_block() -> None:
     # Given
     message = _with_metrics()

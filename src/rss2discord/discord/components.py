@@ -36,7 +36,10 @@ MAX_METRICS_CHARACTERS: Final = 512
 MAX_FOOTER_LINE_CHARACTERS: Final = 512
 MAX_METRIC_LABEL_CHARACTERS: Final = 48
 MAX_METRIC_VALUE_CHARACTERS: Final = 64
-MAX_RENDERED_METRICS: Final = 6
+# The densest producers (Neptun and Neksio price alerts) emit six metrics, so
+# this keeps headroom above them: a card overflowing the cap loses its tail
+# silently, and that is a worse failure than a slightly longer subtext line.
+MAX_RENDERED_METRICS: Final = 8
 # A well-formed <t:...:R> is tiny; this only bounds unparseable timestamps,
 # which fall back to being echoed verbatim.
 MAX_FOOTER_TIMESTAMP_CHARACTERS: Final = 128
