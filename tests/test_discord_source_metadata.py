@@ -5,8 +5,13 @@ import pytest
 
 from rss2discord.configuration import FeedStrategyName
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.discord.components import METRICS_GAP
 from rss2discord.models import EntryData, SourceMetric
-from tests.discord_components_helpers import get_metadata_content, make_message
+from tests.discord_components_helpers import (
+    get_metadata_content,
+    get_metrics_content,
+    make_message,
+)
 
 
 @pytest.mark.parametrize(
@@ -131,12 +136,14 @@ def test_components_v2_payload_renders_escaped_source_metrics_in_order() -> None
     )
 
     # When
+    metrics = get_metrics_content(message)
     metadata = get_metadata_content(message)
 
-    # Then
-    assert metadata.startswith("-# Hacker News • News • Points 123 • Domain ")
-    assert "\\[evil\\]\\(h\u200bttps://evil.example\\)" in metadata
-    assert metadata.endswith("• By Author")
+    # Then - the headline metric leads at body size, the rest trail as subtext
+    assert metrics.startswith(f"Points: **123**\n{METRICS_GAP}\n-# Domain: ")
+    assert "\\[evil\\]\\(h\u200bttps://evil.example\\)" in metrics
+    # Then - metrics no longer crowd the provenance footer
+    assert metadata == "-# Hacker News • News • By Author"
 
 
 def test_components_v2_payload_omits_duplicate_source_title() -> None:
@@ -240,13 +247,12 @@ def test_components_v2_payload_renders_discussion_link_with_categories() -> None
     # When
     metadata = get_metadata_content(message)
 
-    # Then
-    lines = metadata.split("\n")
-    assert len(lines) == 2
-    assert lines[0].startswith("-# Hacker News • ")
-    assert "[Discussion](https://news.ycombinator.com/item?id=99)" in lines[1]
-    assert "tech" in lines[1]
-    assert "programming" in lines[1]
+    # Then - one provenance line carries source, discussion and categories
+    assert "\n" not in metadata
+    assert metadata.startswith("-# Hacker News • ")
+    assert "[Discussion](https://news.ycombinator.com/item?id=99)" in metadata
+    assert "tech" in metadata
+    assert "programming" in metadata
 
 
 def test_components_v2_payload_renders_categories_without_discussion_link() -> None:
@@ -265,13 +271,12 @@ def test_components_v2_payload_renders_categories_without_discussion_link() -> N
     # When
     metadata = get_metadata_content(message)
 
-    # Then
-    lines = metadata.split("\n")
-    assert len(lines) == 2
-    assert lines[0].startswith("-# RSS • ")
-    assert "Discussion" not in lines[1]
-    assert "news" in lines[1]
-    assert "rss" in lines[1]
+    # Then - categories join the single provenance line, led by the source
+    assert "\n" not in metadata
+    assert metadata.startswith("-# RSS • ")
+    assert "Discussion" not in metadata
+    assert "news" in metadata
+    assert "rss" in metadata
 
 
 def test_components_v2_payload_prompt_injection_remains_escaped() -> None:
@@ -297,3 +302,24 @@ def test_components_v2_payload_prompt_injection_remains_escaped() -> None:
     assert "h\u200bttps://evil.example" in metadata
     assert "\\[System\\]" in metadata
     assert "javascript:" not in json.dumps(payload)
+
+
+def test_line_breaks_cannot_escape_the_footer_subtext_block() -> None:
+    # Given - a category that tries to close the subtext block and open a heading
+    message = make_message(
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+            categories=("safe\n## INJECTED HEADING",),
+        ),
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then - the footer stays a single subtext line
+    assert metadata == "-# RSS • News • safe ## INJECTED HEADING"
+    assert "\n" not in metadata

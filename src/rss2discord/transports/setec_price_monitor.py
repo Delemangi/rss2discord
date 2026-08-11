@@ -19,7 +19,11 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceSnapshotStore,
+    price_direction,
+)
 from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
 from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
 from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
@@ -212,34 +216,22 @@ class SetecPriceMonitor:
             entry=EntryData(
                 title=product.title,
                 link=f"{SETEC_PRODUCT_BASE_URL}{product.handle}",
-                description=self._description_for(change),
+                description="",
                 author="",
                 timestamp=None,
                 image_url=product.thumbnail,
                 categories=tuple(category.name for category in product.categories),
                 source_metrics=self._metrics_for(change),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or SETEC_LABEL,
-        )
-
-    @staticmethod
-    def _description_for(change: _PriceChange) -> str:
-        if change.previous.currency != change.current.currency:
-            action = "changed"
-        elif change.current.amount < change.previous.amount:
-            action = "decreased"
-        else:
-            action = "increased"
-        return (
-            f"Price {action} from {change.previous.formatted} "
-            f"to {change.current.formatted}"
         )
 
     @staticmethod
     def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
         metrics = [
             SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted),
+            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
         ]
         if not change.product.variants:
             return tuple(metrics)

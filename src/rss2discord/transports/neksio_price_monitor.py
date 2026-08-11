@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
@@ -25,7 +24,11 @@ from rss2discord.retries import (
 from rss2discord.transports.neksio import NEKSIO_PRODUCT_DETAILS_PATH, _categories
 from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL, NEKSIO_ORIGIN
 from rss2discord.transports.neksio_models import NeksioProduct
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceSnapshotStore,
+    price_direction,
+)
 
 MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
 MAX_NEKSIO_PRICE_CHANGES_PER_SCAN: Final = 100
@@ -180,27 +183,15 @@ class NeksioPriceMonitor:
                 link=(
                     f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}{product.product_id}"
                 ),
-                description=self._description_for(change),
+                description="",
                 author="",
                 timestamp=product.observed_at.isoformat(),
                 image_url=f"{NEKSIO_ORIGIN}{product.image_path.lstrip('/')}",
                 categories=_categories(product),
                 source_metrics=self._metrics_for(change),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or NEKSIO_LABEL,
-        )
-
-    @staticmethod
-    def _description_for(change: _PriceChange) -> str:
-        if change.previous.currency != change.current.currency:
-            action = "changed"
-        elif change.current.amount < change.previous.amount:
-            action = "decreased"
-        else:
-            action = "increased"
-        return (
-            f"Price {action} from {_escape_markdown(change.previous.formatted)} "
-            f"to {_escape_markdown(change.current.formatted)}"
         )
 
     @staticmethod
@@ -208,7 +199,7 @@ class NeksioPriceMonitor:
         product = change.product
         metrics = [
             SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted),
+            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
         ]
         if product.old_formatted_price:
             metrics.append(
@@ -224,7 +215,3 @@ class NeksioPriceMonitor:
             )
         metrics.append(SourceMetric(label="Stock", value=str(product.stock_quantity)))
         return tuple(metrics)
-
-
-def _escape_markdown(value: str) -> str:
-    return re.sub(r"([\\`*_{}\[\]()<>#+\-.!|~])", r"\\\1", value)

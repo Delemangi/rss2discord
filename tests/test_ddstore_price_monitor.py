@@ -9,7 +9,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.ddstore_price_monitor import (
@@ -131,13 +131,11 @@ def test_ddstore_price_monitor_silently_seeds_then_delivers_price_change(
 
         # Then
         assert len(sender.messages) == 1
-        assert (
-            sender.messages[0].entry.description
-            == "Price decreased from 100 ден. to 90,5 ден."
-        )
+        assert sender.messages[0].entry.description == ""
+        assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90,5 ден."),
-            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
             SourceMetric(label="Original", value="120 ден."),
             SourceMetric(label="Stock", value="Out of stock"),
         )

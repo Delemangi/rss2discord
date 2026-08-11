@@ -24,6 +24,7 @@ from rss2discord.transports.anhoch_models import AnhochProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
+    price_direction,
 )
 
 
@@ -164,7 +165,7 @@ class AnhochPriceMonitor:
             entry=EntryData(
                 title=change.product.name,
                 link=f"{ANHOCH_PRODUCT_BASE_URL}{change.product.slug}",
-                description=self._description_for(change),
+                description="",
                 author="",
                 timestamp=None,
                 image_url=(
@@ -173,21 +174,9 @@ class AnhochPriceMonitor:
                     else None
                 ),
                 source_metrics=self._metrics_for(change),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or ANHOCH_LABEL,
-        )
-
-    @staticmethod
-    def _description_for(change: _PriceChange) -> str:
-        if change.previous.currency != change.current.currency:
-            action = "changed"
-        elif change.current.amount < change.previous.amount:
-            action = "decreased"
-        else:
-            action = "increased"
-        return (
-            f"Price {action} from {change.previous.formatted} "
-            f"to {change.current.formatted}"
         )
 
     @staticmethod
@@ -195,7 +184,7 @@ class AnhochPriceMonitor:
         product = change.product
         metrics = [
             SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted),
+            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
         ]
         if product.price.formatted != product.selling_price.formatted:
             metrics.append(

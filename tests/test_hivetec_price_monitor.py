@@ -6,6 +6,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError, hivetec_price_monitor
 from rss2discord.transports.hivetec_models import HivetecProduct
@@ -98,9 +99,8 @@ def test_hivetec_price_monitor_baselines_then_delivers_price_change(
         # Then
         assert len(sender.messages) == 1
         message = sender.messages[0]
-        assert message.entry.description == (
-            "Price decreased from 1.499 ден. to 1.299 ден."
-        )
+        assert message.entry.description == ""
+        assert message.entry.price_direction is PriceDirection.DECREASE
         assert message.entry.link == "https://hivetec.mk/product/product-1/"
         assert [metric.label for metric in message.entry.source_metrics] == [
             "Price",
@@ -109,6 +109,10 @@ def test_hivetec_price_monitor_baselines_then_delivers_price_change(
             "Stock",
             "SKU",
         ]
+        assert message.entry.source_metrics[:2] == (
+            SourceMetric("Price", "1.299 ден."),
+            SourceMetric("Previous", "1.499 ден.", prior=True),
+        )
         assert store.load_price_snapshots("hivetec")[0].amount.as_tuple().digits == (
             1,
             2,

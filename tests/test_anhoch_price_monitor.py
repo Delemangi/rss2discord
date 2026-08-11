@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from tests.anhoch_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -160,14 +160,38 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
             "Product 10",
             "Product 20",
         ]
+        assert [message.entry.price_direction for message in sender.messages] == [
+            PriceDirection.DECREASE,
+            PriceDirection.INCREASE,
+            None,
+        ]
         assert [message.entry.description for message in sender.messages] == [
-            "Price decreased from 100 den to 90 den",
-            "Price increased from 100 den to 110 den",
-            "Price changed from 100 den to $100",
+            "",
+            "",
+            "",
+        ]
+        # The deleted sentence used to carry both prices, so every alert must
+        # still expose its own headline price and exactly one prior price.
+        assert [message.entry.source_metrics[0] for message in sender.messages] == [
+            SourceMetric(label="Price", value="90 den"),
+            SourceMetric(label="Price", value="110 den"),
+            SourceMetric(label="Price", value="$100"),
+        ]
+        assert [
+            [
+                metric
+                for metric in message.entry.source_metrics
+                if metric.label == "Previous"
+            ]
+            for message in sender.messages
+        ] == [
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
         ]
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 den"),
-            SourceMetric(label="Previous", value="100 den"),
+            SourceMetric(label="Previous", value="100 den", prior=True),
             SourceMetric(label="Original", value="150 den"),
             SourceMetric(label="Stock", value="3"),
             SourceMetric(label="Installments", value="12 × 10 den"),

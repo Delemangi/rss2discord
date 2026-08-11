@@ -1,9 +1,13 @@
 import json
 from dataclasses import replace
 
-import pytest
-
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.discord.components import (
+    MAX_FOOTER_LINE_CHARACTERS,
+    MAX_HEADING_CHARACTERS,
+    MAX_HEADING_TITLE_CHARACTERS,
+    MAX_TEXT_DISPLAY_CHARACTERS,
+)
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
     get_container_children,
@@ -28,7 +32,7 @@ def test_components_v2_payload_baseline_top_level_contract() -> None:
     unsafe_children = get_container_children(unsafe_message)
 
     # Then
-    assert sum(map(len, contents)) <= 4000
+    assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert [child["type"] for child in children] == [10, 10, 14, 10]
     assert payload["allowed_mentions"] == {"parse": []}
     assert unsafe_children[0]["content"] == "## Entry"
@@ -70,13 +74,13 @@ def test_components_v2_payload_preserves_markdown_when_description_is_truncated(
     # When
     contents = get_text_display_contents(message)
 
-    # Then
+    # Then - the description absorbs whatever the other blocks leave behind
     assert contents[1].startswith("**Release notes** ")
-    assert len(contents[1]) == 3992
+    assert sum(map(len, contents)) == MAX_TEXT_DISPLAY_CHARACTERS
 
 
 def test_components_v2_payload_stays_within_combined_text_limit() -> None:
-    # Given
+    # Given - every field hostile at once
     message = make_message()
     message = replace(
         message,
@@ -95,70 +99,19 @@ def test_components_v2_payload_stays_within_combined_text_limit() -> None:
     # When
     contents = get_text_display_contents(message)
 
-    # Then
+    # Then - each block stays inside its own ceiling and the total is exact
     assert contents
     assert all(contents)
-    assert list(map(len, contents)) == [4, 3992, 4]
+    assert sum(map(len, contents)) == MAX_TEXT_DISPLAY_CHARACTERS
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+    assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
+    # Then - an unfittable link is dropped rather than truncated into a ruin
+    assert contents[0].startswith("## ")
+    assert "](" not in contents[0]
 
 
-@pytest.mark.parametrize(
-    (
-        "title",
-        "source_title",
-        "expected_lengths",
-        "expected_heading",
-        "expected_metadata",
-    ),
-    [
-        ("Entry", "S" * 5000, [8, 3992], "## Entry", None),
-        ("T" * 3000, "S" * 3000, [3003, 997], "## " + "T" * 3000, None),
-        ("T" * 5000, "S" * 5000, [2000, 2000], None, None),
-        ("[" * 5000, "News", [3986, 13], None, "-# RSS • News"),
-    ],
-    ids=[
-        "metadata-only-oversized",
-        "combined-overflow-preserves-heading",
-        "both-fields-oversized",
-        "escaped-title-oversized",
-    ],
-)
-def test_components_v2_payload_allocates_heading_and_metadata_budget(
-    title: str,
-    source_title: str,
-    expected_lengths: list[int],
-    expected_heading: str | None,
-    expected_metadata: str | None,
-) -> None:
-    # Given
-    message = make_message()
-    message = replace(
-        message,
-        entry=replace(
-            message.entry,
-            title=title,
-            link="",
-            description="",
-            author="",
-            timestamp=None,
-        ),
-        source_title=source_title,
-    )
-
-    # When
-    contents = get_text_display_contents(message)
-
-    # Then
-    assert list(map(len, contents)) == expected_lengths
-    if expected_heading is not None:
-        assert contents[0] == expected_heading
-    if expected_metadata is not None:
-        assert contents[-1] == expected_metadata
-
-
-def test_components_v2_payload_preserves_metadata_when_only_title_is_oversized() -> (
-    None
-):
-    # Given
+def test_components_v2_payload_caps_heading_without_starving_footer() -> None:
+    # Given - only the title is oversized
     message = make_message()
     message = replace(
         message,
@@ -175,9 +128,78 @@ def test_components_v2_payload_preserves_metadata_when_only_title_is_oversized()
     # When
     contents = get_text_display_contents(message)
 
-    # Then
+    # Then - the visible title is bounded, so the footer still renders
+    assert len(contents[0]) == len("## ") + MAX_HEADING_TITLE_CHARACTERS
+    assert contents[0].startswith("## ")
     assert contents[-1] == "-# RSS • News"
-    assert sum(map(len, contents)) == 4000
+
+
+def test_components_v2_payload_truncates_escaped_heading_between_escapes() -> None:
+    # Given - a title that doubles in length once escaped
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="[" * 5000,
+            link="",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the cut never splits a backslash from the character it escapes
+    body = contents[0].removeprefix("## ").removesuffix("…")
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+    assert body == "\\[" * (len(body) // 2)
+
+
+def test_components_v2_payload_drops_footer_parts_that_do_not_fit() -> None:
+    # Given - a source title far past the footer ceiling
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="Entry",
+            link="",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+        source_title="S" * 5000,
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - whole parts drop out, leaving no half-rendered fragment behind
+    assert contents[-1] == "-# RSS"
+
+
+def test_components_v2_payload_keeps_timestamp_after_overflowing_categories() -> None:
+    # Given - more categories than the footer can hold
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            description="",
+            author="",
+            categories=tuple("C" * 200 for _ in range(20)),
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the reserved tail means the time survives the categories
+    assert contents[-1].endswith("<t:1784548800:R>")
+    assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
 
 
 def test_components_v2_payload_drops_link_that_exceeds_text_budget() -> None:
@@ -199,3 +221,72 @@ def test_components_v2_payload_drops_link_that_exceeds_text_budget() -> None:
 
     # Then
     assert contents[0] == "## Entry"
+
+
+def test_components_v2_payload_keeps_the_link_when_only_the_url_is_long() -> None:
+    # Given - a realistic long title behind a URL carrying tracking parameters
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="T" * 220,
+            link="https://example.test/product?" + "utm=x&" * 50,
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - a long address costs budget but no width, so the link survives
+    assert contents[0].startswith("## [")
+    assert "](" in contents[0]
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+
+
+def test_components_v2_payload_skips_an_oversized_footer_part() -> None:
+    # Given - one category far past the ceiling, between two that fit
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            description="",
+            author="",
+            timestamp=None,
+            categories=("first", "X" * 600, "last"),
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the overlong one drops out without taking the rest with it
+    assert contents[-1] == "-# RSS • News • first • last"
+
+
+def test_components_v2_payload_keeps_a_title_on_one_line() -> None:
+    # Given - a title that tries to close the heading and forge a footer of its
+    # own, styled exactly like the card's real provenance line
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="Real Story\n-# RSS • Verified Source",
+            link="",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - a heading occupies one line, so no counterfeit line can appear
+    assert contents[0] == "## Real Story -# RSS • Verified Source"
+    assert "\n" not in contents[0]

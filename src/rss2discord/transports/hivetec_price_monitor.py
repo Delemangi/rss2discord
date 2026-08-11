@@ -18,7 +18,11 @@ from rss2discord.retries import (
 from rss2discord.transports.hivetec import format_hivetec_mkd, hivetec_product_metrics
 from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL
 from rss2discord.transports.hivetec_models import HivetecProduct
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceSnapshotStore,
+    price_direction,
+)
 
 MAX_HIVETEC_RETAINED_SNAPSHOTS: Final = 10_000
 MAX_HIVETEC_PRICE_CHANGES_PER_SCAN: Final = 100
@@ -164,20 +168,12 @@ class HivetecPriceMonitor:
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        action = (
-            "decreased"
-            if change.current.amount < change.previous.amount
-            else "increased"
-        )
         return WebhookMessage(
             feed=self._feed,
             entry=EntryData(
                 title=change.product.name,
                 link=change.product.permalink,
-                description=(
-                    f"Price {action} from {change.previous.formatted} "
-                    f"to {change.current.formatted}"
-                ),
+                description="",
                 author="",
                 timestamp=None,
                 image_url=change.product.image_url,
@@ -188,6 +184,7 @@ class HivetecPriceMonitor:
                     change.product,
                     previous_price=change.previous.formatted,
                 ),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or HIVETEC_LABEL,
         )
