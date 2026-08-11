@@ -139,7 +139,7 @@ CASES: tuple[Case, ...] = (
             source_metrics=(
                 SourceMetric("Points", "482"),
                 SourceMetric("Comments", "213"),
-                SourceMetric("", "example.com"),
+                SourceMetric("Domain", "example.com"),
             ),
         ),
         source_title="Hacker News",

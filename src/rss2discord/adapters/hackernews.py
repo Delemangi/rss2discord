@@ -94,9 +94,7 @@ class HackerNewsAdapter:
             )
         domain = _article_domain(link)
         if domain is not None:
-            # Unlabelled: the host is provenance, not a measurement, and reads
-            # as itself the way Hacker News prints it beside a title.
-            metrics.append(SourceMetric(label="", value=domain))
+            metrics.append(SourceMetric(label="Domain", value=domain))
 
         return EntryData(
             title=data.title,

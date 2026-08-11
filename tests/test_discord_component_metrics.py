@@ -145,7 +145,7 @@ def test_prior_metric_without_a_value_leaves_no_empty_strike_through() -> None:
 
 
 def test_unlabelled_metric_renders_as_a_bare_value() -> None:
-    # Given - the Hacker News article host carries no label
+    # Given - no shipped source emits one, but the model permits it
     message = _with_metrics(
         SourceMetric(label="Points", value="482"),
         SourceMetric(label="", value="example.com"),

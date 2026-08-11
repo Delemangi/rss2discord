@@ -52,8 +52,7 @@ def test_hackernews_adapter_enriches_external_story() -> None:
     assert result.source_metrics == (
         SourceMetric(label="Points", value="111"),
         SourceMetric(label="Comments", value="71"),
-        # Unlabelled: the host reads as itself rather than as a measurement.
-        SourceMetric(label="", value="example.test"),
+        SourceMetric(label="Domain", value="example.test"),
     )
 
 
