@@ -19,7 +19,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklam
 - New products from one Neptun category and opt-in actual-price alerts
 - SQLite delivery history and persistent price snapshots for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, and Setec
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
-- Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, and only provenance left in the footer
+- Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, each supporting detail on its own line, and only provenance left in the footer
 
 ## Docker Compose setup
 

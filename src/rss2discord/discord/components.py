@@ -228,13 +228,23 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
         if index > 0 and index != prior_index
     ]
 
-    tail_budget = (
-        MAX_METRICS_CHARACTERS - len(headline) - len("\n") - len(SUBTEXT_PREFIX)
-    )
-    tail = _bounded_join(supporting, tail_budget)
+    # One supporting metric per line: a run of values joined by separators reads
+    # as a sentence, where the reader has to parse it to find the one they want.
     # Discord rejects an empty Text Display, and a blank headline must not leave
-    # the block opening on a bare newline, so only rendered lines are joined.
-    lines = [line for line in (headline, None if tail is None else f"{SUBTEXT_PREFIX}{tail}") if line]
+    # the block opening on a bare newline, so only rendered lines are kept.
+    lines = [headline] if headline else []
+    remaining = MAX_METRICS_CHARACTERS - len(headline)
+    for text in supporting:
+        if not text:
+            continue
+        line = f"{SUBTEXT_PREFIX}{text}"
+        cost = len(line) + (len("\n") if lines else 0)
+        if cost > remaining:
+            # Skip rather than stop: one overlong detail should not cost the
+            # reader every shorter one behind it.
+            continue
+        remaining -= cost
+        lines.append(line)
     if not lines:
         return None
     return "\n".join(lines)

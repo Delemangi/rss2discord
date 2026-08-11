@@ -1,7 +1,10 @@
 from dataclasses import replace
 
 from rss2discord.discord.client import WebhookMessage
-from rss2discord.discord.components import MAX_RENDERED_METRICS
+from rss2discord.discord.components import (
+    MAX_METRICS_CHARACTERS,
+    MAX_RENDERED_METRICS,
+)
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
     get_child_contents,
@@ -26,7 +29,7 @@ def _with_metrics(*metrics: SourceMetric) -> WebhookMessage:
     )
 
 
-def test_metrics_lead_with_headline_and_trail_supporting_values_as_subtext() -> None:
+def test_metrics_lead_with_headline_and_stack_supporting_values_one_per_line() -> None:
     # Given
     message = _with_metrics(
         SourceMetric(label="Price", value="7.990 ден"),
@@ -37,9 +40,33 @@ def test_metrics_lead_with_headline_and_trail_supporting_values_as_subtext() -> 
     # When
     metrics = get_metrics_content(message)
 
-    # Then - first metric at body size, the rest demoted to one subtext line
+    # Then - first metric at body size, each of the rest on its own subtext line
     assert metrics == (
-        "Price: **7.990 ден**\n-# Stock: 3 • Installments: 12 × 5.749 ден"
+        "Price: **7.990 ден**\n-# Stock: 3\n-# Installments: 12 × 5.749 ден"
+    )
+
+
+def test_dense_alert_stacks_every_supporting_metric_on_its_own_line() -> None:
+    # Given - the shape a Neksio price alert actually emits
+    message = _with_metrics(
+        SourceMetric(label="Price", value="11.450 ден"),
+        SourceMetric(label="Previous", value="9.990 ден", prior=True),
+        SourceMetric(label="Original", value="13.990 ден"),
+        SourceMetric(label="Product code", value="KF560C36-32"),
+        SourceMetric(label="Manufacturer", value="Kingston"),
+        SourceMetric(label="Stock", value="7"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - one detail per line, so none has to be read out of a sentence
+    assert metrics == (
+        "Price: **11.450 ден** ~~9.990 ден~~\n"
+        "-# Original: 13.990 ден\n"
+        "-# Product code: KF560C36-32\n"
+        "-# Manufacturer: Kingston\n"
+        "-# Stock: 7"
     )
 
 
@@ -168,10 +195,31 @@ def test_metrics_beyond_the_render_cap_are_dropped() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - the cap holds and the overflow leaves no trailing separator
-    assert metrics.count("•") == MAX_RENDERED_METRICS - 2
+    # Then - the cap holds and the overflow leaves no empty line behind
+    assert len(metrics.splitlines()) == MAX_RENDERED_METRICS
     assert f"L{MAX_RENDERED_METRICS}" not in metrics
-    assert not metrics.endswith("•")
+    assert all(metrics.splitlines())
+
+
+def test_metrics_budget_skips_an_overlong_detail_and_keeps_the_rest() -> None:
+    # Given - four details that nearly fill the block, then one too long for
+    # what remains, then a short one that still fits
+    message = _with_metrics(
+        SourceMetric(label="P", value="1"),
+        *(SourceMetric(label="L" * 40, value="V" * 60) for _ in range(4)),
+        SourceMetric(label="X" * 48, value="Y" * 64),
+        SourceMetric(label="Stock", value="7"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+    lines = metrics.splitlines()
+
+    # Then - the overlong one drops out without taking the rest with it
+    assert len(metrics) <= MAX_METRICS_CHARACTERS
+    assert lines[0] == "P: **1**"
+    assert lines[-1] == "-# Stock: 7"
+    assert not any(line.startswith("-# XXX") for line in lines)
 
 
 def test_render_cap_clears_the_densest_shipped_producer() -> None:
