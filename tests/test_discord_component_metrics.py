@@ -4,6 +4,7 @@ from rss2discord.discord.client import WebhookMessage
 from rss2discord.discord.components import (
     MAX_METRICS_CHARACTERS,
     MAX_RENDERED_METRICS,
+    METRICS_GAP,
 )
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
@@ -42,7 +43,8 @@ def test_metrics_lead_with_headline_and_stack_supporting_values_one_per_line() -
 
     # Then - first metric at body size, each of the rest on its own subtext line
     assert metrics == (
-        "Price: **7.990 ден**\n-# Stock: 3\n-# Installments: 12 × 5.749 ден"
+        f"Price: **7.990 ден**\n{METRICS_GAP}\n"
+        "-# Stock: 3\n-# Installments: 12 × 5.749 ден"
     )
 
 
@@ -63,11 +65,53 @@ def test_dense_alert_stacks_every_supporting_metric_on_its_own_line() -> None:
     # Then - one detail per line, so none has to be read out of a sentence
     assert metrics == (
         "Price: **11.450 ден** ~~9.990 ден~~\n"
+        f"{METRICS_GAP}\n"
         "-# Original: 13.990 ден\n"
         "-# Product code: KF560C36-32\n"
         "-# Manufacturer: Kingston\n"
         "-# Stock: 7"
     )
+
+
+def test_metrics_gap_is_a_blank_subtext_line() -> None:
+    # Given - the gap is invisible on screen and in source, so a stray edit that
+    # drops the character would go unnoticed without an explicit check
+
+    # Then - a subtext prefix carrying nothing but a zero-width space
+    assert METRICS_GAP == "-# \u200b"
+    assert METRICS_GAP.strip("-# ") == "\u200b"
+
+
+def test_no_gap_without_supporting_metrics() -> None:
+    # Given - a headline and nothing to separate it from
+    message = _with_metrics(SourceMetric(label="Price", value="7.990 ден"))
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the gap must not leave a blank line hanging off the end
+    assert metrics == "Price: **7.990 ден**"
+    assert METRICS_GAP not in metrics
+
+
+def test_gap_is_not_charged_against_the_supporting_metrics() -> None:
+    # Given - the densest shape any transport emits
+    message = _with_metrics(
+        SourceMetric(label="Price", value="11.450 ден"),
+        SourceMetric(label="Previous", value="9.990 ден", prior=True),
+        SourceMetric(label="Original", value="13.990 ден"),
+        SourceMetric(label="Product code", value="KF560C36-32"),
+        SourceMetric(label="Manufacturer", value="Kingston"),
+        SourceMetric(label="Stock", value="7"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - reserving the gap up front must not push a real detail out
+    assert METRICS_GAP in metrics
+    assert "-# Stock: 7" in metrics
+    assert len(metrics) <= MAX_METRICS_CHARACTERS
 
 
 def test_metrics_render_outside_the_provenance_footer() -> None:
@@ -98,7 +142,10 @@ def test_prior_metric_renders_struck_through_beside_the_headline() -> None:
 
     # Then - the strike-through says "was", so the prior label is dropped, and
     # the prior value does not also appear in the supporting line
-    assert metrics == "Price: **7.990 ден** ~~9.490 ден~~\n-# Original: 10.990 ден"
+    assert metrics == (
+        f"Price: **7.990 ден** ~~9.490 ден~~\n{METRICS_GAP}\n"
+        "-# Original: 10.990 ден"
+    )
 
 
 def test_prior_metric_is_the_only_one_promoted_beside_the_headline() -> None:
@@ -113,7 +160,7 @@ def test_prior_metric_is_the_only_one_promoted_beside_the_headline() -> None:
     metrics = get_metrics_content(message)
 
     # Then
-    assert metrics == "Price: **5** ~~9~~\n-# Original: 12"
+    assert metrics == f"Price: **5** ~~9~~\n{METRICS_GAP}\n-# Original: 12"
 
 
 def test_prior_flag_on_the_headline_metric_is_ignored() -> None:
@@ -127,7 +174,7 @@ def test_prior_flag_on_the_headline_metric_is_ignored() -> None:
     metrics = get_metrics_content(message)
 
     # Then
-    assert metrics == "Price: **5**\n-# Stock: 2"
+    assert metrics == f"Price: **5**\n{METRICS_GAP}\n-# Stock: 2"
 
 
 def test_prior_metric_without_a_value_leaves_no_empty_strike_through() -> None:
@@ -155,7 +202,7 @@ def test_unlabelled_metric_renders_as_a_bare_value() -> None:
     metrics = get_metrics_content(message)
 
     # Then - no stray colon where there is nothing to label
-    assert metrics == "Points: **482**\n-# example.com"
+    assert metrics == f"Points: **482**\n{METRICS_GAP}\n-# example.com"
 
 
 def test_unlabelled_headline_metric_renders_without_a_colon() -> None:
@@ -180,7 +227,7 @@ def test_valueless_metric_renders_as_a_bare_label() -> None:
     metrics = get_metrics_content(message)
 
     # Then - no colon left dangling in front of nothing
-    assert metrics == "Price: **10**\n-# Stock"
+    assert metrics == f"Price: **10**\n{METRICS_GAP}\n-# Stock"
 
 
 def test_metrics_beyond_the_render_cap_are_dropped() -> None:
@@ -196,7 +243,7 @@ def test_metrics_beyond_the_render_cap_are_dropped() -> None:
     metrics = get_metrics_content(message)
 
     # Then - the cap holds and the overflow leaves no empty line behind
-    assert len(metrics.splitlines()) == MAX_RENDERED_METRICS
+    assert len(metrics.splitlines()) == MAX_RENDERED_METRICS + 1  # + the gap
     assert f"L{MAX_RENDERED_METRICS}" not in metrics
     assert all(metrics.splitlines())
 
@@ -331,7 +378,9 @@ def test_line_breaks_cannot_escape_the_metrics_subtext_block() -> None:
     metrics = get_metrics_content(message)
 
     # Then - only the block's own break survives, so no heading can open
-    assert metrics == "Price: **10**\n-# X: a # INJECTED HEADING"
+    assert metrics == (
+        f"Price: **10**\n{METRICS_GAP}\n-# X: a # INJECTED HEADING"
+    )
 
 
 def test_blank_metric_emits_no_empty_text_display() -> None:

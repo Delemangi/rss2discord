@@ -48,6 +48,14 @@ MAX_FOOTER_TIMESTAMP_CHARACTERS: Final = 128
 SEPARATOR_SPACING_COMPACT: Final = 1
 METADATA_SEPARATOR: Final = " • "
 SUBTEXT_PREFIX: Final = "-# "
+# Always written as an escape, so the character stays visible to whoever edits
+# this. It splits a bare link's scheme to stop Discord auto-linking it, and it
+# fills the blank line below.
+ZERO_WIDTH_SPACE: Final = "\u200b"
+# A Separator component cannot sit inside a Section, and its smallest spacing is
+# several lines tall regardless, so the gap above the supporting metrics is a
+# blank subtext line instead: subtext line height keeps it to roughly one line.
+METRICS_GAP: Final = f"{SUBTEXT_PREFIX}{ZERO_WIDTH_SPACE}"
 ELLIPSIS: Final = "…"
 ATTACHMENT_FILENAMES: Final = frozenset(
     {
@@ -232,19 +240,27 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
     # as a sentence, where the reader has to parse it to find the one they want.
     # Discord rejects an empty Text Display, and a blank headline must not leave
     # the block opening on a bare newline, so only rendered lines are kept.
-    lines = [headline] if headline else []
-    remaining = MAX_METRICS_CHARACTERS - len(headline)
+    # Reserved up front so the gap can never be the reason a detail is dropped.
+    gap_cost = len("\n") + len(METRICS_GAP) if headline else 0
+    remaining = MAX_METRICS_CHARACTERS - len(headline) - gap_cost
+    supporting_lines: list[str] = []
     for text in supporting:
         if not text:
             continue
         line = f"{SUBTEXT_PREFIX}{text}"
-        cost = len(line) + (len("\n") if lines else 0)
+        cost = len(line) + (len("\n") if supporting_lines or headline else 0)
         if cost > remaining:
             # Skip rather than stop: one overlong detail should not cost the
             # reader every shorter one behind it.
             continue
         remaining -= cost
-        lines.append(line)
+        supporting_lines.append(line)
+
+    lines = [headline] if headline else []
+    # Only worth its characters when it actually separates something.
+    if headline and supporting_lines:
+        lines.append(METRICS_GAP)
+    lines.extend(supporting_lines)
     if not lines:
         return None
     return "\n".join(lines)
@@ -369,7 +385,9 @@ def _escape_metadata_text(text: str) -> str:
     single_line = LINE_BREAK.sub(" ", text)
     return _escape_markdown_text(
         BARE_LINK_PREFIX.sub(
-            lambda match: f"{match.group(0)[0]}\u200b{match.group(0)[1:]}",
+            lambda match: (
+                f"{match.group(0)[0]}{ZERO_WIDTH_SPACE}{match.group(0)[1:]}"
+            ),
             single_line,
         ),
     )

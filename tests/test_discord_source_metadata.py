@@ -5,6 +5,7 @@ import pytest
 
 from rss2discord.configuration import FeedStrategyName
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.discord.components import METRICS_GAP
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
     get_metadata_content,
@@ -139,7 +140,7 @@ def test_components_v2_payload_renders_escaped_source_metrics_in_order() -> None
     metadata = get_metadata_content(message)
 
     # Then - the headline metric leads at body size, the rest trail as subtext
-    assert metrics.startswith("Points: **123**\n-# Domain: ")
+    assert metrics.startswith(f"Points: **123**\n{METRICS_GAP}\n-# Domain: ")
     assert "\\[evil\\]\\(h\u200bttps://evil.example\\)" in metrics
     # Then - metrics no longer crowd the provenance footer
     assert metadata == "-# Hacker News • News • By Author"
