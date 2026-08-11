@@ -8,6 +8,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError, pazar3_price_monitor
 from rss2discord.transports.pazar3_models import Pazar3Listing
@@ -95,11 +96,47 @@ def test_pazar3_price_monitor_baselines_then_delivers_currency_change(
 
         price_monitor.scan()
 
-        assert sender.messages[0].entry.description == (
-            "Price changed from 1.200 МКД to 20 ЕУР"
+        entry = sender.messages[0].entry
+        assert entry.description == ""
+        assert entry.price_direction is None
+        assert entry.source_metrics[:2] == (
+            SourceMetric("Price", "20 ЕУР"),
+            SourceMetric("Previous", "1.200 МКД", prior=True),
         )
         assert store.load_price_snapshots("pazar3") == (
             PriceSnapshot("pazar3", "1", Decimal(20), "20 ЕУР", "EUR"),
+        )
+
+
+def test_pazar3_price_monitor_marks_direction_within_one_currency(
+    tmp_path: Path,
+) -> None:
+    sender = RecordingSender(
+        [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.DELIVERED],
+    )
+    catalog = CatalogStub(
+        [
+            (priced("1", "100 ден."), priced("2", "200 ден.")),
+            (priced("1", "90 ден."), priced("2", "210 ден.")),
+        ],
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        price_monitor = monitor(catalog, store, sender)
+        price_monitor.scan()
+
+        price_monitor.scan()
+
+        dropped, raised = (message.entry for message in sender.messages)
+        assert dropped.price_direction is PriceDirection.DECREASE
+        assert raised.price_direction is PriceDirection.INCREASE
+        assert dropped.source_metrics[:2] == (
+            SourceMetric("Price", "90 ден."),
+            SourceMetric("Previous", "100 ден.", prior=True),
+        )
+        assert raised.source_metrics[:2] == (
+            SourceMetric("Price", "210 ден."),
+            SourceMetric("Previous", "200 ден.", prior=True),
         )
 
 

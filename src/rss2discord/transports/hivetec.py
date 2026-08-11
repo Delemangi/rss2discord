@@ -68,7 +68,7 @@ def hivetec_product_metrics(
 ) -> tuple[SourceMetric, ...]:
     metrics = [SourceMetric("Price", format_hivetec_mkd(product.prices.current_amount))]
     if previous_price is not None:
-        metrics.append(SourceMetric("Previous", previous_price))
+        metrics.append(SourceMetric("Previous", previous_price, prior=True))
     if product.prices.regular_amount != product.prices.current_amount:
         metrics.append(
             SourceMetric("Original", format_hivetec_mkd(product.prices.regular_amount)),

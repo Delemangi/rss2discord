@@ -24,6 +24,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
     deliver_price_changes,
+    price_direction,
 )
 
 MAX_PAZAR3_RETAINED_SNAPSHOTS: Final = 10_000
@@ -157,15 +158,9 @@ class Pazar3PriceMonitor:
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
         base_entry = Pazar3Strategy().get_entry_data(change.listing)
-        if change.previous.currency != change.current.currency:
-            action = "changed"
-        elif change.current.amount < change.previous.amount:
-            action = "decreased"
-        else:
-            action = "increased"
         metrics = (
             SourceMetric("Price", change.current.formatted),
-            SourceMetric("Previous", change.previous.formatted),
+            SourceMetric("Previous", change.previous.formatted, prior=True),
             *(
                 metric
                 for metric in base_entry.source_metrics
@@ -176,11 +171,9 @@ class Pazar3PriceMonitor:
             feed=self._feed,
             entry=replace(
                 base_entry,
-                description=(
-                    f"Price {action} from {change.previous.formatted} "
-                    f"to {change.current.formatted}"
-                ),
+                description="",
                 source_metrics=metrics,
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or PAZAR3_LABEL,
         )

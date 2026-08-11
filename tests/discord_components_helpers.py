@@ -50,12 +50,17 @@ def get_text_display_contents(message: WebhookMessage) -> list[str]:
     return contents
 
 
-def get_container_children(message: WebhookMessage) -> list[dict[str, JSONValue]]:
+def get_container(message: WebhookMessage) -> dict[str, JSONValue]:
     payload = DiscordWebhookClient._build_payload(message)
     components = payload["components"]
     assert isinstance(components, list)
     container = components[0]
     assert isinstance(container, dict)
+    return container
+
+
+def get_container_children(message: WebhookMessage) -> list[dict[str, JSONValue]]:
+    container = get_container(message)
     children = container["components"]
     assert isinstance(children, list)
     result: list[dict[str, JSONValue]] = []
@@ -99,3 +104,21 @@ def get_metadata_content(message: WebhookMessage) -> str:
     content = metadata["content"]
     assert isinstance(content, str)
     return content
+
+
+def get_metrics_content(message: WebhookMessage) -> str:
+    """Return the metrics Text Display, which always follows the heading."""
+    return get_text_display_contents(message)[1]
+
+
+def get_child_contents(component: dict[str, JSONValue]) -> list[str]:
+    """Return the Text Display contents nested directly inside a component."""
+    children = component["components"]
+    assert isinstance(children, list)
+    contents: list[str] = []
+    for child in children:
+        assert isinstance(child, dict)
+        content = child["content"]
+        assert isinstance(content, str)
+        contents.append(content)
+    return contents

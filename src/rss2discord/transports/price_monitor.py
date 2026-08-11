@@ -12,7 +12,25 @@ from rss2discord.discord.client import (
     SleepCallback,
 )
 from rss2discord.discord.message import WebhookMessage
+from rss2discord.models import PriceDirection
 from rss2discord.retries import SQLiteRetryPolicy
+
+
+def price_direction(
+    previous: PriceSnapshot,
+    current: PriceSnapshot,
+) -> PriceDirection | None:
+    """Report which way a monitored price moved.
+
+    Returns ``None`` when the two amounts are not comparable, such as a change
+    that crossed currencies, so callers never claim a direction the snapshots
+    cannot establish.
+    """
+    if previous.currency != current.currency:
+        return None
+    if current.amount < previous.amount:
+        return PriceDirection.DECREASE
+    return PriceDirection.INCREASE
 
 
 class PriceSnapshotStore(Protocol):

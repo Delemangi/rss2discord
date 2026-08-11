@@ -3,7 +3,7 @@ from pathlib import Path
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from tests.setec_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -176,10 +176,11 @@ def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
             "Product prod-30",
             "Product prod-10",
         ]
-        assert [message.entry.description for message in sender.messages] == [
-            "Price decreased from 100 ден. to 90 ден.",
-            "Price increased from 200 ден. to 210 ден.",
+        assert [message.entry.price_direction for message in sender.messages] == [
+            PriceDirection.DECREASE,
+            PriceDirection.INCREASE,
         ]
+        assert [message.entry.description for message in sender.messages] == ["", ""]
         assert (
             sender.messages[0].entry.link == "https://setec.mk/products/product-prod-30"
         )
@@ -189,7 +190,7 @@ def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
         assert sender.messages[0].entry.categories == ("Computers", "Accessories")
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
             SourceMetric(label="Original", value="120 ден."),
         )
         assert sender.messages[0].source_title == "Setec Deals"
@@ -226,11 +227,10 @@ def test_alert_omits_original_when_display_document_reports_another_price(
         ]
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
         )
-        assert sender.messages[0].entry.description == (
-            "Price decreased from 100 ден. to 90 ден."
-        )
+        assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
+        assert sender.messages[0].entry.description == ""
 
 
 def test_alert_carries_original_from_display_document_when_prices_agree(
@@ -264,7 +264,7 @@ def test_alert_carries_original_from_display_document_when_prices_agree(
         ]
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
             SourceMetric(label="Original", value="150 ден."),
         )
 
@@ -296,7 +296,7 @@ def test_alert_ships_without_original_when_display_document_has_no_variants(
         ]
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
         )
         assert snapshots_by_product(store)["prod-1"].amount == Decimal(90)
 

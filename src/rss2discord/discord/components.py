@@ -1,27 +1,49 @@
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Final
 from urllib.parse import quote, urlsplit
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.source_labels import source_label
-from rss2discord.models import EntryData
+from rss2discord.models import EntryData, PriceDirection, SourceMetric
 
 type JSONValue = (
     bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None
 )
 
 DEFAULT_ACCENT_COLOR: Final = 5814783
+# A price move states its own direction through the accent bar, so the reader
+# can tell a drop from a rise before parsing any numbers. Read from the buyer's
+# side: cheaper is good news.
+PRICE_DECREASE_ACCENT_COLOR: Final = 0x3BA55D
+PRICE_INCREASE_ACCENT_COLOR: Final = 0xED4245
 IS_COMPONENTS_V2: Final = 1 << 15
 TEXT_DISPLAY_COMPONENT: Final = 10
 SECTION_COMPONENT: Final = 9
 THUMBNAIL_COMPONENT: Final = 11
 SEPARATOR_COMPONENT: Final = 14
 CONTAINER_COMPONENT: Final = 17
+
+# Discord counts every Text Display in the message against one shared budget.
 MAX_TEXT_DISPLAY_CHARACTERS: Final = 4000
 MAX_THUMBNAIL_DESCRIPTION_CHARACTERS: Final = 1024
+
+# Per-block ceilings. They sum to well under the shared budget so the
+# description always keeps a usable share no matter how hostile an entry is.
+MAX_HEADING_CHARACTERS: Final = 512
+MAX_METRICS_CHARACTERS: Final = 512
+MAX_FOOTER_LINE_CHARACTERS: Final = 512
+MAX_METRIC_LABEL_CHARACTERS: Final = 48
+MAX_METRIC_VALUE_CHARACTERS: Final = 64
+MAX_RENDERED_METRICS: Final = 6
+# A well-formed <t:...:R> is tiny; this only bounds unparseable timestamps,
+# which fall back to being echoed verbatim.
+MAX_FOOTER_TIMESTAMP_CHARACTERS: Final = 128
+
 SEPARATOR_SPACING_COMPACT: Final = 1
+METADATA_SEPARATOR: Final = " • "
+SUBTEXT_PREFIX: Final = "-# "
 ELLIPSIS: Final = "…"
 ATTACHMENT_FILENAMES: Final = frozenset(
     {
@@ -32,10 +54,6 @@ ATTACHMENT_FILENAMES: Final = frozenset(
     },
 )
 MIN_HEADING_CHARACTERS: Final = len(f"## {ELLIPSIS}")
-MIN_METADATA_CHARACTERS: Final = len(f"-# {ELLIPSIS}")
-MAX_DESCRIPTION_CHARACTERS: Final = (
-    MAX_TEXT_DISPLAY_CHARACTERS - MIN_HEADING_CHARACTERS - MIN_METADATA_CHARACTERS
-)
 BARE_LINK_PREFIX: Final[re.Pattern[str]] = re.compile(
     r"\b(?:https?://|www\.)",
     re.IGNORECASE,
@@ -49,49 +67,40 @@ def build_components_v2_payload(
     *,
     attachment_filename: str | None = None,
 ) -> dict[str, JSONValue]:
-    title = _escape_markdown_link_text(entry.title)
+    """Render an entry as a Components V2 container.
+
+    The card is ordered by what a reader needs first: title, then the entry's
+    metrics, then its description, and only then the provenance footer. The
+    first entry in ``source_metrics`` is treated as the headline metric and is
+    rendered at body size; every transport already orders its metrics that way.
+    """
     link = _safe_markdown_url(entry.link)
-    plain_heading = f"## {title}"
-    heading = f"## [{title}]({link})" if link is not None else plain_heading
-    description = _bounded_description(entry.description)
-    metadata = _build_metadata(entry, feed, source_title, link)
+    heading = _build_heading(entry.title, link)
+    metrics = _build_metrics(entry.source_metrics)
+    footer = _build_footer(entry, feed, source_title, link)
+    description = _truncate_rendered_text(
+        entry.description,
+        _description_budget(heading, metrics, footer),
+    )
 
-    if (
-        link is not None
-        and len(heading) + len(description) + len(metadata)
-        > MAX_TEXT_DISPLAY_CHARACTERS
-    ):
-        heading = plain_heading
-
-    if len(heading) + len(description) + len(metadata) > MAX_TEXT_DISPLAY_CHARACTERS:
-        text_budget = MAX_TEXT_DISPLAY_CHARACTERS - len(description)
-        if len(heading) <= text_budget - MIN_METADATA_CHARACTERS:
-            metadata = _truncate_rendered_text(metadata, text_budget - len(heading))
-        elif len(metadata) <= text_budget - MIN_HEADING_CHARACTERS:
-            heading = _truncate_heading(entry.title, text_budget - len(metadata))
-        else:
-            heading_limit = max(MIN_HEADING_CHARACTERS, text_budget // 2)
-            heading = _truncate_heading(entry.title, heading_limit)
-            metadata = _truncate_rendered_text(metadata, text_budget - len(heading))
-
-    if attachment_filename is None:
-        safe_image_url = (
-            _safe_markdown_url(entry.image_url) if entry.image_url else None
-        )
-    elif attachment_filename in ATTACHMENT_FILENAMES:
-        safe_image_url = f"attachment://{attachment_filename}"
-    else:
-        safe_image_url = None
+    safe_image_url = _resolve_image_url(entry, attachment_filename)
 
     container_components: list[JSONValue] = []
+    heading_component = _text_display(heading)
+    metrics_component = _text_display(metrics) if metrics is not None else None
+    description_component = _text_display(description) if description else None
+
     if safe_image_url is not None:
-        section_children: list[JSONValue] = [
-            {"content": heading, "type": TEXT_DISPLAY_COMPONENT},
-        ]
-        if description:
-            section_children.append(
-                {"content": description, "type": TEXT_DISPLAY_COMPONENT},
-            )
+        # A Section pairs its children with the thumbnail. Keep it to the title
+        # and the metrics so a long description gets the full container width.
+        section_children: list[JSONValue] = [heading_component]
+        trailing: list[JSONValue] = []
+        if metrics_component is not None:
+            section_children.append(metrics_component)
+            if description_component is not None:
+                trailing.append(description_component)
+        elif description_component is not None:
+            section_children.append(description_component)
         container_components.append(
             {
                 "accessory": {
@@ -103,38 +112,28 @@ def build_components_v2_payload(
                 "type": SECTION_COMPONENT,
             },
         )
+        container_components.extend(trailing)
     else:
-        container_components.append(
-            {"content": heading, "type": TEXT_DISPLAY_COMPONENT},
-        )
-        if description:
-            container_components.append(
-                {"content": description, "type": TEXT_DISPLAY_COMPONENT},
-            )
+        container_components.append(heading_component)
+        if metrics_component is not None:
+            container_components.append(metrics_component)
+        if description_component is not None:
+            container_components.append(description_component)
 
-    container_components.extend(
-        [
-            {
-                "divider": True,
-                "spacing": SEPARATOR_SPACING_COMPACT,
-                "type": SEPARATOR_COMPONENT,
-            },
-            {
-                "content": metadata,
-                "type": TEXT_DISPLAY_COMPONENT,
-            },
-        ],
+    container_components.append(
+        {
+            "divider": True,
+            "spacing": SEPARATOR_SPACING_COMPACT,
+            "type": SEPARATOR_COMPONENT,
+        },
     )
+    container_components.append(_text_display(footer))
 
     payload: dict[str, JSONValue] = {
         "allowed_mentions": {"parse": []},
         "components": [
             {
-                "accent_color": (
-                    feed.embed_color
-                    if feed.embed_color is not None
-                    else DEFAULT_ACCENT_COLOR
-                ),
+                "accent_color": _accent_color(feed, entry),
                 "components": container_components,
                 "type": CONTAINER_COMPONENT,
             },
@@ -146,6 +145,177 @@ def build_components_v2_payload(
     if feed.webhook_avatar:
         payload["avatar_url"] = feed.webhook_avatar
     return payload
+
+
+def _text_display(content: str) -> dict[str, JSONValue]:
+    return {"content": content, "type": TEXT_DISPLAY_COMPONENT}
+
+
+def _accent_color(feed: FeedConfig, entry: EntryData) -> int:
+    """Direction wins over the feed's colour: which way the price moved is the
+    whole point of the alert, and matters more than per-feed branding."""
+    match entry.price_direction:
+        case PriceDirection.DECREASE:
+            return PRICE_DECREASE_ACCENT_COLOR
+        case PriceDirection.INCREASE:
+            return PRICE_INCREASE_ACCENT_COLOR
+        case None:
+            pass
+    if feed.embed_color is not None:
+        return feed.embed_color
+    return DEFAULT_ACCENT_COLOR
+
+
+def _resolve_image_url(
+    entry: EntryData,
+    attachment_filename: str | None,
+) -> str | None:
+    if attachment_filename is None:
+        return _safe_markdown_url(entry.image_url) if entry.image_url else None
+    if attachment_filename in ATTACHMENT_FILENAMES:
+        return f"attachment://{attachment_filename}"
+    return None
+
+
+def _description_budget(heading: str, metrics: str | None, footer: str) -> int:
+    used = len(heading) + len(footer)
+    if metrics is not None:
+        used += len(metrics)
+    return max(0, MAX_TEXT_DISPLAY_CHARACTERS - used)
+
+
+def _build_heading(title: str, safe_link: str | None) -> str:
+    escaped = _escape_markdown_link_text(title)
+    if safe_link is not None:
+        # Only link the heading when the whole construct fits. Truncating a
+        # Markdown link would leave a mangled URL or broken syntax behind.
+        linked = f"## [{escaped}]({safe_link})"
+        if len(linked) <= MAX_HEADING_CHARACTERS:
+            return linked
+    plain = f"## {escaped}"
+    if len(plain) <= MAX_HEADING_CHARACTERS:
+        return plain
+    return _truncate_heading(title, MAX_HEADING_CHARACTERS)
+
+
+def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
+    if not metrics:
+        return None
+    rendered = metrics[:MAX_RENDERED_METRICS]
+    prior_index = next(
+        (index for index, metric in enumerate(rendered) if index > 0 and metric.prior),
+        None,
+    )
+    prior = rendered[prior_index] if prior_index is not None else None
+    headline = _render_headline_metric(rendered[0], prior)
+    supporting = [
+        _render_metric(metric)
+        for index, metric in enumerate(rendered)
+        if index > 0 and index != prior_index
+    ]
+
+    tail_budget = (
+        MAX_METRICS_CHARACTERS - len(headline) - len("\n") - len(SUBTEXT_PREFIX)
+    )
+    tail = _bounded_join(supporting, tail_budget)
+    if tail is None:
+        return headline
+    return f"{headline}\n{SUBTEXT_PREFIX}{tail}"
+
+
+def _render_headline_metric(metric: SourceMetric, prior: SourceMetric | None) -> str:
+    label, value = _metric_parts(metric)
+    if not value:
+        rendered = label
+    elif not label:
+        rendered = f"**{value}**"
+    else:
+        rendered = f"{label}: **{value}**"
+    if prior is None:
+        return rendered
+    # The strike-through says "was" on its own, so the prior metric's own label
+    # would only repeat what the styling already communicates.
+    _, prior_value = _metric_parts(prior)
+    if not prior_value:
+        return rendered
+    return f"{rendered} ~~{prior_value}~~"
+
+
+def _render_metric(metric: SourceMetric) -> str:
+    label, value = _metric_parts(metric)
+    if not label:
+        return value
+    if not value:
+        return label
+    return f"{label}: {value}"
+
+
+def _metric_parts(metric: SourceMetric) -> tuple[str, str]:
+    # Clip before escaping so a clipped value can never split an escape pair,
+    # which would leak a stray backslash into the rendered card.
+    label = _escape_metadata_text(metric.label[:MAX_METRIC_LABEL_CHARACTERS])
+    value = _escape_metadata_text(metric.value[:MAX_METRIC_VALUE_CHARACTERS])
+    return label, value
+
+
+def _build_footer(
+    entry: EntryData,
+    feed: FeedConfig,
+    source_title: str,
+    safe_primary_link: str | None,
+) -> str:
+    """Build the single provenance line, led by the source the entry came from.
+
+    The timestamp closes the line, after the categories.
+    """
+    label = source_label(feed)
+    parts: list[str] = [label]
+    if source_title and source_title.strip().casefold() != label.casefold():
+        parts.append(_escape_metadata_text(source_title))
+    if entry.author:
+        parts.append(f"By {_escape_metadata_text(entry.author)}")
+    safe_discussion_url = (
+        _safe_markdown_url(entry.discussion_url) if entry.discussion_url else None
+    )
+    if safe_discussion_url is not None and safe_discussion_url != safe_primary_link:
+        parts.append(f"[Discussion]({safe_discussion_url})")
+    parts.extend(_escape_metadata_text(category) for category in entry.categories)
+
+    timestamp = (
+        _truncate_rendered_text(
+            _format_timestamp(entry.timestamp),
+            MAX_FOOTER_TIMESTAMP_CHARACTERS,
+        )
+        if entry.timestamp is not None
+        else None
+    )
+
+    line_budget = MAX_FOOTER_LINE_CHARACTERS - len(SUBTEXT_PREFIX)
+    if timestamp is not None:
+        # Reserve the tail so a long category list cannot crowd the time out.
+        line_budget -= len(METADATA_SEPARATOR) + len(timestamp)
+
+    line = _bounded_join(parts, line_budget)
+    if line is None:
+        line = _truncate_rendered_text(label, max(0, line_budget))
+    if timestamp is not None:
+        line = f"{line}{METADATA_SEPARATOR}{timestamp}" if line else timestamp
+    return f"{SUBTEXT_PREFIX}{line}"
+
+
+def _bounded_join(parts: Sequence[str], budget: int) -> str | None:
+    """Join what fits, dropping whole parts so Markdown is never cut mid-token."""
+    if budget <= 0:
+        return None
+    kept: list[str] = []
+    for part in parts:
+        candidate = METADATA_SEPARATOR.join([*kept, part])
+        if len(candidate) > budget:
+            break
+        kept.append(part)
+    if not kept:
+        return None
+    return METADATA_SEPARATOR.join(kept)
 
 
 def _escape_markdown_link_text(text: str) -> str:
@@ -166,48 +336,6 @@ def _escape_metadata_text(text: str) -> str:
             text,
         ),
     )
-
-
-def _bounded_description(description: str) -> str:
-    if len(description) <= MAX_DESCRIPTION_CHARACTERS:
-        return description
-    return _truncate_rendered_text(description, MAX_DESCRIPTION_CHARACTERS)
-
-
-def _build_metadata(
-    entry: EntryData,
-    feed: FeedConfig,
-    source_title: str,
-    safe_primary_link: str | None,
-) -> str:
-    label = source_label(feed)
-    first_parts: list[str] = [label]
-    if source_title and source_title.strip().casefold() != label.casefold():
-        first_parts.append(_escape_metadata_text(source_title))
-    first_parts.extend(
-        f"{_escape_metadata_text(metric.label)} {_escape_metadata_text(metric.value)}"
-        for metric in entry.source_metrics
-    )
-    if entry.author:
-        first_parts.append(f"By {_escape_metadata_text(entry.author)}")
-    if entry.timestamp is not None:
-        first_parts.append(_format_timestamp(entry.timestamp))
-    first_line = f"-# {' • '.join(first_parts)}"
-
-    second_parts: list[str] = []
-    safe_discussion_url = (
-        _safe_markdown_url(entry.discussion_url) if entry.discussion_url else None
-    )
-    if safe_discussion_url is not None and safe_discussion_url != safe_primary_link:
-        second_parts.append(f"[Discussion]({safe_discussion_url})")
-    second_parts.extend(
-        _escape_metadata_text(category) for category in entry.categories
-    )
-
-    if not second_parts:
-        return first_line
-    second_line = f"-# {' • '.join(second_parts)}"
-    return f"{first_line}\n{second_line}"
 
 
 def _thumbnail_description(title: str) -> str:

@@ -10,7 +10,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import EntryId, SourceMetric
+from rss2discord.models import EntryId, PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError, reklama5_price_monitor
 from rss2discord.transports import reklama5 as reklama5_transport
@@ -107,12 +107,11 @@ def test_reklama5_price_monitor_silently_baselines_then_delivers_change(
 
         assert len(sender.messages) == 1
         message = sender.messages[0]
-        assert message.entry.description == (
-            "Price decreased from 1.200 МКД to 900 МКД"
-        )
+        assert message.entry.description == ""
+        assert message.entry.price_direction is PriceDirection.DECREASE
         assert message.entry.source_metrics[:2] == (
             SourceMetric("Price", "900 МКД"),
-            SourceMetric("Previous", "1.200 МКД"),
+            SourceMetric("Previous", "1.200 МКД", prior=True),
         )
         assert store.load_price_snapshots("reklama5") == (
             PriceSnapshot("reklama5", "1", Decimal(900), "900 МКД", "MKD"),
@@ -148,8 +147,11 @@ def test_reklama5_price_monitor_ignores_unavailable_prices_and_retains_baseline(
         monitor.scan()
 
         assert len(sender.messages) == 1
-        assert sender.messages[0].entry.description == (
-            "Price decreased from 100 ден. to 90 ден."
+        entry = sender.messages[0].entry
+        assert entry.price_direction is PriceDirection.DECREASE
+        assert entry.source_metrics[:2] == (
+            SourceMetric("Price", "90 ден."),
+            SourceMetric("Previous", "100 ден.", prior=True),
         )
 
 

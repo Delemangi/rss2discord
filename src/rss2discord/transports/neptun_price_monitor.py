@@ -22,6 +22,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
     deliver_price_changes,
+    price_direction,
 )
 
 MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
@@ -142,16 +143,9 @@ class NeptunPriceMonitor:
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
         base_entry = NeptunStrategy().get_entry_data(change.product)
-        action = "changed"
-        if change.previous.currency == change.current.currency:
-            action = (
-                "decreased"
-                if change.current.amount < change.previous.amount
-                else "increased"
-            )
         metrics = [
             SourceMetric("Price", change.current.formatted),
-            SourceMetric("Previous", change.previous.formatted),
+            SourceMetric("Previous", change.previous.formatted, prior=True),
         ]
         if change.product.regular_price != change.product.actual_price:
             metrics.append(
@@ -177,11 +171,9 @@ class NeptunPriceMonitor:
             feed=self._feed,
             entry=replace(
                 base_entry,
-                description=(
-                    f"Price {action} from {change.previous.formatted} "
-                    f"to {change.current.formatted}"
-                ),
+                description="",
                 source_metrics=tuple(metrics),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or NEPTUN_LABEL,
         )

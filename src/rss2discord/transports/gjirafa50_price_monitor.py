@@ -23,6 +23,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
     deliver_price_changes,
+    price_direction,
 )
 
 MAX_GJIRAFA50_RETAINED_SNAPSHOTS: Final = 100_000
@@ -133,25 +134,16 @@ class Gjirafa50PriceMonitor:
         deliver_price_changes(changes, self._dependencies, self._message_for)
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        action = "changed"
-        if change.previous.currency == change.current.currency:
-            action = (
-                "decreased"
-                if change.current.amount < change.previous.amount
-                else "increased"
-            )
         return WebhookMessage(
             feed=self._feed,
             entry=replace(
                 Gjirafa50Strategy().get_entry_data(change.product),
-                description=(
-                    f"Price {action} from {change.previous.formatted} "
-                    f"to {change.current.formatted}"
-                ),
+                description="",
                 source_metrics=(
                     SourceMetric("Price", change.current.formatted),
-                    SourceMetric("Previous", change.previous.formatted),
+                    SourceMetric("Previous", change.previous.formatted, prior=True),
                 ),
+                price_direction=price_direction(change.previous, change.current),
             ),
             source_title=self._feed.name or GJIRAFA50_LABEL,
         )

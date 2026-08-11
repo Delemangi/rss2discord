@@ -4,8 +4,9 @@ from pathlib import Path
 import pytest
 
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.transports import FeedFetchError, neksio_price_monitor
+from tests.discord_components_helpers import get_text_display_contents
 from tests.neksio_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -111,9 +112,19 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         "Product 30",
         "Product 10",
     ]
-    assert [message.entry.description for message in sender.messages] == [
-        "Price decreased from 100 MKD to 90 MKD",
-        "Price increased from 100 MKD to 110 MKD",
+    assert [message.entry.description for message in sender.messages] == ["", ""]
+    assert [message.entry.price_direction for message in sender.messages] == [
+        PriceDirection.DECREASE,
+        PriceDirection.INCREASE,
+    ]
+    assert [
+        metric
+        for message in sender.messages
+        for metric in message.entry.source_metrics
+        if metric.label == "Previous"
+    ] == [
+        SourceMetric(label="Previous", value="100 MKD", prior=True),
+        SourceMetric(label="Previous", value="100 MKD", prior=True),
     ]
     entry = sender.messages[0].entry
     assert entry.link == "https://g.store.neksio.mk/Product/Details/30"
@@ -122,7 +133,7 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
     assert entry.timestamp == "2026-07-26T12:00:00+00:00"
     assert entry.source_metrics == (
         SourceMetric(label="Price", value="90 MKD"),
-        SourceMetric(label="Previous", value="100 MKD"),
+        SourceMetric(label="Previous", value="100 MKD", prior=True),
         SourceMetric(label="Original", value="150 MKD"),
         SourceMetric(label="Product code", value="CODE-30"),
         SourceMetric(label="Manufacturer", value="Neksio"),
@@ -130,7 +141,7 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
     )
 
 
-def test_scan_escapes_markdown_in_formatted_prices_and_omits_empty_subcategory(
+def test_scan_keeps_hostile_formatted_prices_inert_and_omits_empty_subcategory(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -161,7 +172,16 @@ def test_scan_escapes_markdown_in_formatted_prices_and_omits_empty_subcategory(
 
     # Then
     entry = sender.messages[0].entry
-    assert "](" not in entry.description
+    assert entry.description == ""
+    assert entry.price_direction == PriceDirection.DECREASE
+    assert entry.source_metrics[:2] == (
+        SourceMetric(label="Price", value="[new](https://evil.example)"),
+        SourceMetric(label="Previous", value="[old](https://evil.example)", prior=True),
+    )
+    assert all(
+        "](https://evil.example)" not in content
+        for content in get_text_display_contents(sender.messages[0])
+    )
     assert entry.categories == ("Laptops",)
 
 

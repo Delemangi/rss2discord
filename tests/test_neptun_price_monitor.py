@@ -7,7 +7,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError, neptun_price_monitor
 from rss2discord.transports.neptun_models import NeptunProduct
@@ -91,13 +91,11 @@ def test_price_monitor_silently_baselines_then_delivers_actual_price_change(
         monitor.scan()
 
         assert len(sender.messages) == 1
-        assert (
-            sender.messages[0].entry.description
-            == "Price decreased from 100 ден. to 90 ден."
-        )
+        assert sender.messages[0].entry.description == ""
+        assert sender.messages[0].entry.price_direction is PriceDirection.DECREASE
         assert sender.messages[0].entry.source_metrics[:2] == (
             SourceMetric("Price", "90 ден."),
-            SourceMetric("Previous", "100 ден."),
+            SourceMetric("Previous", "100 ден.", prior=True),
         )
         assert store.load_price_snapshots("neptun")[0].amount == Decimal(90)
         assert store.load_price_snapshots("neptun")[0].currency == "MKD"

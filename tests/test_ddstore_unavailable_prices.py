@@ -5,7 +5,7 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.transports import ddstore_price_monitor
 from rss2discord.transports.ddstore import DDStoreStrategy
 from tests.setec_price_monitor_helpers import RecordingSender
@@ -94,8 +94,10 @@ def test_ddstore_price_monitor_resumes_from_last_real_price(
 
         # Then
         assert len(sender.messages) == 1
-        assert sender.messages[0].entry.description == (
-            "Price increased from 100 ден. to 125 ден."
+        assert sender.messages[0].entry.price_direction == PriceDirection.INCREASE
+        assert sender.messages[0].entry.source_metrics[:2] == (
+            SourceMetric(label="Price", value="125 ден."),
+            SourceMetric(label="Previous", value="100 ден.", prior=True),
         )
         assert store.load_price_snapshots("ddstore")[0].amount == Decimal(125)
 

@@ -8,7 +8,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -135,12 +135,11 @@ def test_price_monitor_silently_baselines_then_delivers_price_change(
 
     # Then
     assert len(sender.messages) == 1
-    assert sender.messages[0].entry.description == (
-        "Price decreased from 100 MKD. to 90 MKD."
-    )
+    assert sender.messages[0].entry.description == ""
+    assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
     assert sender.messages[0].entry.source_metrics == (
         SourceMetric("Price", "90 MKD."),
-        SourceMetric("Previous", "100 MKD."),
+        SourceMetric("Previous", "100 MKD.", prior=True),
     )
     assert snapshots[0].amount == Decimal(90)
 
