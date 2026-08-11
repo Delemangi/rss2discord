@@ -95,6 +95,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "SLF001"]
+# Development scripts, run directly rather than imported as a package.
+"tools/**/*.py" = ["INP001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
