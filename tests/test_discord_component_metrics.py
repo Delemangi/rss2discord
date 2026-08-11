@@ -103,6 +103,20 @@ def test_prior_flag_on_the_headline_metric_is_ignored() -> None:
     assert metrics == "Price: **5**\n-# Stock: 2"
 
 
+def test_prior_metric_without_a_value_leaves_no_empty_strike_through() -> None:
+    # Given - a superseded figure the source never supplied
+    message = _with_metrics(
+        SourceMetric(label="Price", value="7.990 ден"),
+        SourceMetric(label="Previous", value="", prior=True),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - an empty strike-through would render as literal tildes
+    assert metrics == "Price: **7.990 ден**"
+
+
 def test_unlabelled_metric_renders_as_a_bare_value() -> None:
     # Given - the Hacker News article host carries no label
     message = _with_metrics(
@@ -126,6 +140,20 @@ def test_unlabelled_headline_metric_renders_without_a_colon() -> None:
 
     # Then
     assert metrics == "**482**"
+
+
+def test_valueless_metric_renders_as_a_bare_label() -> None:
+    # Given - a detail the source names but never measures
+    message = _with_metrics(
+        SourceMetric(label="Price", value="10"),
+        SourceMetric(label="Stock", value=""),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - no colon left dangling in front of nothing
+    assert metrics == "Price: **10**\n-# Stock"
 
 
 def test_metrics_beyond_the_render_cap_are_dropped() -> None:
