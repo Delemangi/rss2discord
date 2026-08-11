@@ -114,6 +114,22 @@ def test_gap_is_not_charged_against_the_supporting_metrics() -> None:
     assert len(metrics) <= MAX_METRICS_CHARACTERS
 
 
+def test_gap_reservation_keeps_the_block_inside_its_budget() -> None:
+    # Given - supporting lines sized so a fifth one fits only if the gap's own
+    # characters go unreserved, which would overrun the block by a single line
+    message = _with_metrics(
+        SourceMetric(label="P", value="1"),
+        *(SourceMetric(label="L" * 40, value="V" * 54) for _ in range(5)),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the gap is paid for up front, so the block cannot overrun
+    assert METRICS_GAP in metrics
+    assert len(metrics) <= MAX_METRICS_CHARACTERS
+
+
 def test_metrics_render_outside_the_provenance_footer() -> None:
     # Given
     message = _with_metrics(SourceMetric(label="Price", value="7.990 ден"))
