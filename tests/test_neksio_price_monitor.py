@@ -117,14 +117,22 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         PriceDirection.DECREASE,
         PriceDirection.INCREASE,
     ]
+    # The deleted sentence used to carry both prices, so every alert must still
+    # expose its own headline price and exactly one prior price.
+    assert [message.entry.source_metrics[0] for message in sender.messages] == [
+        SourceMetric(label="Price", value="90 MKD"),
+        SourceMetric(label="Price", value="110 MKD"),
+    ]
     assert [
-        metric
+        [
+            metric
+            for metric in message.entry.source_metrics
+            if metric.label == "Previous"
+        ]
         for message in sender.messages
-        for metric in message.entry.source_metrics
-        if metric.label == "Previous"
     ] == [
-        SourceMetric(label="Previous", value="100 MKD", prior=True),
-        SourceMetric(label="Previous", value="100 MKD", prior=True),
+        [SourceMetric(label="Previous", value="100 MKD", prior=True)],
+        [SourceMetric(label="Previous", value="100 MKD", prior=True)],
     ]
     entry = sender.messages[0].entry
     assert entry.link == "https://g.store.neksio.mk/Product/Details/30"

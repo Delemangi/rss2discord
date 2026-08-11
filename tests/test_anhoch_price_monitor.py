@@ -166,15 +166,24 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
             None,
         ]
         assert [message.entry.description for message in sender.messages] == ["", "", ""]
+        # The deleted sentence used to carry both prices, so every alert must
+        # still expose its own headline price and exactly one prior price.
+        assert [message.entry.source_metrics[0] for message in sender.messages] == [
+            SourceMetric(label="Price", value="90 den"),
+            SourceMetric(label="Price", value="110 den"),
+            SourceMetric(label="Price", value="$100"),
+        ]
         assert [
-            metric
+            [
+                metric
+                for metric in message.entry.source_metrics
+                if metric.label == "Previous"
+            ]
             for message in sender.messages
-            for metric in message.entry.source_metrics
-            if metric.label == "Previous"
         ] == [
-            SourceMetric(label="Previous", value="100 den", prior=True),
-            SourceMetric(label="Previous", value="100 den", prior=True),
-            SourceMetric(label="Previous", value="100 den", prior=True),
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
+            [SourceMetric(label="Previous", value="100 den", prior=True)],
         ]
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 den"),
