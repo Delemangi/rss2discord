@@ -57,7 +57,6 @@ ATTACHMENT_FILENAMES: Final = frozenset(
         "product-image.webp",
     },
 )
-MIN_HEADING_CHARACTERS: Final = len(f"## {ELLIPSIS}")
 BARE_LINK_PREFIX: Final[re.Pattern[str]] = re.compile(
     r"\b(?:https?://|www\.)",
     re.IGNORECASE,
@@ -190,6 +189,10 @@ def _description_budget(heading: str, metrics: str | None, footer: str) -> int:
 
 
 def _build_heading(title: str, safe_link: str | None) -> str:
+    # A heading occupies a single line, so a break in the title would let feed
+    # text close it and forge further lines - including a counterfeit of the
+    # grey provenance footer - inside the container.
+    title = LINE_BREAK.sub(" ", title)
     # Bound the visible title on its own. A URL costs budget but no width, so
     # measuring the whole linked construct would strip the link off entries
     # whose address merely carries a long query string.
@@ -229,11 +232,12 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
         MAX_METRICS_CHARACTERS - len(headline) - len("\n") - len(SUBTEXT_PREFIX)
     )
     tail = _bounded_join(supporting, tail_budget)
-    if tail is None:
-        # An entry whose only metric is blank must not emit an empty Text
-        # Display, which Discord rejects outright.
-        return headline or None
-    return f"{headline}\n{SUBTEXT_PREFIX}{tail}"
+    # Discord rejects an empty Text Display, and a blank headline must not leave
+    # the block opening on a bare newline, so only rendered lines are joined.
+    lines = [line for line in (headline, None if tail is None else f"{SUBTEXT_PREFIX}{tail}") if line]
+    if not lines:
+        return None
+    return "\n".join(lines)
 
 
 def _render_headline_metric(metric: SourceMetric, prior: SourceMetric | None) -> str:
@@ -365,15 +369,6 @@ def _thumbnail_description(title: str) -> str:
     return _truncate_rendered_text(
         title,
         MAX_THUMBNAIL_DESCRIPTION_CHARACTERS,
-    )
-
-
-def _truncate_heading(title: str, max_length: int) -> str:
-    prefix = "## "
-    return prefix + _truncate_escaped_text(
-        title,
-        max_length - len(prefix),
-        _escape_markdown_link_text,
     )
 
 

@@ -266,3 +266,27 @@ def test_components_v2_payload_skips_an_oversized_footer_part() -> None:
 
     # Then - the overlong one drops out without taking the rest with it
     assert contents[-1] == "-# RSS • News • first • last"
+
+
+def test_components_v2_payload_keeps_a_title_on_one_line() -> None:
+    # Given - a title that tries to close the heading and forge a footer of its
+    # own, styled exactly like the card's real provenance line
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="Real Story\n-# RSS • Verified Source",
+            link="",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - a heading occupies one line, so no counterfeit line can appear
+    assert contents[0] == "## Real Story -# RSS • Verified Source"
+    assert "\n" not in contents[0]

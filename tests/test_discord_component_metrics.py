@@ -279,3 +279,17 @@ def test_clipped_metric_value_is_marked_as_truncated() -> None:
 
     # Then - a cut value must not read as a complete one
     assert metrics.endswith("…**")
+
+
+def test_blank_headline_metric_leaves_no_leading_newline() -> None:
+    # Given - a blank headline metric alongside a real supporting one
+    message = _with_metrics(
+        SourceMetric(label="", value=""),
+        SourceMetric(label="A", value="B"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the block must not open on a bare newline
+    assert metrics == "-# A: B"
