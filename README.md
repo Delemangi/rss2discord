@@ -19,6 +19,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklam
 - New products from one Neptun category and opt-in actual-price alerts
 - SQLite delivery history and persistent price snapshots for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, and Setec
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
+- Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, and only provenance left in the footer
 
 ## Docker Compose setup
 
@@ -198,7 +199,7 @@ Useful options:
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
-| `embed_color` | Components v2 accent color; key name is kept for compatibility. |
+| `embed_color` | Components v2 accent color; key name is kept for compatibility. Price alerts override it with green for a drop and red for a rise. |
 | `price_check_interval` | Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec only. Omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
