@@ -5,6 +5,7 @@ from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.discord.components import (
     MAX_FOOTER_LINE_CHARACTERS,
     MAX_HEADING_CHARACTERS,
+    MAX_HEADING_TITLE_CHARACTERS,
     MAX_TEXT_DISPLAY_CHARACTERS,
 )
 from rss2discord.models import EntryData, SourceMetric
@@ -127,8 +128,8 @@ def test_components_v2_payload_caps_heading_without_starving_footer() -> None:
     # When
     contents = get_text_display_contents(message)
 
-    # Then - the heading is bounded on its own, so the footer still renders
-    assert len(contents[0]) == MAX_HEADING_CHARACTERS
+    # Then - the visible title is bounded, so the footer still renders
+    assert len(contents[0]) == len("## ") + MAX_HEADING_TITLE_CHARACTERS
     assert contents[0].startswith("## ")
     assert contents[-1] == "-# RSS • News"
 
@@ -220,3 +221,48 @@ def test_components_v2_payload_drops_link_that_exceeds_text_budget() -> None:
 
     # Then
     assert contents[0] == "## Entry"
+
+
+def test_components_v2_payload_keeps_the_link_when_only_the_url_is_long() -> None:
+    # Given - a realistic long title behind a URL carrying tracking parameters
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="T" * 220,
+            link="https://example.test/product?" + "utm=x&" * 50,
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - a long address costs budget but no width, so the link survives
+    assert contents[0].startswith("## [")
+    assert "](" in contents[0]
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+
+
+def test_components_v2_payload_skips_an_oversized_footer_part() -> None:
+    # Given - one category far past the ceiling, between two that fit
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            description="",
+            author="",
+            timestamp=None,
+            categories=("first", "X" * 600, "last"),
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the overlong one drops out without taking the rest with it
+    assert contents[-1] == "-# RSS • News • first • last"

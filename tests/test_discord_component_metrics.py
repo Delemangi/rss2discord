@@ -242,3 +242,40 @@ def test_metric_markdown_stays_escaped_inside_the_headline_emphasis() -> None:
 
     # Then - escaping keeps the bold and strike-through delimiters unambiguous
     assert metrics == "Pri\\*\\*ce: **7\\*\\*990** ~~9\\~\\~490~~"
+
+
+def test_line_breaks_cannot_escape_the_metrics_subtext_block() -> None:
+    # Given - a value carrying a newline and a heading marker
+    message = _with_metrics(
+        SourceMetric(label="Price", value="10"),
+        SourceMetric(label="X", value="a\n# INJECTED HEADING"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - only the block's own break survives, so no heading can open
+    assert metrics == "Price: **10**\n-# X: a # INJECTED HEADING"
+
+
+def test_blank_metric_emits_no_empty_text_display() -> None:
+    # Given - a metric with neither label nor value
+    message = _with_metrics(SourceMetric(label="", value=""))
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - Discord rejects an empty Text Display, so none is produced
+    assert contents == ["## [Entry](https://example.test/entry)", "-# RSS • News"]
+    assert all(contents)
+
+
+def test_clipped_metric_value_is_marked_as_truncated() -> None:
+    # Given - a value past the per-metric ceiling
+    message = _with_metrics(SourceMetric(label="Price", value="1234567890" * 10))
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - a cut value must not read as a complete one
+    assert metrics.endswith("…**")

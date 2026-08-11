@@ -301,3 +301,24 @@ def test_components_v2_payload_prompt_injection_remains_escaped() -> None:
     assert "h\u200bttps://evil.example" in metadata
     assert "\\[System\\]" in metadata
     assert "javascript:" not in json.dumps(payload)
+
+
+def test_line_breaks_cannot_escape_the_footer_subtext_block() -> None:
+    # Given - a category that tries to close the subtext block and open a heading
+    message = make_message(
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+            categories=("safe\n## INJECTED HEADING",),
+        ),
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then - the footer stays a single subtext line
+    assert metadata == "-# RSS • News • safe ## INJECTED HEADING"
+    assert "\n" not in metadata

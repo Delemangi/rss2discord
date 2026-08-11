@@ -31,7 +31,8 @@ MAX_THUMBNAIL_DESCRIPTION_CHARACTERS: Final = 1024
 
 # Per-block ceilings. They sum to well under the shared budget so the
 # description always keeps a usable share no matter how hostile an entry is.
-MAX_HEADING_CHARACTERS: Final = 512
+MAX_HEADING_CHARACTERS: Final = 1024
+MAX_HEADING_TITLE_CHARACTERS: Final = 300
 MAX_METRICS_CHARACTERS: Final = 512
 MAX_FOOTER_LINE_CHARACTERS: Final = 512
 MAX_METRIC_LABEL_CHARACTERS: Final = 48
@@ -61,6 +62,7 @@ BARE_LINK_PREFIX: Final[re.Pattern[str]] = re.compile(
     r"\b(?:https?://|www\.)",
     re.IGNORECASE,
 )
+LINE_BREAK: Final[re.Pattern[str]] = re.compile("[\r\n\v\f\u2028\u2029]+")
 
 
 def build_components_v2_payload(
@@ -188,17 +190,23 @@ def _description_budget(heading: str, metrics: str | None, footer: str) -> int:
 
 
 def _build_heading(title: str, safe_link: str | None) -> str:
+    # Bound the visible title on its own. A URL costs budget but no width, so
+    # measuring the whole linked construct would strip the link off entries
+    # whose address merely carries a long query string.
     escaped = _escape_markdown_link_text(title)
+    if len(escaped) > MAX_HEADING_TITLE_CHARACTERS:
+        escaped = _truncate_escaped_text(
+            title,
+            MAX_HEADING_TITLE_CHARACTERS,
+            _escape_markdown_link_text,
+        )
     if safe_link is not None:
-        # Only link the heading when the whole construct fits. Truncating a
-        # Markdown link would leave a mangled URL or broken syntax behind.
+        # Link only when the whole construct fits: truncating a Markdown link
+        # would leave a mangled URL or broken syntax behind.
         linked = f"## [{escaped}]({safe_link})"
         if len(linked) <= MAX_HEADING_CHARACTERS:
             return linked
-    plain = f"## {escaped}"
-    if len(plain) <= MAX_HEADING_CHARACTERS:
-        return plain
-    return _truncate_heading(title, MAX_HEADING_CHARACTERS)
+    return f"## {escaped}"
 
 
 def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
@@ -222,7 +230,9 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
     )
     tail = _bounded_join(supporting, tail_budget)
     if tail is None:
-        return headline
+        # An entry whose only metric is blank must not emit an empty Text
+        # Display, which Discord rejects outright.
+        return headline or None
     return f"{headline}\n{SUBTEXT_PREFIX}{tail}"
 
 
@@ -256,8 +266,12 @@ def _render_metric(metric: SourceMetric) -> str:
 def _metric_parts(metric: SourceMetric) -> tuple[str, str]:
     # Clip before escaping so a clipped value can never split an escape pair,
     # which would leak a stray backslash into the rendered card.
-    label = _escape_metadata_text(metric.label[:MAX_METRIC_LABEL_CHARACTERS])
-    value = _escape_metadata_text(metric.value[:MAX_METRIC_VALUE_CHARACTERS])
+    label = _escape_metadata_text(
+        _truncate_rendered_text(metric.label, MAX_METRIC_LABEL_CHARACTERS),
+    )
+    value = _escape_metadata_text(
+        _truncate_rendered_text(metric.value, MAX_METRIC_VALUE_CHARACTERS),
+    )
     return label, value
 
 
@@ -314,7 +328,9 @@ def _bounded_join(parts: Sequence[str], budget: int) -> str | None:
     for part in parts:
         candidate = METADATA_SEPARATOR.join([*kept, part])
         if len(candidate) > budget:
-            break
+            # Skip rather than stop: one overlong category should not cost the
+            # reader every shorter one behind it.
+            continue
         kept.append(part)
     if not kept:
         return None
@@ -333,10 +349,14 @@ def _escape_markdown_text(text: str) -> str:
 
 
 def _escape_metadata_text(text: str) -> str:
+    # Metadata is single-line by contract. A line break would close the "-# "
+    # subtext block, letting feed text open a heading of its own inside the
+    # card, so every break becomes a space before anything else is escaped.
+    single_line = LINE_BREAK.sub(" ", text)
     return _escape_markdown_text(
         BARE_LINK_PREFIX.sub(
             lambda match: f"{match.group(0)[0]}\u200b{match.group(0)[1:]}",
-            text,
+            single_line,
         ),
     )
 
