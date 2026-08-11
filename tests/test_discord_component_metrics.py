@@ -159,8 +159,7 @@ def test_prior_metric_renders_struck_through_beside_the_headline() -> None:
     # Then - the strike-through says "was", so the prior label is dropped, and
     # the prior value does not also appear in the supporting line
     assert metrics == (
-        f"Price: **7.990 ден** ~~9.490 ден~~\n{METRICS_GAP}\n"
-        "-# Original: 10.990 ден"
+        f"Price: **7.990 ден** ~~9.490 ден~~\n{METRICS_GAP}\n-# Original: 10.990 ден"
     )
 
 
@@ -316,8 +315,9 @@ def test_entry_without_metrics_renders_no_metrics_block() -> None:
     assert contents == ["## [Entry](https://example.test/entry)", "-# RSS • News"]
 
 
-def test_description_moves_below_the_section_when_metrics_take_the_thumbnail_row(
-) -> None:
+def test_description_moves_below_the_section_when_metrics_take_the_thumbnail_row() -> (
+    None
+):
     # Given - an image, metrics and a description all at once
     message = make_message(
         entry=EntryData(
@@ -394,9 +394,7 @@ def test_line_breaks_cannot_escape_the_metrics_subtext_block() -> None:
     metrics = get_metrics_content(message)
 
     # Then - only the block's own break survives, so no heading can open
-    assert metrics == (
-        f"Price: **10**\n{METRICS_GAP}\n-# X: a # INJECTED HEADING"
-    )
+    assert metrics == f"Price: **10**\n{METRICS_GAP}\n-# X: a # INJECTED HEADING"
 
 
 def test_blank_metric_emits_no_empty_text_display() -> None:

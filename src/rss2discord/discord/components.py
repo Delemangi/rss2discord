@@ -385,9 +385,7 @@ def _escape_metadata_text(text: str) -> str:
     single_line = LINE_BREAK.sub(" ", text)
     return _escape_markdown_text(
         BARE_LINK_PREFIX.sub(
-            lambda match: (
-                f"{match.group(0)[0]}{ZERO_WIDTH_SPACE}{match.group(0)[1:]}"
-            ),
+            lambda match: f"{match.group(0)[0]}{ZERO_WIDTH_SPACE}{match.group(0)[1:]}",
             single_line,
         ),
     )

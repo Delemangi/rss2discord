@@ -193,7 +193,9 @@ def render_discord_markdown(text: str, *, now: datetime) -> str:
             blocks.append(f"<h1>{_render_inline(line[2:], now=now)}</h1>")
         elif line.startswith("-# "):
             flush()
-            blocks.append(f'<div class="subtext">{_render_inline(line[3:], now=now)}</div>')
+            blocks.append(
+                f'<div class="subtext">{_render_inline(line[3:], now=now)}</div>',
+            )
         else:
             paragraph.append(_render_inline(line, now=now))
     flush()
@@ -299,7 +301,9 @@ def _relative(moment: datetime, now: datetime) -> str:
             step = seconds // 60 if unit != "second" else 1
             value = max(1, delta // step) if unit != "second" else max(1, delta)
             plural = "" if value == 1 else "s"
-            return f"{value} {unit}{plural} ago" if past else f"in {value} {unit}{plural}"
+            return (
+                f"{value} {unit}{plural} ago" if past else f"in {value} {unit}{plural}"
+            )
     years = max(1, delta // 31536000)
     plural = "" if years == 1 else "s"
     return f"{years} year{plural} ago" if past else f"in {years} year{plural}"

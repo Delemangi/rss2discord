@@ -204,7 +204,11 @@ def build_samples() -> list[Sample]:
         Sample(
             key=case.key,
             caption=case.caption,
-            payload=build_components_v2_payload(case.feed, case.entry, case.source_title),
+            payload=build_components_v2_payload(
+                case.feed,
+                case.entry,
+                case.source_title,
+            ),
         )
         for case in CASES
     ]
