@@ -6,6 +6,7 @@ from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
 
 from rss2discord.models import EntryData, EntryId
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
+from rss2discord.url_normalization import normalize_http_url
 
 
 class XenForoStrategy(ScraperStrategy):
@@ -31,7 +32,7 @@ class XenForoStrategy(ScraperStrategy):
         thread = threads[0] if threads else {}
 
         title = thread.get("title", "XenForo Thread")
-        thread_url = thread.get("url")
+        thread_url = thread.get("url") or url
         posts = thread.get("posts", [])
 
         if posts:
@@ -61,7 +62,12 @@ class XenForoStrategy(ScraperStrategy):
         author = entry.get("author", entry.get("user", "Unknown"))
         title = entry.get("title", "XenForo Thread")
 
-        thread_url = entry.get("thread_url")
+        raw_thread_url = entry.get("thread_url")
+        thread_url = (
+            normalize_http_url(str(raw_thread_url))
+            if raw_thread_url is not None
+            else None
+        )
         post_id = entry.get("id")
         link = ""
         if thread_url and post_id is not None:

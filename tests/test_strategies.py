@@ -8,6 +8,7 @@ import requests
 
 import rss2discord.transports.xenforo as xenforo_module
 from rss2discord.transports import FeedFetchError, RSSStrategy, XenForoStrategy
+from tests.discord_components_helpers import get_text_display_contents, make_message
 
 
 def test_rss_strategy_uses_stable_native_identity() -> None:
@@ -133,6 +134,51 @@ def test_xenforo_fetch_does_not_change_process_working_directory(
 
     # Then
     assert scraper_working_directories == [original_cwd]
+
+
+def test_xenforo_fetch_uses_configured_thread_url_when_scraper_omits_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    configured_url = "https://forum.example.test/threads/topic.1/"
+
+    class ThreadWithoutUrlScraper:
+        def get_thread(
+            self,
+            url: str,
+        ) -> dict[
+            str,
+            dict[str, list[dict[str, str | list[dict[str, int | str]]]]],
+        ]:
+            del url
+            return {
+                "data": {
+                    "threads": [
+                        {
+                            "title": "Thread",
+                            "posts": [{"id": 7, "content": "Post body"}],
+                        },
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        xenforo_module,
+        "xenforo",
+        lambda **kwargs: ThreadWithoutUrlScraper(),
+    )
+    strategy = XenForoStrategy()
+
+    # When
+    entries, _source_title = strategy.fetch_entries(configured_url)
+    entry_data = strategy.get_entry_data(entries[0])
+    heading = get_text_display_contents(
+        make_message(strategy="xenforo", entry=entry_data),
+    )[0]
+
+    # Then
+    assert entry_data.link == f"{configured_url.rstrip('/')}/post-7"
+    assert entry_data.link in heading
 
 
 def test_rss_fetch_error_does_not_expose_feed_url_secret(
