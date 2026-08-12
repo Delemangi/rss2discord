@@ -9,6 +9,7 @@ def normalize_http_url(value: str) -> str | None:
         return None
     try:
         parsed = urlsplit(normalized)
+        _ = parsed.port
     except ValueError:
         return None
     if (
