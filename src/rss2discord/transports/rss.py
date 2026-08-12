@@ -12,6 +12,7 @@ import requests
 from rss2discord.models import EntryData, EntryId
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 from rss2discord.transports.rss_timestamp import get_rss_timestamp
+from rss2discord.url_normalization import normalize_http_url
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
@@ -110,7 +111,7 @@ class RSSStrategy(ScraperStrategy):
     def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
         """Extract data from an RSS entry."""
         title = unescape(str(entry.get("title", "No Title")))
-        link = str(entry.get("link", ""))
+        link = normalize_http_url(str(entry.get("link", ""))) or ""
         author = str(entry.get("author", ""))
 
         raw_description = entry.get("summary", entry.get("description", ""))
@@ -126,10 +127,15 @@ class RSSStrategy(ScraperStrategy):
         description = self._clean_rss_description(description)
         description = self._truncate(description)
 
-        discussion_url = self._optional_string(
+        raw_discussion_url = self._optional_string(
             self._structured_field(entry, "comments"),
         )
-        if discussion_url == link.strip():
+        discussion_url = (
+            normalize_http_url(raw_discussion_url)
+            if raw_discussion_url is not None
+            else None
+        )
+        if discussion_url == link:
             discussion_url = None
 
         image_url = (
