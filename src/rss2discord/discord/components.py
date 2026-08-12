@@ -7,7 +7,7 @@ from urllib.parse import quote
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
-from rss2discord.url_normalization import normalize_http_url
+from rss2discord.url_normalization import normalize_http_url, normalize_remote_media_url
 
 type JSONValue = (
     bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None
@@ -184,7 +184,7 @@ def _resolve_image_url(
     attachment_filename: str | None,
 ) -> str | None:
     if attachment_filename is None:
-        return _safe_markdown_url(entry.image_url) if entry.image_url else None
+        return _safe_remote_media_url(entry.image_url) if entry.image_url else None
     if attachment_filename in ATTACHMENT_FILENAMES:
         return f"attachment://{attachment_filename}"
     return None
@@ -434,6 +434,13 @@ def _truncate_rendered_text(text: str, max_length: int) -> str:
 
 def _safe_markdown_url(url: str) -> str | None:
     normalized_url = normalize_http_url(url)
+    if normalized_url is None:
+        return None
+    return quote(normalized_url, safe=":/?#[]@!$&'*+,;=%-._~")
+
+
+def _safe_remote_media_url(url: str) -> str | None:
+    normalized_url = normalize_remote_media_url(url)
     if normalized_url is None:
         return None
     return quote(normalized_url, safe=":/?#[]@!$&'*+,;=%-._~")

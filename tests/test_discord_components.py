@@ -138,6 +138,31 @@ def test_components_v2_payload_safely_renders_entry_links(
 
 
 @pytest.mark.parametrize(
+    "image_url",
+    [
+        "http://example.test/image.jpg",
+        "https://preview.localhost/image.jpg",
+        "https://127.0.0.1/image.jpg",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/image.jpg",
+        f"https://example.test/{'a' * 2_048}",
+    ],
+)
+def test_components_v2_payload_omits_unsafe_remote_thumbnails(
+    image_url: str,
+) -> None:
+    # Given
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, image_url=image_url))
+
+    # When
+    children = get_container_children(message)
+
+    # Then
+    assert children[0]["type"] == 10
+
+
+@pytest.mark.parametrize(
     ("author", "source_title", "expected_metadata"),
     [
         (
