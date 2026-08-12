@@ -116,6 +116,9 @@ def test_components_v2_payload_omits_empty_optional_text() -> None:
             "## [Entry](https://legit.example/%29%20[Urgent]%28https://evil.example/phish)",
         ),
         ("javascript:alert(1)", "## Entry"),
+        ("https://user:secret@example.test/article", "## Entry"),
+        ("https://example.test:bad/article", "## Entry"),
+        ("https://example.test:99999/article", "## Entry"),
     ],
 )
 def test_components_v2_payload_safely_renders_entry_links(

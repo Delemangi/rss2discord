@@ -2,11 +2,12 @@ import re
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Final
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
+from rss2discord.url_normalization import normalize_http_url
 
 type JSONValue = (
     bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None
@@ -432,16 +433,10 @@ def _truncate_rendered_text(text: str, max_length: int) -> str:
 
 
 def _safe_markdown_url(url: str) -> str | None:
-    if any(ord(character) < 32 or ord(character) == 127 for character in url):
+    normalized_url = normalize_http_url(url)
+    if normalized_url is None:
         return None
-    try:
-        parsed = urlsplit(url)
-        hostname = parsed.hostname
-    except ValueError:
-        return None
-    if parsed.scheme.lower() not in {"http", "https"} or hostname is None:
-        return None
-    return quote(url, safe=":/?#[]@!$&'*+,;=%-._~")
+    return quote(normalized_url, safe=":/?#[]@!$&'*+,;=%-._~")
 
 
 def _format_timestamp(timestamp: str) -> str:
