@@ -199,6 +199,7 @@ Useful options:
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
+| `webhook_avatar` | Optional HTTPS URL, up to 2,048 encoded characters. Localhost, non-global IP literals, malformed hosts, and URLs with credentials are rejected. DNS names are not resolved by rss2discord. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. Price alerts override it with green for a drop and red for a rise. |
 | `price_check_interval` | Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec only. Omit or set to `null` to disable. |
 

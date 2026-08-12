@@ -46,6 +46,58 @@ def test_load_config_rejects_webhook_name_over_80_characters(
         load_config(config_path)
 
 
+@pytest.mark.parametrize(
+    "webhook_avatar",
+    [
+        "http://example.test/avatar.png",
+        "javascript:alert(1)",
+        "https://user:secret@example.test/avatar.png",
+        "https://example.test:bad/avatar.png",
+        "https://localhost/avatar.png",
+        "https://127.0.0.1/avatar.png",
+        f"https://example.test/{'a' * 2_048}",
+        f"https://example.test/{'é' * 400}",
+    ],
+)
+def test_load_config_rejects_invalid_webhook_avatar_urls(
+    tmp_path: Path,
+    webhook_avatar: str,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        f"    webhook_avatar: {webhook_avatar}\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
+def test_load_config_preserves_valid_webhook_avatar_url(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    webhook_avatar: https://cdn.example.test/avatar image.png?size=256\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].webhook_avatar == (
+        "https://cdn.example.test/avatar%20image.png?size=256"
+    )
+
+
 def test_load_config_parses_delay_between_feeds(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"

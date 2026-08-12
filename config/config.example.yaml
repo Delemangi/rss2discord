@@ -257,6 +257,8 @@ feeds:
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors without OAuth
 # - webhook_name: Custom name for the webhook bot (optional)
-# - webhook_avatar: URL to custom avatar image for the webhook bot (optional)
+# - webhook_avatar: HTTPS URL for the webhook avatar, up to 2,048 encoded
+#   characters. Localhost, non-global IP literals, malformed hosts, and
+#   credentials are rejected; DNS names are not resolved by rss2discord.
 # - embed_color: Decimal color for the Components v2 container accent
 #   The legacy key name is retained for compatibility (optional, default: 5814783)

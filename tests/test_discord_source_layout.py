@@ -169,6 +169,64 @@ def test_components_v2_payload_keeps_thumbnail_description_plain() -> None:
     assert accessory["description"] == title
 
 
+def test_components_v2_payload_falls_back_for_blank_titles() -> None:
+    # Given
+    message = make_message(
+        entry=EntryData(
+            title=" \n ",
+            link="https://example.test/entry",
+            description="Description",
+            author="",
+            timestamp=None,
+            image_url="https://example.test/image.png",
+        ),
+    )
+
+    # When
+    children = get_container_children(message)
+
+    # Then
+    section = children[0]
+    assert section["type"] == 9
+    section_children = section["components"]
+    assert isinstance(section_children, list)
+    heading = section_children[0]
+    assert isinstance(heading, dict)
+    assert heading["content"] == "## [No Title](https://example.test/entry)"
+    accessory = section["accessory"]
+    assert isinstance(accessory, dict)
+    assert accessory["description"] == "No Title"
+
+
+def test_components_v2_payload_keeps_multiline_title_text_consistent() -> None:
+    # Given
+    message = make_message(
+        entry=EntryData(
+            title="Release\nNotes",
+            link="https://example.test/entry",
+            description="Description",
+            author="",
+            timestamp=None,
+            image_url="https://example.test/image.png",
+        ),
+    )
+
+    # When
+    children = get_container_children(message)
+
+    # Then
+    section = children[0]
+    assert section["type"] == 9
+    section_children = section["components"]
+    assert isinstance(section_children, list)
+    heading = section_children[0]
+    assert isinstance(heading, dict)
+    assert heading["content"] == "## [Release Notes](https://example.test/entry)"
+    accessory = section["accessory"]
+    assert isinstance(accessory, dict)
+    assert accessory["description"] == "Release Notes"
+
+
 def test_components_v2_payload_separator_has_divider_and_compact_spacing() -> None:
     # Given
     message = make_message()
