@@ -7,7 +7,11 @@ from urllib.parse import quote
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
-from rss2discord.url_normalization import normalize_http_url, normalize_remote_media_url
+from rss2discord.url_normalization import (
+    MAX_HTTP_URL_LENGTH,
+    normalize_http_url,
+    normalize_remote_media_url,
+)
 
 type JSONValue = (
     bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None
@@ -443,7 +447,8 @@ def _safe_remote_media_url(url: str) -> str | None:
     normalized_url = normalize_remote_media_url(url)
     if normalized_url is None:
         return None
-    return quote(normalized_url, safe=":/?#[]@!$&'*+,;=%-._~")
+    quoted_url = quote(normalized_url, safe=":/?#[]@!$&'*+,;=%-._~")
+    return quoted_url if len(quoted_url) <= MAX_HTTP_URL_LENGTH else None
 
 
 def _format_timestamp(timestamp: str) -> str:

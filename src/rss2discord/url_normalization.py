@@ -35,7 +35,7 @@ def normalize_remote_media_url(value: str) -> str | None:
     if parsed.scheme.casefold() != "https":
         return None
     hostname = parsed.hostname
-    if hostname is None:
+    if hostname is None or not hostname.isascii():
         return None
     policy_hostname = hostname.casefold().rstrip(".")
     if (
@@ -53,4 +53,4 @@ def normalize_remote_media_url(value: str) -> str | None:
         except OSError:
             return normalized
         return None
-    return normalized if address.is_global else None
+    return normalized if address.is_global and not address.is_multicast else None
