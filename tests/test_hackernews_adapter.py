@@ -11,6 +11,7 @@ from rss2discord.adapters.hackernews import (
     fetch_hacker_news_item,
 )
 from rss2discord.models import EntryData, SourceMetric
+from tests.discord_components_helpers import get_text_display_contents, make_message
 
 
 def make_entry(
@@ -171,6 +172,30 @@ def test_hackernews_adapter_preserves_rss_link_for_blank_api_url() -> None:
 
     # Then
     assert result.link == entry.link
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    ["javascript:alert(1)", "/relative/article", "https://example.test/bad\nlink"],
+)
+def test_hackernews_adapter_preserves_rss_link_for_invalid_api_url(
+    api_url: str,
+) -> None:
+    # Given
+    item = HackerNewsItem(id=123, type="story", url=api_url)
+    adapter = HackerNewsAdapter(fetch_item=lambda item_id: item)
+    entry = make_entry()
+
+    # When
+    result = adapter.adapt({}, entry)
+    heading = get_text_display_contents(
+        make_message(adapter="hackernews", entry=result),
+    )[0]
+
+    # Then
+    assert result.link == entry.link
+    assert result.source_metrics == (SourceMetric(label="Domain", value="example.test"),)
+    assert entry.link in heading
 
 
 def test_fetch_hacker_news_item_parses_api_response(
