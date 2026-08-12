@@ -116,6 +116,9 @@ def test_components_v2_payload_omits_empty_optional_text() -> None:
             "## [Entry](https://legit.example/%29%20[Urgent]%28https://evil.example/phish)",
         ),
         ("javascript:alert(1)", "## Entry"),
+        ("https://user:secret@example.test/article", "## Entry"),
+        ("https://example.test:bad/article", "## Entry"),
+        ("https://example.test:99999/article", "## Entry"),
     ],
 )
 def test_components_v2_payload_safely_renders_entry_links(
@@ -132,6 +135,52 @@ def test_components_v2_payload_safely_renders_entry_links(
     # Then
     heading = children[0]
     assert heading["content"] == expected_heading
+
+
+@pytest.mark.parametrize(
+    "image_url",
+    [
+        "http://example.test/image.jpg",
+        "https://preview.localhost/image.jpg",
+        "https://localhost./image.jpg",
+        "https://preview.localhost./image.jpg",
+        "https://%6cocalhost/image.jpg",
+        "https://localhost。/image.jpg",
+        "https://ｌｏｃａｌｈｏｓｔ/image.jpg",
+        "https://１２７。０。０。１/image.jpg",
+        "https://127.0.0.1/image.jpg",
+        "https://2130706433/image.jpg",
+        "https://0177.0.0.1/image.jpg",
+        "https://127.1/image.jpg",
+        "https://0x7f000001/image.jpg",
+        "https://example.com /image.jpg",
+        "https://.example/image.jpg",
+        "https://example..com/image.jpg",
+        "https://-example.com/image.jpg",
+        "https://example-.com/image.jpg",
+        "https://exam_ple.com/image.jpg",
+        f"https://{'a' * 64}.example/image.jpg",
+        f"https://{'a.' * 126}aa/image.jpg",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://224.0.0.1/image.jpg",
+        "https://[::1]/image.jpg",
+        "https://[ff02::1]/image.jpg",
+        f"https://example.test/{'a' * 2_048}",
+        f"https://example.test/{'é' * 400}",
+    ],
+)
+def test_components_v2_payload_omits_unsafe_remote_thumbnails(
+    image_url: str,
+) -> None:
+    # Given
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, image_url=image_url))
+
+    # When
+    children = get_container_children(message)
+
+    # Then
+    assert children[0]["type"] == 10
 
 
 @pytest.mark.parametrize(

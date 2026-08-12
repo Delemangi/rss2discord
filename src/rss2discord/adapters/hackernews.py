@@ -10,6 +10,7 @@ import requests
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.url_normalization import normalize_http_url
 
 logger = logging.getLogger(__name__)
 HACKER_NEWS_ITEM_URL: Final = (
@@ -70,7 +71,7 @@ class HackerNewsAdapter:
         if item is None or item.deleted or item.dead:
             return data
 
-        candidate_link = item.url.strip() if item.url else ""
+        candidate_link = normalize_http_url(item.url) if item.url else None
         link = candidate_link or data.link
         description = data.description
         if item.text:

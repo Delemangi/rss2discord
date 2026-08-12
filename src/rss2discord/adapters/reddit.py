@@ -5,6 +5,7 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 from rss2discord.models import EntryData
+from rss2discord.url_normalization import normalize_http_url
 
 IMAGE_PATH_SUFFIXES: Final = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
 
@@ -86,14 +87,8 @@ def _outbound_link(entry: Any) -> str | None:  # noqa: ANN401
             continue
         parser = _RedditLinkParser()
         parser.feed(value)
-        if parser.link_target is not None and _is_http_url(parser.link_target):
-            return parser.link_target
+        if parser.link_target is not None:
+            link_target = normalize_http_url(parser.link_target)
+            if link_target is not None:
+                return link_target
     return None
-
-
-def _is_http_url(url: str) -> bool:
-    try:
-        parsed = urlsplit(url)
-    except ValueError:
-        return False
-    return parsed.scheme.casefold() in {"http", "https"} and parsed.hostname is not None

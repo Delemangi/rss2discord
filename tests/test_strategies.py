@@ -1,13 +1,11 @@
 import traceback
-from pathlib import Path
 from time import struct_time
 
 import feedparser
 import pytest
 import requests
 
-import rss2discord.transports.xenforo as xenforo_module
-from rss2discord.transports import FeedFetchError, RSSStrategy, XenForoStrategy
+from rss2discord.transports import FeedFetchError, RSSStrategy
 
 
 def test_rss_strategy_uses_stable_native_identity() -> None:
@@ -49,15 +47,6 @@ def test_rss_strategy_preserves_core_normalization_behavior() -> None:
     assert entry_data.timestamp == "2026-07-20T12:34:56+00:00"
 
 
-def test_xenforo_strategy_requires_post_id() -> None:
-    # Given
-    strategy = XenForoStrategy()
-
-    # When / Then
-    assert strategy.get_entry_id({"id": 42}) == "42"
-    assert strategy.get_entry_id({"content": "No stable identity"}) is None
-
-
 def test_rss_strategy_does_not_invent_missing_timestamp() -> None:
     # Given
     strategy = RSSStrategy()
@@ -74,65 +63,6 @@ def test_rss_strategy_parses_raw_timestamp_when_structured_time_is_missing() -> 
 
     # When / Then
     assert strategy._get_timestamp(entry) == "2026-07-21T09:30:00+00:00"
-
-
-def test_xenforo_strategy_does_not_invent_missing_timestamp() -> None:
-    # Given
-    strategy = XenForoStrategy()
-
-    # When / Then
-    assert strategy._get_timestamp({}) is None
-
-
-def test_xenforo_strategy_builds_post_permalink_from_latest_url() -> None:
-    # Given
-    strategy = XenForoStrategy()
-    entry = {
-        "id": 10481134,
-        "thread_url": "https://forum.example.test/threads/topic.68732/latest",
-    }
-
-    # When
-    entry_data = strategy.get_entry_data(entry)
-
-    # Then
-    assert entry_data.link == (
-        "https://forum.example.test/threads/topic.68732/post-10481134"
-    )
-
-
-def test_xenforo_fetch_does_not_change_process_working_directory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    original_cwd = Path.cwd()
-    scraper_working_directories: list[Path] = []
-
-    class RecordingScraper:
-        def get_thread(
-            self,
-            url: str,
-        ) -> dict[str, dict[str, list[dict[str, str | list[str]]]]]:
-            scraper_working_directories.append(Path.cwd())
-            return {
-                "data": {
-                    "threads": [
-                        {
-                            "title": "Thread",
-                            "url": url,
-                            "posts": [],
-                        },
-                    ],
-                },
-            }
-
-    monkeypatch.setattr(xenforo_module, "xenforo", lambda **kwargs: RecordingScraper())
-
-    # When
-    XenForoStrategy().fetch_entries("https://forum.example.test/threads/topic.1/")
-
-    # Then
-    assert scraper_working_directories == [original_cwd]
 
 
 def test_rss_fetch_error_does_not_expose_feed_url_secret(
@@ -154,35 +84,6 @@ def test_rss_fetch_error_does_not_expose_feed_url_secret(
     # When
     with pytest.raises(FeedFetchError) as fetch_error:
         RSSStrategy().fetch_entries(feed_url)
-
-    # Then
-    rendered_error = "".join(
-        traceback.format_exception(
-            fetch_error.type,
-            fetch_error.value,
-            fetch_error.tb,
-        ),
-    )
-    assert "secret-token" not in rendered_error
-
-
-def test_xenforo_fetch_error_does_not_expose_feed_url_secret(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    feed_url = "https://feed.test/thread?token=secret-token"
-
-    class XenForoRequestError(Exception):
-        pass
-
-    class FailingScraper:
-        def get_thread(self, url: str) -> None:
-            raise XenForoRequestError(f"Could not connect to {url}")
-
-    monkeypatch.setattr(xenforo_module, "xenforo", lambda **kwargs: FailingScraper())
-    # When
-    with pytest.raises(FeedFetchError) as fetch_error:
-        XenForoStrategy().fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(

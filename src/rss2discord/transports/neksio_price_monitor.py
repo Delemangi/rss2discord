@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final, Protocol, assert_never
 
@@ -15,14 +15,14 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.models import SourceMetric
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.neksio import NEKSIO_PRODUCT_DETAILS_PATH, _categories
-from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL, NEKSIO_ORIGIN
+from rss2discord.transports.neksio import _entry_data
+from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL
 from rss2discord.transports.neksio_models import NeksioProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
@@ -178,16 +178,8 @@ class NeksioPriceMonitor:
         product = change.product
         return WebhookMessage(
             feed=self._feed,
-            entry=EntryData(
-                title=product.product_name,
-                link=(
-                    f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}{product.product_id}"
-                ),
-                description="",
-                author="",
-                timestamp=product.observed_at.isoformat(),
-                image_url=f"{NEKSIO_ORIGIN}{product.image_path.lstrip('/')}",
-                categories=_categories(product),
+            entry=replace(
+                _entry_data(product),
                 source_metrics=self._metrics_for(change),
                 price_direction=price_direction(change.previous, change.current),
             ),

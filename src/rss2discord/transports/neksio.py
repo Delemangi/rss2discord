@@ -49,30 +49,34 @@ class NeksioStrategy(ScraperStrategy):
 
     def get_entry_data(self, entry: NeksioProduct) -> EntryData:
         """Map one observed Neksio product to ordinary entry data."""
-        metrics = [SourceMetric(label="Price", value=entry.formatted_price)]
-        if entry.old_formatted_price:
-            metrics.append(
-                SourceMetric(label="Original", value=entry.old_formatted_price),
-            )
-        if entry.product_code:
-            metrics.append(SourceMetric(label="Product code", value=entry.product_code))
-        if entry.manufacturer:
-            metrics.append(SourceMetric(label="Manufacturer", value=entry.manufacturer))
-        metrics.append(SourceMetric(label="Stock", value=str(entry.stock_quantity)))
-        return EntryData(
-            title=entry.product_name,
-            link=f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}{entry.product_id}",
-            description="",
-            author="",
-            timestamp=entry.observed_at.isoformat(),
-            image_url=(
-                f"{NEKSIO_ORIGIN}{entry.image_path.lstrip('/')}"
-                if entry.image_path
-                else None
-            ),
-            categories=_categories(entry),
-            source_metrics=tuple(metrics),
+        return _entry_data(entry)
+
+
+def _entry_data(product: NeksioProduct) -> EntryData:
+    metrics = [SourceMetric(label="Price", value=product.formatted_price)]
+    if product.old_formatted_price:
+        metrics.append(
+            SourceMetric(label="Original", value=product.old_formatted_price),
         )
+    if product.product_code:
+        metrics.append(SourceMetric(label="Product code", value=product.product_code))
+    if product.manufacturer:
+        metrics.append(SourceMetric(label="Manufacturer", value=product.manufacturer))
+    metrics.append(SourceMetric(label="Stock", value=str(product.stock_quantity)))
+    return EntryData(
+        title=product.product_name,
+        link=f"{NEKSIO_ORIGIN}{NEKSIO_PRODUCT_DETAILS_PATH}{product.product_id}",
+        description="",
+        author="",
+        timestamp=product.observed_at.isoformat(),
+        image_url=(
+            f"{NEKSIO_ORIGIN}{product.image_path.lstrip('/')}"
+            if product.image_path
+            else None
+        ),
+        categories=_categories(product),
+        source_metrics=tuple(metrics),
+    )
 
 
 def _categories(product: NeksioProduct) -> tuple[str, ...]:
