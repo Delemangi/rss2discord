@@ -1,4 +1,5 @@
 from ipaddress import ip_address
+from socket import inet_aton
 from typing import Final
 from urllib.parse import urlsplit
 
@@ -34,12 +35,22 @@ def normalize_remote_media_url(value: str) -> str | None:
     if parsed.scheme.casefold() != "https":
         return None
     hostname = parsed.hostname
-    if hostname is None or hostname.casefold() == "localhost" or hostname.casefold().endswith(
-        ".localhost",
+    if hostname is None:
+        return None
+    policy_hostname = hostname.casefold().rstrip(".")
+    if (
+        not policy_hostname
+        or "%" in policy_hostname
+        or policy_hostname == "localhost"
+        or policy_hostname.endswith(".localhost")
     ):
         return None
     try:
-        address = ip_address(hostname)
+        address = ip_address(policy_hostname)
     except ValueError:
-        return normalized
+        try:
+            inet_aton(policy_hostname)
+        except OSError:
+            return normalized
+        return None
     return normalized if address.is_global else None
