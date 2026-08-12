@@ -1,9 +1,12 @@
+import re
 from ipaddress import ip_address
 from socket import inet_aton
 from typing import Final
 from urllib.parse import urlsplit
 
 MAX_HTTP_URL_LENGTH: Final = 2_048
+MAX_DNS_HOSTNAME_LENGTH: Final = 253
+DNS_LABEL: Final = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
 def normalize_http_url(value: str) -> str | None:
@@ -51,8 +54,13 @@ def normalize_remote_media_url(value: str) -> str | None:
         address = ip_address(policy_hostname)
     except ValueError:
         try:
-            inet_aton(policy_hostname)
+            _ = inet_aton(policy_hostname)
         except OSError:
+            if len(policy_hostname) > MAX_DNS_HOSTNAME_LENGTH or any(
+                DNS_LABEL.fullmatch(label) is None
+                for label in policy_hostname.split(".")
+            ):
+                return None
             return normalized
         return None
     return normalized if address.is_global and not address.is_multicast else None
