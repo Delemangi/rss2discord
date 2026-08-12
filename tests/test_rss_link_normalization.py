@@ -9,6 +9,7 @@ from tests.discord_components_helpers import get_text_display_contents, make_mes
     ("raw_link", "expected_link"),
     [
         ("  https://example.test/article  ", "https://example.test/article"),
+        ("https://user:secret@example.test/article", ""),
         ("javascript:alert(1)", ""),
         ("/relative/article", ""),
     ],
@@ -32,3 +33,28 @@ def test_rss_card_normalizes_primary_link(
         assert expected_link in heading
     else:
         assert heading == "## Article"
+
+
+@pytest.mark.parametrize(
+    "raw_discussion_url",
+    [
+        "javascript:alert(1)",
+        "/relative/comments",
+        "https://example.test/comments\nunsafe",
+    ],
+)
+def test_rss_card_omits_unsafe_discussion_link(raw_discussion_url: str) -> None:
+    # Given
+    entry = feedparser.FeedParserDict(
+        {
+            "title": "Article",
+            "link": "https://example.test/article",
+            "comments": raw_discussion_url,
+        },
+    )
+
+    # When
+    entry_data = RSSStrategy().get_entry_data(entry)
+
+    # Then
+    assert entry_data.discussion_url is None
