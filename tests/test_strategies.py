@@ -102,6 +102,21 @@ def test_xenforo_strategy_builds_post_permalink_from_latest_url() -> None:
     )
 
 
+def test_xenforo_strategy_omits_credentials_from_post_permalink() -> None:
+    # Given
+    strategy = XenForoStrategy()
+    entry = {
+        "id": 7,
+        "thread_url": "https://user:secret@forum.example.test/threads/topic.1/",
+    }
+
+    # When
+    entry_data = strategy.get_entry_data(entry)
+
+    # Then
+    assert entry_data.link == ""
+
+
 def test_xenforo_fetch_does_not_change_process_working_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -179,6 +194,95 @@ def test_xenforo_fetch_uses_configured_thread_url_when_scraper_omits_it(
     # Then
     assert entry_data.link == f"{configured_url.rstrip('/')}/post-7"
     assert entry_data.link in heading
+
+
+def test_xenforo_fetch_removes_configured_url_secrets_from_permalink(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    configured_url = (
+        "https://forum.example.test/threads/topic.1/?token=secret-token#latest"
+    )
+
+    class ThreadWithoutUrlScraper:
+        def get_thread(
+            self,
+            url: str,
+        ) -> dict[
+            str,
+            dict[str, list[dict[str, str | list[dict[str, int | str]]]]],
+        ]:
+            del url
+            return {
+                "data": {
+                    "threads": [
+                        {
+                            "title": "Thread",
+                            "posts": [{"id": 7, "content": "Post body"}],
+                        },
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        xenforo_module,
+        "xenforo",
+        lambda **kwargs: ThreadWithoutUrlScraper(),
+    )
+    strategy = XenForoStrategy()
+
+    # When
+    entries, _source_title = strategy.fetch_entries(configured_url)
+    entry_data = strategy.get_entry_data(entries[0])
+    heading = get_text_display_contents(
+        make_message(strategy="xenforo", entry=entry_data),
+    )[0]
+
+    # Then
+    assert entry_data.link == "https://forum.example.test/threads/topic.1/post-7"
+    assert "secret-token" not in heading
+
+
+def test_xenforo_fetch_falls_back_from_invalid_scraper_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    configured_url = "https://forum.example.test/threads/topic.1/"
+
+    class ThreadWithInvalidUrlScraper:
+        def get_thread(
+            self,
+            url: str,
+        ) -> dict[
+            str,
+            dict[str, list[dict[str, str | list[dict[str, int | str]]]]],
+        ]:
+            del url
+            return {
+                "data": {
+                    "threads": [
+                        {
+                            "title": "Thread",
+                            "url": "javascript:alert(1)",
+                            "posts": [{"id": 7, "content": "Post body"}],
+                        },
+                    ],
+                },
+            }
+
+    monkeypatch.setattr(
+        xenforo_module,
+        "xenforo",
+        lambda **kwargs: ThreadWithInvalidUrlScraper(),
+    )
+    strategy = XenForoStrategy()
+
+    # When
+    entries, _source_title = strategy.fetch_entries(configured_url)
+    entry_data = strategy.get_entry_data(entries[0])
+
+    # Then
+    assert entry_data.link == "https://forum.example.test/threads/topic.1/post-7"
 
 
 def test_rss_fetch_error_does_not_expose_feed_url_secret(

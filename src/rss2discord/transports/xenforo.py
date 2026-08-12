@@ -1,6 +1,7 @@
 """XenForo forum scraping strategy."""
 
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from forumscraper import Outputs, xenforo  # type: ignore[import-untyped]
 
@@ -32,7 +33,12 @@ class XenForoStrategy(ScraperStrategy):
         thread = threads[0] if threads else {}
 
         title = thread.get("title", "XenForo Thread")
-        thread_url = thread.get("url") or url
+        raw_thread_url = thread.get("url")
+        thread_url = (
+            normalize_http_url(str(raw_thread_url))
+            if raw_thread_url is not None
+            else None
+        ) or normalize_http_url(url)
         posts = thread.get("posts", [])
 
         if posts:
@@ -71,8 +77,17 @@ class XenForoStrategy(ScraperStrategy):
         post_id = entry.get("id")
         link = ""
         if thread_url and post_id is not None:
-            permalink_base = str(thread_url).rstrip("/").removesuffix("/latest")
-            link = f"{permalink_base}/post-{post_id}"
+            parsed_thread_url = urlsplit(thread_url)
+            thread_path = parsed_thread_url.path.rstrip("/").removesuffix("/latest")
+            link = urlunsplit(
+                (
+                    parsed_thread_url.scheme,
+                    parsed_thread_url.netloc,
+                    f"{thread_path}/post-{post_id}",
+                    "",
+                    "",
+                ),
+            )
 
         content = entry.get("content", entry.get("text", ""))
         content = self._clean_xenforo_content(content)
