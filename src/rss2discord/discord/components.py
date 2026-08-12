@@ -62,6 +62,7 @@ ZERO_WIDTH_SPACE: Final = "\u200b"
 # blank subtext line instead: subtext line height keeps it to roughly one line.
 METRICS_GAP: Final = f"{SUBTEXT_PREFIX}{ZERO_WIDTH_SPACE}"
 ELLIPSIS: Final = "…"
+UNTITLED_ENTRY: Final = "No Title"
 ATTACHMENT_FILENAMES: Final = frozenset(
     {
         "product-image.gif",
@@ -205,7 +206,7 @@ def _build_heading(title: str, safe_link: str | None) -> str:
     # A heading occupies a single line, so a break in the title would let feed
     # text close it and forge further lines - including a counterfeit of the
     # grey provenance footer - inside the container.
-    title = LINE_BREAK.sub(" ", title)
+    title = LINE_BREAK.sub(" ", title).strip() or UNTITLED_ENTRY
     # Bound the visible title on its own. A URL costs budget but no width, so
     # measuring the whole linked construct would strip the link off entries
     # whose address merely carries a long query string.
@@ -397,6 +398,7 @@ def _escape_metadata_text(text: str) -> str:
 
 
 def _thumbnail_description(title: str) -> str:
+    title = LINE_BREAK.sub(" ", title).strip() or UNTITLED_ENTRY
     return _truncate_rendered_text(
         title,
         MAX_THUMBNAIL_DESCRIPTION_CHARACTERS,
