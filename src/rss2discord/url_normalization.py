@@ -1,9 +1,13 @@
+from ipaddress import ip_address
+from typing import Final
 from urllib.parse import urlsplit
+
+MAX_HTTP_URL_LENGTH: Final = 2_048
 
 
 def normalize_http_url(value: str) -> str | None:
     normalized = value.strip()
-    if not normalized or any(
+    if len(normalized) > MAX_HTTP_URL_LENGTH or not normalized or any(
         ord(character) < 32 or ord(character) == 127 for character in normalized
     ):
         return None
@@ -20,3 +24,22 @@ def normalize_http_url(value: str) -> str | None:
     ):
         return None
     return normalized
+
+
+def normalize_remote_media_url(value: str) -> str | None:
+    normalized = normalize_http_url(value)
+    if normalized is None:
+        return None
+    parsed = urlsplit(normalized)
+    if parsed.scheme.casefold() != "https":
+        return None
+    hostname = parsed.hostname
+    if hostname is None or hostname.casefold() == "localhost" or hostname.casefold().endswith(
+        ".localhost",
+    ):
+        return None
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return normalized
+    return normalized if address.is_global else None
