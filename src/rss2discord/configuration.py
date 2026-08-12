@@ -1,8 +1,14 @@
 from pathlib import Path
 from typing import Annotated, ClassVar, Final, Literal, Self, assert_never
+from urllib.parse import quote
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from rss2discord.url_normalization import (
+    MAX_HTTP_URL_LENGTH,
+    normalize_remote_media_url,
+)
 
 FeedIdValue = Annotated[
     str,
@@ -48,6 +54,21 @@ class FeedConfig(BaseModel):
     price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
         None
     )
+
+    @field_validator("webhook_avatar")
+    @classmethod
+    def require_safe_webhook_avatar(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize_remote_media_url(value)
+        if normalized is None:
+            msg = "webhook_avatar must be a safe HTTPS URL"
+            raise ValueError(msg)
+        encoded = quote(normalized, safe=":/?#[]@!$&'*+,;=%-._~")
+        if len(encoded) > MAX_HTTP_URL_LENGTH:
+            msg = "webhook_avatar must not exceed 2048 encoded characters"
+            raise ValueError(msg)
+        return encoded
 
     @model_validator(mode="after")
     def require_rss_strategy_for_adapter(self) -> Self:
