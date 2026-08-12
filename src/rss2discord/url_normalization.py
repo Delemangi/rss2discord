@@ -8,8 +8,10 @@ MAX_HTTP_URL_LENGTH: Final = 2_048
 
 def normalize_http_url(value: str) -> str | None:
     normalized = value.strip()
-    if len(normalized) > MAX_HTTP_URL_LENGTH or not normalized or any(
-        ord(character) < 32 or ord(character) == 127 for character in normalized
+    if (
+        len(normalized) > MAX_HTTP_URL_LENGTH
+        or not normalized
+        or any(ord(character) < 32 or ord(character) == 127 for character in normalized)
     ):
         return None
     try:

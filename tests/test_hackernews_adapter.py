@@ -194,7 +194,9 @@ def test_hackernews_adapter_preserves_rss_link_for_invalid_api_url(
 
     # Then
     assert result.link == entry.link
-    assert result.source_metrics == (SourceMetric(label="Domain", value="example.test"),)
+    assert result.source_metrics == (
+        SourceMetric(label="Domain", value="example.test"),
+    )
     assert entry.link in heading
 
 
