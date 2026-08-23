@@ -12,4 +12,4 @@ permissions:
 
 jobs:
   pytest:
-    uses: Delemangi/.github/.github/workflows/pytest.yaml@ci/reusable-pytest
+    uses: Delemangi/.github/.github/workflows/pytest.yaml@main
