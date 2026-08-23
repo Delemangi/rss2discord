@@ -12,13 +12,4 @@ permissions:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - run: uv sync --frozen --dev
-      - run: uv run pytest
-      - run: uv run ruff check .
-      - run: uv run mypy .
+    uses: Delemangi/.github/.github/workflows/pytest.yaml@main
