@@ -33,6 +33,7 @@ from .transports import (
     SetecStrategy,
     XenForoStrategy,
 )
+from .transports.cccenter import CCCenterStrategy
 from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class RSSToDiscord:
         self._pazar3_pacer = Pazar3RequestPacer(time.monotonic)
         self._strategies: dict[str, ScraperStrategy] = {
             "anhoch": AnhochStrategy(),
+            "cccenter": CCCenterStrategy(self.is_shutdown_requested),
             "ddstore": DDStoreStrategy(self.is_shutdown_requested),
             "gjirafa50": Gjirafa50Strategy(self.is_shutdown_requested),
             "hivetec": HivetecStrategy(self.is_shutdown_requested),

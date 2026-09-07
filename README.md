@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklama5 listings, and Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, or Setec product updates to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklama5 listings, and Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, or Setec product updates to Discord webhooks.
 
 ## What it supports
 
@@ -15,9 +15,10 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklam
 - New products from Setec's online catalog and opt-in selling-price alerts
 - New products from DDStore's public GraphQL catalog and opt-in selling-price alerts
 - New products from Hivetec's public WooCommerce catalog and opt-in selling-price alerts
+- New products from CCCenter's public WooCommerce catalog and opt-in selling-price alerts
 - New in-stock products from Gjirafa50.mk and Gjirafa50.com, with opt-in full-catalog price alerts
 - New products from one Neptun category and opt-in actual-price alerts
-- SQLite delivery history and persistent price snapshots for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, and Setec
+- SQLite delivery history and persistent price snapshots for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, and Setec
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 - Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, each supporting detail on its own line, and only provenance left in the footer
 
@@ -179,6 +180,15 @@ Common feed types:
   price_check_interval: 3600
   webhook_name: "DDStore"
 
+# CCCenter new products and opt-in selling-price monitoring
+- id: "cccenter-products"
+  name: "CCCenter Products"
+  url: "https://cccenter.mk/shop/?orderby=date"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "cccenter"
+  price_check_interval: 3600
+  webhook_name: "CCCenter"
+
 # Neptun category products and opt-in actual-price monitoring
 - id: "neptun-computers"
   name: "Neptun Computers"
@@ -189,19 +199,19 @@ Common feed types:
   webhook_name: "Neptun"
 ```
 
-`price_check_interval` opts an Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Gjirafa50 full-catalog scans should use at least 21600 seconds because they require thousands of requests. Neptun, Pazar3, and Reklama5 scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
+`price_check_interval` opts an Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Gjirafa50 full-catalog scans should use at least 21600 seconds because they require thousands of requests. Neptun, Pazar3, and Reklama5 scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
 
 Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, and `setec`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `cccenter`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, and `setec`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `webhook_avatar` | Optional HTTPS URL, up to 2,048 encoded characters. Localhost, non-global IP literals, malformed hosts, and URLs with credentials are rejected. DNS names are not resolved by rss2discord. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. Price alerts override it with green for a drop and red for a rise. |
-| `price_check_interval` | Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec only. Omit or set to `null` to disable. |
+| `price_check_interval` | Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec only. Omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
@@ -217,6 +227,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
 - Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
 - Hivetec accepts only `https://hivetec.mk/shop/` without credentials, query parameters, fragments, or an explicit port. Discovery requests the latest 30 products from both the WooCommerce Store API and WordPress product API, requires exact bounded ID/order agreement, uses UTC `date_gmt` publication times, and delivers newly observed products oldest first. Empty discovery does not initialize the feed; the first successful non-empty discovery seeds without notifications. Delivery history is capped at 10,000 products.
+- CCCenter accepts only the exact `https://cccenter.mk/shop/?orderby=date` URL. Discovery scrapes at most six server-rendered WooCommerce pages and their first-party product pages under shared request, response-byte, and 300-second scan limits; it seeds the first successful catalog silently and assigns no publication timestamp. Variable products, price ranges, missing prices, and invalid amounts are announced without a scalar price and are skipped by price monitoring.
 - Gjirafa50 accepts only the exact roots `https://gjirafa50.mk/` and `https://gjirafa50.com/`. Each feed stays on its selected origin for searches, redirects, and product links. Discovery requests the newest 30 in-stock products across two bounded pages, assigns one UTC observation time, and seeds the first successful window silently.
 - Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.
 - Anhoch and DDStore product images are downloaded with browser-compatible TLS and uploaded to Discord as Components v2 thumbnail attachments. Each provider is restricted to its own first-party image paths and same-provider redirects. Transient image failures are retried at most twice across redirects within one 30-second operation deadline, honoring `Retry-After` only when it fits within that deadline. If an image cannot be retrieved safely, the product update is delivered without a thumbnail.
@@ -228,6 +239,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - DDStore price monitoring delivers at most 100 changes from one scan. If 101 or more prices change together, the scan sends no alerts and advances no affected snapshots, so it retries against the same baseline later. The integration also applies a 50,000-entry discovery delivery-history safety limit per feed. A feed that reaches the price-change, snapshot, or delivery-history limit remains fail-closed. To reset a legitimate catalog-wide repricing or oversized snapshot history, stop the service and delete that feed's `price_snapshots` rows. To reset delivery history, stop the service and delete that feed's rows from both `delivered_entries` and `initialized_feeds` in one SQLite transaction; the next fetch will silently seed the current product window.
 - Neptun price monitoring traverses only the configured category with 50 products per page, at most 100 pages / 5,000 products, a 5 MiB per-response cap, and a 500 MiB total cap. Retries restart at page one. Changed totals, incomplete traversal, oversized pages, and conflicting duplicate IDs fail closed. Only positive `ActualPrice` values are compared; unavailable values never replace a previous real snapshot. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
 - Hivetec price monitoring traverses the complete public Store API catalog independently from discovery, with 100 products per page, at most 50 pages / 5,000 products, a 1 MiB per-response cap, a retry-wide 20 MiB header-and-body budget, a 300-second absolute operation deadline, and aggregate limits of 20,000 images and 20,000 category records. Retries restart at page one while sharing those limits. Changed totals, incomplete traversal, oversized pages, duplicate IDs, and aggregate metadata excess fail closed. Prices are parsed from WooCommerce integer minor units as MKD; only positive prices are snapshotted. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
+- CCCenter price monitoring baselines silently, compares only positive scalar MKD prices, retains at most 10,000 snapshots, and delivers at most 100 changes per scan. Variable/range, unavailable, and malformed prices are skipped without deleting a prior valid snapshot; changed snapshots persist only after Discord accepts the alert.
 - Reklama5 price monitoring traverses the configured search scope independently from three-page discovery, at most 250 pages / 10,000 organic ads, with a 2 MiB per-response cap and a 500 MiB / 300-second attempt bound. Retries restart at page one. Cycles, incomplete traversal, and bound violations fail closed. Only positive MKD prices are compared; negotiable, missing, malformed, zero, and other-currency prices do not replace the last numeric snapshot. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
 - Pazar3 price monitoring traverses the complete configured scope independently from three-page discovery, at most 10 pages / 500 organic listings, with a 2 MiB response cap and a 20 MiB / 300-second attempt bound. Scopes above that limit, including the full electronics category, are unsupported and fail closed. Positive MKD and EUR values are compared without conversion; unavailable prices preserve the last valid snapshot. A feed retains at most 10,000 snapshots and delivers at most 100 changes per scan. Changed snapshots persist only after Discord accepts their alert.
 - A Discord delivery is recorded immediately after Discord accepts the message.
