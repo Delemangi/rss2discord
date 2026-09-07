@@ -82,9 +82,10 @@ def test_cccenter_catalog_traverses_bounded_pages_and_rejects_duplicate_results(
         "_fetch_html",
         staticmethod(lambda url, **kwargs: responses[url]),
     )
+    client = CCCenterCatalogClient()
 
     with pytest.raises(FeedFetchError, match="DuplicateProduct"):
-        CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+        client.fetch_catalog(CCCENTER_FEED_URL)
 
 
 def test_cccenter_catalog_rejects_malformed_or_empty_listing_response(
@@ -95,9 +96,20 @@ def test_cccenter_catalog_rejects_malformed_or_empty_listing_response(
         "_fetch_html",
         staticmethod(lambda url, **kwargs: "<html><body>not a shop</body></html>"),
     )
+    client = CCCenterCatalogClient()
 
     with pytest.raises(FeedFetchError, match="EmptyPage"):
-        CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+        client.fetch_catalog(CCCENTER_FEED_URL)
+
+
+def test_cccenter_rejects_listing_cards_without_an_image() -> None:
+    card = BeautifulSoup(
+        '<li class="product"><a href="/product/alpha/"><h2 class="woocommerce-loop-product__title">Alpha</h2></a></li>',
+        "html.parser",
+    ).select_one("li.product")
+
+    with pytest.raises(FeedFetchError, match="MalformedProduct"):
+        parse_product_listing(card)
 
 
 @pytest.mark.parametrize(
@@ -122,7 +134,7 @@ def test_cccenter_rejects_noncanonical_product_url_variants(product_url: str) ->
 
 def test_cccenter_marks_variable_and_range_prices_unavailable() -> None:
     variable = BeautifulSoup(
-        '<li class="product product-type-variable"><a href="/product/variable/"><h2 class="woocommerce-loop-product__title">Variable</h2><span class="price">56.000,00 ден – 60.000,00 ден</span></a></li>',
+        '<li class="product product-type-variable"><a href="/product/variable/"><img src="/variable.jpg"><h2 class="woocommerce-loop-product__title">Variable</h2><span class="price">56.000,00 ден – 60.000,00 ден</span></a></li>',
         "html.parser",
     ).select_one("li.product")
 
@@ -140,22 +152,22 @@ def test_cccenter_treats_out_of_bounds_money_as_unpriced() -> None:
     ("listing_markup", "detail_markup", "expected_status"),
     [
         (
-            '<li class="product"><a href="/product/merge/"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
+            '<li class="product"><a href="/product/merge/"><img src="/merge.jpg"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
             '<h1 class="product_title">Merge</h1><form class="variations_form"><p class="price">56.000,00 ден</p></form>',
             "variable",
         ),
         (
-            '<li class="product product-type-variable"><a href="/product/merge/"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
+            '<li class="product product-type-variable"><a href="/product/merge/"><img src="/merge.jpg"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
             '<h1 class="product_title">Merge</h1><p class="price">56.000,00 ден</p>',
             "variable",
         ),
         (
-            '<li class="product"><a href="/product/merge/"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден – 60.000,00 ден</span></a></li>',
+            '<li class="product"><a href="/product/merge/"><img src="/merge.jpg"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден – 60.000,00 ден</span></a></li>',
             '<h1 class="product_title">Merge</h1><p class="price">56.000,00 ден</p>',
             "range",
         ),
         (
-            '<li class="product"><a href="/product/merge/"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
+            '<li class="product"><a href="/product/merge/"><img src="/merge.jpg"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
             '<h1 class="product_title">Merge</h1>',
             "unpriced",
         ),
@@ -275,11 +287,12 @@ def test_cccenter_propagates_typed_callback_abort(
         return _StreamResponse([])
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
+    budget = cccenter_catalog._ScanBudget.start(lambda: False)
 
     with pytest.raises(FeedFetchError) as error:
         CCCenterCatalogClient._fetch_html(
             CCCENTER_FEED_URL,
-            budget=cccenter_catalog._ScanBudget.start(lambda: False),
+            budget=budget,
         )
 
     assert error.value.cause_type == expected_cause
@@ -303,11 +316,12 @@ def test_cccenter_propagates_shutdown_from_callback_abort(
         raise curl_requests.exceptions.RequestException("write aborted")
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
+    budget = cccenter_catalog._ScanBudget.start(is_shutdown_requested)
 
     with pytest.raises(FeedFetchInterruptedError):
         CCCenterCatalogClient._fetch_html(
             CCCENTER_FEED_URL,
-            budget=cccenter_catalog._ScanBudget.start(is_shutdown_requested),
+            budget=budget,
         )
 
 
@@ -337,11 +351,12 @@ def test_cccenter_checks_deadline_before_each_stream_read(
         return _StreamResponse([])
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
+    budget = cccenter_catalog._ScanBudget.start(lambda: False)
 
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
         CCCenterCatalogClient._fetch_html(
             CCCENTER_FEED_URL,
-            budget=cccenter_catalog._ScanBudget.start(lambda: False),
+            budget=budget,
         )
     assert chunks == 1
     assert calls[0]["allow_redirects"] is False
@@ -351,7 +366,7 @@ def test_cccenter_checks_deadline_before_each_stream_read(
 
 def test_cccenter_price_status_rejects_range_evidence_in_discount_markup() -> None:
     card = BeautifulSoup(
-        '<li class="product"><a href="/product/conflict/"><h2 class="woocommerce-loop-product__title">Conflict</h2><span class="price"><del>50.000,00 ден – 60.000,00 ден</del><ins>56.000,00 ден</ins></span></a></li>',
+        '<li class="product"><a href="/product/conflict/"><img src="/conflict.jpg"><h2 class="woocommerce-loop-product__title">Conflict</h2><span class="price"><del>50.000,00 ден – 60.000,00 ден</del><ins>56.000,00 ден</ins></span></a></li>',
         "html.parser",
     ).select_one("li.product")
 

@@ -52,6 +52,8 @@ __all__ = [
 _PRICE_RE: Final = re.compile(
     r"(?<!\d)(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?!\d)",
 )
+_CCCENTER_HOST: Final = "cccenter.mk"
+_HTML_PARSER: Final = "html.parser"
 
 
 @dataclass(slots=True)
@@ -192,7 +194,7 @@ def validate_cccenter_url(url: str) -> str:
         raise FeedFetchError(CCCENTER_LABEL, "InvalidUrl") from None
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "cccenter.mk"
+        or parsed.hostname != _CCCENTER_HOST
         or port is not None
         or parsed.username is not None
         or parsed.password is not None
@@ -306,7 +308,7 @@ def _safe_product_url(url: str) -> str:
         raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl")
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "cccenter.mk"
+        or parsed.hostname != _CCCENTER_HOST
         or port is not None
         or parsed.username is not None
         or parsed.password is not None
@@ -315,7 +317,7 @@ def _safe_product_url(url: str) -> str:
         or parsed.fragment
     ):
         raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl")
-    return urlunsplit(("https", "cccenter.mk", raw_path, "", ""))
+    return urlunsplit(("https", _CCCENTER_HOST, raw_path, "", ""))
 
 
 def _safe_image_url(url: str | None) -> str | None:
@@ -328,11 +330,11 @@ def _safe_image_url(url: str | None) -> str | None:
     parsed = urlsplit(absolute)
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "cccenter.mk"
+        or parsed.hostname != _CCCENTER_HOST
         or parsed.port not in {None, 443}
     ):
         return None
-    return urlunsplit(("https", "cccenter.mk", parsed.path, parsed.query, ""))
+    return urlunsplit(("https", _CCCENTER_HOST, parsed.path, parsed.query, ""))
 
 
 def parse_product_listing(card: Tag | None) -> CCCenterListing:
@@ -351,10 +353,10 @@ def parse_product_listing(card: Tag | None) -> CCCenterListing:
         is_variable="product-type-variable" in str(card.get("class") or ""),
     )
     image = card.select_one("img")
+    if not isinstance(image, Tag):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
     image_url = _safe_image_url(
-        str(image.get("src") or image.get("data-src") or image.get("srcset") or "")
-        if image
-        else None,
+        str(image.get("src") or image.get("data-src") or image.get("srcset") or ""),
     )
     return CCCenterListing(
         product_id=product_url,
@@ -462,7 +464,7 @@ class CCCenterCatalogClient:
     ) -> tuple[CCCenterProduct, ...]:
         first_url = validate_cccenter_url(url)
         first_html = self._fetch_html(first_url, budget=budget)
-        first_soup = BeautifulSoup(first_html, "html.parser")
+        first_soup = BeautifulSoup(first_html, _HTML_PARSER)
         page_count = self._page_count(first_soup)
         products: list[CCCenterProduct] = []
         seen_ids: set[str] = set()
@@ -473,7 +475,7 @@ class CCCenterCatalogClient:
             html = (
                 first_html if page == 1 else self._fetch_html(page_url, budget=budget)
             )
-            soup = first_soup if page == 1 else BeautifulSoup(html, "html.parser")
+            soup = first_soup if page == 1 else BeautifulSoup(html, _HTML_PARSER)
             cards = soup.select("li.product")
             if not cards:
                 raise FeedFetchError(CCCENTER_LABEL, "EmptyPage")
@@ -486,7 +488,7 @@ class CCCenterCatalogClient:
                     raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
                 detail_html = self._fetch_html(listing.url, budget=budget)
                 product = parse_product_detail(
-                    BeautifulSoup(detail_html, "html.parser"),
+                    BeautifulSoup(detail_html, _HTML_PARSER),
                     listing,
                 )
                 products.append(product)
@@ -522,10 +524,22 @@ class CCCenterCatalogClient:
         if budget is not None:
             budget.before_request()
         callback_state = _ContentCallbackState.start(budget)
+        response = CCCenterCatalogClient._request_html(url, budget, callback_state)
+        _raise_callback_abort(callback_state)
+        if budget is not None:
+            budget.after_request()
+        _validate_response(response)
+        return _decode_html(response, callback_state.content)
 
+    @staticmethod
+    def _request_html(
+        url: str,
+        budget: _ScanBudget | None,
+        callback_state: _ContentCallbackState,
+    ) -> Any:  # noqa: ANN401
         try:
             timeout = budget.request_timeout() if budget is not None else 30.0
-            response = _perform_request(
+            return _perform_request(
                 url,
                 headers={"Accept": "text/html", "User-Agent": CCCENTER_USER_AGENT},
                 timeout=timeout,
@@ -543,15 +557,15 @@ class CCCenterCatalogClient:
                 type(error).__name__,
                 retryable=True,
             ) from None
-        if callback_state.abort_error is not None:
-            raise callback_state.abort_error from None
-        if budget is not None:
-            budget.after_request()
-        _validate_response(response)
-        try:
-            return bytes(callback_state.content).decode(
-                response.encoding or "utf-8",
-                errors="strict",
-            )
-        except UnicodeDecodeError:
-            raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None
+
+
+def _raise_callback_abort(callback_state: _ContentCallbackState) -> None:
+    if callback_state.abort_error is not None:
+        raise callback_state.abort_error from None
+
+
+def _decode_html(response: _HttpResponse, content: bytearray) -> str:
+    try:
+        return bytes(content).decode(response.encoding or "utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None

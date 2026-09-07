@@ -201,9 +201,10 @@ def test_cccenter_shutdown_after_fetch_skips_snapshot_reads_and_writes() -> None
             is_shutdown_requested=lambda: catalog.shutdown,
         ),
     )
+    monitor = CCCenterPriceMonitor(feed, dependencies)
 
     with pytest.raises(FeedFetchInterruptedError):
-        CCCenterPriceMonitor(feed, dependencies).scan()
+        monitor.scan()
 
     assert snapshots.load_calls == 0
     assert snapshots.persisted_batches == []
