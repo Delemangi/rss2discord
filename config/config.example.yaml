@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', or 'setec'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', or 'setec'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -98,7 +98,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -163,6 +163,17 @@ feeds:
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
+  # CCCenter new products and opt-in selling-price monitoring
+  - id: "cccenter-products"
+    name: "CCCenter Products"
+    url: "https://cccenter.mk/shop/?orderby=date"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "cccenter"
+    # The first scan silently baselines scalar MKD prices; variable, range,
+    # unavailable, and malformed prices are not snapshotted or alerted.
+    price_check_interval: 3600
+    webhook_name: "CCCenter Bot"
+
   # One Neptun category's newest products and opt-in actual-price monitoring
   - id: "neptun-computers"
     name: "Neptun Computers"
@@ -197,6 +208,7 @@ feeds:
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
 #   - 'anhoch': For new products from Anhoch's public catalog
+#   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
 #   - 'hivetec': For new products from Hivetec's public WooCommerce catalog
 #   - 'gjirafa50': For new products and full in-stock catalog price monitoring from Gjirafa50.mk or Gjirafa50.com
 #   - 'neksio': For new products from Neksio's public catalog
@@ -207,7 +219,7 @@ feeds:
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
-# - price_check_interval: Optional seconds between Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec
+# - price_check_interval: Optional seconds between Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Anhoch scans use 500 products per

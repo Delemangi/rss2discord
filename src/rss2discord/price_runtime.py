@@ -17,6 +17,7 @@ from .fetch_errors import FeedFetchError
 from .price_monitor_builders import (
     DEFAULT_PRICE_MONITOR_FACTORIES,
     AnhochPriceMonitorFactory,
+    CCCenterPriceMonitorFactory,
     DDStorePriceMonitorFactory,
     Gjirafa50PriceMonitorFactory,
     HivetecPriceMonitorFactory,
@@ -81,6 +82,7 @@ def build_price_jobs(
     ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
     hivetec_monitor_factory: HivetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.hivetec,
     gjirafa50_monitor_factory: Gjirafa50PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.gjirafa50,
+    cccenter_monitor_factory: CCCenterPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.cccenter,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
@@ -88,6 +90,7 @@ def build_price_jobs(
     pazar3_pacer = dependencies.pazar3_pacer or Pazar3RequestPacer(time.monotonic)
     factories = PriceMonitorFactories(
         anhoch=anhoch_monitor_factory,
+        cccenter=cccenter_monitor_factory,
         ddstore=ddstore_monitor_factory,
         hivetec=hivetec_monitor_factory,
         gjirafa50=gjirafa50_monitor_factory,

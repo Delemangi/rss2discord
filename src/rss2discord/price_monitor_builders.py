@@ -11,6 +11,11 @@ from .transports.anhoch_price_monitor import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .transports.cccenter_catalog import CCCenterCatalogClient
+from .transports.cccenter_price_monitor import (
+    CCCenterPriceMonitor,
+    CCCenterPriceMonitorDependencies,
+)
 from .transports.ddstore_catalog import DDStoreCatalogClient
 from .transports.ddstore_price_monitor import (
     DDStorePriceMonitor,
@@ -61,6 +66,10 @@ type AnhochPriceMonitorFactory = Callable[
     [FeedConfig, AnhochPriceMonitorDependencies],
     PriceMonitor,
 ]
+type CCCenterPriceMonitorFactory = Callable[
+    [FeedConfig, CCCenterPriceMonitorDependencies],
+    PriceMonitor,
+]
 type DDStorePriceMonitorFactory = Callable[
     [FeedConfig, DDStorePriceMonitorDependencies],
     PriceMonitor,
@@ -98,6 +107,7 @@ type SetecPriceMonitorFactory = Callable[
 @dataclass(frozen=True, slots=True)
 class PriceMonitorFactories:
     anhoch: AnhochPriceMonitorFactory = AnhochPriceMonitor
+    cccenter: CCCenterPriceMonitorFactory = CCCenterPriceMonitor
     ddstore: DDStorePriceMonitorFactory = DDStorePriceMonitor
     hivetec: HivetecPriceMonitorFactory = HivetecPriceMonitor
     gjirafa50: Gjirafa50PriceMonitorFactory = Gjirafa50BackgroundPriceMonitor
@@ -132,6 +142,18 @@ def build_provider_price_monitor(
                 feed,
                 AnhochPriceMonitorDependencies(
                     catalog=AnhochCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
+        case "cccenter":
+            return factories.cccenter(
+                feed,
+                CCCenterPriceMonitorDependencies(
+                    catalog=CCCenterCatalogClient(),
                     snapshots=dependencies.snapshots,
                     sender=dependencies.sender,
                     fetch_retry_policy=dependencies.fetch_retry_policy,
