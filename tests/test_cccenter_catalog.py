@@ -42,6 +42,22 @@ def test_cccenter_parses_listing_sale_price_and_product_detail() -> None:
     assert product.published_at is None
 
 
+def test_cccenter_treats_missing_stock_marker_as_in_stock() -> None:
+    listing = parse_product_listing(
+        BeautifulSoup(
+            '<li class="product"><a href="/product/alpha/"><img src="/alpha.jpg"><h2 class="woocommerce-loop-product__title">Alpha</h2></a></li>',
+            "html.parser",
+        ).select_one("li.product"),
+    )
+
+    product = parse_product_detail(
+        BeautifulSoup('<h1 class="product_title">Alpha</h1>', "html.parser"),
+        listing,
+    )
+
+    assert product.is_in_stock is True
+
+
 @pytest.mark.parametrize(
     "url",
     [

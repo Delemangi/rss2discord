@@ -390,8 +390,7 @@ def parse_product_detail(
         is_variable=is_variable,
     )
     sku = _text(document.select_one(".sku"))
-    stock = document.select_one(".stock")
-    is_in_stock = stock is None or "out-of-stock" not in str(stock.get("class") or "")
+    is_in_stock = _is_in_stock(document.select_one(".stock"))
     categories = tuple(
         category
         for category in (_text(node) for node in document.select(".posted_in a"))
@@ -428,6 +427,13 @@ def parse_product_detail(
         is_in_stock=is_in_stock,
         price_status=_merge_price_status(listing.price_status, price_status),
     )
+
+
+def _is_in_stock(stock: Tag | None) -> bool:
+    if stock is None:
+        return True
+    stock_classes = stock.get("class")
+    return "out-of-stock" not in str(stock_classes or "")
 
 
 class CCCenterCatalogClient:
@@ -471,28 +477,50 @@ class CCCenterCatalogClient:
         for page in range(1, page_count + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
-            page_url = first_url if page == 1 else self._page_url(page)
-            html = (
-                first_html if page == 1 else self._fetch_html(page_url, budget=budget)
-            )
-            soup = first_soup if page == 1 else BeautifulSoup(html, _HTML_PARSER)
-            cards = soup.select("li.product")
-            if not cards:
-                raise FeedFetchError(CCCENTER_LABEL, "EmptyPage")
-            for card in cards:
-                listing = parse_product_listing(card)
-                if listing.product_id in seen_ids:
-                    raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
-                seen_ids.add(listing.product_id)
-                if len(seen_ids) > MAX_CCCENTER_PRODUCTS:
-                    raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
-                detail_html = self._fetch_html(listing.url, budget=budget)
-                product = parse_product_detail(
-                    BeautifulSoup(detail_html, _HTML_PARSER),
-                    listing,
-                )
-                products.append(product)
+            soup = self._page_document(page, first_soup, budget)
+            self._append_page_products(soup, products, seen_ids, budget)
         return tuple(products)
+
+    def _page_document(
+        self,
+        page: int,
+        first_soup: BeautifulSoup,
+        budget: _ScanBudget,
+    ) -> BeautifulSoup:
+        if page == 1:
+            return first_soup
+        html = self._fetch_html(self._page_url(page), budget=budget)
+        return BeautifulSoup(html, _HTML_PARSER)
+
+    def _append_page_products(
+        self,
+        soup: BeautifulSoup,
+        products: list[CCCenterProduct],
+        seen_ids: set[str],
+        budget: _ScanBudget,
+    ) -> None:
+        cards = soup.select("li.product")
+        if not cards:
+            raise FeedFetchError(CCCENTER_LABEL, "EmptyPage")
+        products.extend(self._fetch_product(card, seen_ids, budget) for card in cards)
+
+    def _fetch_product(
+        self,
+        card: Tag,
+        seen_ids: set[str],
+        budget: _ScanBudget,
+    ) -> CCCenterProduct:
+        listing = parse_product_listing(card)
+        if listing.product_id in seen_ids:
+            raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
+        seen_ids.add(listing.product_id)
+        if len(seen_ids) > MAX_CCCENTER_PRODUCTS:
+            raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
+        detail_html = self._fetch_html(listing.url, budget=budget)
+        return parse_product_detail(
+            BeautifulSoup(detail_html, _HTML_PARSER),
+            listing,
+        )
 
     @staticmethod
     def _page_count(document: BeautifulSoup) -> int:
