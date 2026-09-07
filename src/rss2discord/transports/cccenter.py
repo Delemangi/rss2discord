@@ -19,7 +19,10 @@ class CCCenterStrategy(ScraperStrategy):
     max_new_entries_per_fetch = 2_000
     max_delivery_history = 10_000
 
-    def __init__(self, is_shutdown_requested: Callable[[], bool] = lambda: False) -> None:
+    def __init__(
+        self,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> None:
         self._client = CCCenterCatalogClient()
         self._is_shutdown_requested = is_shutdown_requested
 
@@ -47,10 +50,19 @@ class CCCenterStrategy(ScraperStrategy):
             and entry.current_price is not None
             and entry.current_price > 0
         ):
-            metrics.append(SourceMetric("Price", format_cccenter_mkd(entry.current_price)))
-            if entry.original_price is not None and entry.original_price != entry.current_price:
-                metrics.append(SourceMetric("Original", format_cccenter_mkd(entry.original_price)))
-        metrics.append(SourceMetric("Stock", "In stock" if entry.is_in_stock else "Out of stock"))
+            metrics.append(
+                SourceMetric("Price", format_cccenter_mkd(entry.current_price)),
+            )
+            if (
+                entry.original_price is not None
+                and entry.original_price != entry.current_price
+            ):
+                metrics.append(
+                    SourceMetric("Original", format_cccenter_mkd(entry.original_price)),
+                )
+        metrics.append(
+            SourceMetric("Stock", "In stock" if entry.is_in_stock else "Out of stock"),
+        )
         if entry.sku:
             metrics.append(SourceMetric("SKU", entry.sku))
         return EntryData(

@@ -41,7 +41,12 @@ class CCCenterCatalog(Protocol):
 
 
 class CCCenterSnapshotStore(PriceSnapshotStore, Protocol):
-    def load_price_snapshots(self, feed_id: str, *, limit: int | None = None) -> tuple[PriceSnapshot, ...]: ...
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +67,11 @@ class _PriceChange:
 
 
 class CCCenterPriceMonitor:
-    def __init__(self, feed: FeedConfig, dependencies: CCCenterPriceMonitorDependencies) -> None:
+    def __init__(
+        self,
+        feed: FeedConfig,
+        dependencies: CCCenterPriceMonitorDependencies,
+    ) -> None:
         self._feed = feed
         self._dependencies = dependencies
 
@@ -74,9 +83,12 @@ class CCCenterPriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
         snapshots = self._dependencies.sqlite_retry_policy.execute(
             lambda: self._dependencies.snapshots.load_price_snapshots(
-                self._feed.id, limit=MAX_CCCENTER_RETAINED_SNAPSHOTS + 1,
+                self._feed.id,
+                limit=MAX_CCCENTER_RETAINED_SNAPSHOTS + 1,
             ),
         )
         if len(snapshots) > MAX_CCCENTER_RETAINED_SNAPSHOTS:
@@ -91,7 +103,10 @@ class CCCenterPriceMonitor:
                 and product.current_price > 0
             )
         )
-        if len(set(by_id).union(product.product_id for product in available)) > MAX_CCCENTER_RETAINED_SNAPSHOTS:
+        if (
+            len(set(by_id).union(product.product_id for product in available))
+            > MAX_CCCENTER_RETAINED_SNAPSHOTS
+        ):
             raise FeedFetchError(CCCENTER_LABEL, "SnapshotLimitExceeded")
         silent: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
@@ -100,7 +115,10 @@ class CCCenterPriceMonitor:
             previous = by_id.get(product.product_id)
             if previous is None:
                 silent.append(current)
-            elif previous.amount != current.amount or previous.currency != current.currency:
+            elif (
+                previous.amount != current.amount
+                or previous.currency != current.currency
+            ):
                 changes.append(_PriceChange(product, previous, current))
             elif previous.formatted != current.formatted:
                 silent.append(current)
@@ -128,10 +146,17 @@ class CCCenterPriceMonitor:
         for change in changes:
             if self._dependencies.delivery.is_shutdown_requested():
                 return
-            if delay and self._dependencies.delivery.delay_between_posts > 0 and not self._dependencies.delivery.sleep(self._dependencies.delivery.delay_between_posts):
+            if (
+                delay
+                and self._dependencies.delivery.delay_between_posts > 0
+                and not self._dependencies.delivery.sleep(
+                    self._dependencies.delivery.delay_between_posts,
+                )
+            ):
                 return
             result = self._dependencies.sender.send(
-                self._message(change), self._dependencies.delivery.sleep,
+                self._message(change),
+                self._dependencies.delivery.sleep,
             )
             match result:
                 case DiscordDeliveryResult.DELIVERED:
@@ -167,13 +192,21 @@ class CCCenterPriceMonitor:
                     else SourceMetric("Price", "Unavailable"),
                     SourceMetric("Previous", change.previous.formatted, prior=True),
                     *(
-                        (SourceMetric("Original", format_cccenter_mkd(product.original_price)),)
+                        (
+                            SourceMetric(
+                                "Original",
+                                format_cccenter_mkd(product.original_price),
+                            ),
+                        )
                         if product.original_price is not None
                         and product.original_price != product.current_price
                         else ()
                     ),
-                    SourceMetric("Stock", "In stock" if product.is_in_stock else "Out of stock"),
-                    *( (SourceMetric("SKU", product.sku),) if product.sku else () ),
+                    SourceMetric(
+                        "Stock",
+                        "In stock" if product.is_in_stock else "Out of stock",
+                    ),
+                    *((SourceMetric("SKU", product.sku),) if product.sku else ()),
                 ),
                 price_direction=price_direction(change.previous, change.current),
             ),

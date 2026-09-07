@@ -40,7 +40,9 @@ def test_cccenter_strategy_is_registered_in_app(tmp_path: Path) -> None:
 
 
 def test_config_example_documents_cccenter() -> None:
-    config = load_config(Path(__file__).parent.parent / "config" / "config.example.yaml")
+    config = load_config(
+        Path(__file__).parent.parent / "config" / "config.example.yaml",
+    )
     feed = next(feed for feed in config.feeds if feed.id == "cccenter-products")
     assert feed.strategy == "cccenter"
     assert feed.price_check_interval == 3600

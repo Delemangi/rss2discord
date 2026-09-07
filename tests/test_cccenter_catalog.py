@@ -23,7 +23,9 @@ def test_cccenter_parses_listing_sale_price_and_product_detail() -> None:
     listing = (FIXTURES / "listing.html").read_text(encoding="utf-8")
     detail = (FIXTURES / "product-alpha.html").read_text(encoding="utf-8")
 
-    card = parse_product_listing(BeautifulSoup(listing, "html.parser").select_one("li.product"))
+    card = parse_product_listing(
+        BeautifulSoup(listing, "html.parser").select_one("li.product"),
+    )
     product = parse_product_detail(
         BeautifulSoup(detail, "html.parser"),
         card,

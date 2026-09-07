@@ -49,7 +49,9 @@ __all__ = [
     "validate_cccenter_url",
 ]
 
-_PRICE_RE: Final = re.compile(r"(?<!\d)(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?!\d)")
+_PRICE_RE: Final = re.compile(
+    r"(?<!\d)(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?!\d)",
+)
 
 
 @dataclass(slots=True)
@@ -127,7 +129,6 @@ class _ContentCallbackState:
             self.abort_error = error
             return CURL_WRITEFUNC_ERROR
         return len(chunk)
-
 
 
 class _HttpResponse(Protocol):
@@ -320,9 +321,16 @@ def _safe_product_url(url: str) -> str:
 def _safe_image_url(url: str | None) -> str | None:
     if not url:
         return None
-    absolute = urljoin(CCCENTER_ORIGIN + "/", url.split(",", 1)[0].strip().split(" ", 1)[0])
+    absolute = urljoin(
+        CCCENTER_ORIGIN + "/",
+        url.split(",", 1)[0].strip().split(" ", 1)[0],
+    )
     parsed = urlsplit(absolute)
-    if parsed.scheme != "https" or parsed.hostname != "cccenter.mk" or parsed.port not in {None, 443}:
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "cccenter.mk"
+        or parsed.port not in {None, 443}
+    ):
         return None
     return urlunsplit(("https", "cccenter.mk", parsed.path, parsed.query, ""))
 
@@ -359,7 +367,10 @@ def parse_product_listing(card: Tag | None) -> CCCenterListing:
     )
 
 
-def parse_product_detail(document: BeautifulSoup, listing: CCCenterListing) -> CCCenterProduct:
+def parse_product_detail(
+    document: BeautifulSoup,
+    listing: CCCenterListing,
+) -> CCCenterProduct:
     heading = document.select_one("h1.product_title")
     if not _text(heading):
         raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
@@ -386,9 +397,17 @@ def parse_product_detail(document: BeautifulSoup, listing: CCCenterListing) -> C
     )
     image_url = listing.image_url
     for image in document.select(".woocommerce-product-gallery img"):
-        image_url = _safe_image_url(
-            str(image.get("src") or image.get("data-src") or image.get("srcset") or ""),
-        ) or image_url
+        image_url = (
+            _safe_image_url(
+                str(
+                    image.get("src")
+                    or image.get("data-src")
+                    or image.get("srcset")
+                    or "",
+                ),
+            )
+            or image_url
+        )
         if image_url:
             break
     return CCCenterProduct(
@@ -396,8 +415,12 @@ def parse_product_detail(document: BeautifulSoup, listing: CCCenterListing) -> C
         name=_text(heading),
         url=listing.url,
         sku=sku,
-        current_price=current_price if current_price is not None else listing.current_price,
-        original_price=original_price if original_price is not None else listing.original_price,
+        current_price=current_price
+        if current_price is not None
+        else listing.current_price,
+        original_price=original_price
+        if original_price is not None
+        else listing.original_price,
         image_url=image_url,
         categories=categories,
         is_in_stock=is_in_stock,
@@ -447,7 +470,9 @@ class CCCenterCatalogClient:
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
             page_url = first_url if page == 1 else self._page_url(page)
-            html = first_html if page == 1 else self._fetch_html(page_url, budget=budget)
+            html = (
+                first_html if page == 1 else self._fetch_html(page_url, budget=budget)
+            )
             soup = first_soup if page == 1 else BeautifulSoup(html, "html.parser")
             cards = soup.select("li.product")
             if not cards:
@@ -472,7 +497,11 @@ class CCCenterCatalogClient:
         pages = [
             int(value)
             for link in document.select("a.page-numbers[href]")
-            if (value := dict(parse_qsl(urlsplit(str(link["href"])).query)).get("product-page"))
+            if (
+                value := dict(parse_qsl(urlsplit(str(link["href"])).query)).get(
+                    "product-page",
+                )
+            )
             and value.isdigit()
         ]
         page_count = max(pages, default=1)
@@ -509,7 +538,11 @@ class CCCenterCatalogClient:
         except (curl_requests.exceptions.RequestException, ValueError) as error:
             if callback_state.abort_error is not None:
                 raise callback_state.abort_error from None
-            raise FeedFetchError(CCCENTER_LABEL, type(error).__name__, retryable=True) from None
+            raise FeedFetchError(
+                CCCENTER_LABEL,
+                type(error).__name__,
+                retryable=True,
+            ) from None
         if callback_state.abort_error is not None:
             raise callback_state.abort_error from None
         if budget is not None:
