@@ -499,7 +499,7 @@ class CCCenterCatalogClient:
         seen_ids: set[str],
         budget: _ScanBudget,
     ) -> None:
-        cards = soup.select("li.product")
+        cards = soup.select("li.product, div.etheme-product-grid-item")
         if not cards:
             raise FeedFetchError(CCCENTER_LABEL, "EmptyPage")
         products.extend(self._fetch_product(card, seen_ids, budget) for card in cards)
