@@ -31,6 +31,7 @@ from .transports import (
     RSSStrategy,
     ScraperStrategy,
     SetecStrategy,
+    TechnomarketStrategy,
     XenForoStrategy,
 )
 from .transports.cccenter import CCCenterStrategy
@@ -75,6 +76,7 @@ class RSSToDiscord:
             ),
             "rss": RSSStrategy(),
             "setec": SetecStrategy(),
+            "technomarket": TechnomarketStrategy(self.is_shutdown_requested),
             "xenforo": XenForoStrategy(),
         }
         self._adapters: dict[str, SourceAdapter] = {

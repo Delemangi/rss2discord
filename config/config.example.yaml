@@ -22,7 +22,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', or 'setec'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', or 'technomarket'
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -174,6 +174,19 @@ feeds:
     price_check_interval: 3600
     webhook_name: "CCCenter Bot"
 
+  # Technomarket category discovery and complete-scope effective-price monitoring.
+  # Only credential-free HTTPS category roots of the exact form below are accepted.
+  # Discovery observes the first page (up to 30 products) and silently seeds the
+  # first successful non-empty scan. Price monitoring compares SMART when present,
+  # otherwise regular price; a regular-only change is silent while SMART is unchanged.
+  - id: "technomarket-laptops"
+    name: "Technomarket Laptops"
+    url: "https://tehnomarket.com.mk/category/42/laptops"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "technomarket"
+    price_check_interval: 3600
+    webhook_name: "Technomarket Bot"
+
   # One Neptun category's newest products and opt-in actual-price monitoring
   - id: "neptun-computers"
     name: "Neptun Computers"
@@ -215,11 +228,12 @@ feeds:
 #   - 'neptun': For new products from one Neptun category page
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
+#   - 'technomarket': For new products from one public Technomarket category
 #   Reklama5 seeds the first successful result window silently, requests at most three
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
-# - price_check_interval: Optional seconds between Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec
+# - price_check_interval: Optional seconds between Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Anhoch scans use 500 products per

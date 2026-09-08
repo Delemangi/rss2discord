@@ -1,6 +1,6 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklama5 listings, and Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, or Setec product updates to Discord webhooks.
+Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklama5 listings, and Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, or Technomarket product updates to Discord webhooks.
 
 ## What it supports
 
@@ -18,7 +18,8 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklam
 - New products from CCCenter's public WooCommerce catalog and opt-in selling-price alerts
 - New in-stock products from Gjirafa50.mk and Gjirafa50.com, with opt-in full-catalog price alerts
 - New products from one Neptun category and opt-in actual-price alerts
-- SQLite delivery history and persistent price snapshots for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, and Setec
+- New products from one Technomarket category and opt-in SMART/regular effective-price alerts
+- SQLite delivery history and persistent price snapshots for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, and Technomarket
 - Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
 - Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, each supporting detail on its own line, and only provenance left in the footer
 
@@ -180,6 +181,15 @@ Common feed types:
   price_check_interval: 3600
   webhook_name: "DDStore"
 
+# Technomarket category discovery and opt-in effective-price monitoring
+- id: "technomarket-laptops"
+  name: "Technomarket Laptops"
+  url: "https://tehnomarket.com.mk/category/42/laptops"
+  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
+  strategy: "technomarket"
+  price_check_interval: 3600
+  webhook_name: "Technomarket"
+
 # CCCenter new products and opt-in selling-price monitoring
 - id: "cccenter-products"
   name: "CCCenter Products"
@@ -199,19 +209,19 @@ Common feed types:
   webhook_name: "Neptun"
 ```
 
-`price_check_interval` opts an Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Gjirafa50 full-catalog scans should use at least 21600 seconds because they require thousands of requests. Neptun, Pazar3, and Reklama5 scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
+`price_check_interval` opts an Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Gjirafa50 full-catalog scans should use at least 21600 seconds because they require thousands of requests. Neptun, Pazar3, Reklama5, and Technomarket scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
 
 Useful options:
 
 | Key | Notes |
 | --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `cccenter`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, and `setec`. |
+| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `cccenter`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, `setec`, and `technomarket`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `webhook_avatar` | Optional HTTPS URL, up to 2,048 encoded characters. Localhost, non-global IP literals, malformed hosts, and URLs with credentials are rejected. DNS names are not resolved by rss2discord. |
 | `embed_color` | Components v2 accent color; key name is kept for compatibility. Price alerts override it with green for a drop and red for a rise. |
-| `price_check_interval` | Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec only. Omit or set to `null` to disable. |
+| `price_check_interval` | Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket only. Omit or set to `null` to disable. |
 
 See `config/config.example.yaml` for the fully annotated configuration.
 
@@ -228,6 +238,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 - Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
 - Hivetec accepts only `https://hivetec.mk/shop/` without credentials, query parameters, fragments, or an explicit port. Discovery requests the latest 30 products from both the WooCommerce Store API and WordPress product API, requires exact bounded ID/order agreement, uses UTC `date_gmt` publication times, and delivers newly observed products oldest first. Empty discovery does not initialize the feed; the first successful non-empty discovery seeds without notifications. Delivery history is capped at 10,000 products.
 - CCCenter accepts only the exact `https://cccenter.mk/shop/?orderby=date` URL. Discovery scrapes at most six server-rendered WooCommerce pages and their first-party product pages under shared request, response-byte, and 300-second scan limits; it seeds the first successful catalog silently and assigns no publication timestamp. Variable products, price ranges, missing prices, and invalid amounts are announced without a scalar price and are skipped by price monitoring.
+- Technomarket accepts only credential-free HTTPS roots matching `https://tehnomarket.com.mk/category/<numeric-id>/<slug>`. Discovery reads one bounded first-page window (up to 30 products) and silently seeds the first successful non-empty scan. Listing prices use SMART when present and regular otherwise; complete price scans traverse the configured category sequentially under 100 pages / 5,000 products, 5 MiB per response, 500 MiB total, and 300-second limits. A regular-price-only change is silent when the effective SMART price is unchanged. No stock state is inferred.
 - Gjirafa50 accepts only the exact roots `https://gjirafa50.mk/` and `https://gjirafa50.com/`. Each feed stays on its selected origin for searches, redirects, and product links. Discovery requests the newest 30 in-stock products across two bounded pages, assigns one UTC observation time, and seeds the first successful window silently.
 - Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.
 - Anhoch and DDStore product images are downloaded with browser-compatible TLS and uploaded to Discord as Components v2 thumbnail attachments. Each provider is restricted to its own first-party image paths and same-provider redirects. Transient image failures are retried at most twice across redirects within one 30-second operation deadline, honoring `Retry-After` only when it fits within that deadline. If an image cannot be retrieved safely, the product update is delivered without a thumbnail.
