@@ -152,7 +152,8 @@ class TechnomarketPriceMonitor:
         ):
             metrics.append(
                 SourceMetric(
-                    "Original", format_technomarket_mkd(product.regular_price),
+                    "Original",
+                    format_technomarket_mkd(product.regular_price),
                 ),
             )
         if product.manufacturer:
