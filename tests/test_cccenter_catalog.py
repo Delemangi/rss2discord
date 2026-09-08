@@ -118,6 +118,41 @@ def test_cccenter_catalog_rejects_malformed_or_empty_listing_response(
         client.fetch_catalog(CCCENTER_FEED_URL)
 
 
+def test_cccenter_catalog_parses_etheme_product_grid_cards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = """
+    <div class="etheme-product-grid-item">
+      <a href="https://cccenter.mk/product/alpha-laptop/">
+        <img src="https://cccenter.mk/wp-content/uploads/2026/09/alpha.jpg">
+        <h2 class="woocommerce-loop-product__title">Alpha Laptop</h2>
+      </a>
+    </div>
+    <div class="etheme-category-grid-item">
+      <a href="https://cccenter.mk/product/category/">
+        <img src="https://cccenter.mk/wp-content/uploads/2026/09/category.jpg">
+        <h2 class="woocommerce-loop-product__title">Category</h2>
+      </a>
+    </div>
+    """
+    detail = '<h1 class="product_title">Alpha Laptop</h1>'
+    responses = {
+        CCCENTER_FEED_URL: listing,
+        "https://cccenter.mk/product/alpha-laptop/": detail,
+    }
+    monkeypatch.setattr(
+        CCCenterCatalogClient,
+        "_fetch_html",
+        staticmethod(lambda url, **kwargs: responses[url]),
+    )
+
+    products = CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+
+    assert [product.product_id for product in products] == [
+        "https://cccenter.mk/product/alpha-laptop/",
+    ]
+
+
 def test_cccenter_rejects_listing_cards_without_an_image() -> None:
     card = BeautifulSoup(
         '<li class="product"><a href="/product/alpha/"><h2 class="woocommerce-loop-product__title">Alpha</h2></a></li>',
