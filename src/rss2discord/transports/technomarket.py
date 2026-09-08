@@ -8,7 +8,6 @@ from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.transports.base import ScraperStrategy
 from rss2discord.transports.technomarket_bounds import (
-    TECHNOMARKET_DISCOVERY_WINDOW,
     TECHNOMARKET_LABEL,
 )
 from rss2discord.transports.technomarket_catalog import TechnomarketCatalogClient
@@ -19,11 +18,11 @@ MAX_TECHNOMARKET_DELIVERY_HISTORY: Final = 10_000
 
 @final
 class TechnomarketStrategy(ScraperStrategy):
-    """Discover the newest bounded window from one Technomarket category."""
+    """Discover products from the complete bounded configured category."""
 
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = True
-    max_new_entries_per_fetch: int | None = TECHNOMARKET_DISCOVERY_WINDOW
+    max_new_entries_per_fetch: int | None = None
     max_delivery_history: int | None = MAX_TECHNOMARKET_DELIVERY_HISTORY
 
     def __init__(

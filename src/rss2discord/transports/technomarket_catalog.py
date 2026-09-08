@@ -33,7 +33,6 @@ from rss2discord.transports.technomarket_bounds import (
     MAX_TECHNOMARKET_RESPONSE_BYTES,
     MAX_TECHNOMARKET_SCAN_BYTES,
     MAX_TECHNOMARKET_SCAN_SECONDS,
-    TECHNOMARKET_DISCOVERY_WINDOW,
     TECHNOMARKET_FEED_URL,
     TECHNOMARKET_HOST,
     TECHNOMARKET_LABEL,
@@ -438,27 +437,17 @@ def _total_products(document: BeautifulSoup) -> int | None:
 
 
 class TechnomarketCatalogClient:
-    """Fetch a bounded discovery window or the complete configured category."""
+    """Fetch the complete configured category within fixed scan bounds."""
 
     def fetch_latest_products(
         self,
         url: str,
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> tuple[TechnomarketProduct, ...]:
-        root = validate_technomarket_url(url)
-        budget = _ScanBudget.start(is_shutdown_requested)
-        observed_at = datetime.now(UTC)
-        soup = BeautifulSoup(self._fetch_html(root, budget=budget), _HTML_PARSER)
-        _page_count(soup)
-        page_info = _page_info(soup)
-        total = page_info.total
-        products = self._parse_products(soup, observed_at=observed_at)
-        if len(products) != page_info.last - page_info.first + 1:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "IncompleteCatalog")
-        if total < len(products):
-            raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidCount")
-        products = products[:TECHNOMARKET_DISCOVERY_WINDOW]
-        return tuple(products)
+        return self.fetch_catalog(
+            url,
+            is_shutdown_requested=is_shutdown_requested,
+        )
 
     def fetch_catalog(
         self,

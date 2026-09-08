@@ -176,9 +176,11 @@ feeds:
 
   # Technomarket category discovery and complete-scope effective-price monitoring.
   # Only credential-free HTTPS category roots of the exact form below are accepted.
-  # Discovery observes the first page (up to 30 products) and silently seeds the
-  # first successful non-empty scan. Price monitoring compares SMART when present,
-  # otherwise regular price; a regular-only change is silent while SMART is unchanged.
+  # Discovery traverses the complete bounded category and silently seeds the first
+  # successful non-empty scan. This is more expensive than a first-page check, so
+  # use a conservative refresh interval. Price monitoring compares SMART when
+  # present, otherwise regular price; a regular-only change is silent while SMART
+  # is unchanged.
   - id: "technomarket-laptops"
     name: "Technomarket Laptops"
     url: "https://tehnomarket.com.mk/category/4003/laptopi"

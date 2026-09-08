@@ -131,16 +131,31 @@ def test_technomarket_catalog_rejects_changed_page_count(
         TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
 
 
-def test_technomarket_discovery_reads_only_the_first_page(
+def test_technomarket_discovery_traverses_complete_category(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_page = (FIXTURES / "category-page-1.html").read_text(encoding="utf-8")
+    first_page = first_page.replace(
+        '<div class="products-range">1 - 2 од 3 производи</div>\n',
+        "",
+        1,
+    )
+    second_page = (FIXTURES / "category-page-2.html").read_text(encoding="utf-8")
+    second_page = second_page.replace(
+        '<div class="products-range">3 - 3 од 3 производи</div>\n',
+        "",
+        1,
+    )
+    responses = {
+        TECHNOMARKET_FEED_URL: first_page,
+        f"{TECHNOMARKET_FEED_URL}?page=2": second_page,
+    }
     calls: list[str] = []
 
     def fetch(url: str, **kwargs: object) -> str:
         del kwargs
         calls.append(url)
-        return first_page
+        return responses[url]
 
     monkeypatch.setattr(
         TechnomarketCatalogClient,
@@ -150,8 +165,12 @@ def test_technomarket_discovery_reads_only_the_first_page(
 
     products = TechnomarketCatalogClient().fetch_latest_products(TECHNOMARKET_FEED_URL)
 
-    assert [product.product_id for product in products] == ["29404051", "29400351"]
-    assert calls == [TECHNOMARKET_FEED_URL]
+    assert [product.product_id for product in products] == [
+        "29404051",
+        "29400351",
+        "29400003",
+    ]
+    assert calls == [TECHNOMARKET_FEED_URL, f"{TECHNOMARKET_FEED_URL}?page=2"]
 
 
 def test_technomarket_accepts_duplicate_agreeing_count_counters() -> None:
