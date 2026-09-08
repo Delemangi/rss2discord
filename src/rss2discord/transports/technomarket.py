@@ -27,7 +27,8 @@ class TechnomarketStrategy(ScraperStrategy):
     max_delivery_history: int | None = MAX_TECHNOMARKET_DELIVERY_HISTORY
 
     def __init__(
-        self, is_shutdown_requested: Callable[[], bool] = lambda: False,
+        self,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> None:
         self._is_shutdown_requested = is_shutdown_requested
 
@@ -77,7 +78,7 @@ class TechnomarketStrategy(ScraperStrategy):
             link=entry.url,
             description="",
             author="",
-            timestamp=None,
+            timestamp=entry.observed_at.isoformat(),
             image_url=entry.image_url,
             categories=entry.categories,
             source_metrics=tuple(metrics),

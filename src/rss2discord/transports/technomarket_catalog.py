@@ -5,11 +5,12 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from time import monotonic
 from typing import Any, Final, Protocol
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
@@ -51,12 +52,19 @@ __all__ = [
 
 _HTML_PARSER: Final = "html.parser"
 _PRICE_RE: Final = re.compile(
-    r"(?<!\d)(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?!\d)",
+    r"(?<!\d)(?:\d{1,3}(?:[.\s,]\d{3})+|\d+)(?:[.,]\d{1,2})?(?!\d)",
 )
 _CATEGORY_PATH_RE: Final = re.compile(
     r"^/category/\d+/[a-z0-9]+(?:-[a-z0-9]+)*/?$",
 )
+_CATEGORY_PAGE_RE: Final = re.compile(
+    r"^/category/\d+/[a-z0-9]+(?:-[a-z0-9]+)*/page/(\d+)/?$",
+)
 _PRODUCT_PATH_RE: Final = re.compile(r"^/(?:product|products)/[^?#]+/?$")
+_PRODUCT_RANGE_RE: Final = re.compile(
+    r"^(\d+)\s*-\s*(\d+)\s+од\s+(\d+)\s+производи$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -188,8 +196,14 @@ def parse_mkd_price(value: str) -> Decimal | None:
         return None
     normalized = match.group(0).replace(" ", "")
     if "," in normalized:
-        whole, fraction = normalized.split(",", 1)
-        normalized = f"{whole.replace('.', '')}.{fraction}"
+        comma_parts = normalized.split(",")
+        if len(comma_parts) == 2 and len(comma_parts[1]) == 3:
+            normalized = "".join(comma_parts)
+        elif len(comma_parts) == 2:
+            whole, fraction = comma_parts
+            normalized = f"{whole.replace('.', '')}.{fraction}"
+        else:
+            normalized = "".join(comma_parts)
     else:
         normalized = normalized.replace(".", "")
     try:
@@ -263,7 +277,11 @@ def _safe_image_url(value: str | None) -> str | None:
     return urlunsplit(("https", parsed.hostname or "", parsed.path, parsed.query, ""))
 
 
-def parse_product_card(card: Tag | None) -> TechnomarketProduct:
+def parse_product_card(
+    card: Tag | None,
+    *,
+    observed_at: datetime | None = None,
+) -> TechnomarketProduct:
     """Parse a complete product card, failing closed on identity errors."""
     if card is None:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedProduct")
@@ -285,6 +303,9 @@ def parse_product_card(card: Tag | None) -> TechnomarketProduct:
     if link is None or not _text(title):
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedProduct")
     url, product_id = _safe_product_url(str(link.get("href", "")))
+    data_id = str(card.get("data-id") or "")
+    if not data_id.isdigit() or data_id != product_id:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidProductIdentity")
     regular_node = _first(
         card,
         (
@@ -311,11 +332,22 @@ def parse_product_card(card: Tag | None) -> TechnomarketProduct:
     )
     image = _first(
         card,
-        ("img.product-image", "img[data-src]", "img[data-original]", "img[src]"),
+        (
+            "img.product-image",
+            "img[data-src]",
+            "img[data-original]",
+            "img[src]",
+            "figure.product-figure",
+        ),
     )
-    manufacturer = (
-        _text(_first(card, ("[data-manufacturer]", ".manufacturer", ".brand"))) or None
-    )
+    manufacturer_node = _first(card, ("[data-manufacturer]", ".manufacturer", ".brand"))
+    manufacturer = _text(manufacturer_node) or None
+    if manufacturer is None:
+        for node in card.select(".product-price > div, .product-price div"):
+            if "Производител" in _text(node):
+                manufacturer = _text(node.select_one("strong")) or None
+                if manufacturer:
+                    break
     category_nodes = card.select(
         "[data-category], .category, .product-category, .categories a",
     )
@@ -326,75 +358,78 @@ def parse_product_card(card: Tag | None) -> TechnomarketProduct:
         product_id=product_id,
         name=_text(title),
         url=url,
-        image_url=_safe_image_url(
-            str(
-                image.get("data-src")
-                or image.get("data-original")
-                or image.get("src")
-                or "",
-            )
-            if image
-            else None,
-        ),
+        image_url=_safe_image_url(_image_value(image) if image else None),
         manufacturer=manufacturer,
         categories=categories,
         regular_price=_price(regular_node),
         smart_price=_price(smart_node),
+        observed_at=observed_at or datetime.now(UTC),
     )
 
 
-def _metadata_int(
-    document: BeautifulSoup,
-    names: tuple[str, ...],
-    error: str,
-) -> int | None:
-    values: list[str] = []
-    for name in names:
-        values.extend(str(node.get(name, "")) for node in document.select(f"[{name}]"))
-    if not values:
-        return None
-    if len(set(values)) != 1 or not values[0].isdigit() or int(values[0]) < 0:
-        raise FeedFetchError(TECHNOMARKET_LABEL, error)
-    return int(values[0])
+def _image_value(image: Tag) -> str:
+    if image.name == "figure":
+        match = re.search(r"url\(['\"]?([^)'\"]+)", str(image.get("style") or ""))
+        return match.group(1) if match else ""
+    return str(
+        image.get("data-src") or image.get("data-original") or image.get("src") or "",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _PageInfo:
+    first: int
+    last: int
+    total: int
+
+
+def _page_info(document: BeautifulSoup) -> _PageInfo:
+    ranges = document.select(".products-range")
+    if len(ranges) != 1:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+    match = _PRODUCT_RANGE_RE.fullmatch(_text(ranges[0]))
+    if match is None:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+    first, last, total = (int(value) for value in match.groups())
+    if first < 1 or last < first or total < last:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+    return _PageInfo(first, last, total)
 
 
 def _page_count(document: BeautifulSoup) -> int:
-    explicit = _metadata_int(
-        document,
-        ("data-total-pages", "data-page-count", "data-pages"),
-        "MalformedPagination",
-    )
     page_values: list[int] = []
     for link in document.select("a[href]"):
-        query = parse_qsl(
-            urlsplit(str(link.get("href", ""))).query,
-            keep_blank_values=True,
-        )
-        page_params = [value for key, value in query if key == "page"]
-        if page_params:
-            if (
-                len(page_params) != 1
-                or not page_params[0].isdigit()
-                or int(page_params[0]) < 1
-            ):
+        href = str(link.get("href", "")).strip()
+        if not href or href == "#":
+            continue
+        try:
+            parsed = urlsplit(urljoin(TECHNOMARKET_ORIGIN + "/", href))
+        except ValueError:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination") from None
+        match = _CATEGORY_PAGE_RE.fullmatch(parsed.path)
+        if match is None:
+            if "/page/" in parsed.path:
                 raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
-            page_values.append(int(page_params[0]))
-    count = explicit or max(page_values, default=1)
+            continue
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != TECHNOMARKET_HOST
+            or parsed.port is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
+        page_values.append(int(match.group(1)))
+    count = max(page_values, default=1)
     if count < 1:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
     if count > MAX_TECHNOMARKET_PAGES:
         raise FeedFetchError(TECHNOMARKET_LABEL, "PageLimitExceeded")
-    if explicit is not None and page_values and max(page_values) > explicit:
-        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
     return count
 
 
 def _total_products(document: BeautifulSoup) -> int | None:
-    return _metadata_int(
-        document,
-        ("data-total-products", "data-total-count", "data-product-count"),
-        "MalformedCount",
-    )
+    return _page_info(document).total
 
 
 class TechnomarketCatalogClient:
@@ -407,18 +442,16 @@ class TechnomarketCatalogClient:
     ) -> tuple[TechnomarketProduct, ...]:
         root = validate_technomarket_url(url)
         budget = _ScanBudget.start(is_shutdown_requested)
+        observed_at = datetime.now(UTC)
         soup = BeautifulSoup(self._fetch_html(root, budget=budget), _HTML_PARSER)
-        page_count = _page_count(soup)
+        _page_count(soup)
         total = _total_products(soup)
         if total is None:
             raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
-        products = self._parse_products(soup)
+        products = self._parse_products(soup, observed_at=observed_at)
         if total is not None and total < len(products):
             raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidCount")
-        if len(products) > TECHNOMARKET_DISCOVERY_WINDOW:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "DiscoveryLimitExceeded")
-        if page_count == 1 and total is not None and total != len(products):
-            raise FeedFetchError(TECHNOMARKET_LABEL, "IncompleteCatalog")
+        products = products[:TECHNOMARKET_DISCOVERY_WINDOW]
         return tuple(products)
 
     def fetch_catalog(
@@ -455,6 +488,8 @@ class TechnomarketCatalogClient:
             raise FeedFetchError(TECHNOMARKET_LABEL, "ProductLimitExceeded")
         products: list[TechnomarketProduct] = []
         seen: set[str] = set()
+        observed_at = datetime.now(UTC)
+        scanned_count = 0
         for page in range(1, expected_pages + 1):
             if page == 1:
                 document = first
@@ -463,20 +498,31 @@ class TechnomarketCatalogClient:
                     self._fetch_html(self._page_url(root, page), budget=budget),
                     _HTML_PARSER,
                 )
+            page_info = _page_info(document)
             if _page_count(document) != expected_pages:
                 raise FeedFetchError(
                     TECHNOMARKET_LABEL,
                     "CatalogChanged",
                     retryable=True,
                 )
-            page_total = _total_products(document)
-            if page_total is not None and page_total != expected_total:
+            if page_info.total != expected_total:
                 raise FeedFetchError(
                     TECHNOMARKET_LABEL,
                     "CatalogChanged",
                     retryable=True,
                 )
-            for product in self._parse_products(document):
+            page_products = self._parse_products(document, observed_at=observed_at)
+            if (
+                len(page_products) != page_info.last - page_info.first + 1
+                or page_info.first != scanned_count + 1
+                or page_info.last != scanned_count + len(page_products)
+            ):
+                raise FeedFetchError(
+                    TECHNOMARKET_LABEL,
+                    "IncompleteCatalog",
+                    retryable=True,
+                )
+            for product in page_products:
                 if product.product_id in seen:
                     raise FeedFetchError(
                         TECHNOMARKET_LABEL,
@@ -487,6 +533,7 @@ class TechnomarketCatalogClient:
                 if len(seen) > MAX_TECHNOMARKET_PRODUCTS:
                     raise FeedFetchError(TECHNOMARKET_LABEL, "ProductLimitExceeded")
                 products.append(product)
+            scanned_count += len(page_products)
         if expected_total is not None and len(products) != expected_total:
             raise FeedFetchError(
                 TECHNOMARKET_LABEL,
@@ -498,19 +545,23 @@ class TechnomarketCatalogClient:
         return tuple(products)
 
     @staticmethod
-    def _parse_products(document: BeautifulSoup) -> list[TechnomarketProduct]:
+    def _parse_products(
+        document: BeautifulSoup,
+        *,
+        observed_at: datetime | None = None,
+    ) -> list[TechnomarketProduct]:
         cards = document.select(
-            ".product-card, .product-item, article.product, [data-product-card]",
+            "li.product-fix[data-id], .product-card, .product-item, article.product, [data-product-card]",
         )
         if not cards:
             if _total_products(document) == 0:
                 return []
             raise FeedFetchError(TECHNOMARKET_LABEL, "EmptyPage")
-        return [parse_product_card(card) for card in cards]
+        return [parse_product_card(card, observed_at=observed_at) for card in cards]
 
     @staticmethod
     def _page_url(root: str, page: int) -> str:
-        return f"{root}?{urlencode({'page': page})}"
+        return f"{root.rstrip('/')}/page/{page}"
 
     @staticmethod
     def _fetch_html(url: str, *, budget: _ScanBudget | None = None) -> str:

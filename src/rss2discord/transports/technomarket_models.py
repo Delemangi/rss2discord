@@ -1,7 +1,9 @@
 """Normalized models extracted from Technomarket listing HTML."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
+from functools import partial
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +16,7 @@ class TechnomarketProduct:
     categories: tuple[str, ...]
     regular_price: Decimal | None
     smart_price: Decimal | None
+    observed_at: datetime = field(default_factory=partial(datetime.now, UTC))
 
     @property
     def effective_price(self) -> Decimal | None:

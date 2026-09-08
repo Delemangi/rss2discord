@@ -6,7 +6,7 @@ TECHNOMARKET_LABEL: Final = "Technomarket"
 TECHNOMARKET_ORIGIN: Final = "https://tehnomarket.com.mk"
 TECHNOMARKET_HOST: Final = "tehnomarket.com.mk"
 TECHNOMARKET_CATEGORY_PATH_PREFIX: Final = "/category/"
-TECHNOMARKET_FEED_URL: Final = f"{TECHNOMARKET_ORIGIN}/category/42/laptops"
+TECHNOMARKET_FEED_URL: Final = f"{TECHNOMARKET_ORIGIN}/category/4003/laptopi"
 TECHNOMARKET_USER_AGENT: Final = (
     "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
 )

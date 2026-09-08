@@ -98,7 +98,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -148,7 +148,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -159,7 +159,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, or Setec. The immediate first scan stores a silent baseline.
+    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -181,7 +181,7 @@ feeds:
   # otherwise regular price; a regular-only change is silent while SMART is unchanged.
   - id: "technomarket-laptops"
     name: "Technomarket Laptops"
-    url: "https://tehnomarket.com.mk/category/42/laptops"
+    url: "https://tehnomarket.com.mk/category/4003/laptopi"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "technomarket"
     price_check_interval: 3600

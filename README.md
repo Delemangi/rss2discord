@@ -184,7 +184,7 @@ Common feed types:
 # Technomarket category discovery and opt-in effective-price monitoring
 - id: "technomarket-laptops"
   name: "Technomarket Laptops"
-  url: "https://tehnomarket.com.mk/category/42/laptops"
+  url: "https://tehnomarket.com.mk/category/4003/laptopi"
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "technomarket"
   price_check_interval: 3600

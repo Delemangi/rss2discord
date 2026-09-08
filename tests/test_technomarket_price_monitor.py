@@ -50,17 +50,20 @@ def product(
 
 
 def dependencies(
-    catalog: CatalogStub, sender: RecordingSender,
+    catalog: CatalogStub,
+    sender: RecordingSender,
 ) -> TechnomarketPriceMonitorDependencies:
     return TechnomarketPriceMonitorDependencies(
         catalog=catalog,
         snapshots=None,  # type: ignore[arg-type]
         sender=sender,
         fetch_retry_policy=FetchRetryPolicy(
-            sleep=lambda _: True, on_retry=lambda *_: None,
+            sleep=lambda _: True,
+            on_retry=lambda *_: None,
         ),
         sqlite_retry_policy=SQLiteRetryPolicy(
-            sleep=lambda _: True, on_retry=lambda *_: None,
+            sleep=lambda _: True,
+            on_retry=lambda *_: None,
         ),
         delivery=PriceAlertDelivery(
             sleep=lambda _: True,
@@ -76,7 +79,7 @@ def test_technomarket_price_monitor_baselines_and_alerts_effective_smart_changes
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
     feed = FeedConfig(
         id="technomarket",
-        url="https://tehnomarket.com.mk/category/42/laptops",
+        url="https://tehnomarket.com.mk/category/4003/laptopi",
         webhook="https://discord.example.test/webhooks/id/token",
         strategy="technomarket",
     )
@@ -92,6 +95,10 @@ def test_technomarket_price_monitor_baselines_and_alerts_effective_smart_changes
 
         assert len(sender.messages) == 1
         assert sender.messages[0].entry.price_direction is PriceDirection.DECREASE
+        assert ("Original", "57.999 ден.") in {
+            (metric.label, metric.value)
+            for metric in sender.messages[0].entry.source_metrics
+        }
         assert str(store.load_price_snapshots("technomarket")[0].amount) == "54999"
 
 
@@ -101,7 +108,7 @@ def test_technomarket_regular_only_change_is_silent_when_smart_price_is_unchange
     sender = RecordingSender([])
     feed = FeedConfig(
         id="technomarket",
-        url="https://tehnomarket.com.mk/category/42/laptops",
+        url="https://tehnomarket.com.mk/category/4003/laptopi",
         webhook="https://discord.example.test/webhooks/id/token",
         strategy="technomarket",
     )
