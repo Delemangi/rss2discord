@@ -82,10 +82,9 @@ def test_technomarket_catalog_fetches_complete_scope_sequentially(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_page = (FIXTURES / "category-page-1.html").read_text(encoding="utf-8")
-    first_page = first_page.replace("1 - 32 од 57 производи", "1 - 2 од 3 производи")
     responses = {
         TECHNOMARKET_FEED_URL: first_page,
-        f"{TECHNOMARKET_FEED_URL}/page/2": (
+        f"{TECHNOMARKET_FEED_URL}?page=2": (
             FIXTURES / "category-page-2.html"
         ).read_text(encoding="utf-8"),
     }
@@ -109,19 +108,18 @@ def test_technomarket_catalog_fetches_complete_scope_sequentially(
         "29400351",
         "29400003",
     ]
-    assert calls == [TECHNOMARKET_FEED_URL, f"{TECHNOMARKET_FEED_URL}/page/2"]
+    assert calls == [TECHNOMARKET_FEED_URL, f"{TECHNOMARKET_FEED_URL}?page=2"]
 
 
 def test_technomarket_catalog_rejects_changed_page_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_page = (FIXTURES / "category-page-1.html").read_text(encoding="utf-8")
-    first_page = first_page.replace("1 - 32 од 57 производи", "1 - 2 од 3 производи")
     second_page = (FIXTURES / "category-page-2.html").read_text(encoding="utf-8")
     second_page = second_page.replace("3 - 3 од 3 производи", "3 - 3 од 4 производи")
     responses = {
         TECHNOMARKET_FEED_URL: first_page,
-        f"{TECHNOMARKET_FEED_URL}/page/2": second_page,
+        f"{TECHNOMARKET_FEED_URL}?page=2": second_page,
     }
     monkeypatch.setattr(
         TechnomarketCatalogClient,
@@ -154,6 +152,50 @@ def test_technomarket_discovery_reads_only_the_first_page(
 
     assert [product.product_id for product in products] == ["29404051", "29400351"]
     assert calls == [TECHNOMARKET_FEED_URL]
+
+
+def test_technomarket_accepts_duplicate_agreeing_count_counters() -> None:
+    document = BeautifulSoup(
+        (FIXTURES / "category-page-1.html").read_text(encoding="utf-8"),
+        "html.parser",
+    )
+
+    products = TechnomarketCatalogClient._parse_products(document)
+
+    assert len(products) == 2
+
+
+def test_technomarket_rejects_inconsistent_count_counters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        TechnomarketCatalogClient,
+        "_fetch_html",
+        staticmethod(
+            lambda url, **kwargs: (
+                '<div class="products-range">1 - 2 од 3 производи</div>'
+                '<div class="products-range">1 - 2 од 4 производи</div>'
+            ),
+        ),
+    )
+
+    with pytest.raises(FeedFetchError, match="MalformedCount"):
+        TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
+
+
+def test_technomarket_discovery_rejects_short_first_page_before_slicing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = (FIXTURES / "category-page-1.html").read_text(encoding="utf-8")
+    page = page.replace("1 - 2 од 3 производи", "1 - 3 од 3 производи")
+    monkeypatch.setattr(
+        TechnomarketCatalogClient,
+        "_fetch_html",
+        staticmethod(lambda url, **kwargs: page),
+    )
+
+    with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
+        TechnomarketCatalogClient().fetch_latest_products(TECHNOMARKET_FEED_URL)
 
 
 def test_technomarket_catalog_fails_closed_on_malformed_count(

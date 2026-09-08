@@ -385,15 +385,20 @@ class _PageInfo:
 
 def _page_info(document: BeautifulSoup) -> _PageInfo:
     ranges = document.select(".products-range")
-    if len(ranges) != 1:
+    if not ranges:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
-    match = _PRODUCT_RANGE_RE.fullmatch(_text(ranges[0]))
-    if match is None:
+    parsed_ranges: list[_PageInfo] = []
+    for node in ranges:
+        match = _PRODUCT_RANGE_RE.fullmatch(_text(node))
+        if match is None:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+        first, last, total = (int(value) for value in match.groups())
+        if first < 1 or last < first or total < last:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+        parsed_ranges.append(_PageInfo(first, last, total))
+    if len(set(parsed_ranges)) != 1:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
-    first, last, total = (int(value) for value in match.groups())
-    if first < 1 or last < first or total < last:
-        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
-    return _PageInfo(first, last, total)
+    return parsed_ranges[0]
 
 
 def _page_count(document: BeautifulSoup) -> int:
@@ -445,11 +450,12 @@ class TechnomarketCatalogClient:
         observed_at = datetime.now(UTC)
         soup = BeautifulSoup(self._fetch_html(root, budget=budget), _HTML_PARSER)
         _page_count(soup)
-        total = _total_products(soup)
-        if total is None:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
+        page_info = _page_info(soup)
+        total = page_info.total
         products = self._parse_products(soup, observed_at=observed_at)
-        if total is not None and total < len(products):
+        if len(products) != page_info.last - page_info.first + 1:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "IncompleteCatalog")
+        if total < len(products):
             raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidCount")
         products = products[:TECHNOMARKET_DISCOVERY_WINDOW]
         return tuple(products)
@@ -561,7 +567,7 @@ class TechnomarketCatalogClient:
 
     @staticmethod
     def _page_url(root: str, page: int) -> str:
-        return f"{root.rstrip('/')}/page/{page}"
+        return f"{root}?page={page}"
 
     @staticmethod
     def _fetch_html(url: str, *, budget: _ScanBudget | None = None) -> str:
