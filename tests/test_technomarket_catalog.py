@@ -127,8 +127,9 @@ def test_technomarket_catalog_rejects_changed_page_count(
         staticmethod(lambda url, **kwargs: responses[url]),
     )
 
+    client = TechnomarketCatalogClient()
     with pytest.raises(FeedFetchError, match="CatalogChanged"):
-        TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
+        client.fetch_catalog(TECHNOMARKET_FEED_URL)
 
 
 def test_technomarket_discovery_traverses_complete_category(
@@ -198,8 +199,9 @@ def test_technomarket_rejects_inconsistent_count_counters(
         ),
     )
 
+    client = TechnomarketCatalogClient()
     with pytest.raises(FeedFetchError, match="MalformedCount"):
-        TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
+        client.fetch_catalog(TECHNOMARKET_FEED_URL)
 
 
 def test_technomarket_discovery_rejects_short_first_page_before_slicing(
@@ -213,8 +215,9 @@ def test_technomarket_discovery_rejects_short_first_page_before_slicing(
         staticmethod(lambda url, **kwargs: page),
     )
 
+    client = TechnomarketCatalogClient()
     with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
-        TechnomarketCatalogClient().fetch_latest_products(TECHNOMARKET_FEED_URL)
+        client.fetch_latest_products(TECHNOMARKET_FEED_URL)
 
 
 def test_technomarket_catalog_fails_closed_on_malformed_count(
@@ -231,8 +234,9 @@ def test_technomarket_catalog_fails_closed_on_malformed_count(
         ),
     )
 
+    client = TechnomarketCatalogClient()
     with pytest.raises(FeedFetchError, match="MalformedCount"):
-        TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
+        client.fetch_catalog(TECHNOMARKET_FEED_URL)
 
 
 def test_technomarket_rejects_listing_with_missing_numeric_identity() -> None:
@@ -259,8 +263,9 @@ def test_technomarket_rejects_pagination_beyond_bound(
         ),
     )
 
+    client = TechnomarketCatalogClient()
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        TechnomarketCatalogClient().fetch_catalog(TECHNOMARKET_FEED_URL)
+        client.fetch_catalog(TECHNOMARKET_FEED_URL)
 
 
 class _Response:

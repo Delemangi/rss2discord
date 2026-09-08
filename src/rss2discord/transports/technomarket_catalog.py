@@ -14,7 +14,6 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
-from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_amount import (
@@ -26,6 +25,7 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     parse_retry_after,
 )
+from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.technomarket_bounds import (
     MAX_TECHNOMARKET_PAGES,
     MAX_TECHNOMARKET_PRODUCTS,
@@ -110,33 +110,6 @@ class _ScanBudget:
             raise FeedFetchInterruptedError
         if monotonic() - self.started_at >= MAX_TECHNOMARKET_SCAN_SECONDS:
             raise FeedFetchError(TECHNOMARKET_LABEL, "ScanTimeLimitExceeded")
-
-
-@dataclass(slots=True)
-class _ContentCallbackState:
-    budget: _ScanBudget | None
-    content: bytearray
-    abort_error: FeedFetchError | FeedFetchInterruptedError | None = None
-
-    def write(self, chunk: bytes) -> int:
-        if self.abort_error is not None:
-            return CURL_WRITEFUNC_ERROR
-        try:
-            if self.budget is not None:
-                self.budget.before_chunk()
-            if len(self.content) + len(chunk) > MAX_TECHNOMARKET_RESPONSE_BYTES:
-                self.abort_error = FeedFetchError(
-                    TECHNOMARKET_LABEL,
-                    "ResponseTooLarge",
-                )
-                return CURL_WRITEFUNC_ERROR
-            self.content.extend(chunk)
-            if self.budget is not None:
-                self.budget.add_bytes(len(chunk))
-        except (FeedFetchError, FeedFetchInterruptedError) as error:
-            self.abort_error = error
-            return CURL_WRITEFUNC_ERROR
-        return len(chunk)
 
 
 class _HttpResponse(Protocol):
@@ -284,6 +257,34 @@ def parse_product_card(
     """Parse a complete product card, failing closed on identity errors."""
     if card is None:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedProduct")
+    link, title = _required_card_nodes(card)
+    url, product_id = _safe_product_url(str(link.get("href", "")))
+    _validate_product_identity(card, product_id)
+    regular_node, smart_node = _price_nodes(card)
+    image = _first(
+        card,
+        (
+            "img.product-image",
+            "img[data-src]",
+            "img[data-original]",
+            "img[src]",
+            "figure.product-figure",
+        ),
+    )
+    return TechnomarketProduct(
+        product_id=product_id,
+        name=_text(title),
+        url=url,
+        image_url=_safe_image_url(_image_value(image) if image else None),
+        manufacturer=_manufacturer(card),
+        categories=_categories(card),
+        regular_price=_price(regular_node),
+        smart_price=_price(smart_node),
+        observed_at=observed_at or datetime.now(UTC),
+    )
+
+
+def _required_card_nodes(card: Tag) -> tuple[Tag, Tag]:
     link = _first(
         card,
         ("a.product-link[href]", "a[href*='/product/']", "a[href*='/products/']"),
@@ -299,12 +300,18 @@ def parse_product_card(
             "h3",
         ),
     )
-    if link is None or not _text(title):
+    if link is None or title is None or not _text(title):
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedProduct")
-    url, product_id = _safe_product_url(str(link.get("href", "")))
+    return link, title
+
+
+def _validate_product_identity(card: Tag, product_id: str) -> None:
     data_id = str(card.get("data-id") or "")
     if not data_id.isdigit() or data_id != product_id:
         raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidProductIdentity")
+
+
+def _price_nodes(card: Tag) -> tuple[Tag | None, Tag | None]:
     regular_node = _first(
         card,
         (
@@ -329,41 +336,31 @@ def parse_product_card(
             "[class*='smart']",
         ),
     )
-    image = _first(
-        card,
-        (
-            "img.product-image",
-            "img[data-src]",
-            "img[data-original]",
-            "img[src]",
-            "figure.product-figure",
-        ),
+    return regular_node, smart_node
+
+
+def _manufacturer(card: Tag) -> str | None:
+    manufacturer = (
+        _text(
+            _first(card, ("[data-manufacturer]", ".manufacturer", ".brand")),
+        )
+        or None
     )
-    manufacturer_node = _first(card, ("[data-manufacturer]", ".manufacturer", ".brand"))
-    manufacturer = _text(manufacturer_node) or None
-    if manufacturer is None:
-        for node in card.select(".product-price > div, .product-price div"):
-            if "Производител" in _text(node):
-                manufacturer = _text(node.select_one("strong")) or None
-                if manufacturer:
-                    break
+    if manufacturer is not None:
+        return manufacturer
+    for node in card.select(".product-price > div, .product-price div"):
+        if "Производител" in _text(node):
+            manufacturer = _text(node.select_one("strong")) or None
+            if manufacturer:
+                return manufacturer
+    return None
+
+
+def _categories(card: Tag) -> tuple[str, ...]:
     category_nodes = card.select(
         "[data-category], .category, .product-category, .categories a",
     )
-    categories = tuple(
-        dict.fromkeys(_text(node) for node in category_nodes if _text(node)),
-    )
-    return TechnomarketProduct(
-        product_id=product_id,
-        name=_text(title),
-        url=url,
-        image_url=_safe_image_url(_image_value(image) if image else None),
-        manufacturer=manufacturer,
-        categories=categories,
-        regular_price=_price(regular_node),
-        smart_price=_price(smart_node),
-        observed_at=observed_at or datetime.now(UTC),
-    )
+    return tuple(dict.fromkeys(_text(node) for node in category_nodes if _text(node)))
 
 
 def _image_value(image: Tag) -> str:
@@ -401,30 +398,10 @@ def _page_info(document: BeautifulSoup) -> _PageInfo:
 
 
 def _page_count(document: BeautifulSoup) -> int:
-    page_values: list[int] = []
-    for link in document.select("a[href]"):
-        href = str(link.get("href", "")).strip()
-        if not href or href == "#":
-            continue
-        try:
-            parsed = urlsplit(urljoin(TECHNOMARKET_ORIGIN + "/", href))
-        except ValueError:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination") from None
-        match = _CATEGORY_PAGE_RE.fullmatch(parsed.path)
-        if match is None:
-            if "/page/" in parsed.path:
-                raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
-            continue
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname != TECHNOMARKET_HOST
-            or parsed.port is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
-        page_values.append(int(match.group(1)))
-    count = max(page_values, default=1)
+    page_values = (
+        _page_number(link.get("href")) for link in document.select("a[href]")
+    )
+    count = max((page for page in page_values if page is not None), default=1)
     if count < 1:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
     if count > MAX_TECHNOMARKET_PAGES:
@@ -432,7 +409,31 @@ def _page_count(document: BeautifulSoup) -> int:
     return count
 
 
-def _total_products(document: BeautifulSoup) -> int | None:
+def _page_number(value: object) -> int | None:
+    href = str(value or "").strip()
+    if not href or href == "#":
+        return None
+    try:
+        parsed = urlsplit(urljoin(TECHNOMARKET_ORIGIN + "/", href))
+    except ValueError:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination") from None
+    match = _CATEGORY_PAGE_RE.fullmatch(parsed.path)
+    if match is None:
+        if "/page/" in parsed.path:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
+        return None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != TECHNOMARKET_HOST
+        or parsed.port is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination")
+    return int(match.group(1))
+
+
+def _total_products(document: BeautifulSoup) -> int:
     return _page_info(document).total
 
 
@@ -477,8 +478,6 @@ class TechnomarketCatalogClient:
         first = BeautifulSoup(self._fetch_html(root, budget=budget), _HTML_PARSER)
         expected_pages = _page_count(first)
         expected_total = _total_products(first)
-        if expected_total is None:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
         if expected_total > MAX_TECHNOMARKET_PRODUCTS:
             raise FeedFetchError(TECHNOMARKET_LABEL, "ProductLimitExceeded")
         products: list[TechnomarketProduct] = []
@@ -486,58 +485,84 @@ class TechnomarketCatalogClient:
         observed_at = datetime.now(UTC)
         scanned_count = 0
         for page in range(1, expected_pages + 1):
-            if page == 1:
-                document = first
-            else:
-                document = BeautifulSoup(
-                    self._fetch_html(self._page_url(root, page), budget=budget),
-                    _HTML_PARSER,
-                )
-            page_info = _page_info(document)
-            if _page_count(document) != expected_pages:
-                raise FeedFetchError(
-                    TECHNOMARKET_LABEL,
-                    "CatalogChanged",
-                    retryable=True,
-                )
-            if page_info.total != expected_total:
-                raise FeedFetchError(
-                    TECHNOMARKET_LABEL,
-                    "CatalogChanged",
-                    retryable=True,
-                )
+            document = self._page_document(root, page, first, budget)
+            page_info = self._validate_page(document, expected_pages, expected_total)
             page_products = self._parse_products(document, observed_at=observed_at)
-            if (
-                len(page_products) != page_info.last - page_info.first + 1
-                or page_info.first != scanned_count + 1
-                or page_info.last != scanned_count + len(page_products)
-            ):
-                raise FeedFetchError(
-                    TECHNOMARKET_LABEL,
-                    "IncompleteCatalog",
-                    retryable=True,
-                )
-            for product in page_products:
-                if product.product_id in seen:
-                    raise FeedFetchError(
-                        TECHNOMARKET_LABEL,
-                        "DuplicateProduct",
-                        retryable=True,
-                    )
-                seen.add(product.product_id)
-                if len(seen) > MAX_TECHNOMARKET_PRODUCTS:
-                    raise FeedFetchError(TECHNOMARKET_LABEL, "ProductLimitExceeded")
-                products.append(product)
-            scanned_count += len(page_products)
-        if expected_total is not None and len(products) != expected_total:
+            scanned_count = self._append_page_products(
+                products,
+                seen,
+                page_products,
+                page_info,
+                scanned_count,
+            )
+        if len(products) != expected_total:
             raise FeedFetchError(
                 TECHNOMARKET_LABEL,
                 "IncompleteCatalog",
                 retryable=True,
             )
-        if expected_total is None and not products:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedCount")
         return tuple(products)
+
+    def _page_document(
+        self,
+        root: str,
+        page: int,
+        first: BeautifulSoup,
+        budget: _ScanBudget,
+    ) -> BeautifulSoup:
+        if page == 1:
+            return first
+        return BeautifulSoup(
+            self._fetch_html(self._page_url(root, page), budget=budget),
+            _HTML_PARSER,
+        )
+
+    @staticmethod
+    def _validate_page(
+        document: BeautifulSoup,
+        expected_pages: int,
+        expected_total: int,
+    ) -> _PageInfo:
+        page_info = _page_info(document)
+        if _page_count(document) != expected_pages or page_info.total != expected_total:
+            raise FeedFetchError(
+                TECHNOMARKET_LABEL,
+                "CatalogChanged",
+                retryable=True,
+            )
+        return page_info
+
+    @staticmethod
+    def _append_page_products(
+        products: list[TechnomarketProduct],
+        seen: set[str],
+        page_products: list[TechnomarketProduct],
+        page_info: _PageInfo,
+        scanned_count: int,
+    ) -> int:
+        expected_count = page_info.last - page_info.first + 1
+        if (
+            len(page_products) != expected_count
+            or page_info.first != scanned_count + 1
+            or page_info.last != scanned_count + len(page_products)
+        ):
+            raise FeedFetchError(
+                TECHNOMARKET_LABEL,
+                "IncompleteCatalog",
+                retryable=True,
+            )
+        for product in page_products:
+            if product.product_id in seen:
+                raise FeedFetchError(
+                    TECHNOMARKET_LABEL,
+                    "DuplicateProduct",
+                    retryable=True,
+                )
+            seen.add(product.product_id)
+            if len(seen) > MAX_TECHNOMARKET_PRODUCTS:
+                raise FeedFetchError(TECHNOMARKET_LABEL, "ProductLimitExceeded")
+            products.append(product)
+        return scanned_count + len(page_products)
 
     @staticmethod
     def _parse_products(
@@ -562,9 +587,26 @@ class TechnomarketCatalogClient:
     def _fetch_html(url: str, *, budget: _ScanBudget | None = None) -> str:
         if budget is not None:
             budget.before_request()
-        state = _ContentCallbackState(budget, bytearray())
+        state = BoundedContentCallback.start(
+            budget,
+            max_bytes=MAX_TECHNOMARKET_RESPONSE_BYTES,
+            label=TECHNOMARKET_LABEL,
+        )
+        response = TechnomarketCatalogClient._request_html(url, budget, state)
+        if state.abort_error is not None:
+            raise state.abort_error
+        if budget is not None:
+            budget.after_request()
+        return _decode_html(response, state.content)
+
+    @staticmethod
+    def _request_html(
+        url: str,
+        budget: _ScanBudget | None,
+        state: BoundedContentCallback,
+    ) -> Any:  # noqa: ANN401
         try:
-            response = _perform_request(
+            return _perform_request(
                 url,
                 headers={"Accept": "text/html", "User-Agent": TECHNOMARKET_USER_AGENT},
                 timeout=budget.request_timeout() if budget is not None else 30.0,
@@ -582,33 +624,32 @@ class TechnomarketCatalogClient:
                 type(error).__name__,
                 retryable=True,
             ) from None
-        if state.abort_error is not None:
-            raise state.abort_error
-        if budget is not None:
-            budget.after_request()
-        if 300 <= response.status_code < 400:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidRedirect")
-        try:
-            response.raise_for_status()
-        except curl_requests.exceptions.HTTPError:
-            status = response.status_code
-            raise FeedFetchError(
-                TECHNOMARKET_LABEL,
-                "HTTPError",
-                status_code=status,
-                retryable=status == 429 or 500 <= status < 600,
-                retry_after=parse_retry_after(response.headers.get("Retry-After")),
-            ) from None
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None and (
-            not content_length.isdigit()
-            or int(content_length) > MAX_TECHNOMARKET_RESPONSE_BYTES
-        ):
-            raise FeedFetchError(TECHNOMARKET_LABEL, "ResponseTooLarge")
-        try:
-            return bytes(state.content).decode(
-                response.encoding or "utf-8",
-                errors="strict",
-            )
-        except UnicodeDecodeError:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidResponse") from None
+
+
+def _decode_html(response: _HttpResponse, content: bytearray) -> str:
+    if 300 <= response.status_code < 400:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidRedirect")
+    try:
+        response.raise_for_status()
+    except curl_requests.exceptions.HTTPError:
+        status = response.status_code
+        raise FeedFetchError(
+            TECHNOMARKET_LABEL,
+            "HTTPError",
+            status_code=status,
+            retryable=status == 429 or 500 <= status < 600,
+            retry_after=parse_retry_after(response.headers.get("Retry-After")),
+        ) from None
+    content_length = response.headers.get("Content-Length")
+    if content_length is not None and (
+        not content_length.isdigit()
+        or int(content_length) > MAX_TECHNOMARKET_RESPONSE_BYTES
+    ):
+        raise FeedFetchError(TECHNOMARKET_LABEL, "ResponseTooLarge")
+    try:
+        return bytes(content).decode(
+            response.encoding or "utf-8",
+            errors="strict",
+        )
+    except UnicodeDecodeError:
+        raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidResponse") from None

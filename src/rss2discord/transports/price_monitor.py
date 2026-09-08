@@ -12,8 +12,9 @@ from rss2discord.discord.client import (
     SleepCallback,
 )
 from rss2discord.discord.message import WebhookMessage
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceDirection
-from rss2discord.retries import SQLiteRetryPolicy
+from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryPolicy
 
 
 def price_direction(
@@ -69,6 +70,26 @@ class PriceChangeDeliveryDependencies(Protocol):
 
     @property
     def delivery(self) -> PriceAlertDelivery: ...
+
+
+def prepare_price_scan[ProductT](
+    *,
+    fetch_products: Callable[[], tuple[ProductT, ...]],
+    load_snapshots: Callable[[], tuple[PriceSnapshot, ...]],
+    is_shutdown_requested: Callable[[], bool],
+    snapshot_limit: int,
+    label: str,
+) -> tuple[tuple[ProductT, ...], tuple[PriceSnapshot, ...]]:
+    """Run the common shutdown, catalog, and snapshot scan preamble."""
+    if is_shutdown_requested():
+        raise FeedFetchInterruptedError
+    products = fetch_products()
+    if is_shutdown_requested():
+        raise FeedFetchInterruptedError
+    persisted = load_snapshots()
+    if len(persisted) > snapshot_limit:
+        raise FeedFetchError(label, "SnapshotLimitExceeded")
+    return products, persisted
 
 
 def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
