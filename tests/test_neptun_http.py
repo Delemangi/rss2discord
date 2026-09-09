@@ -117,6 +117,30 @@ def test_products_request_uses_observed_payload_and_parses_response(
     }
 
 
+def test_products_request_accepts_provider_null_thumbnail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product = product_payload(7)
+    product["Thumbnail"] = None
+    requests_spy = RecordingRequests(
+        [StubResponse(products_payload(1, [product]))],
+    )
+    monkeypatch.setattr(requests, "post", requests_spy.post)
+
+    fetched = NeptunHttpClient().fetch_products(
+        category_url=CATEGORY_URL,
+        category_id=2,
+        request=NeptunPageRequest(
+            page=1,
+            page_size=20,
+            sort=7,
+            remaining_scan_bytes=5 * 1024 * 1024,
+        ),
+    )
+
+    assert fetched.response.batch.items[0].thumbnail is None
+
+
 def test_products_request_rejects_off_origin_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

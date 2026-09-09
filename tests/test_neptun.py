@@ -54,6 +54,16 @@ def test_neptun_strategy_maps_product_to_rich_entry() -> None:
     )
 
 
+def test_neptun_strategy_maps_null_thumbnail_to_no_image() -> None:
+    payload = product_payload(42)
+    payload["Thumbnail"] = None
+    product = NeptunProduct.model_validate(payload)
+
+    entry = NeptunStrategy().get_entry_data(product)
+
+    assert entry.image_url is None
+
+
 def test_neptun_strategy_does_not_present_non_positive_price_as_free() -> None:
     entry = NeptunStrategy().get_entry_data(make_product(actual_price=0))
 

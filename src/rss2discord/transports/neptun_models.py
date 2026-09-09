@@ -57,7 +57,7 @@ class NeptunProduct(BaseModel):
     actual_price: Annotated[Decimal, Field(alias="ActualPrice", ge=0)]
     discount_percent: Annotated[Decimal, Field(alias="DiscountPercent", ge=0)]
     currency_label: Literal["ден."] = Field(alias="Currency")
-    thumbnail: str = Field(alias="Thumbnail")
+    thumbnail: str | None = Field(alias="Thumbnail")
     url: Annotated[str, Field(alias="Url", min_length=1)]
     warranty: Annotated[int, Field(alias="Warranty", ge=0)]
     quantity: Annotated[int, Field(alias="Quantity", ge=0)]
