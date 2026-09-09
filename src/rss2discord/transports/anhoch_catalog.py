@@ -133,7 +133,11 @@ class AnhochCatalogClient:
                 products.append(product)
                 continue
             if existing_product != product:
-                raise FeedFetchError(ANHOCH_LABEL, "DuplicateProductId")
+                raise FeedFetchError(
+                    ANHOCH_LABEL,
+                    "DuplicateProductId",
+                    retryable=True,
+                )
 
     @classmethod
     def _fetch_page(
