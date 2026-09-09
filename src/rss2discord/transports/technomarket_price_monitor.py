@@ -1,24 +1,20 @@
-"""Delivery-safe actual-price monitoring for one Neptun category."""
+"""Opt-in complete-category Technomarket effective-price monitoring."""
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Final, Protocol
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
 from rss2discord.retries import (
-    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.neptun import NeptunStrategy, format_neptun_mkd
-from rss2discord.transports.neptun_http import NEPTUN_LABEL
-from rss2discord.transports.neptun_models import NeptunProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
@@ -26,22 +22,29 @@ from rss2discord.transports.price_monitor import (
     prepare_price_scan,
     price_direction,
 )
+from rss2discord.transports.technomarket import (
+    TechnomarketStrategy,
+    format_technomarket_mkd,
+)
+from rss2discord.transports.technomarket_bounds import (
+    MAX_TECHNOMARKET_PRICE_CHANGES_PER_SCAN,
+    MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
+    TECHNOMARKET_LABEL,
+)
+from rss2discord.transports.technomarket_models import TechnomarketProduct
 
-MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
-MAX_NEPTUN_PRICE_CHANGES_PER_SCAN: Final = 100
 
-
-class NeptunCatalog(Protocol):
+class TechnomarketCatalog(Protocol):
     def fetch_catalog(
         self,
         url: str,
         *,
         retry_policy: FetchRetryPolicy,
         is_shutdown_requested: Callable[[], bool],
-    ) -> tuple[NeptunProduct, ...]: ...
+    ) -> tuple[TechnomarketProduct, ...]: ...
 
 
-class NeptunPriceSnapshotStore(PriceSnapshotStore, Protocol):
+class TechnomarketSnapshotStore(PriceSnapshotStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -51,9 +54,9 @@ class NeptunPriceSnapshotStore(PriceSnapshotStore, Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class NeptunPriceMonitorDependencies:
-    catalog: NeptunCatalog
-    snapshots: NeptunPriceSnapshotStore
+class TechnomarketPriceMonitorDependencies:
+    catalog: TechnomarketCatalog
+    snapshots: TechnomarketSnapshotStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -62,18 +65,18 @@ class NeptunPriceMonitorDependencies:
 
 @dataclass(frozen=True, slots=True)
 class _PriceChange:
-    product: NeptunProduct
+    product: TechnomarketProduct
     previous: PriceSnapshot
     current: PriceSnapshot
 
 
-class NeptunPriceMonitor:
-    """Compare positive actual prices and persist changes after Discord delivery."""
+class TechnomarketPriceMonitor:
+    """Compare effective SMART-or-regular prices and persist delivered changes."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: NeptunPriceMonitorDependencies,
+        dependencies: TechnomarketPriceMonitorDependencies,
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies
@@ -91,93 +94,82 @@ class NeptunPriceMonitor:
                 partial(
                     self._dependencies.snapshots.load_price_snapshots,
                     self._feed.id,
-                    limit=MAX_NEPTUN_RETAINED_SNAPSHOTS + 1,
+                    limit=MAX_TECHNOMARKET_RETAINED_SNAPSHOTS + 1,
                 ),
             ),
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            snapshot_limit=MAX_NEPTUN_RETAINED_SNAPSHOTS,
-            label=NEPTUN_LABEL,
+            snapshot_limit=MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
+            label=TECHNOMARKET_LABEL,
         )
-        by_product = {snapshot.product_id: snapshot for snapshot in persisted}
-        silent_updates: list[PriceSnapshot] = []
+        by_id = {snapshot.product_id: snapshot for snapshot in persisted}
+        silent: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
-        positive_product_ids: set[str] = set()
+        available_ids: set[str] = set()
         for product in products:
             current = self._snapshot(product)
             if current is None:
                 continue
-            positive_product_ids.add(current.product_id)
-            previous = by_product.get(current.product_id)
+            available_ids.add(current.product_id)
+            previous = by_id.get(current.product_id)
             if previous is None:
-                silent_updates.append(current)
+                silent.append(current)
             elif (
                 previous.amount != current.amount
                 or previous.currency != current.currency
             ):
                 changes.append(_PriceChange(product, previous, current))
             elif previous.formatted != current.formatted:
-                silent_updates.append(current)
-        if len(set(by_product) | positive_product_ids) > MAX_NEPTUN_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(NEPTUN_LABEL, "SnapshotLimitExceeded")
-        if len(changes) > MAX_NEPTUN_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(NEPTUN_LABEL, "PriceChangeLimitExceeded")
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        if silent_updates:
+                silent.append(current)
+        if len(set(by_id) | available_ids) > MAX_TECHNOMARKET_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "SnapshotLimitExceeded")
+        if len(changes) > MAX_TECHNOMARKET_PRICE_CHANGES_PER_SCAN:
+            raise FeedFetchError(TECHNOMARKET_LABEL, "PriceChangeLimitExceeded")
+        if silent:
             self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
-                ),
+                lambda: self._dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        self._deliver_changes(changes)
-
-    def _deliver_changes(self, changes: list[_PriceChange]) -> None:
         deliver_price_changes(changes, self._dependencies, self._message_for)
 
-    def _snapshot(self, product: NeptunProduct) -> PriceSnapshot | None:
-        if product.actual_price <= 0:
+    def _snapshot(self, product: TechnomarketProduct) -> PriceSnapshot | None:
+        amount = product.effective_price
+        if amount is None or amount <= 0:
             return None
         return PriceSnapshot(
             self._feed.id,
-            str(product.id),
-            product.actual_price,
-            format_neptun_mkd(product.actual_price),
+            product.product_id,
+            amount,
+            format_technomarket_mkd(amount),
             "MKD",
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        base_entry = NeptunStrategy().get_entry_data(change.product)
+        product = change.product
+        base = TechnomarketStrategy().get_entry_data(product)
         metrics = [
             SourceMetric("Price", change.current.formatted),
             SourceMetric("Previous", change.previous.formatted, prior=True),
         ]
-        if change.product.regular_price != change.product.actual_price:
+        if (
+            product.regular_price is not None
+            and product.regular_price != product.effective_price
+        ):
             metrics.append(
                 SourceMetric(
                     "Original",
-                    format_neptun_mkd(change.product.regular_price),
+                    format_technomarket_mkd(product.regular_price),
                 ),
             )
+        if product.manufacturer:
+            metrics.append(SourceMetric("Manufacturer", product.manufacturer))
         metrics.extend(
-            (
-                SourceMetric("Manufacturer", change.product.manufacturer.name),
-                SourceMetric("Code", change.product.code_number),
-                SourceMetric(
-                    "Online",
-                    "Available"
-                    if change.product.available_online
-                    and change.product.available_webshop
-                    else "Unavailable",
-                ),
-            ),
+            SourceMetric("Category", category) for category in product.categories
         )
         return WebhookMessage(
             feed=self._feed,
             entry=replace(
-                base_entry,
-                description="",
+                base,
                 source_metrics=tuple(metrics),
                 price_direction=price_direction(change.previous, change.current),
             ),
-            source_title=self._feed.name or NEPTUN_LABEL,
+            source_title=self._feed.name or TECHNOMARKET_LABEL,
         )

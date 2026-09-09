@@ -1,0 +1,21 @@
+"""Safety limits and source constants for the Technomarket HTML catalog."""
+
+from typing import Final
+
+TECHNOMARKET_LABEL: Final = "Technomarket"
+TECHNOMARKET_ORIGIN: Final = "https://tehnomarket.com.mk"
+TECHNOMARKET_HOST: Final = "tehnomarket.com.mk"
+TECHNOMARKET_CATEGORY_PATH_PREFIX: Final = "/category/"
+TECHNOMARKET_FEED_URL: Final = f"{TECHNOMARKET_ORIGIN}/category/4003/laptopi"
+TECHNOMARKET_USER_AGENT: Final = (
+    "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
+)
+
+MAX_TECHNOMARKET_PAGES: Final = 100
+MAX_TECHNOMARKET_PRODUCTS: Final = 5_000
+MAX_TECHNOMARKET_RESPONSE_BYTES: Final = 5 * 1024 * 1024
+MAX_TECHNOMARKET_SCAN_BYTES: Final = 500 * 1024 * 1024
+MAX_TECHNOMARKET_REQUESTS: Final = MAX_TECHNOMARKET_PAGES
+MAX_TECHNOMARKET_SCAN_SECONDS: Final = 300.0
+MAX_TECHNOMARKET_PRICE_CHANGES_PER_SCAN: Final = 100
+MAX_TECHNOMARKET_RETAINED_SNAPSHOTS: Final = 10_000

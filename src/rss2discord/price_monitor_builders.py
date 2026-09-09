@@ -56,6 +56,11 @@ from .transports.setec_price_monitor import (
     SetecPriceMonitor,
     SetecPriceMonitorDependencies,
 )
+from .transports.technomarket_catalog import TechnomarketCatalogClient
+from .transports.technomarket_price_monitor import (
+    TechnomarketPriceMonitor,
+    TechnomarketPriceMonitorDependencies,
+)
 
 
 class PriceMonitor(Protocol):
@@ -102,6 +107,10 @@ type SetecPriceMonitorFactory = Callable[
     [FeedConfig, SetecPriceMonitorDependencies],
     PriceMonitor,
 ]
+type TechnomarketPriceMonitorFactory = Callable[
+    [FeedConfig, TechnomarketPriceMonitorDependencies],
+    PriceMonitor,
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +125,7 @@ class PriceMonitorFactories:
     pazar3: Pazar3PriceMonitorFactory = Pazar3PriceMonitor
     reklama5: Reklama5PriceMonitorFactory = Reklama5PriceMonitor
     setec: SetecPriceMonitorFactory = SetecPriceMonitor
+    technomarket: TechnomarketPriceMonitorFactory = TechnomarketPriceMonitor
 
 
 DEFAULT_PRICE_MONITOR_FACTORIES: Final = PriceMonitorFactories()
@@ -254,6 +264,18 @@ def build_provider_price_monitor(
                 feed,
                 SetecPriceMonitorDependencies(
                     catalog=SetecCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
+        case "technomarket":
+            return factories.technomarket(
+                feed,
+                TechnomarketPriceMonitorDependencies(
+                    catalog=TechnomarketCatalogClient(),
                     snapshots=dependencies.snapshots,
                     sender=dependencies.sender,
                     fetch_retry_policy=dependencies.fetch_retry_policy,

@@ -31,6 +31,7 @@ FeedStrategyName = Literal[
     "reklama5",
     "setec",
     "cccenter",
+    "technomarket",
 ]
 MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600
 
@@ -95,13 +96,14 @@ class FeedConfig(BaseModel):
                     | "reklama5"
                     | "setec"
                     | "cccenter"
+                    | "technomarket"
                 ):
                     pass
                 case "rss" | "xenforo" | "itmk_oglasnik":
                     msg = (
                         "price_check_interval requires anhoch, ddstore, gjirafa50, "
                         "hivetec, neksio, neptun, pazar3, reklama5, or setec strategy; "
-                        "cccenter is also supported"
+                        "cccenter and technomarket are also supported"
                     )
                     raise ValueError(msg)
                 case unreachable:

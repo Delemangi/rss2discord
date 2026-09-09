@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Final, Protocol
 
@@ -23,6 +24,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceSnapshotStore,
     deliver_price_changes,
+    prepare_price_scan,
     price_direction,
 )
 
@@ -77,23 +79,25 @@ class Gjirafa50PriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(
-                self._feed.id,
-                limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS + 1,
+        products, persisted = prepare_price_scan(
+            fetch_products=partial(
+                self._dependencies.catalog.fetch_catalog,
+                self._feed.url,
+                retry_policy=self._dependencies.fetch_retry_policy,
+                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
             ),
+            load_snapshots=partial(
+                self._dependencies.sqlite_retry_policy.execute,
+                partial(
+                    self._dependencies.snapshots.load_price_snapshots,
+                    self._feed.id,
+                    limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS + 1,
+                ),
+            ),
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+            snapshot_limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS,
+            label=GJIRAFA50_LABEL,
         )
-        if len(persisted) > MAX_GJIRAFA50_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(GJIRAFA50_LABEL, "SnapshotLimitExceeded")
         by_product = {snapshot.product_id: snapshot for snapshot in persisted}
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []

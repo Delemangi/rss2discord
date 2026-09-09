@@ -7,4 +7,5 @@ def write_config(path: Path, feeds: str) -> None:
         "delay_between_posts: 0\n"
         "max_post_age_days: 7\n"
         f"feeds:\n{feeds}",
+        encoding="utf-8",
     )

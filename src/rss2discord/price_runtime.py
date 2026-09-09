@@ -29,6 +29,7 @@ from .price_monitor_builders import (
     Reklama5PriceMonitorFactory,
     SetecPriceMonitorFactory,
     SharedPriceMonitorDependencies,
+    TechnomarketPriceMonitorFactory,
     build_provider_price_monitor,
 )
 from .retries import (
@@ -83,6 +84,7 @@ def build_price_jobs(
     hivetec_monitor_factory: HivetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.hivetec,
     gjirafa50_monitor_factory: Gjirafa50PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.gjirafa50,
     cccenter_monitor_factory: CCCenterPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.cccenter,
+    technomarket_monitor_factory: TechnomarketPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.technomarket,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
@@ -99,6 +101,7 @@ def build_price_jobs(
         pazar3=pazar3_monitor_factory,
         reklama5=reklama5_monitor_factory,
         setec=setec_monitor_factory,
+        technomarket=technomarket_monitor_factory,
     )
     for feed in config.feeds:
         interval = feed.price_check_interval

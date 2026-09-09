@@ -7,6 +7,7 @@ SOURCE_LABEL_FORUM: Final = "Forum"
 SOURCE_LABEL_GITHUB: Final = "GitHub"
 SOURCE_LABEL_ANHOCH: Final = "Anhoch"
 SOURCE_LABEL_CCCENTER: Final = "CCCenter"
+SOURCE_LABEL_TECHNOMARKET: Final = "Technomarket"
 SOURCE_LABEL_DDSTORE: Final = "DDStore"
 SOURCE_LABEL_HIVETEC: Final = "Hivetec"
 SOURCE_LABEL_GJIRAFA50: Final = "Gjirafa50"
@@ -35,6 +36,8 @@ def source_label(feed: FeedConfig) -> str:
             return SOURCE_LABEL_ANHOCH
         case "cccenter":
             return SOURCE_LABEL_CCCENTER
+        case "technomarket":
+            return SOURCE_LABEL_TECHNOMARKET
         case "ddstore":
             return SOURCE_LABEL_DDSTORE
         case "hivetec":

@@ -13,7 +13,6 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
-from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_amount import (
@@ -21,6 +20,7 @@ from rss2discord.price_amount import (
     canonicalize_price_amount,
 )
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.cccenter_bounds import (
     CCCENTER_FEED_URL,
     CCCENTER_LABEL,
@@ -101,36 +101,6 @@ class _ScanBudget:
 
     def after_request(self) -> None:
         self.before_chunk()
-
-
-@dataclass(slots=True)
-class _ContentCallbackState:
-    """Collect one response while preserving callback abort causes."""
-
-    budget: _ScanBudget | None
-    content: bytearray
-    abort_error: FeedFetchError | FeedFetchInterruptedError | None = None
-
-    @classmethod
-    def start(cls, budget: _ScanBudget | None) -> _ContentCallbackState:
-        return cls(budget=budget, content=bytearray())
-
-    def write(self, chunk: bytes) -> int:
-        if self.abort_error is not None:
-            return CURL_WRITEFUNC_ERROR
-        try:
-            if self.budget is not None:
-                self.budget.before_chunk()
-            if len(self.content) + len(chunk) > MAX_CCCENTER_RESPONSE_BYTES:
-                self.abort_error = FeedFetchError(CCCENTER_LABEL, "ResponseTooLarge")
-                return CURL_WRITEFUNC_ERROR
-            self.content.extend(chunk)
-            if self.budget is not None:
-                self.budget.add_bytes(len(chunk))
-        except (FeedFetchError, FeedFetchInterruptedError) as error:
-            self.abort_error = error
-            return CURL_WRITEFUNC_ERROR
-        return len(chunk)
 
 
 class _HttpResponse(Protocol):
@@ -551,7 +521,11 @@ class CCCenterCatalogClient:
     ) -> str:
         if budget is not None:
             budget.before_request()
-        callback_state = _ContentCallbackState.start(budget)
+        callback_state = BoundedContentCallback.start(
+            budget,
+            max_bytes=MAX_CCCENTER_RESPONSE_BYTES,
+            label=CCCENTER_LABEL,
+        )
         response = CCCenterCatalogClient._request_html(url, budget, callback_state)
         _raise_callback_abort(callback_state)
         if budget is not None:
@@ -563,7 +537,7 @@ class CCCenterCatalogClient:
     def _request_html(
         url: str,
         budget: _ScanBudget | None,
-        callback_state: _ContentCallbackState,
+        callback_state: BoundedContentCallback,
     ) -> Any:  # noqa: ANN401
         try:
             timeout = budget.request_timeout() if budget is not None else 30.0
@@ -587,7 +561,7 @@ class CCCenterCatalogClient:
             ) from None
 
 
-def _raise_callback_abort(callback_state: _ContentCallbackState) -> None:
+def _raise_callback_abort(callback_state: BoundedContentCallback) -> None:
     if callback_state.abort_error is not None:
         raise callback_state.abort_error from None
 
