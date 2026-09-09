@@ -212,7 +212,7 @@ def test_anhoch_catalog_client_continues_through_declared_final_page_and_preserv
     assert [product.id for product in products] == [3, 2, 1]
 
 
-def test_anhoch_catalog_client_collapses_identical_duplicates_and_rejects_conflicts(
+def test_anhoch_catalog_client_collapses_identical_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
@@ -222,7 +222,23 @@ def test_anhoch_catalog_client_collapses_identical_duplicates_and_rejects_confli
             StubResponse(page_payload(2, 2, [product_payload(1, "p-1")])),
         ],
     )
-    conflicting_get = RecordingGet(
+    # When
+    monkeypatch.setattr(requests, "get", identical_get)
+    products = AnhochCatalogClient().fetch_catalog(
+        CATALOG_URL,
+        retry_policy=no_wait_fetch_retry_policy(),
+        is_shutdown_requested=catalog_scan_should_stop,
+    )
+
+    # Then
+    assert [product.id for product in products] == [1]
+
+
+def test_anhoch_catalog_client_restarts_full_scan_after_conflicting_later_page_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
         [
             StubResponse(page_payload(1, 2, [product_payload(1, "p-1")])),
             StubResponse(
@@ -239,25 +255,37 @@ def test_anhoch_catalog_client_collapses_identical_duplicates_and_rejects_confli
                     ],
                 ),
             ),
+            StubResponse(page_payload(1, 2, [product_payload(1, "p-1")])),
+            StubResponse(page_payload(2, 2, [product_payload(2, "p-2")])),
         ],
+    )
+    monkeypatch.setattr(requests, "get", get)
+    retry_delays: list[float] = []
+    retry_causes: list[str] = []
+
+    def record_retry_sleep(seconds: float) -> bool:
+        retry_delays.append(seconds)
+        return True
+
+    def record_retry(error: FeedFetchError, delay: float) -> None:
+        del delay
+        retry_causes.append(error.cause_type)
+
+    retry_policy = FetchRetryPolicy(
+        sleep=record_retry_sleep,
+        on_retry=record_retry,
     )
 
     # When
-    monkeypatch.setattr(requests, "get", identical_get)
     products = AnhochCatalogClient().fetch_catalog(
         CATALOG_URL,
-        retry_policy=no_wait_fetch_retry_policy(),
+        retry_policy=retry_policy,
         is_shutdown_requested=catalog_scan_should_stop,
     )
 
     # Then
-    assert [product.id for product in products] == [1]
-
-    # When / Then
-    monkeypatch.setattr(requests, "get", conflicting_get)
-    with pytest.raises(FeedFetchError, match="DuplicateProductId"):
-        AnhochCatalogClient().fetch_catalog(
-            CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
-            is_shutdown_requested=catalog_scan_should_stop,
-        )
+    assert [product.id for product in products] == [1, 2]
+    assert requested_page_numbers(get.urls) == ["1", "2", "1", "2"]
+    assert retry_causes == ["DuplicateProductId"]
+    assert len(retry_delays) == 1
+    assert 0 <= retry_delays[0] <= 30
