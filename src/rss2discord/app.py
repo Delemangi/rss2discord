@@ -95,9 +95,15 @@ class RSSToDiscord:
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
-        if strategy.seed_existing_on_first_fetch:
+        should_seed_existing = (
+            feed.seed_existing_on_first_fetch or strategy.seed_existing_on_first_fetch
+        )
+        if should_seed_existing:
             entry_ids = strategy.get_initialization_entry_ids(entries)
-            if not entry_ids and strategy.require_entries_for_initialization:
+            if not entry_ids and (
+                feed.seed_existing_on_first_fetch
+                or strategy.require_entries_for_initialization
+            ):
                 return
             if self._store.seed_feed(feed.id, entry_ids):
                 logger.info("Initialized feed %s with existing entries", feed.id)

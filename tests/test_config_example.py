@@ -17,6 +17,23 @@ def test_checked_in_config_example_enables_hourly_anhoch_price_monitoring() -> N
     assert anhoch_feed.price_check_interval == 3600
 
 
+def test_checked_in_config_example_documents_gitlab_commit_baseline() -> None:
+    # Given / When
+    example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"
+    config = load_config(example_path)
+    feed = next(
+        feed for feed in config.feeds if feed.id == "gitlab-horizon-application-main"
+    )
+
+    # Then
+    assert feed.name == "Horizon Application commits (main)"
+    assert feed.url == (
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main.atom"
+    )
+    assert feed.strategy == "rss"
+    assert feed.seed_existing_on_first_fetch
+
+
 def test_checked_in_config_example_documents_neksio_price_monitoring() -> None:
     # Given
     example_path = Path(__file__).parent.parent / "config" / "config.example.yaml"

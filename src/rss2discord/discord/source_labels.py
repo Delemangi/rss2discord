@@ -5,6 +5,7 @@ from rss2discord.configuration import FeedConfig
 
 SOURCE_LABEL_FORUM: Final = "Forum"
 SOURCE_LABEL_GITHUB: Final = "GitHub"
+SOURCE_LABEL_GITLAB: Final = "GitLab"
 SOURCE_LABEL_ANHOCH: Final = "Anhoch"
 SOURCE_LABEL_CCCENTER: Final = "CCCenter"
 SOURCE_LABEL_TECHNOMARKET: Final = "Technomarket"
@@ -74,6 +75,8 @@ def _rss_source_label(url: str) -> str:
         return SOURCE_LABEL_RSS
     hostname_lower = hostname.lower()
     path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
+    if _is_gitlab_commit_feed(path_segments):
+        return SOURCE_LABEL_GITLAB
     if (
         hostname_lower == "github.com"
         and len(path_segments) == 3
@@ -85,3 +88,16 @@ def _rss_source_label(url: str) -> str:
     if hostname_lower == "reddit.com" or hostname_lower.endswith(".reddit.com"):
         return SOURCE_LABEL_REDDIT
     return SOURCE_LABEL_RSS
+
+
+def _is_gitlab_commit_feed(path_segments: tuple[str, ...]) -> bool:
+    """Recognize GitLab's project commit Atom URL shape on any host."""
+    for marker_index, segment in enumerate(path_segments[:-2]):
+        if segment != "-" or path_segments[marker_index + 1] != "commits":
+            continue
+        if marker_index == 0:
+            return False
+        branch_segments = path_segments[marker_index + 2 :]
+        branch = branch_segments[-1] if branch_segments else ""
+        return len(branch) > len(".atom") and branch.casefold().endswith(".atom")
+    return False

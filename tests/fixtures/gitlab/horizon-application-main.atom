@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main</id>
+  <title>Commits to wp/horizon-application:main</title>
+  <updated>2026-09-14T09:30:00Z</updated>
+  <link rel="alternate" type="text/html"
+        href="https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main" />
+  <entry>
+    <id>https://gitlab.finki.ukim.mk/wp/horizon-application/-/commit/1111111111111111111111111111111111111111</id>
+    <title>Fix import path for the horizon worker</title>
+    <updated>2026-09-14T08:15:00Z</updated>
+    <link rel="alternate" type="text/html"
+          href="https://gitlab.finki.ukim.mk/wp/horizon-application/-/commit/1111111111111111111111111111111111111111" />
+    <author>
+      <name>Horizon Maintainer</name>
+      <email>maintainer@example.test</email>
+    </author>
+    <summary type="html">&lt;p&gt;Correct the worker import and keep startup &amp;amp; shutdown symmetric.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <id>https://gitlab.finki.ukim.mk/wp/horizon-application/-/commit/2222222222222222222222222222222222222222</id>
+    <title>Document local development setup</title>
+    <updated>2026-09-14T09:30:00Z</updated>
+    <link rel="alternate" type="text/html"
+          href="https://gitlab.finki.ukim.mk/wp/horizon-application/-/commit/2222222222222222222222222222222222222222" />
+    <author>
+      <name>Horizon Maintainer</name>
+      <email>maintainer@example.test</email>
+    </author>
+    <summary type="html">&lt;p&gt;Add the sanitized setup notes for contributors.&lt;/p&gt;</summary>
+  </entry>
+</feed>

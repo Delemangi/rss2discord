@@ -26,6 +26,25 @@ def test_load_config_parses_valid_feed(tmp_path: Path) -> None:
     assert config.refresh_interval == 60
     assert config.feeds[0].id == "news"
     assert config.feeds[0].strategy == "rss"
+    assert not config.feeds[0].seed_existing_on_first_fetch
+
+
+def test_load_config_parses_rss_first_fetch_baseline_opt_in(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: gitlab-main\n"
+        "    url: https://gitlab.example.test/group/project/-/commits/main.atom\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    seed_existing_on_first_fetch: true\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].seed_existing_on_first_fetch
 
 
 def test_load_config_rejects_webhook_name_over_80_characters(

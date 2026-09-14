@@ -4,7 +4,7 @@ Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklam
 
 ## What it supports
 
-- RSS and Atom feeds, including public GitHub release feeds
+- RSS and Atom feeds, including public GitHub release and self-hosted GitLab commit feeds
 - Optional RSS adapters for Hacker News and Reddit
 - XenForo forum threads
 - IT.mk Oglasnik index and category pages
@@ -94,6 +94,14 @@ Common feed types:
   url: "https://github.com/cli/cli/releases.atom"
   webhook: "https://discord.com/api/webhooks/ID/TOKEN"
   strategy: "rss"
+
+# Self-hosted GitLab commits for one selected branch
+- id: "gitlab-horizon-application-main"
+  name: "Horizon Application commits (main)"
+  url: "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main.atom"
+  webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  strategy: "rss"
+  seed_existing_on_first_fetch: true
 
 # XenForo thread
 - id: "forum-thread"
@@ -217,6 +225,7 @@ Useful options:
 | --- | --- |
 | `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `cccenter`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, `setec`, and `technomarket`. |
 | `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
+| `seed_existing_on_first_fetch` | Optional RSS/Atom baseline. Set to `true` to seed the first non-empty fetch without notifications; an empty first fetch does not initialize the feed. |
 | `max_post_age_days` | Set to `0` to disable age filtering. |
 | `delay_between_feeds` | Increase if a source rate-limits requests. |
 | `webhook_avatar` | Optional HTTPS URL, up to 2,048 encoded characters. Localhost, non-global IP literals, malformed hosts, and URLs with credentials are rejected. DNS names are not resolved by rss2discord. |
@@ -228,6 +237,7 @@ See `config/config.example.yaml` for the fully annotated configuration.
 ## Runtime notes
 
 - Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
+- GitLab commit feeds use the project Atom URL shape `https://HOST/NAMESPACE/PROJECT/-/commits/BRANCH.atom`; the final path segment selects one branch, such as `main`. GitLab returns bounded recent history, so commits that age out of the feed cannot be recovered by this monitor. Configure one feed per branch; feeds are not automatically enumerated.
 - Selling-price snapshots are stored persistently in the same SQLite database by feed and product.
 - The database is created automatically on first startup.
 - RSS, IT.mk, ordinary Anhoch new-product, Setec, and Neksio first-party responses are capped at 1 MiB and transient fetch failures are retried. Neksio accepts only `https://g.store.neksio.mk/`, follows only same-origin redirects, and applies a 30-second request timeout. Anhoch price responses are capped at 2 MiB.

@@ -49,6 +49,7 @@ class FeedConfig(BaseModel):
     webhook: NonEmptyString
     name: str | None = None
     strategy: FeedStrategyName = "rss"
+    seed_existing_on_first_fetch: bool = False
     adapter: FeedAdapterName | None = None
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
