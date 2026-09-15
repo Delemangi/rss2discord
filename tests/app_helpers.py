@@ -77,12 +77,17 @@ class FakeSender:
                 assert_never(unreachable)
 
 
-def make_feed(feed_id: str) -> FeedConfig:
+def make_feed(
+    feed_id: str,
+    *,
+    seed_existing_on_first_fetch: bool = False,
+) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
         name=feed_id,
         url="https://example.test/feed.xml",
         webhook=f"https://discord.test/{feed_id}",
+        seed_existing_on_first_fetch=seed_existing_on_first_fetch,
     )
 
 

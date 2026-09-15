@@ -144,6 +144,63 @@ def test_first_successful_fetch_seeds_entries_before_new_delivery(
     assert [message.entry.title for message in sender.messages] == ["new-product"]
 
 
+def test_configured_first_fetch_baseline_survives_restart(tmp_path: Path) -> None:
+    # Given
+    feed = make_feed("gitlab", seed_existing_on_first_fetch=True)
+    database_path = tmp_path / "state.db"
+
+    # When
+    with DeliveryStore(database_path) as store:
+        app = make_app(
+            store,
+            FakeSender([]),
+            FakeStrategy([make_entry("existing-commit")]),
+            (feed,),
+        )
+        app.process_feed(feed)
+
+    sender = FakeSender([True])
+    with DeliveryStore(database_path) as store:
+        app = make_app(
+            store,
+            sender,
+            FakeStrategy([make_entry("existing-commit"), make_entry("new-commit")]),
+            (feed,),
+        )
+        app.process_feed(feed)
+
+    with DeliveryStore(database_path) as store:
+        app = make_app(
+            store,
+            FakeSender([]),
+            FakeStrategy([make_entry("existing-commit"), make_entry("new-commit")]),
+            (feed,),
+        )
+        app.process_feed(feed)
+
+    # Then
+    assert [message.entry.title for message in sender.messages] == ["new-commit"]
+
+
+def test_configured_first_fetch_waits_for_non_empty_entries(tmp_path: Path) -> None:
+    # Given
+    feed = make_feed("gitlab", seed_existing_on_first_fetch=True)
+    sender = FakeSender([])
+    strategy = FakeStrategy([])
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app.process_feed(feed)
+        initialized_after_empty_fetch = store.is_feed_initialized(feed.id)
+        strategy.entries.append(make_entry("first-commit"))
+        app.process_feed(feed)
+
+    # Then
+    assert not initialized_after_empty_fetch
+    assert sender.messages == []
+
+
 def test_empty_first_fetch_initializes_before_future_delivery(tmp_path: Path) -> None:
     # Given
     feed = make_feed("anhoch")
