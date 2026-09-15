@@ -50,6 +50,7 @@ def test_gitlab_atom_entries_extract_stable_ids_content_and_dates() -> None:
         "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main.atom",
         "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/develop.atom",
         "https://example.test/group/project/-/commits/release%2F1.0.atom",
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main?format=atom&ref=main",
     ],
 )
 def test_gitlab_commit_feed_shape_gets_gitlab_label(url: str) -> None:
@@ -68,6 +69,10 @@ def test_gitlab_commit_feed_shape_gets_gitlab_label(url: str) -> None:
         "https://gitlab.finki.ukim.mk/wp/horizon-application/-/issues.atom",
         "https://gitlab.finki.ukim.mk/-/commits/main.atom",
         "https://gitlab.finki.ukim.mk/wp/horizon-application/commits/main.atom",
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main?format=rss",
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main?note=atom",
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits?format=atom",
+        "https://gitlab.finki.ukim.mk/wp/horizon-application/-/issues/main?format=atom",
     ],
 )
 def test_unrelated_rss_paths_are_not_labeled_gitlab(url: str) -> None:

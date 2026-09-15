@@ -1,5 +1,5 @@
 from typing import Final, assert_never
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from rss2discord.configuration import FeedConfig
 
@@ -75,7 +75,7 @@ def _rss_source_label(url: str) -> str:
         return SOURCE_LABEL_RSS
     hostname_lower = hostname.lower()
     path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
-    if _is_gitlab_commit_feed(path_segments):
+    if _is_gitlab_commit_feed(path_segments, parsed_url.query):
         return SOURCE_LABEL_GITLAB
     if (
         hostname_lower == "github.com"
@@ -90,8 +90,9 @@ def _rss_source_label(url: str) -> str:
     return SOURCE_LABEL_RSS
 
 
-def _is_gitlab_commit_feed(path_segments: tuple[str, ...]) -> bool:
+def _is_gitlab_commit_feed(path_segments: tuple[str, ...], query: str = "") -> bool:
     """Recognize GitLab's project commit Atom URL shape on any host."""
+    query_params = parse_qs(query)
     for marker_index, segment in enumerate(path_segments[:-2]):
         if segment != "-" or path_segments[marker_index + 1] != "commits":
             continue
@@ -99,5 +100,7 @@ def _is_gitlab_commit_feed(path_segments: tuple[str, ...]) -> bool:
             return False
         branch_segments = path_segments[marker_index + 2 :]
         branch = branch_segments[-1] if branch_segments else ""
-        return len(branch) > len(".atom") and branch.casefold().endswith(".atom")
+        if len(branch) > len(".atom") and branch.casefold().endswith(".atom"):
+            return True
+        return bool(branch_segments) and "atom" in query_params.get("format", ())
     return False
