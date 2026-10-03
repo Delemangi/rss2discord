@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol, assert_never
@@ -27,6 +28,8 @@ from rss2discord.transports.price_monitor import (
 from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
 from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
 from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
+
+logger = logging.getLogger(__name__)
 
 
 class SetecCatalog(Protocol):
@@ -67,6 +70,7 @@ class _PendingChange:
     product_id: str
     previous: PriceSnapshot
     current: PriceSnapshot
+    variant_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +127,17 @@ class SetecPriceMonitor:
                 if previous.formatted != current.formatted:
                     silent_updates.append(current)
                 continue
-            pending_changes.append(_PendingChange(entry.id, previous, current))
+            pending_changes.append(
+                _PendingChange(entry.id, previous, current, entry.variants[0].id),
+            )
+
+        ambiguous_count = sum(len(entry.variants) > 1 for entry in price_entries)
+        if ambiguous_count:
+            logger.warning(
+                "Deferred %d ambiguous multi-variant prices for feed %s",
+                ambiguous_count,
+                self._feed.id,
+            )
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -150,15 +164,29 @@ class SetecPriceMonitor:
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
         products_by_id = {product.id: product for product in products}
-        return [
-            _PriceChange(
-                products_by_id[pending.product_id],
-                pending.previous,
-                pending.current,
+        changes: list[_PriceChange] = []
+        for pending in pending_changes:
+            product = products_by_id.get(pending.product_id)
+            if product is None or len(product.variants) != 1:
+                continue
+            variant = product.variants[0]
+            if (
+                variant.id != pending.variant_id
+                or variant.calculated_price.currency_code.upper()
+                != pending.current.currency
+                or variant.calculated_price.calculated_amount != pending.current.amount
+            ):
+                continue
+            changes.append(_PriceChange(product, pending.previous, pending.current))
+        deferred_count = len(pending_changes) - len(changes)
+        if deferred_count:
+            logger.warning(
+                "Deferred %d unconfirmed price changes for feed %s; "
+                "product details must agree with indexed price and variant",
+                deferred_count,
+                self._feed.id,
             )
-            for pending in pending_changes
-            if pending.product_id in products_by_id
-        ]
+        return changes
 
     def _deliver(self, changes: Sequence[_PriceChange]) -> None:
         delay_before_next_attempt = False

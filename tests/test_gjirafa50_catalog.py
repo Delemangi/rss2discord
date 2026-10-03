@@ -211,12 +211,12 @@ def test_catalog_request_budget_is_shared_across_retries(
 def test_catalog_product_budget_accumulates_across_retry_attempts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_PRODUCTS", 3)
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_FETCHED_PRODUCTS", 3)
     budget = _OperationBudget(lambda: False)
 
     budget.consume_products(2)
 
-    with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
+    with pytest.raises(FeedFetchError, match="ProductWorkLimitExceeded"):
         budget.consume_products(2)
 
 

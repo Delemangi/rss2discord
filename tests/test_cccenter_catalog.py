@@ -79,11 +79,21 @@ def test_cccenter_catalog_traverses_bounded_pages_and_rejects_duplicate_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     listing = (FIXTURES / "listing.html").read_text(encoding="utf-8")
+    extra_cards = "".join(
+        f'<li class="product"><a href="/product/extra-{number}/">'
+        '<img src="/extra.jpg"><h2 class="woocommerce-loop-product__title">Extra</h2>'
+        '<span class="price">100 ден</span></a></li>'
+        for number in range(22)
+    )
+    listing = listing.replace("</ul>", f"{extra_cards}</ul>")
     detail = (FIXTURES / "product-alpha.html").read_text(encoding="utf-8")
-    responses = {CCCENTER_FEED_URL: listing}
+    responses = {
+        CCCENTER_FEED_URL: listing + '<span class="page-numbers current">1</span>',
+    }
     responses.update(
         {
-            f"https://cccenter.mk/shop/?orderby=date&product-page={page}": listing
+            f"https://cccenter.mk/shop/page/{page}/?orderby=date": listing
+            + f'<span class="page-numbers current">{page}</span>'
             for page in range(2, 7)
         },
     )
@@ -204,7 +214,7 @@ def test_cccenter_treats_out_of_bounds_money_as_unpriced() -> None:
     [
         (
             '<li class="product"><a href="/product/merge/"><img src="/merge.jpg"><h2 class="woocommerce-loop-product__title">Merge</h2><span class="price">56.000,00 ден</span></a></li>',
-            '<h1 class="product_title">Merge</h1><form class="variations_form"><p class="price">56.000,00 ден</p></form>',
+            '<h1 class="product_title">Merge</h1><form class="variations_form"><select name="attribute_size"><option>Large</option></select><p class="price">56.000,00 ден</p></form>',
             "variable",
         ),
         (

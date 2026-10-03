@@ -196,7 +196,7 @@ def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
         assert sender.messages[0].source_title == "Setec Deals"
 
 
-def test_alert_omits_original_when_display_document_reports_another_price(
+def test_alert_is_deferred_when_display_document_reports_another_price(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -222,15 +222,8 @@ def test_alert_omits_original_when_display_document_reports_another_price(
 
         # Then
         assert catalog.requested_id_batches == [("prod-1",)]
-        assert [message.entry.title for message in sender.messages] == [
-            "Product prod-1",
-        ]
-        assert sender.messages[0].entry.source_metrics == (
-            SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден.", prior=True),
-        )
-        assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
-        assert sender.messages[0].entry.description == ""
+        assert sender.messages == []
+        assert snapshots_by_product(store)["prod-1"].amount == Decimal(100)
 
 
 def test_alert_carries_original_from_display_document_when_prices_agree(
@@ -269,7 +262,7 @@ def test_alert_carries_original_from_display_document_when_prices_agree(
         )
 
 
-def test_alert_ships_without_original_when_display_document_has_no_variants(
+def test_alert_is_deferred_when_display_document_has_no_variants(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -291,14 +284,8 @@ def test_alert_ships_without_original_when_display_document_has_no_variants(
 
         # Then
         assert unpriced_display.variants == ()
-        assert [message.entry.title for message in sender.messages] == [
-            "Product prod-1",
-        ]
-        assert sender.messages[0].entry.source_metrics == (
-            SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден.", prior=True),
-        )
-        assert snapshots_by_product(store)["prod-1"].amount == Decimal(90)
+        assert sender.messages == []
+        assert snapshots_by_product(store)["prod-1"].amount == Decimal(100)
 
 
 def test_scan_requests_display_data_only_for_changed_product_ids(

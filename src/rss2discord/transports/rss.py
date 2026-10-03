@@ -1,6 +1,5 @@
 """RSS feed scraping strategy."""
 
-import math
 import re
 from collections.abc import Callable, Mapping
 from html import unescape
@@ -10,6 +9,7 @@ import feedparser
 import requests
 
 from rss2discord.models import EntryData, EntryId
+from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 from rss2discord.transports.rss_timestamp import get_rss_timestamp
 from rss2discord.url_normalization import normalize_http_url
@@ -90,13 +90,7 @@ class RSSStrategy(ScraperStrategy):
 
     @staticmethod
     def _parse_retry_after(value: str | None) -> float | None:
-        if value is None:
-            return None
-        try:
-            retry_after = float(value)
-        except ValueError:
-            return None
-        return retry_after if math.isfinite(retry_after) and retry_after >= 0 else None
+        return parse_retry_after(value)
 
     def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
         """Get unique identifier for an RSS entry."""
