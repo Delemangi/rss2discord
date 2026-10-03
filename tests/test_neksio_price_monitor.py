@@ -84,7 +84,7 @@ def test_scan_treats_equal_decimal_prices_as_formatting_only_changes(
         assert snapshot.formatted == "1.20 MKD"
 
 
-def test_scan_delivers_in_catalog_order_with_neksio_metadata(
+def test_scan_delivers_in_persistent_cursor_id_order_with_neksio_metadata(
     tmp_path: Path,
 ) -> None:
     decrease_before = make_product(30, amount="100", formatted="100 MKD")
@@ -109,19 +109,19 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         monitor.scan()
 
     assert [message.entry.title for message in sender.messages] == [
-        "Product 30",
         "Product 10",
+        "Product 30",
     ]
     assert [message.entry.description for message in sender.messages] == ["", ""]
     assert [message.entry.price_direction for message in sender.messages] == [
-        PriceDirection.DECREASE,
         PriceDirection.INCREASE,
+        PriceDirection.DECREASE,
     ]
     # The deleted sentence used to carry both prices, so every alert must still
     # expose its own headline price and exactly one prior price.
     assert [message.entry.source_metrics[0] for message in sender.messages] == [
-        SourceMetric(label="Price", value="90 MKD"),
         SourceMetric(label="Price", value="110 MKD"),
+        SourceMetric(label="Price", value="90 MKD"),
     ]
     assert [
         [
@@ -134,7 +134,7 @@ def test_scan_delivers_in_catalog_order_with_neksio_metadata(
         [SourceMetric(label="Previous", value="100 MKD", prior=True)],
         [SourceMetric(label="Previous", value="100 MKD", prior=True)],
     ]
-    entry = sender.messages[0].entry
+    entry = sender.messages[1].entry
     assert entry.link == "https://g.store.neksio.mk/Product/Details/30"
     assert entry.image_url == "https://g.store.neksio.mk/images/30.jpg"
     assert entry.categories == ("Laptops", "Gaming")

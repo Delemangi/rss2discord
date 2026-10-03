@@ -6,7 +6,11 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.price_safety import canonical_manifest_fingerprint
-from rss2discord.recovery_models import HealthUpdate, PriceChangeRecord
+from rss2discord.recovery_models import (
+    HealthUpdate,
+    PriceChangeRecord,
+    PriceDeliveryClaim,
+)
 
 
 def _change(feed_id: str, product_id: str, old: str, new: str) -> PriceChangeRecord:
@@ -42,8 +46,8 @@ def _candidate(store: DeliveryStore, feed_id: str = "feed") -> int:
 def test_price_manifest_approval_and_atomic_delivery(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         batch_id = _candidate(store)
-        first = store.begin_price_delivery_attempt(batch_id)
-        second = store.begin_price_delivery_attempt(batch_id)
+        first = store.claim_price_delivery_attempt(batch_id, "one")
+        second = store.claim_price_delivery_attempt(batch_id, "two")
 
         assert first is not None
         assert first.product_id == "one"
@@ -51,10 +55,12 @@ def test_price_manifest_approval_and_atomic_delivery(tmp_path: Path) -> None:
         assert second.product_id == "two"
         assert store.complete_price_change_batch_if_drained(batch_id) is False
 
-        store.record_approved_price_delivery(batch_id, "one", first.current)
-        assert store.load_price_snapshots("feed") == (first.current,)
+        first_snapshot = _change("feed", "one", "1", "2").current
+        second_snapshot = _change("feed", "two", "3", "4").current
+        store.record_approved_price_delivery(first, first_snapshot)
+        assert store.load_price_snapshots("feed") == (first_snapshot,)
         assert store.complete_price_change_batch_if_drained(batch_id) is False
-        store.record_approved_price_delivery(batch_id, "two", second.current)
+        store.record_approved_price_delivery(second, second_snapshot)
 
         assert store.complete_price_change_batch_if_drained(batch_id)
         assert store.load_price_batch(batch_id).status == "completed"  # type: ignore[union-attr]
@@ -70,28 +76,22 @@ def test_delivery_requires_reservation_and_rejects_duplicate_without_mutation(
         first = batch.items[0]
         with pytest.raises(ValueError, match="not reserved"):
             store.record_approved_price_delivery(
-                batch_id,
-                first.product_id,
+                PriceDeliveryClaim(batch_id, first.product_id, 1),
                 first.current,
             )
         assert store.load_price_snapshots("feed") == ()
         assert store.load_price_batch(batch_id).items[0].status == "pending"  # type: ignore[union-attr]
 
-        reserved = store.begin_price_delivery_attempt(batch_id)
+        reserved = store.claim_price_delivery_attempt(batch_id, first.product_id)
         assert reserved is not None
         store.record_approved_price_delivery(
-            batch_id,
-            reserved.product_id,
-            reserved.current,
+            reserved,
+            first.current,
         )
         snapshot_after_delivery = store.load_price_snapshots("feed")
         item_after_delivery = store.load_price_batch(batch_id).items[0]  # type: ignore[union-attr]
         with pytest.raises(ValueError, match="already completed"):
-            store.record_approved_price_delivery(
-                batch_id,
-                reserved.product_id,
-                reserved.current,
-            )
+            store.record_approved_price_delivery(reserved, first.current)
 
         assert store.load_price_snapshots("feed") == snapshot_after_delivery
         assert store.load_price_batch(batch_id).items[0] == item_after_delivery  # type: ignore[union-attr]
@@ -103,17 +103,17 @@ def test_delivery_target_mismatch_rolls_back_conditional_item_update(
 ) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         batch_id = _candidate(store)
-        reserved = store.begin_price_delivery_attempt(batch_id)
+        reserved = store.claim_price_delivery_attempt(batch_id, "one")
         assert reserved is not None
         wrong = PriceSnapshot(
-            reserved.current.feed_id,
-            reserved.current.product_id,
+            "feed",
+            "one",
             Decimal(999),
             "999 EUR",
             "EUR",
         )
         with pytest.raises(ValueError, match="does not match"):
-            store.record_approved_price_delivery(batch_id, reserved.product_id, wrong)
+            store.record_approved_price_delivery(reserved, wrong)
         item = store.load_price_batch(batch_id).items[0]  # type: ignore[union-attr]
         assert item.status == "pending"
         assert item.attempt_count == 1

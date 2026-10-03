@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
@@ -29,7 +28,6 @@ from rss2discord.transports.price_monitor import (
     deliver_price_changes,
     finish_price_delivery,
     pause_price_fetch_failure,
-    persist_price_delivery,
     prepare_price_delivery,
     price_direction,
 )
@@ -156,7 +154,7 @@ class AnhochPriceMonitor:
             (by_id[product_id] for product_id in plan.selected_ids),
             self._dependencies,
             self._message_for,
-            on_delivered=partial(persist_price_delivery, store, plan),
+            plan=plan,
         )
         finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 

@@ -82,7 +82,13 @@ class RuntimeScheduler:
                 ]
                 index = min(
                     range(len(jobs)),
-                    key=lambda index: (eligible[index], (index - cursor) % len(jobs)),
+                    # The global gap can collapse distinct overdue ordinary
+                    # deadlines. Preserve their age before rotating exact ties.
+                    key=lambda index: (
+                        eligible[index],
+                        deadlines[index],
+                        (index - cursor) % len(jobs),
+                    ),
                 )
                 if eligible[index] > now:
                     if not self._control.sleep(eligible[index] - now):

@@ -7,7 +7,7 @@ from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.transports.price_monitor import prepare_price_delivery
 
 
-def test_reservations_remain_distinct_fair_and_retryable_after_reopen(
+def test_selection_is_fair_after_reopen_without_claiming_before_delivery(
     tmp_path: Path,
 ) -> None:
     records = tuple(
@@ -40,11 +40,13 @@ def test_reservations_remain_distinct_fair_and_retryable_after_reopen(
             reason="fixture review",
         )
         # Model repeated failures, then an interrupted scan with uneven counts.
-        for _ in range(37):
-            assert (
-                store.begin_price_delivery_attempt(candidate.batch_id, max_attempts=100)
-                is not None
+        for index in range(37):
+            claim = store.claim_price_delivery_attempt(
+                candidate.batch_id,
+                str(index % 3),
             )
+            assert claim is not None
+            assert store.release_price_delivery_attempt(claim)
     with DeliveryStore(path) as store:
         plan = prepare_price_delivery(
             store=store,
@@ -55,11 +57,10 @@ def test_reservations_remain_distinct_fair_and_retryable_after_reopen(
             persisted={r.product_id: r.previous for r in records},
             catalog_count=3,
         )
-        assert len(plan.selected_ids) == 2
-        assert len(set(plan.selected_ids)) == 2
+        assert plan.selected_ids == ("1", "2", "0")
         batch = store.load_active_price_batch("feed")
         assert batch is not None
-        assert {item.attempt_count for item in batch.items} == {13}
+        assert {item.attempt_count for item in batch.items} == {12, 13}
         assert batch.status == "approved"
         next_plan = prepare_price_delivery(
             store=store,
@@ -70,5 +71,5 @@ def test_reservations_remain_distinct_fair_and_retryable_after_reopen(
             persisted={r.product_id: r.previous for r in records},
             catalog_count=3,
         )
-        assert len(next_plan.selected_ids) == 3
-        assert len(set(next_plan.selected_ids)) == 3
+        assert next_plan == plan
+        assert store.load_active_price_batch("feed") == batch

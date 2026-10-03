@@ -9,15 +9,38 @@ from time import time
 import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
-from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.discord.client import (
+    DiscordDeliveryResult,
+    SleepCallback,
+    WebhookMessage,
+)
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_safety import MAX_PRICE_MANIFEST_ITEMS
-from rss2discord.recovery_models import HealthUpdate, PriceChangeRecord
+from rss2discord.recovery_models import (
+    HealthUpdate,
+    PriceChangeRecord,
+    PriceDeliveryClaim,
+)
 from rss2discord.transports.ddstore_price_monitor import DDStorePriceMonitor
 from rss2discord.transports.hivetec_price_monitor import HivetecPriceMonitor
 from tests import test_ddstore_price_monitor as dd
 from tests import test_hivetec_price_monitor as hive
 from tests.setec_price_monitor_helpers import RecordingSender
+from tests.test_adapter_c2_provider_caps import Monitor, build
+
+PROVIDERS = (
+    "anhoch",
+    "neksio",
+    "setec",
+    "cccenter",
+    "gjirafa50",
+    "neptun",
+    "pazar3",
+    "reklama5",
+    "technomarket",
+    "ddstore",
+    "hivetec",
+)
 
 
 def monitor_for(
@@ -300,3 +323,121 @@ def test_oversized_manifest_is_rejected_before_database_write(tmp_path: Path) ->
                 items=records(),
             )
         assert store.list_price_change_batches("feed", include_terminal=True) == ()
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
+def test_inflight_success_is_acknowledged_after_revoke_and_next_send_is_blocked(
+    tmp_path: Path,
+    provider: str,
+) -> None:
+    path = tmp_path / "state.db"
+    with DeliveryStore(path) as store, DeliveryStore(path) as admin:
+
+        class RevokingSender(RecordingSender):
+            def send(
+                self,
+                message: WebhookMessage,
+                sleep: SleepCallback,
+            ) -> DiscordDeliveryResult:
+                active = admin.load_active_price_batch(provider)
+                assert active is not None
+                # Exactly this send has a claim; later selected IDs are not reserved.
+                assert sum(item.attempt_count for item in active.items) == 1
+                admin.revoke_price_change_batch(
+                    active.batch_id,
+                    active.fingerprint,
+                    "revoke during send",
+                )
+                return super().send(message, sleep)
+
+        sender = RevokingSender([DiscordDeliveryResult.DELIVERED])
+        monitor: Monitor = (
+            monitor_for(
+                provider,
+                [(100,) * 101, (90,) * 101, (90,) * 101],
+                store,
+                sender,
+            )
+            if provider in {"ddstore", "hivetec"}
+            else build(provider, 101, store, sender)
+        )
+        monitor.scan()
+        monitor.scan()
+        candidate = store.list_price_change_batches(provider)[0]
+        store.approve_price_change_batch(
+            feed_id=provider,
+            fingerprint=candidate.fingerprint,
+            reason="reviewed",
+        )
+        monitor.scan()
+        batch = store.load_price_batch(candidate.batch_id)
+        assert batch is not None
+        assert batch.status == "revoked"
+        assert batch.delivered_count == 1
+        assert batch.pending_count == 100
+        assert sum(item.attempt_count for item in batch.items) == 1
+        assert len(sender.messages) == 1
+        assert sum(s.amount == 90 for s in store.load_price_snapshots(provider)) == 1
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.INTERRUPTED, "exception"],
+)
+def test_unsuccessful_sender_releases_exact_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: DiscordDeliveryResult | str,
+) -> None:
+    class UnsuccessfulSender(RecordingSender):
+        def send(
+            self,
+            message: WebhookMessage,
+            sleep: SleepCallback,
+        ) -> DiscordDeliveryResult:
+            if outcome == "exception":
+                raise RuntimeError("fixture sender failed")
+            return super().send(message, sleep)
+
+    sender = UnsuccessfulSender(
+        [outcome] * 10 if isinstance(outcome, DiscordDeliveryResult) else [],
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        claims: list[PriceDeliveryClaim] = []
+        claim_attempt = store.claim_price_delivery_attempt
+
+        def record_claim(batch_id: int, product_id: str) -> PriceDeliveryClaim | None:
+            claim = claim_attempt(batch_id, product_id)
+            if claim is not None:
+                claims.append(claim)
+            return claim
+
+        monkeypatch.setattr(store, "claim_price_delivery_attempt", record_claim)
+        monitor = monitor_for(
+            "ddstore",
+            [(100,) * 101, (90,) * 101, (90,) * 101],
+            store,
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        candidate = store.list_price_change_batches("ddstore")[0]
+        store.approve_price_change_batch(
+            feed_id="ddstore",
+            fingerprint=candidate.fingerprint,
+            reason="reviewed",
+        )
+        if outcome == "exception":
+            with pytest.raises(RuntimeError, match="fixture sender failed"):
+                monitor.scan()
+        else:
+            monitor.scan()
+        batch = store.load_price_batch(candidate.batch_id)
+        assert batch is not None
+        assert claims
+        assert all(not store.release_price_delivery_attempt(claim) for claim in claims)
+        assert sum(item.attempt_count for item in batch.items) == (
+            10 if outcome is DiscordDeliveryResult.FAILED else 1
+        )
+        assert batch.delivered_count == 0
+        assert all(s.amount == 100 for s in store.load_price_snapshots("ddstore"))

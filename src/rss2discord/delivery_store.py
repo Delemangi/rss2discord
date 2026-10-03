@@ -28,6 +28,7 @@ from rss2discord.recovery_models import (
     PriceBatchItem,
     PriceBatchSummary,
     PriceChangeRecord,
+    PriceDeliveryClaim,
     PriceSnapshot,
 )
 
@@ -257,6 +258,7 @@ class DeliveryStore:
         """Approve only an exact candidate/paused fingerprint and reason."""
         _require_reason(reason)
         with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
             active = self._connection.execute(
                 "SELECT batch_id FROM price_change_batches "
                 "WHERE feed_id = ? AND status IN ('approved', 'paused') "
@@ -292,6 +294,7 @@ class DeliveryStore:
         """Revoke a candidate or active batch after exact audit selection."""
         _require_reason(reason)
         with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
             row = self._find_price_batch(batch_id, feed_id, fingerprint)
             if row is None:
                 raise ValueError("price batch not found")
@@ -305,6 +308,7 @@ class DeliveryStore:
                 "updated_at = unixepoch() WHERE batch_id = ?",
                 (reason, selected_id),
             )
+            selected_batch = self._load_price_batch(int(selected_id))
             selected_feed_id = feed_id
             if selected_feed_id is None:
                 feed_row = self._connection.execute(
@@ -313,7 +317,7 @@ class DeliveryStore:
                 ).fetchone()
                 selected_feed_id = None if feed_row is None else str(feed_row[0])
             self._prune_terminal_price_batches(selected_feed_id)
-        return self._load_price_batch(int(selected_id))
+        return selected_batch
 
     def pause_price_change_batch(self, batch_id: int, reason: str) -> PriceBatch:
         """Persist a fail-closed pause without changing its manifest."""
@@ -332,65 +336,92 @@ class DeliveryStore:
             )
         return self._load_price_batch(batch_id)
 
-    def begin_price_delivery_attempt(
-        self,
-        batch_id: int,
-        *,
-        max_attempts: int = MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
-    ) -> PriceBatchItem | None:
-        """Rotate to the least-attempted item and persist its attempt before send."""
-        if max_attempts < 1:
-            raise ValueError("max_attempts must be positive")
-        with self._connection:
-            row = self._connection.execute(
-                "SELECT product_id FROM price_change_batch_items "
-                "WHERE batch_id = ? AND status = 'pending' AND attempt_count < ? "
-                "ORDER BY attempt_count, last_attempt_at IS NOT NULL, "
-                "last_attempt_at, ordinal LIMIT 1",
-                (batch_id, max_attempts),
-            ).fetchone()
-            active = self._connection.execute(
-                "SELECT status FROM price_change_batches WHERE batch_id = ?",
-                (batch_id,),
-            ).fetchone()
-            if active is None or active[0] != "approved" or row is None:
-                return None
-            self._connection.execute(
-                "UPDATE price_change_batch_items SET attempt_count = attempt_count + 1, "
-                "last_attempt_at = unixepoch() WHERE batch_id = ? AND product_id = ?",
-                (batch_id, row[0]),
-            )
-        return self._load_price_item(batch_id, str(row[0]))
-
-    claim_price_delivery_attempt = begin_price_delivery_attempt
-    record_price_delivery_attempt = begin_price_delivery_attempt
-    next_price_delivery_attempt = begin_price_delivery_attempt
-
-    def record_approved_price_delivery(
+    def claim_price_delivery_attempt(
         self,
         batch_id: int,
         product_id: str,
+    ) -> PriceDeliveryClaim | None:
+        """Atomically claim exactly one pending approved item.
+
+        The write is intentionally separate from network delivery.  A pending
+        open claim may be reclaimed after a process restart; doing so advances
+        its generation and invalidates any late callback for the old claim.
+        """
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                active = self._connection.execute(
+                    "SELECT 1 FROM price_change_batches "
+                    "WHERE batch_id = ? AND status = 'approved'",
+                    (batch_id,),
+                ).fetchone()
+                if active is None:
+                    self._connection.rollback()
+                    return None
+                updated = self._connection.execute(
+                    "UPDATE price_change_batch_items SET attempt_count = attempt_count + 1, "
+                    "last_attempt_at = unixepoch(), claim_generation = claim_generation + 1, "
+                    "claim_open = 1 WHERE batch_id = ? AND product_id = ? "
+                    "AND status = 'pending'",
+                    (batch_id, product_id),
+                )
+                if updated.rowcount != 1:
+                    self._connection.rollback()
+                    return None
+                generation_row = self._connection.execute(
+                    "SELECT claim_generation FROM price_change_batch_items "
+                    "WHERE batch_id = ? AND product_id = ?",
+                    (batch_id, product_id),
+                ).fetchone()
+                if generation_row is None:  # pragma: no cover - conditional update
+                    self._connection.rollback()
+                    return None
+                self._connection.commit()
+                return PriceDeliveryClaim(batch_id, product_id, int(generation_row[0]))
+            except BaseException:
+                self._connection.rollback()
+                raise
+
+    def release_price_delivery_attempt(self, claim: PriceDeliveryClaim) -> bool:
+        """Close a matching claim without changing delivery state."""
+        with self._connection:
+            updated = self._connection.execute(
+                "UPDATE price_change_batch_items SET claim_open = 0 "
+                "WHERE batch_id = ? AND product_id = ? AND claim_generation = ? "
+                "AND claim_open = 1 AND status = 'pending'",
+                (claim.batch_id, claim.product_id, claim.generation),
+            )
+            changed = updated.rowcount == 1
+            if changed:
+                self._prune_terminal_price_batches_for_batch(claim.batch_id)
+            return changed
+
+    def record_approved_price_delivery(
+        self,
+        claim: PriceDeliveryClaim,
         snapshot: PriceSnapshot,
     ) -> None:
-        """Atomically update the snapshot and mark its manifest item delivered."""
+        """Atomically acknowledge a matching generation-scoped claim."""
+        if snapshot.product_id != claim.product_id:
+            raise ValueError("delivered snapshot identity mismatch")
         with self._connection:
             batch = self._connection.execute(
                 "SELECT feed_id, status FROM price_change_batches WHERE batch_id = ?",
-                (batch_id,),
+                (claim.batch_id,),
             ).fetchone()
             item = self._connection.execute(
                 "SELECT current_amount, current_formatted, current_currency, status, "
-                "attempt_count "
+                "attempt_count, claim_generation, claim_open "
                 "FROM price_change_batch_items WHERE batch_id = ? AND product_id = ?",
-                (batch_id, product_id),
+                (claim.batch_id, claim.product_id),
             ).fetchone()
-            if batch is None or batch[1] != "approved" or item is None:
-                raise ValueError("price delivery is not approved")
+            if batch is None or batch[1] not in {"approved", "revoked"} or item is None:
+                raise ValueError("price delivery is not approved or revoked")
             if item[3] != "pending":
                 raise ValueError("price delivery item is already completed")
-            if int(item[4]) <= 0:
+            if int(item[4]) <= 0 or int(item[5]) != claim.generation or not item[6]:
                 raise ValueError("price delivery attempt was not reserved")
-            if snapshot.feed_id != batch[0] or snapshot.product_id != product_id:
+            if snapshot.feed_id != batch[0] or snapshot.product_id != claim.product_id:
                 raise ValueError("delivered snapshot identity mismatch")
             if (
                 canonicalize_price_amount(snapshot.amount) != item[0]
@@ -400,9 +431,14 @@ class DeliveryStore:
                 raise ValueError("delivered snapshot does not match manifest target")
             updated = self._connection.execute(
                 "UPDATE price_change_batch_items SET status = 'delivered', "
-                "delivered_at = unixepoch() WHERE batch_id = ? AND product_id = ? "
-                "AND status = 'pending' AND attempt_count > 0",
-                (batch_id, product_id),
+                "delivered_at = unixepoch(), claim_open = 0 WHERE batch_id = ? "
+                "AND product_id = ? AND status = 'pending' AND attempt_count > 0 "
+                "AND claim_generation = ? AND claim_open = 1",
+                (
+                    claim.batch_id,
+                    claim.product_id,
+                    claim.generation,
+                ),
             )
             if updated.rowcount != 1:
                 raise ValueError("price delivery item is no longer pending")
@@ -420,6 +456,7 @@ class DeliveryStore:
                     snapshot.currency,
                 ),
             )
+            self._prune_terminal_price_batches_for_batch(claim.batch_id)
 
     def complete_price_change_batch_if_drained(self, batch_id: int) -> bool:
         """Complete an approved batch only after every item is delivered."""
@@ -472,6 +509,90 @@ class DeliveryStore:
         query += " ORDER BY batch_id DESC"
         rows = self._connection.execute(query, parameters)
         return tuple(self._load_price_summary(int(row[0])) for row in rows)
+
+    def select_normal_price_deliveries(
+        self,
+        *,
+        feed_id: str,
+        product_ids: Iterable[str],
+        limit: int = MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
+    ) -> tuple[str, ...] | None:
+        """Serialize normal-price rotation and return the next fair IDs.
+
+        This is a short database-only transaction.  Confirmation and sending
+        must happen after it commits.  ``None`` means that an approved or
+        paused recovery batch owns the feed; an empty tuple is a valid
+        zero-change scan and therefore permits ordinary silent updates.
+        """
+        if not 1 <= limit <= MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN:
+            raise ValueError("limit must be between 1 and 10")
+        normalized = tuple(sorted(set(product_ids)))
+        if any(not product_id for product_id in normalized):
+            raise ValueError("normal price product IDs must be non-empty")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                active = self._connection.execute(
+                    "SELECT 1 FROM price_change_batches "
+                    "WHERE feed_id = ? AND status IN ('approved', 'paused') LIMIT 1",
+                    (feed_id,),
+                ).fetchone()
+                if active is not None:
+                    self._connection.commit()
+                    return None
+
+                candidate = self._connection.execute(
+                    "SELECT batch_id FROM price_change_batches "
+                    "WHERE feed_id = ? AND status = 'candidate' LIMIT 1",
+                    (feed_id,),
+                ).fetchone()
+                if candidate is not None:
+                    self._connection.execute(
+                        "UPDATE price_change_batches SET status = 'revoked', "
+                        "reason = 'ChangeSetNoLongerRequiresApproval', "
+                        "updated_at = unixepoch() WHERE batch_id = ? AND status = 'candidate'",
+                        (candidate[0],),
+                    )
+                    self._prune_terminal_price_batches(feed_id)
+
+                if not normalized:
+                    self._connection.commit()
+                    return ()
+
+                cursor = self._connection.execute(
+                    "SELECT last_product_id FROM price_normal_delivery_cursors "
+                    "WHERE feed_id = ?",
+                    (feed_id,),
+                ).fetchone()
+                last_id = None if cursor is None else str(cursor[0])
+                after = (
+                    tuple(
+                        product_id for product_id in normalized if product_id > last_id
+                    )
+                    if last_id is not None
+                    else normalized
+                )
+                before = (
+                    tuple(
+                        product_id for product_id in normalized if product_id <= last_id
+                    )
+                    if last_id is not None
+                    else ()
+                )
+                selected = (after + before)[:limit] if after else normalized[:limit]
+                self._connection.execute(
+                    "INSERT INTO price_normal_delivery_cursors "
+                    "(feed_id, last_product_id, updated_at) VALUES (?, ?, unixepoch()) "
+                    "ON CONFLICT(feed_id) DO UPDATE SET last_product_id = excluded.last_product_id, "
+                    "updated_at = excluded.updated_at",
+                    (feed_id, selected[-1]),
+                )
+            except BaseException:
+                self._connection.rollback()
+                raise
+            else:
+                self._connection.commit()
+                return selected
 
     # Baseline candidates -------------------------------------------------
 
@@ -557,12 +678,18 @@ class DeliveryStore:
     ) -> BaselineCandidateSummary:
         _require_reason(reason)
         with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
             row = self._connection.execute(
                 "SELECT fingerprint, status FROM baseline_candidates WHERE feed_id = ?",
                 (feed_id,),
             ).fetchone()
             if row is None or row[0] != fingerprint:
                 raise ValueError("baseline fingerprint mismatch")
+            if row[1] == "approved":
+                candidate = self.load_baseline_candidate(feed_id)
+                if candidate is None:  # pragma: no cover - transaction guarantees this
+                    raise RuntimeError("baseline candidate disappeared")
+                return candidate
             self._connection.execute(
                 "INSERT OR IGNORE INTO baseline_states "
                 "(feed_id, fingerprint, complete, approved_at) VALUES (?, ?, 1, unixepoch()) "
@@ -575,11 +702,14 @@ class DeliveryStore:
                 "SELECT feed_id, entry_id FROM baseline_candidate_entries WHERE feed_id = ?",
                 (feed_id,),
             )
-            self._connection.execute(
+            approved = self._connection.execute(
                 "UPDATE baseline_candidates SET status = 'approved', reason = ?, "
-                "approved_at = unixepoch() WHERE feed_id = ?",
-                (reason, feed_id),
+                "approved_at = unixepoch() WHERE feed_id = ? AND fingerprint = ? "
+                "AND status = 'candidate'",
+                (reason, feed_id, fingerprint),
             )
+            if approved.rowcount != 1:
+                raise ValueError("baseline candidate is no longer pending")
             self._connection.execute(
                 "INSERT OR IGNORE INTO initialized_feeds (feed_id) VALUES (?)",
                 (feed_id,),
@@ -925,6 +1055,27 @@ class DeliveryStore:
                 "last_attempt_at INTEGER, ordinal INTEGER NOT NULL, delivered_at INTEGER, "
                 "PRIMARY KEY(batch_id, product_id)) WITHOUT ROWID",
             )
+            item_columns = {
+                str(row[1])
+                for row in self._connection.execute(
+                    "PRAGMA table_info(price_change_batch_items)",
+                )
+            }
+            if "claim_generation" not in item_columns:
+                self._connection.execute(
+                    "ALTER TABLE price_change_batch_items ADD COLUMN "
+                    "claim_generation INTEGER NOT NULL DEFAULT 0",
+                )
+            if "claim_open" not in item_columns:
+                self._connection.execute(
+                    "ALTER TABLE price_change_batch_items ADD COLUMN "
+                    "claim_open INTEGER NOT NULL DEFAULT 0",
+                )
+            self._connection.execute(
+                "CREATE TABLE IF NOT EXISTS price_normal_delivery_cursors ("
+                "feed_id TEXT PRIMARY KEY, last_product_id TEXT NOT NULL, "
+                "updated_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
+            )
             self._connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS price_change_candidate_one "
                 "ON price_change_batches(feed_id) WHERE status = 'candidate'",
@@ -1092,27 +1243,13 @@ class DeliveryStore:
             delivered_count=int(row[14]),
         )
 
-    def _load_price_item(self, batch_id: int, product_id: str) -> PriceBatchItem:
+    def _prune_terminal_price_batches_for_batch(self, batch_id: int) -> None:
         row = self._connection.execute(
-            "SELECT b.feed_id, i.previous_amount, i.previous_formatted, i.previous_currency, "
-            "i.current_amount, i.current_formatted, i.current_currency, i.status, i.attempt_count, "
-            "i.last_attempt_at, i.ordinal, i.delivered_at FROM price_change_batch_items i "
-            "JOIN price_change_batches b ON b.batch_id = i.batch_id "
-            "WHERE i.batch_id = ? AND i.product_id = ?",
-            (batch_id, product_id),
+            "SELECT feed_id FROM price_change_batches WHERE batch_id = ?",
+            (batch_id,),
         ).fetchone()
-        if row is None:
-            raise ValueError("price batch item not found")
-        return PriceBatchItem(
-            product_id=product_id,
-            previous=PriceSnapshot(row[0], product_id, Decimal(row[1]), row[2], row[3]),
-            current=PriceSnapshot(row[0], product_id, Decimal(row[4]), row[5], row[6]),
-            status=row[7],
-            attempt_count=int(row[8]),
-            last_attempt_at=row[9],
-            ordinal=int(row[10]),
-            delivered_at=row[11],
-        )
+        if row is not None:
+            self._prune_terminal_price_batches(str(row[0]))
 
     def _find_price_batch(
         self,
@@ -1121,17 +1258,29 @@ class DeliveryStore:
         fingerprint: str | None,
     ) -> tuple[int, str, str] | None:
         if batch_id is not None:
+            if feed_id is not None:
+                return self._connection.execute(
+                    "SELECT batch_id, fingerprint, status FROM price_change_batches "
+                    "WHERE batch_id = ? AND feed_id = ?",
+                    (batch_id, feed_id),
+                ).fetchone()
             return self._connection.execute(
-                "SELECT batch_id, fingerprint, status FROM price_change_batches WHERE batch_id = ?",
+                "SELECT batch_id, fingerprint, status FROM price_change_batches "
+                "WHERE batch_id = ?",
                 (batch_id,),
             ).fetchone()
         if feed_id is None or fingerprint is None:
             return None
-        return self._connection.execute(
+        rows = self._connection.execute(
             "SELECT batch_id, fingerprint, status FROM price_change_batches "
-            "WHERE feed_id = ? AND fingerprint = ?",
+            "WHERE feed_id = ? AND fingerprint = ? "
+            "AND status IN ('candidate', 'approved', 'paused') "
+            "ORDER BY batch_id DESC LIMIT 2",
             (feed_id, fingerprint),
-        ).fetchone()
+        ).fetchall()
+        if len(rows) > 1:
+            raise ValueError("price batch fingerprint is ambiguous")
+        return None if not rows else rows[0]
 
     def _prune_terminal_price_batches(self, feed_id: str | None) -> None:
         if feed_id is None:
@@ -1139,8 +1288,13 @@ class DeliveryStore:
         self._connection.execute(
             "DELETE FROM price_change_batches WHERE batch_id IN ("
             "SELECT batch_id FROM price_change_batches WHERE feed_id = ? "
-            "AND status IN ('completed','revoked') ORDER BY batch_id DESC LIMIT -1 OFFSET 10)",
-            (feed_id,),
+            "AND status IN ('completed','revoked') "
+            "AND NOT EXISTS (SELECT 1 FROM price_change_batch_items i "
+            "WHERE i.batch_id = price_change_batches.batch_id AND i.claim_open = 1) "
+            "AND batch_id NOT IN (SELECT batch_id FROM price_change_batches "
+            "WHERE feed_id = ? AND status IN ('completed','revoked') "
+            "ORDER BY batch_id DESC LIMIT 10))",
+            (feed_id, feed_id),
         )
 
 
@@ -1174,4 +1328,4 @@ def _baseline_fingerprint(feed_id: str, entry_ids: tuple[str, ...]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-__all__ = ["DeliveryStore", "PriceSnapshot"]
+__all__ = ["DeliveryStore", "PriceDeliveryClaim", "PriceSnapshot"]

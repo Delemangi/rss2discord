@@ -5,19 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from itertools import islice
-from typing import Final, Protocol, assert_never
+from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import (
-    DiscordDeliveryResult,
     DiscordSender,
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
-from rss2discord.price_safety import MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -29,11 +26,10 @@ from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL
 from rss2discord.transports.neksio_models import NeksioProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceDeliveryPlan,
     PriceRecoveryStore,
+    deliver_price_changes,
     finish_price_delivery,
     pause_price_fetch_failure,
-    persist_price_delivery,
     prepare_price_delivery,
     price_direction,
 )
@@ -164,38 +160,13 @@ class NeksioPriceMonitor:
                 ),
             )
 
-        delay_before_next_attempt = False
         by_id = {change.current.product_id: change for change in changes}
-        changes = [by_id[product_id] for product_id in plan.selected_ids]
-        for change in islice(changes, MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN):
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay_before_next_attempt
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            delay_before_next_attempt = False
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            delivery_result = self._dependencies.sender.send(
-                self._message_for(change),
-                self._dependencies.delivery.sleep,
-            )
-            match delivery_result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._persist_changed_snapshot(change.current, plan)
-                    delay_before_next_attempt = True
-                case DiscordDeliveryResult.FAILED:
-                    if self._dependencies.delivery.is_shutdown_requested():
-                        return
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case unreachable:
-                    assert_never(unreachable)
+        deliver_price_changes(
+            (by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            plan=plan,
+        )
         finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:
@@ -205,19 +176,6 @@ class NeksioPriceMonitor:
             amount=Decimal(str(product.price_with_tax)),
             formatted=product.formatted_price,
             currency="MKD",
-        )
-
-    def _persist_changed_snapshot(
-        self,
-        snapshot: PriceSnapshot,
-        plan: PriceDeliveryPlan,
-    ) -> None:
-        self._dependencies.sqlite_retry_policy.execute(
-            lambda: persist_price_delivery(
-                self._dependencies.snapshots,
-                plan,
-                snapshot,
-            ),
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

@@ -362,3 +362,90 @@ def test_hard_catalog_failure_pauses_approved_batch(
         assert all(
             snapshot.amount == 100 for snapshot in store.load_price_snapshots("setec")
         )
+
+
+@pytest.mark.parametrize("provider", ["setec", "cccenter"])
+@pytest.mark.parametrize("revoke_at", ["detail", "spacing"])
+def test_revoke_before_jit_claim_prevents_next_send(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    revoke_at: str,
+) -> None:
+    path = tmp_path / "state.db"
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
+    with DeliveryStore(path) as store, DeliveryStore(path) as admin:
+        monitor: SetecPriceMonitor | CCCenterPriceMonitor
+        if provider == "setec":
+            before = tuple(
+                setec.make_product(str(i), calculated_amount=100) for i in range(101)
+            )
+            after = tuple(
+                setec.make_product(str(i), calculated_amount=90) for i in range(101)
+            )
+            catalog = setec.CatalogStub([before, after, after])
+            monitor = setec.make_monitor(setec.make_feed(), catalog, store, sender)
+        else:
+            cc_before = tuple(
+                product("100", f"https://cccenter.mk/product/{i}/") for i in range(101)
+            )
+            cc_after = tuple(replace(p, current_price=Decimal(90)) for p in cc_before)
+            cc_catalog = DetailCatalog([cc_before, cc_after, cc_after])
+            monitor = cc_monitor(store, cc_catalog, sender)
+        monitor.scan()
+        monitor.scan()
+        candidate = store.list_price_change_batches(provider)[0]
+        store.approve_price_change_batch(
+            feed_id=provider,
+            fingerprint=candidate.fingerprint,
+            reason="reviewed",
+        )
+
+        def revoke() -> None:
+            batch = admin.load_active_price_batch(provider)
+            assert batch is not None
+            assert sum(item.attempt_count for item in batch.items) == (
+                0 if revoke_at == "detail" else 1
+            )
+            admin.revoke_price_change_batch(
+                batch.batch_id,
+                batch.fingerprint,
+                "fixture revocation",
+            )
+
+        if revoke_at == "detail":
+            if isinstance(monitor, SetecPriceMonitor):
+                resolve = monitor._resolve_changes
+
+                def resolve_and_revoke(*args: object, **kwargs: object) -> object:
+                    result = resolve(*args, **kwargs)  # type: ignore[arg-type]
+                    revoke()
+                    return result
+
+                monkeypatch.setattr(monitor, "_resolve_changes", resolve_and_revoke)
+            else:
+                confirm = monitor._confirm_changes
+
+                def confirm_and_revoke(*args: object, **kwargs: object) -> object:
+                    result = confirm(*args, **kwargs)  # type: ignore[arg-type]
+                    revoke()
+                    return result
+
+                monkeypatch.setattr(monitor, "_confirm_changes", confirm_and_revoke)
+        else:
+
+            def sleep_and_revoke(_seconds: float) -> bool:
+                revoke()
+                return True
+
+            monitor._dependencies = replace(
+                monitor._dependencies,
+                delivery=PriceAlertDelivery(sleep_and_revoke, 1, lambda: False),
+            )
+        monitor.scan()
+        batch = store.load_price_batch(candidate.batch_id)
+        assert batch is not None
+        expected = 0 if revoke_at == "detail" else 1
+        assert len(sender.messages) == batch.delivered_count == expected
+        assert sum(item.attempt_count for item in batch.items) == expected
+        assert batch.status == "revoked"

@@ -104,6 +104,8 @@ class RSSToDiscord:
         return self._shutdown_requested
 
     def process_feed(self, feed: FeedConfig) -> None:
+        if self._shutdown_requested:
+            return
         attempted_at = int(time.time())
         if feed_is_blocked(feed, self._config.feeds, self._store, attempted_at):
             return
@@ -111,7 +113,18 @@ class RSSToDiscord:
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
+        if self._shutdown_requested:
+            return
         baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
+        if baseline_state == "ready" and not self._process_entries(
+            feed,
+            strategy,
+            entries,
+            fetched_source_title,
+        ):
+            return
+        if self._shutdown_requested:
+            return
         record_runtime_health(
             self._store,
             HealthUpdate(
@@ -133,8 +146,15 @@ class RSSToDiscord:
                 scheduler_lag_ms=0,
             ),
         )
-        if baseline_state != "ready":
-            return
+
+    def _process_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+        fetched_source_title: str,
+    ) -> bool:
+        """Return whether processing completed rather than being interrupted."""
         should_seed_existing = (
             feed.seed_existing_on_first_fetch or strategy.seed_existing_on_first_fetch
         )
@@ -144,10 +164,10 @@ class RSSToDiscord:
                 feed.seed_existing_on_first_fetch
                 or strategy.require_entries_for_initialization
             ):
-                return
+                return True
             if self._store.seed_feed(feed.id, entry_ids):
                 logger.info("Initialized feed %s with existing entries", feed.id)
-                return
+                return True
         enforce_delivery_limits(feed.id, entries, strategy, self._store)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
@@ -161,7 +181,7 @@ class RSSToDiscord:
 
         for entry in entries:
             if self._shutdown_requested:
-                return
+                return False
 
             entry_id = strategy.get_entry_id(entry)
             if entry_id is None:
@@ -210,9 +230,10 @@ class RSSToDiscord:
                 continue
 
             if not self._persist_delivery(feed.id, entry_id):
-                return
+                return False
             if not self._interruptible_sleep(self._config.delay_between_posts):
-                return
+                return False
+        return True
 
     def run(self) -> None:
         if not self._config.feeds:

@@ -18,6 +18,19 @@ class PriceSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class PriceDeliveryClaim:
+    """The generation-scoped receipt authorizing one price delivery.
+
+    A claim is deliberately small and immutable.  Its generation prevents a
+    delayed callback from acknowledging a later retry of the same item.
+    """
+
+    batch_id: int
+    product_id: str
+    generation: int
+
+
+@dataclass(frozen=True, slots=True)
 class PriceChangeRecord:
     """A stable-ID price transition from a persisted to a current snapshot."""
 

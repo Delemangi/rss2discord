@@ -2,12 +2,11 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import partial
-from typing import Protocol, assert_never
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordDeliveryResult, DiscordSender
+from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
@@ -25,12 +24,11 @@ from rss2discord.transports.cccenter_bounds import (
 from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceDeliveryPlan,
     PriceRecoveryStore,
+    deliver_price_changes,
     finish_price_delivery,
     pause_price_fetch_failure,
     pause_price_recovery,
-    persist_price_delivery,
     prepare_price_delivery,
     price_direction,
     record_price_health,
@@ -181,7 +179,7 @@ class CCCenterPriceMonitor:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        self._deliver(confirmed, plan)
+        deliver_price_changes(confirmed, self._dependencies, self._message, plan=plan)
         if unconfirmed:
             record_price_health(
                 store,
@@ -231,43 +229,6 @@ class CCCenterPriceMonitor:
             formatted=format_cccenter_mkd(product.current_price),
             currency="MKD",
         )
-
-    def _deliver(self, changes: list[_PriceChange], plan: PriceDeliveryPlan) -> None:
-        delay = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            result = self._dependencies.sender.send(
-                self._message(change),
-                self._dependencies.delivery.sleep,
-            )
-            match result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._dependencies.sqlite_retry_policy.execute(
-                        partial(
-                            persist_price_delivery,
-                            self._dependencies.snapshots,
-                            plan,
-                            change.current,
-                        ),
-                    )
-                    delay = True
-                case DiscordDeliveryResult.FAILED:
-                    delay = False
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case other:
-                    assert_never(other)
 
     def _message(self, change: _PriceChange) -> WebhookMessage:
         product = change.product

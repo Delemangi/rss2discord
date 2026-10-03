@@ -63,13 +63,9 @@ def test_price_pages_audit_all_101_items_without_mutation(
             fingerprint=fingerprint,
             reason="Fixture audit",
         )
-        reserved = store.begin_price_delivery_attempt(batch.batch_id)
+        reserved = store.claim_price_delivery_attempt(batch.batch_id, "product-000")
         assert reserved is not None
-        store.record_approved_price_delivery(
-            batch.batch_id,
-            reserved.product_id,
-            reserved.current,
-        )
+        store.record_approved_price_delivery(reserved, batch.items[0].current)
     before = _dump(database)
     observed = []
     for offset in range(0, 101, 20):

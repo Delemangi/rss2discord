@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import pytest
 
 from rss2discord.scheduler import (
@@ -459,3 +461,57 @@ def test_failed_job_observation_cannot_mask_primary_exception() -> None:
             observer=fail_observer,
         ).run()
     assert caught.value.__notes__ == ["Job timing observer failed: RuntimeError"]
+
+
+@pytest.mark.parametrize(
+    ("interval", "first_duration", "horizon"),
+    [(60, 0, 86400), (300, 240, 3600)],
+)
+def test_gap_preserves_overdue_feed_priority_despite_price_cursor_resets(
+    interval: float,
+    first_duration: float,
+    horizon: float,
+) -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def first() -> None:
+        events.append(("first", clock.now))
+        clock.now += first_duration
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            (
+                ScheduledJob("first", "ordinary", interval, first),
+                ScheduledJob(
+                    "second",
+                    "ordinary",
+                    interval,
+                    lambda: events.append(("second", clock.now)),
+                ),
+            ),
+            (
+                ScheduledJob(
+                    "price",
+                    "price",
+                    interval,
+                    lambda: events.append(("price", clock.now)),
+                ),
+            ),
+            ordinary_gap=61,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: clock.now >= horizon),
+    ).run()
+
+    ordinary = [(name, at) for name, at in events if name != "price"]
+    assert len(ordinary) > 10
+    assert [name for name, _ in ordinary] == [
+        "first" if index % 2 == 0 else "second" for index in range(len(ordinary))
+    ]
+    assert ordinary[1] == ("second", first_duration + 61)
+    for (name, previous), (_, following) in pairwise(ordinary):
+        duration = first_duration if name == "first" else 0
+        assert following - previous >= duration + 61
+    for name in ("first", "second", "price"):
+        starts = [at for kind, at in events if kind == name]
+        assert starts[-1] >= horizon - 2 * (interval + first_duration + 61)

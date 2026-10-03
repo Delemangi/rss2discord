@@ -28,8 +28,8 @@ from rss2discord.recovery_models import (
     HealthNotice,
     HealthUpdate,
     PriceBatch,
-    PriceBatchItem,
     PriceChangeRecord,
+    PriceDeliveryClaim,
 )
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryPolicy
 
@@ -79,17 +79,25 @@ class PriceRecoveryStore(PriceSnapshotStore, Protocol):
 
     def pause_price_change_batch(self, batch_id: int, reason: str) -> PriceBatch: ...
 
-    def begin_price_delivery_attempt(
-        self,
-        batch_id: int,
-        *,
-        max_attempts: int = MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
-    ) -> PriceBatchItem | None: ...
-
-    def record_approved_price_delivery(
+    def claim_price_delivery_attempt(
         self,
         batch_id: int,
         product_id: str,
+    ) -> PriceDeliveryClaim | None: ...
+
+    def release_price_delivery_attempt(self, claim: PriceDeliveryClaim) -> bool: ...
+
+    def select_normal_price_deliveries(
+        self,
+        *,
+        feed_id: str,
+        product_ids: Iterable[str],
+        limit: int = MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
+    ) -> tuple[str, ...] | None: ...
+
+    def record_approved_price_delivery(
+        self,
+        claim: PriceDeliveryClaim,
         snapshot: PriceSnapshot,
     ) -> None: ...
 
@@ -171,7 +179,7 @@ def prepare_price_delivery(
     persisted: Mapping[str, PriceSnapshot],
     catalog_count: int,
 ) -> PriceDeliveryPlan:
-    """Gate a complete diff before writes/resolution, then reserve bounded work."""
+    """Validate the complete diff and select bounded work without claiming sends."""
     batch = store.load_active_price_batch(feed_id)
     if batch is not None and batch.status == "paused":
         record_price_health(
@@ -203,22 +211,21 @@ def prepare_price_delivery(
         if not pending:
             store.complete_price_change_batch_if_drained(batch.batch_id)
             return PriceDeliveryPlan(batch_id=batch.batch_id)
-        selected: list[str] = []
-        # Reserve only the current least-attempted tier. Advancing a claim
-        # removes it from this tier, so a batch cannot select an ID twice.
-        # The store's ceiling is cumulative, not a lifetime retry policy.
-        minimum_attempts = min(item.attempt_count for item in pending)
-        tier_count = sum(item.attempt_count == minimum_attempts for item in pending)
-        for _ in range(min(tier_count, MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN)):
-            item = store.begin_price_delivery_attempt(
-                batch.batch_id,
-                max_attempts=minimum_attempts + 1,
-            )
-            if item is None or item.product_id in selected:
-                pause_price_recovery(store, feed_id, "PriceAttemptSelectionUnavailable")
-                return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
-            selected.append(item.product_id)
-        return PriceDeliveryPlan(tuple(selected), batch.batch_id)
+        ordered = sorted(
+            pending,
+            key=lambda item: (
+                item.attempt_count,
+                item.last_attempt_at if item.last_attempt_at is not None else -1,
+                item.ordinal,
+            ),
+        )
+        return PriceDeliveryPlan(
+            tuple(
+                item.product_id
+                for item in ordered[:MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN]
+            ),
+            batch.batch_id,
+        )
     if len(changes) > MAX_UNAPPROVED_PRICE_CHANGES:
         store.record_price_change_candidate(
             feed_id=feed_id,
@@ -240,27 +247,27 @@ def prepare_price_delivery(
             len(changes),
         )
         return PriceDeliveryPlan(blocked=True)
-    return PriceDeliveryPlan(
-        tuple(
-            change.product_id
-            for change in changes[:MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN]
-        ),
+    selected = store.select_normal_price_deliveries(
+        feed_id=feed_id,
+        product_ids=tuple(change.product_id for change in changes),
+        limit=MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
+    )
+    return (
+        PriceDeliveryPlan(blocked=True)
+        if selected is None
+        else PriceDeliveryPlan(selected)
     )
 
 
 def persist_price_delivery(
     store: PriceRecoveryStore,
-    plan: PriceDeliveryPlan,
+    claim: PriceDeliveryClaim | None,
     snapshot: PriceSnapshot,
 ) -> None:
-    if plan.batch_id is None:
+    if claim is None:
         store.upsert_price_snapshot(snapshot)
     else:
-        store.record_approved_price_delivery(
-            plan.batch_id,
-            snapshot.product_id,
-            snapshot,
-        )
+        store.record_approved_price_delivery(claim, snapshot)
 
 
 def finish_price_delivery(
@@ -296,7 +303,7 @@ class DeliverablePriceChange(Protocol):
 
 class PriceChangeDeliveryDependencies(Protocol):
     @property
-    def snapshots(self) -> PriceSnapshotStore: ...
+    def snapshots(self) -> PriceRecoveryStore: ...
 
     @property
     def sender(self) -> DiscordSender: ...
@@ -333,8 +340,10 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
     dependencies: PriceChangeDeliveryDependencies,
     message_for: Callable[[PriceChangeT], WebhookMessage],
     *,
-    on_delivered: Callable[[PriceSnapshot], None] | None = None,
+    plan: PriceDeliveryPlan,
 ) -> None:
+    if plan.blocked:
+        return
     delay_before_next = False
     for change in islice(changes, MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN):
         if dependencies.delivery.is_shutdown_requested():
@@ -350,15 +359,42 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         delay_before_next = False
         if dependencies.delivery.is_shutdown_requested():
             return
-        result = dependencies.sender.send(
-            message_for(change),
-            dependencies.delivery.sleep,
-        )
+        message = message_for(change)
+        if dependencies.delivery.is_shutdown_requested():
+            return
+        claim = None
+        if plan.batch_id is not None:
+            claim = dependencies.sqlite_retry_policy.execute(
+                partial(
+                    dependencies.snapshots.claim_price_delivery_attempt,
+                    plan.batch_id,
+                    change.current.product_id,
+                ),
+            )
+            if claim is None:
+                return
+        try:
+            result = dependencies.sender.send(message, dependencies.delivery.sleep)
+        except BaseException:
+            if claim is not None:
+                dependencies.sqlite_retry_policy.execute(
+                    partial(
+                        dependencies.snapshots.release_price_delivery_attempt,
+                        claim,
+                    ),
+                )
+            raise
+        if result is not DiscordDeliveryResult.DELIVERED and claim is not None:
+            dependencies.sqlite_retry_policy.execute(
+                partial(dependencies.snapshots.release_price_delivery_attempt, claim),
+            )
         match result:
             case DiscordDeliveryResult.DELIVERED:
                 dependencies.sqlite_retry_policy.execute(
                     partial(
-                        on_delivered or dependencies.snapshots.upsert_price_snapshot,
+                        persist_price_delivery,
+                        dependencies.snapshots,
+                        claim,
                         change.current,
                     ),
                 )

@@ -127,7 +127,9 @@ def test_scan_refreshes_formatting_without_an_alert(tmp_path: Path) -> None:
         assert snapshots_by_product(store)["1"].formatted == "100.00 ден."
 
 
-def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None:
+def test_scan_renders_price_changes_in_persistent_cursor_id_order(
+    tmp_path: Path,
+) -> None:
     # Given
     decrease_before = make_product(30, amount="100", formatted="100 den")
     increase_before = make_product(10, amount="100", formatted="100 den")
@@ -156,14 +158,14 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
 
         # Then
         assert [message.entry.title for message in sender.messages] == [
-            "Product 30",
             "Product 10",
             "Product 20",
+            "Product 30",
         ]
         assert [message.entry.price_direction for message in sender.messages] == [
+            PriceDirection.INCREASE,
+            PriceDirection.INCREASE,
             PriceDirection.DECREASE,
-            PriceDirection.INCREASE,
-            PriceDirection.INCREASE,
         ]
         assert [message.entry.description for message in sender.messages] == [
             "",
@@ -173,9 +175,9 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
         # The deleted sentence used to carry both prices, so every alert must
         # still expose its own headline price and exactly one prior price.
         assert [message.entry.source_metrics[0] for message in sender.messages] == [
-            SourceMetric(label="Price", value="90 den"),
             SourceMetric(label="Price", value="110 den"),
             SourceMetric(label="Price", value="120 den"),
+            SourceMetric(label="Price", value="90 den"),
         ]
         assert [
             [
@@ -189,7 +191,7 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
             [SourceMetric(label="Previous", value="100 den", prior=True)],
             [SourceMetric(label="Previous", value="100 den", prior=True)],
         ]
-        assert sender.messages[0].entry.source_metrics == (
+        assert sender.messages[2].entry.source_metrics == (
             SourceMetric(label="Price", value="90 den"),
             SourceMetric(label="Previous", value="100 den", prior=True),
             SourceMetric(label="Original", value="150 den"),
