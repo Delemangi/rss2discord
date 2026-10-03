@@ -18,7 +18,7 @@ def enforce_delivery_limits(
         entry_id
         for entry in entries
         if (entry_id := strategy.get_entry_id(entry)) is not None
-        and not store.has_delivered(feed_id, entry_id)
+        and not store.has_handled_entry(feed_id, entry_id)
     }
     if new_entry_limit is not None and len(new_entry_ids) > new_entry_limit:
         raise FeedFetchError("Feed", "NewEntryLimitExceeded")

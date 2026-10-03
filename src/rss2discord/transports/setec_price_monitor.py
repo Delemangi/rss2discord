@@ -14,7 +14,9 @@ from rss2discord.discord.client import (
     DiscordSender,
     WebhookMessage,
 )
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -22,8 +24,15 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceDeliveryPlan,
+    PriceRecoveryStore,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    pause_price_recovery,
+    persist_price_delivery,
+    prepare_price_delivery,
     price_direction,
+    record_price_health,
 )
 from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
 from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
@@ -58,7 +67,7 @@ class SetecPriceMonitorDependencies:
     """Typed collaborators used by one Setec price-monitor scan."""
 
     catalog: SetecCatalog
-    snapshots: PriceSnapshotStore
+    snapshots: PriceRecoveryStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -92,6 +101,17 @@ class SetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         """Compare prices, persist silent updates, then alert on changed products."""
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -111,11 +131,13 @@ class SetecPriceMonitor:
         }
         silent_updates: list[PriceSnapshot] = []
         pending_changes: list[_PendingChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
 
         for entry in price_entries:
             current = self._snapshot(entry)
             if current is None:
                 continue
+            current_snapshots[entry.id] = current
             previous = snapshots_by_product.get(entry.id)
             if previous is None:
                 silent_updates.append(current)
@@ -141,17 +163,74 @@ class SetecPriceMonitor:
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=snapshot_store,
+                feed_id=self._feed.id,
+                provider="setec",
+                changes=tuple(
+                    PriceChangeRecord(p.product_id, p.previous, p.current)
+                    for p in pending_changes
+                ),
+                current=current_snapshots,
+                persisted=snapshots_by_product,
+                catalog_count=len(price_entries),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: snapshot_store.upsert_price_snapshots(silent_updates),
             )
 
-        if not pending_changes:
+        if not plan.selected_ids:
+            if ambiguous_count:
+                record_price_health(
+                    snapshot_store,
+                    self._feed.id,
+                    "failed",
+                    "PriceConfirmationDeferred",
+                    len(current_snapshots),
+                )
+                return
+            finish_price_delivery(
+                snapshot_store,
+                self._feed.id,
+                plan,
+                len(current_snapshots),
+            )
             return
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        changes = self._resolve_changes(pending_changes)
-        self._deliver(changes)
+        by_id = {pending.product_id: pending for pending in pending_changes}
+        changes = self._resolve_changes(
+            [by_id[product_id] for product_id in plan.selected_ids],
+        )
+        unconfirmed = len(changes) != len(plan.selected_ids)
+        if unconfirmed and plan.batch_id is not None:
+            pause_price_recovery(
+                snapshot_store,
+                self._feed.id,
+                "PriceConfirmationMismatch",
+            )
+            return
+        self._deliver(changes, plan)
+        if unconfirmed or ambiguous_count:
+            record_price_health(
+                snapshot_store,
+                self._feed.id,
+                "failed",
+                "PriceConfirmationDeferred",
+                len(current_snapshots),
+            )
+        else:
+            finish_price_delivery(
+                snapshot_store,
+                self._feed.id,
+                plan,
+                len(current_snapshots),
+            )
 
     def _resolve_changes(
         self,
@@ -188,7 +267,11 @@ class SetecPriceMonitor:
             )
         return changes
 
-    def _deliver(self, changes: Sequence[_PriceChange]) -> None:
+    def _deliver(
+        self,
+        changes: Sequence[_PriceChange],
+        plan: PriceDeliveryPlan,
+    ) -> None:
         delay_before_next_attempt = False
         for change in changes:
             if self._dependencies.delivery.is_shutdown_requested():
@@ -210,7 +293,7 @@ class SetecPriceMonitor:
             )
             match delivery_result:
                 case DiscordDeliveryResult.DELIVERED:
-                    self._persist_changed_snapshot(change.current)
+                    self._persist_changed_snapshot(change.current, plan)
                     delay_before_next_attempt = True
                 case DiscordDeliveryResult.FAILED:
                     if self._dependencies.delivery.is_shutdown_requested():
@@ -232,9 +315,17 @@ class SetecPriceMonitor:
             currency="MKD",
         )
 
-    def _persist_changed_snapshot(self, snapshot: PriceSnapshot) -> None:
+    def _persist_changed_snapshot(
+        self,
+        snapshot: PriceSnapshot,
+        plan: PriceDeliveryPlan,
+    ) -> None:
         self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.upsert_price_snapshot(snapshot),
+            lambda: persist_price_delivery(
+                self._dependencies.snapshots,
+                plan,
+                snapshot,
+            ),
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

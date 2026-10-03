@@ -88,9 +88,9 @@ def test_runtime_wires_gjirafa50_monitor_shutdown(tmp_path: Path) -> None:
             gjirafa50_monitor_factory=monitor_factory,
         )
 
-    jobs[0].run()
-    assert jobs[0].close is not None
-    jobs[0].close()
+        jobs[0].run()
+        assert jobs[0].close is not None
+        jobs[0].close()
 
     assert events == ["scan", "close"]
 

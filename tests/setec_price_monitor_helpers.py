@@ -12,7 +12,7 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
 from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 from rss2discord.transports.setec_price_monitor import (
     SetecCatalog,
@@ -264,7 +264,7 @@ def is_not_shutdown() -> bool:
 def make_monitor(
     feed: FeedConfig,
     catalog: SetecCatalog,
-    snapshots: PriceSnapshotStore,
+    snapshots: PriceRecoveryStore,
     sender: DiscordSender,
     *,
     sleep: SleepCallback = keep_running,

@@ -10,6 +10,7 @@ from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -21,8 +22,12 @@ from rss2discord.transports.neptun_http import NEPTUN_LABEL
 from rss2discord.transports.neptun_models import NeptunProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
     deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    persist_price_delivery,
+    prepare_price_delivery,
     prepare_price_scan,
     price_direction,
 )
@@ -41,7 +46,7 @@ class NeptunCatalog(Protocol):
     ) -> tuple[NeptunProduct, ...]: ...
 
 
-class NeptunPriceSnapshotStore(PriceSnapshotStore, Protocol):
+class NeptunPriceSnapshotStore(PriceRecoveryStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -79,6 +84,17 @@ class NeptunPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         products, persisted = prepare_price_scan(
             fetch_products=partial(
                 self._dependencies.catalog.fetch_catalog,
@@ -101,12 +117,14 @@ class NeptunPriceMonitor:
         by_product = {snapshot.product_id: snapshot for snapshot in persisted}
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
         positive_product_ids: set[str] = set()
         for product in products:
             current = self._snapshot(product)
             if current is None:
                 continue
             positive_product_ids.add(current.product_id)
+            current_snapshots[current.product_id] = current
             previous = by_product.get(current.product_id)
             if previous is None:
                 silent_updates.append(current)
@@ -119,20 +137,39 @@ class NeptunPriceMonitor:
                 silent_updates.append(current)
         if len(set(by_product) | positive_product_ids) > MAX_NEPTUN_RETAINED_SNAPSHOTS:
             raise FeedFetchError(NEPTUN_LABEL, "SnapshotLimitExceeded")
-        if len(changes) > MAX_NEPTUN_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(NEPTUN_LABEL, "PriceChangeLimitExceeded")
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
+        store = self._dependencies.snapshots
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider="neptun",
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
+                ),
+                current=current_snapshots,
+                persisted=by_product,
+                catalog_count=len(products),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(
                     silent_updates,
                 ),
             )
-        self._deliver_changes(changes)
-
-    def _deliver_changes(self, changes: list[_PriceChange]) -> None:
-        deliver_price_changes(changes, self._dependencies, self._message_for)
+        by_id = {change.current.product_id: change for change in changes}
+        deliver_price_changes(
+            (by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            on_delivered=partial(persist_price_delivery, store, plan),
+        )
+        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: NeptunProduct) -> PriceSnapshot | None:
         if product.actual_price <= 0:

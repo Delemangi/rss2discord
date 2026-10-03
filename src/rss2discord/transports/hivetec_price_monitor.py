@@ -2,14 +2,16 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol, assert_never
+from functools import partial
+from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordDeliveryResult, DiscordSender
+from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -20,12 +22,16 @@ from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL
 from rss2discord.transports.hivetec_models import HivetecProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
+    deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    persist_price_delivery,
+    prepare_price_delivery,
     price_direction,
 )
 
 MAX_HIVETEC_RETAINED_SNAPSHOTS: Final = 10_000
-MAX_HIVETEC_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
 class HivetecCatalog(Protocol):
@@ -38,7 +44,7 @@ class HivetecCatalog(Protocol):
     ) -> tuple[HivetecProduct, ...]: ...
 
 
-class HivetecSnapshotStore(PriceSnapshotStore, Protocol):
+class HivetecSnapshotStore(PriceRecoveryStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -74,7 +80,17 @@ class HivetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        """Snapshot baselines silently and deliver bounded price changes in order."""
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -82,81 +98,74 @@ class HivetecPriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
-        snapshots = self._dependencies.sqlite_retry_policy.execute(
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        persisted = self._dependencies.sqlite_retry_policy.execute(
             lambda: self._dependencies.snapshots.load_price_snapshots(
                 self._feed.id,
                 limit=MAX_HIVETEC_RETAINED_SNAPSHOTS + 1,
             ),
         )
-        if len(snapshots) > MAX_HIVETEC_RETAINED_SNAPSHOTS:
+        if len(persisted) > MAX_HIVETEC_RETAINED_SNAPSHOTS:
             raise FeedFetchError(HIVETEC_LABEL, "SnapshotLimitExceeded")
-        snapshots_by_product = {snapshot.product_id: snapshot for snapshot in snapshots}
-        available_products = tuple(
+        by_id = {snapshot.product_id: snapshot for snapshot in persisted}
+        if len({product.id for product in products}) != len(products):
+            raise FeedFetchError(HIVETEC_LABEL, "ConflictingProductIDs")
+        available = tuple(
             product for product in products if product.prices.current_amount > 0
         )
-        retained_ids = set(snapshots_by_product)
-        retained_ids.update(str(product.id) for product in available_products)
-        if len(retained_ids) > MAX_HIVETEC_RETAINED_SNAPSHOTS:
+        if (
+            len(set(by_id).union(str(product.id) for product in available))
+            > MAX_HIVETEC_RETAINED_SNAPSHOTS
+        ):
             raise FeedFetchError(HIVETEC_LABEL, "SnapshotLimitExceeded")
-        silent_updates: list[PriceSnapshot] = []
+        current_by_id: dict[str, PriceSnapshot] = {}
+        silent: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
-        for product in available_products:
+        for product in available:
             current = self._snapshot(product)
-            previous = snapshots_by_product.get(str(product.id))
+            current_by_id[current.product_id] = current
+            previous = by_id.get(current.product_id)
             if previous is None:
-                silent_updates.append(current)
+                silent.append(current)
             elif (
-                previous.amount == current.amount
-                and previous.currency == current.currency
+                previous.amount != current.amount
+                or previous.currency != current.currency
             ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-            else:
                 changes.append(_PriceChange(product, previous, current))
-        if len(changes) > MAX_HIVETEC_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(HIVETEC_LABEL, "PriceChangeLimitExceeded")
+            elif previous.formatted != current.formatted:
+                silent.append(current)
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
+        store = self._dependencies.snapshots
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider=HIVETEC_LABEL,
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
                 ),
-            )
-        self._deliver_changes(changes)
-
-    def _deliver_changes(self, changes: list[_PriceChange]) -> None:
-        delay_before_next_attempt = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay_before_next_attempt
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            result = self._dependencies.sender.send(
-                self._message_for(change),
-                self._dependencies.delivery.sleep,
-            )
-            match result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._persist_changed_snapshot(change.current)
-                    delay_before_next_attempt = True
-                case DiscordDeliveryResult.FAILED:
-                    delay_before_next_attempt = False
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case unreachable:
-                    assert_never(unreachable)
-
-    def _persist_changed_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.upsert_price_snapshot(snapshot),
+                current=current_by_id,
+                persisted=by_id,
+                catalog_count=len(products),
+            ),
         )
+        if plan.blocked:
+            return
+        if silent and plan.allow_silent_updates:
+            self._dependencies.sqlite_retry_policy.execute(
+                lambda: store.upsert_price_snapshots(silent),
+            )
+        changes_by_id = {change.current.product_id: change for change in changes}
+        deliver_price_changes(
+            (changes_by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            on_delivered=partial(persist_price_delivery, store, plan),
+        )
+        finish_price_delivery(store, self._feed.id, plan, len(current_by_id))
 
     def _snapshot(self, product: HivetecProduct) -> PriceSnapshot:
         return PriceSnapshot(

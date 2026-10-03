@@ -14,6 +14,7 @@ from rss2discord.transports.cccenter_models import CCCenterProduct
 
 @final
 class CCCenterStrategy(ScraperStrategy):
+    allow_missing_timestamp_after_complete_baseline = True
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = True
     max_new_entries_per_fetch = 2_000

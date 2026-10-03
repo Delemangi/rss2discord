@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 rss2discord = "rss2discord.main:main"
+rss2discord-admin = "rss2discord.admin:main"
 
 [build-system]
 requires = ["uv_build>=0.12.14,<0.13"]

@@ -87,12 +87,15 @@ def test_hivetec_price_monitor_baselines_then_delivers_price_change(
 ) -> None:
     # Given
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
-    catalog = CatalogStub([(product(1, "149900"),), (product(1, "129900"),)])
+    catalog = CatalogStub(
+        [(product(1, "149900"),), (product(1, "129900"),), (product(1, "129900"),)],
+    )
 
     with DeliveryStore(tmp_path / "state.db") as store:
         price_monitor = monitor(catalog, store, sender)
 
         # When
+        price_monitor.scan()
         price_monitor.scan()
         price_monitor.scan()
 
@@ -125,9 +128,7 @@ def test_hivetec_price_monitor_retries_failed_delivery_without_advancing_snapsho
     tmp_path: Path,
 ) -> None:
     # Given
-    sender = RecordingSender(
-        [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
-    )
+    sender = RecordingSender([DiscordDeliveryResult.FAILED] * 2)
     changed = (product(1, "129900"),)
     catalog = CatalogStub([(product(1, "149900"),), changed, changed])
 
@@ -137,23 +138,20 @@ def test_hivetec_price_monitor_retries_failed_delivery_without_advancing_snapsho
         # When
         price_monitor.scan()
         price_monitor.scan()
-        amount_after_failure = store.load_price_snapshots("hivetec")[0].amount
         price_monitor.scan()
+        amount_after_failure = store.load_price_snapshots("hivetec")[0].amount
 
         # Then
         assert str(amount_after_failure) == "1499"
-        assert str(store.load_price_snapshots("hivetec")[0].amount) == "1299"
         assert len(sender.messages) == 2
 
 
 def test_hivetec_price_monitor_rejects_change_limit_without_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    monkeypatch.setattr(hivetec_price_monitor, "MAX_HIVETEC_PRICE_CHANGES_PER_SCAN", 1)
-    baseline = (product(1, "149900"), product(2, "249900", "299900"))
-    changed = (product(1, "129900"), product(2, "229900", "299900"))
+    baseline = tuple(product(i, "149900") for i in range(1, 102))
+    changed = tuple(product(i, "129900") for i in range(1, 102))
 
     with DeliveryStore(tmp_path / "state.db") as store:
         price_monitor = monitor(
@@ -164,13 +162,13 @@ def test_hivetec_price_monitor_rejects_change_limit_without_mutation(
         price_monitor.scan()
 
         # When / Then
-        with pytest.raises(FeedFetchError, match="PriceChangeLimitExceeded"):
-            price_monitor.scan()
+        price_monitor.scan()
+
+        assert store.list_price_change_batches("hivetec")[0].status == "candidate"
         assert {
             str(snapshot.amount) for snapshot in store.load_price_snapshots("hivetec")
         } == {
             "1499",
-            "2499",
         }
 
 

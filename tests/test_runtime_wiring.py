@@ -199,8 +199,18 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
         assert built_config is config
         assert dependencies.delay_between_posts == config.delay_between_posts
         return (
-            ScheduledJob(5, lambda: events.append(("price-first", clock.now))),
-            ScheduledJob(7, lambda: events.append(("price-second", clock.now))),
+            ScheduledJob(
+                "first",
+                "price",
+                5,
+                lambda: events.append(("price-first", clock.now)),
+            ),
+            ScheduledJob(
+                "second",
+                "price",
+                7,
+                lambda: events.append(("price-second", clock.now)),
+            ),
         )
 
     with DeliveryStore(tmp_path / "state.db") as store:
@@ -210,8 +220,8 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
         monkeypatch.setattr(app, "_interruptible_sleep", clock.sleep)
         monkeypatch.setattr(
             app,
-            "_run_feed_cycle",
-            lambda: events.append(("ordinary", clock.now)),
+            "_process_feed_safely",
+            lambda feed: events.append((feed.id, clock.now)),
         )
 
         # When
@@ -220,11 +230,17 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
     # Then
     assert events == [
         ("ordinary", 0),
+        ("first", 0),
+        ("second", 0),
         ("price-first", 0),
         ("price-second", 0),
         ("ordinary", 3),
+        ("first", 3),
+        ("second", 3),
         ("price-first", 5),
         ("ordinary", 6),
+        ("first", 6),
+        ("second", 6),
         ("price-second", 7),
     ]
     assert clock.sleep_calls == [3, 2, 1, 1, 2]
@@ -252,12 +268,16 @@ def test_run_stops_after_scheduler_sleep_is_interrupted(
         dependencies: PriceJobDependencies,
     ) -> tuple[ScheduledJob, ...]:
         del built_config, dependencies
-        return (ScheduledJob(5, lambda: events.append("price")),)
+        return (ScheduledJob("ordinary", "price", 5, lambda: events.append("price")),)
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=FakeSender([]))
         monkeypatch.setattr("rss2discord.app.build_price_jobs", fake_price_jobs)
-        monkeypatch.setattr(app, "_run_feed_cycle", lambda: events.append("ordinary"))
+        monkeypatch.setattr(
+            app,
+            "_process_feed_safely",
+            lambda feed: events.append("ordinary"),
+        )
 
         def interrupt_scheduler_sleep(_seconds: float) -> bool:
             app.request_shutdown()

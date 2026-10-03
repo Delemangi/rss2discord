@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
 from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
@@ -32,6 +34,7 @@ from .price_monitor_builders import (
     TechnomarketPriceMonitorFactory,
     build_provider_price_monitor,
 )
+from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -112,6 +115,7 @@ def build_price_jobs(
             dependencies,
             retry_sleep,
             pazar3_pacer,
+            _cooldown_peer_ids(feed, config.feeds),
         )
         monitor = build_provider_price_monitor(feed, shared_dependencies, factories)
         if monitor is None:
@@ -119,8 +123,16 @@ def build_price_jobs(
         close = monitor.close if isinstance(monitor, _ClosablePriceMonitor) else None
         jobs.append(
             ScheduledJob(
+                feed.id,
+                "price",
                 interval,
-                partial(_scan_price_monitor, monitor, feed.id),
+                partial(
+                    _scan_price_monitor,
+                    monitor,
+                    feed,
+                    config.feeds,
+                    dependencies.store,
+                ),
                 close,
             ),
         )
@@ -132,6 +144,7 @@ def _shared_monitor_dependencies(
     dependencies: PriceJobDependencies,
     retry_sleep: _RetrySleepAdapter,
     pazar3_pacer: Pazar3RequestPacer,
+    cooldown_peer_feed_ids: tuple[str, ...],
 ) -> SharedPriceMonitorDependencies:
     return SharedPriceMonitorDependencies(
         snapshots=dependencies.store,
@@ -150,37 +163,155 @@ def _shared_monitor_dependencies(
             is_shutdown_requested=dependencies.is_shutdown_requested,
         ),
         pazar3_pacer=pazar3_pacer,
+        cooldown_peer_feed_ids=cooldown_peer_feed_ids,
     )
 
 
-def _scan_price_monitor(monitor: PriceMonitor, feed_id: str) -> None:
+def _scan_price_monitor(
+    monitor: PriceMonitor,
+    feed: FeedConfig,
+    feeds: tuple[FeedConfig, ...],
+    store: DeliveryStore,
+) -> None:
+    attempted_at = int(time.time())
+    started_at = time.monotonic()
     try:
+        if feed_is_blocked(feed, feeds, store, attempted_at):
+            return
         monitor.scan()
     except FeedFetchInterruptedError:
         return
     except SQLiteRetryInterruptedError:
         return
-    except FeedFetchError as error:
-        logger.exception(
-            "Price scan failed for feed %s (%s)",
-            feed_id,
-            error.cause_type,
-        )
-    except sqlite3.Error as error:
-        logger.exception(
-            "Price scan persistence failed for feed %s (%s)",
-            feed_id,
-            type(error).__name__,
-        )
     except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK
-        logger.exception(
-            "Unexpected price scan failure for feed %s (%s)",
-            feed_id,
-            type(error).__name__,
-            exc_info=RuntimeError(type(error).__name__).with_traceback(
-                error.__traceback__,
-            ),
+        record_fetch_failure(
+            store,
+            feed.id,
+            "price",
+            error,
+            attempted_at,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
+    # A successful return may mean quarantine, a background scan, or no work.
+    # Adapters own successful/domain health; scheduler timing is recorded
+    # separately and must never clear a quarantined or recovery-required state.
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    try:
+        parts = urlsplit(url)
+        origin = (
+            parts.scheme,
+            parts.hostname,
+            parts.port or (443 if parts.scheme == "https" else 80),
+        )
+    except ValueError:
+        return None
+    return origin
+
+
+def feed_is_blocked(
+    feed: FeedConfig,
+    feeds: tuple[FeedConfig, ...],
+    store: DeliveryStore,
+    now: int,
+) -> bool:
+    """Persisted feed cooldowns also cover configured peers on the same origin."""
+    return any(
+        (store.get_blocked_until(feed_id) or 0) > now
+        for feed_id in _cooldown_peer_ids(feed, feeds)
+    )
+
+
+def _cooldown_peer_ids(
+    feed: FeedConfig,
+    feeds: tuple[FeedConfig, ...],
+) -> tuple[str, ...]:
+    origin = _origin(feed.url)
+    # Bounded by the configured feeds; only IDs cross into worker dependencies.
+    return tuple(
+        dict.fromkeys(
+            (
+                feed.id,
+                *(
+                    peer.id
+                    for peer in feeds
+                    if origin is not None and _origin(peer.url) == origin
+                ),
+            ),
+        ),
+    )
+
+
+def record_runtime_health(store: DeliveryStore, update: HealthUpdate) -> None:
+    """Only transitions/reminders log; diagnostic payloads contain no URLs."""
+    try:
+        notice = store.record_health(update, reminder_seconds=21600)
+    except sqlite3.Error as error:
+        logger.log(
+            logging.ERROR,
+            "Health persistence failed for feed %s (%s)",
+            update.feed_id,
+            type(error).__name__,
+        )
+        return
+    if notice.should_log:
+        level = logging.ERROR if update.state in {"failed", "blocked"} else logging.INFO
+        logger.log(
+            level,
+            "Feed %s %s health=%s cause=%s recovered=%s",
+            update.feed_id,
+            update.job_kind,
+            update.state,
+            update.cause,
+            notice.recovered,
+        )
+
+
+def record_fetch_failure(
+    store: DeliveryStore,
+    feed_id: str,
+    job_kind: Literal["ordinary", "price"],
+    error: Exception,
+    attempted_at: int,
+    *,
+    duration_ms: int,
+) -> None:
+    cause = safe_error_cause(error)
+    blocked = isinstance(error, FeedFetchError) and (
+        error.cause_type in {"BotChallenge", "AccessChallenge"}
+        or error.status_code == 403
+    )
+    record_runtime_health(
+        store,
+        HealthUpdate(
+            feed_id=feed_id,
+            job_kind=job_kind,
+            state="blocked" if blocked else "failed",
+            cause=cause,
+            attempted_at=attempted_at,
+            success=False,
+            nonempty=False,
+            item_count=0,
+            duration_ms=duration_ms,
+            scheduler_lag_ms=0,
+        ),
+    )
+
+
+def safe_error_cause(error: Exception) -> str:
+    cause = (
+        error.cause_type if isinstance(error, FeedFetchError) else type(error).__name__
+    )
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", cause):
+        return "FetchError"
+    if (
+        isinstance(error, FeedFetchError)
+        and isinstance(error.status_code, int)
+        and 100 <= error.status_code <= 599
+    ):
+        return f"{cause} HTTP {error.status_code}"
+    return cause
 
 
 def _log_fetch_retry(feed_id: str, error: FeedFetchError, delay: float) -> None:
@@ -188,7 +319,7 @@ def _log_fetch_retry(feed_id: str, error: FeedFetchError, delay: float) -> None:
         "Price scan fetch retry for feed %s in %.1f seconds (%s)",
         feed_id,
         delay,
-        error.cause_type,
+        safe_error_cause(error),
     )
 
 

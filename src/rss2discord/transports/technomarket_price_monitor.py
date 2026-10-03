@@ -11,14 +11,20 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
+    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
     deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    persist_price_delivery,
+    prepare_price_delivery,
     prepare_price_scan,
     price_direction,
 )
@@ -27,7 +33,6 @@ from rss2discord.transports.technomarket import (
     format_technomarket_mkd,
 )
 from rss2discord.transports.technomarket_bounds import (
-    MAX_TECHNOMARKET_PRICE_CHANGES_PER_SCAN,
     MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
     TECHNOMARKET_LABEL,
 )
@@ -44,7 +49,7 @@ class TechnomarketCatalog(Protocol):
     ) -> tuple[TechnomarketProduct, ...]: ...
 
 
-class TechnomarketSnapshotStore(PriceSnapshotStore, Protocol):
+class TechnomarketSnapshotStore(PriceRecoveryStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -82,6 +87,17 @@ class TechnomarketPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         products, persisted = prepare_price_scan(
             fetch_products=partial(
                 self._dependencies.catalog.fetch_catalog,
@@ -104,12 +120,14 @@ class TechnomarketPriceMonitor:
         by_id = {snapshot.product_id: snapshot for snapshot in persisted}
         silent: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
         available_ids: set[str] = set()
         for product in products:
             current = self._snapshot(product)
             if current is None:
                 continue
             available_ids.add(current.product_id)
+            current_snapshots[current.product_id] = current
             previous = by_id.get(current.product_id)
             if previous is None:
                 silent.append(current)
@@ -122,13 +140,37 @@ class TechnomarketPriceMonitor:
                 silent.append(current)
         if len(set(by_id) | available_ids) > MAX_TECHNOMARKET_RETAINED_SNAPSHOTS:
             raise FeedFetchError(TECHNOMARKET_LABEL, "SnapshotLimitExceeded")
-        if len(changes) > MAX_TECHNOMARKET_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "PriceChangeLimitExceeded")
-        if silent:
+        store = self._dependencies.snapshots
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider="technomarket",
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
+                ),
+                current=current_snapshots,
+                persisted=by_id,
+                catalog_count=len(products),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        deliver_price_changes(changes, self._dependencies, self._message_for)
+        changes_by_id = {change.current.product_id: change for change in changes}
+        deliver_price_changes(
+            (changes_by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            on_delivered=partial(persist_price_delivery, store, plan),
+        )
+        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: TechnomarketProduct) -> PriceSnapshot | None:
         amount = product.effective_price

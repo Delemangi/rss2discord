@@ -11,6 +11,7 @@ from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -23,8 +24,12 @@ from rss2discord.transports.gjirafa50_models import Gjirafa50Product
 from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
     deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    persist_price_delivery,
+    prepare_price_delivery,
     prepare_price_scan,
     price_direction,
 )
@@ -43,7 +48,7 @@ class Gjirafa50Catalog(Protocol):
     ) -> tuple[Gjirafa50Product, ...]: ...
 
 
-class Gjirafa50PriceSnapshotStore(PriceSnapshotStore, Protocol):
+class Gjirafa50PriceSnapshotStore(PriceRecoveryStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -61,6 +66,7 @@ class Gjirafa50PriceMonitorDependencies:
     sqlite_retry_policy: SQLiteRetryPolicy
     delivery: PriceAlertDelivery
     database_path: Path
+    cooldown_peer_feed_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +86,17 @@ class Gjirafa50PriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         products, persisted = prepare_price_scan(
             fetch_products=partial(
                 self._dependencies.catalog.fetch_catalog,
@@ -102,6 +119,7 @@ class Gjirafa50PriceMonitor:
         by_product = {snapshot.product_id: snapshot for snapshot in persisted}
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
         current_ids: set[str] = set()
         for product in products:
             if product.price <= 0:
@@ -114,6 +132,7 @@ class Gjirafa50PriceMonitor:
                 product.currency,
             )
             current_ids.add(current.product_id)
+            current_snapshots[current.product_id] = current
             previous = by_product.get(current.product_id)
             if previous is None:
                 silent_updates.append(current)
@@ -126,17 +145,39 @@ class Gjirafa50PriceMonitor:
                 silent_updates.append(current)
         if len(set(by_product) | current_ids) > MAX_GJIRAFA50_RETAINED_SNAPSHOTS:
             raise FeedFetchError(GJIRAFA50_LABEL, "SnapshotLimitExceeded")
-        if len(changes) > MAX_GJIRAFA50_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(GJIRAFA50_LABEL, "PriceChangeLimitExceeded")
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
+        store = self._dependencies.snapshots
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider="gjirafa50",
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
+                ),
+                current=current_snapshots,
+                persisted=by_product,
+                catalog_count=len(products),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(
                     silent_updates,
                 ),
             )
-        deliver_price_changes(changes, self._dependencies, self._message_for)
+        by_id = {change.current.product_id: change for change in changes}
+        deliver_price_changes(
+            (by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            on_delivered=partial(persist_price_delivery, store, plan),
+        )
+        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
         return WebhookMessage(

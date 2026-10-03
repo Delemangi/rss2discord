@@ -78,7 +78,7 @@ def monitor(
     )
 
 
-def test_pazar3_price_monitor_baselines_then_delivers_currency_change(
+def test_pazar3_price_monitor_rejects_currency_change(
     tmp_path: Path,
 ) -> None:
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
@@ -94,17 +94,11 @@ def test_pazar3_price_monitor_baselines_then_delivers_currency_change(
         price_monitor.scan()
         assert sender.messages == []
 
-        price_monitor.scan()
-
-        entry = sender.messages[0].entry
-        assert entry.description == ""
-        assert entry.price_direction is None
-        assert entry.source_metrics[:2] == (
-            SourceMetric("Price", "20 ЕУР"),
-            SourceMetric("Previous", "1.200 МКД", prior=True),
-        )
+        with pytest.raises(FeedFetchError, match="CurrencyChanged"):
+            price_monitor.scan()
+        assert sender.messages == []
         assert store.load_price_snapshots("pazar3") == (
-            PriceSnapshot("pazar3", "1", Decimal(20), "20 ЕУР", "EUR"),
+            PriceSnapshot("pazar3", "1", Decimal(1200), "1.200 МКД", "MKD"),
         )
 
 
@@ -183,15 +177,9 @@ def test_pazar3_price_monitor_retries_failed_delivery_without_advancing_snapshot
 
 def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        pazar3_price_monitor,
-        "MAX_PAZAR3_PRICE_CHANGES_PER_SCAN",
-        1,
-    )
-    baseline = (priced("1", "100 МКД"), priced("2", "200 EUR"))
-    changed = (priced("1", "90 МКД"), priced("2", "190 EUR"))
+    baseline = tuple(priced(str(i), "100 МКД") for i in range(101))
+    changed = tuple(priced(str(i), "90 МКД") for i in range(101))
 
     with DeliveryStore(tmp_path / "state.db") as store:
         price_monitor = monitor(
@@ -201,15 +189,12 @@ def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
         )
         price_monitor.scan()
 
-        with pytest.raises(FeedFetchError) as fetch_error:
-            price_monitor.scan()
-
-        assert fetch_error.value.cause_type == "PriceChangeLimitExceeded"
+        price_monitor.scan()
+        assert len(store.list_price_change_batches(feed_id="pazar3")) == 1
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("pazar3")
         } == {
             Decimal(100),
-            Decimal(200),
         }
 
 

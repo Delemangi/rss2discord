@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -14,7 +14,7 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.cccenter_models import CCCenterProduct
+from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
 from rss2discord.transports.cccenter_price_monitor import (
     CCCenterPriceMonitor,
     CCCenterPriceMonitorDependencies,
@@ -26,6 +26,7 @@ from tests.setec_price_monitor_helpers import RecordingSender
 class CatalogStub:
     def __init__(self, batches: list[tuple[CCCenterProduct, ...]]) -> None:
         self._batches = batches
+        self._current: tuple[CCCenterProduct, ...] = ()
 
     def fetch_catalog(
         self,
@@ -35,7 +36,18 @@ class CatalogStub:
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[CCCenterProduct, ...]:
         del url, retry_policy, is_shutdown_requested
-        return self._batches.pop(0)
+        self._current = self._batches.pop(0)
+        return self._current
+
+    def fetch_product_details(
+        self,
+        listings: Sequence[CCCenterListing | CCCenterProduct],
+        *,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[CCCenterProduct, ...]:
+        del is_shutdown_requested
+        by_id = {product.product_id: product for product in self._current}
+        return tuple(by_id[listing.product_id] for listing in listings)
 
 
 class ShutdownAfterFetchCatalog(CatalogStub):
@@ -59,8 +71,9 @@ class ShutdownAfterFetchCatalog(CatalogStub):
         return products
 
 
-class SnapshotStoreSpy:
+class SnapshotStoreSpy(DeliveryStore):
     def __init__(self) -> None:
+        super().__init__(Path(":memory:"))
         self.load_calls = 0
         self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
 

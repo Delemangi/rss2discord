@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from html import unescape
@@ -43,6 +43,7 @@ from rss2discord.transports.cccenter_models import (
 
 __all__ = [
     "CCCENTER_FEED_URL",
+    "MAX_CCCENTER_DETAIL_PRODUCTS",
     "CCCenterCatalogClient",
     "parse_mkd_price",
     "parse_product_detail",
@@ -55,6 +56,7 @@ _PRICE_RE: Final = re.compile(
 )
 _CCCENTER_HOST: Final = "cccenter.mk"
 _HTML_PARSER: Final = "html.parser"
+MAX_CCCENTER_DETAIL_PRODUCTS: Final = 10
 
 
 @dataclass(slots=True)
@@ -563,12 +565,47 @@ class CCCenterCatalogClient:
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> CCCenterProduct:
         """Optional single-product enrichment, separate from catalog enumeration."""
-        url = _safe_product_url(listing.url)
-        if listing.product_id != url:
-            raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+        return self.fetch_product_details(
+            (listing,),
+            is_shutdown_requested=is_shutdown_requested,
+        )[0]
+
+    def fetch_product_details(
+        self,
+        listings: Sequence[CCCenterListing | CCCenterProduct],
+        *,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[CCCenterProduct, ...]:
+        """Fetch at most ten selected details under one aggregate scan budget.
+
+        Validate all source identities before any transfer; preserve input order
+        and return no partial batch on interruption or failure. There are no
+        internal retries or fresh per-product deadlines. Callers must still
+        compare scalar status, currency and price with the selected listing.
+        """
         budget = _ScanBudget.start(is_shutdown_requested)
-        html = self._fetch_html(url, budget=budget)
-        return parse_product_detail(BeautifulSoup(html, _HTML_PARSER), listing)
+        budget.before_chunk()
+        if len(listings) > MAX_CCCENTER_DETAIL_PRODUCTS:
+            raise FeedFetchError(CCCENTER_LABEL, "DetailProductLimitExceeded")
+        selected = tuple(listings)
+        urls: list[str] = []
+        for listing in selected:
+            budget.before_chunk()
+            url = _safe_product_url(listing.url)
+            if listing.product_id != url:
+                raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+            if url in urls:
+                raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
+            urls.append(url)
+        products: list[CCCenterProduct] = []
+        for listing, url in zip(selected, urls, strict=True):
+            budget.before_chunk()
+            html = self._fetch_html(url, budget=budget)
+            product = parse_product_detail(BeautifulSoup(html, _HTML_PARSER), listing)
+            budget.after_request()
+            products.append(product)
+        budget.after_request()
+        return tuple(products)
 
     def fetch_latest_products(
         self,

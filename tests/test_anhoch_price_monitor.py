@@ -134,7 +134,7 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
     currency_before = make_product(20, amount="100", formatted="100 den")
     decrease_after = make_product(30, amount="90", formatted="90 den")
     increase_after = make_product(10, amount="110", formatted="110 den")
-    currency_after = make_product(20, amount="100", formatted="$100", currency="USD")
+    currency_after = make_product(20, amount="120", formatted="120 den")
     sender = RecordingSender([True, True, True])
 
     with DeliveryStore(tmp_path / "state.db") as store:
@@ -163,7 +163,7 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
         assert [message.entry.price_direction for message in sender.messages] == [
             PriceDirection.DECREASE,
             PriceDirection.INCREASE,
-            None,
+            PriceDirection.INCREASE,
         ]
         assert [message.entry.description for message in sender.messages] == [
             "",
@@ -175,7 +175,7 @@ def test_scan_renders_price_changes_in_catalog_api_order(tmp_path: Path) -> None
         assert [message.entry.source_metrics[0] for message in sender.messages] == [
             SourceMetric(label="Price", value="90 den"),
             SourceMetric(label="Price", value="110 den"),
-            SourceMetric(label="Price", value="$100"),
+            SourceMetric(label="Price", value="120 den"),
         ]
         assert [
             [

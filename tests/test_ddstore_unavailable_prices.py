@@ -81,6 +81,7 @@ def test_ddstore_price_monitor_resumes_from_last_real_price(
             (make_product("1", amount=100),),
             (make_product("1", amount=0, regular_amount=0),),
             (make_product("1", amount=125),),
+            (make_product("1", amount=125),),
         ],
     )
 
@@ -88,6 +89,7 @@ def test_ddstore_price_monitor_resumes_from_last_real_price(
         monitor = make_monitor(make_feed(), catalog, store, sender)
 
         # When
+        monitor.scan()
         monitor.scan()
         monitor.scan()
         monitor.scan()

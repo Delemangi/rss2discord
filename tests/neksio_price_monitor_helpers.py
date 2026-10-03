@@ -17,7 +17,7 @@ from rss2discord.transports.neksio_price_monitor import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
 
 
 class CatalogStub:
@@ -118,7 +118,7 @@ def shutdown_never_requested() -> bool:
 def make_monitor(
     feed: FeedConfig,
     catalog: NeksioCatalog,
-    snapshots: PriceSnapshotStore,
+    snapshots: PriceRecoveryStore,
     sender: DiscordSender,
     *,
     sleep: SleepCallback = keep_running,

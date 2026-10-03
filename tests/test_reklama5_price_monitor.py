@@ -5,14 +5,11 @@ from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
-
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import EntryId, PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import FeedFetchError, reklama5_price_monitor
 from rss2discord.transports import reklama5 as reklama5_transport
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from rss2discord.transports.reklama5 import Reklama5Listing
@@ -192,27 +189,18 @@ def test_reklama5_price_monitor_parses_nonbreaking_thousands_separator(
 
 def test_reklama5_price_monitor_rejects_change_limit_without_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        reklama5_price_monitor,
-        "MAX_REKLAMA5_PRICE_CHANGES_PER_SCAN",
-        1,
-    )
-    baseline = (_listing("1", "100 ден."), _listing("2", "200 ден."))
-    changed = (_listing("1", "90 ден."), _listing("2", "190 ден."))
+    baseline = tuple(_listing(str(i), "100 ден.") for i in range(101))
+    changed = tuple(_listing(str(i), "90 ден.") for i in range(101))
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = _monitor(CatalogStub([baseline, changed]), store, RecordingSender([]))
         monitor.scan()
 
-        with pytest.raises(FeedFetchError) as fetch_error:
-            monitor.scan()
-
-        assert fetch_error.value.cause_type == "PriceChangeLimitExceeded"
+        monitor.scan()
+        assert len(store.list_price_change_batches(feed_id="reklama5")) == 1
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("reklama5")
         } == {
             Decimal(100),
-            Decimal(200),
         }
