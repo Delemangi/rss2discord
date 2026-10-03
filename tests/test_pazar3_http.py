@@ -45,6 +45,73 @@ def test_pazar3_http_fetches_public_html_with_explicit_headers(
     assert get.headers[0]["Accept"] == "text/html"
 
 
+@pytest.mark.parametrize("status_code", [200, 403])
+def test_pazar3_http_classifies_cf_challenge_from_header_only(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                b"<html><div id='challenge-platform'></div></html>",
+                status_code=status_code,
+                headers={"cf-mitigated": "challenge"},
+            ),
+        ],
+    )
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        fetch_with(monkeypatch, get)
+
+    assert fetch_error.value.cause_type == "AccessChallenge"
+    assert fetch_error.value.status_code == status_code
+    assert not fetch_error.value.retryable
+    assert "challenge-platform" not in str(fetch_error.value)
+
+
+def test_pazar3_http_does_not_classify_challenge_platform_html_without_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"<html><div id='challenge-platform'></div></html>"
+
+    fetched_content, waits = fetch_with(
+        monkeypatch,
+        RecordingGet([StubResponse(content)]),
+    )
+
+    assert fetched_content == content
+    assert waits == []
+
+
+def test_pazar3_http_keeps_ordinary_forbidden_response_as_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet([StubResponse(b"forbidden", status_code=403)])
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        fetch_with(monkeypatch, get)
+
+    assert fetch_error.value.cause_type == "HTTPError"
+    assert fetch_error.value.status_code == 403
+    assert not fetch_error.value.retryable
+
+
+def test_pazar3_http_preserves_retryable_server_error_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [StubResponse(b"busy", status_code=503, headers={"Retry-After": "2.5"})],
+    )
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        fetch_with(monkeypatch, get)
+
+    assert fetch_error.value.cause_type == "HTTPError"
+    assert fetch_error.value.status_code == 503
+    assert fetch_error.value.retryable
+    assert fetch_error.value.retry_after == 2.5
+
+
 def test_pazar3_http_rejects_response_over_byte_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

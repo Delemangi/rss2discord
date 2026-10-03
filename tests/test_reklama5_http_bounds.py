@@ -258,6 +258,47 @@ def test_reklama5_fetch_classifies_http_statuses(
     )
 
 
+@pytest.mark.parametrize("status_code", [200, 403])
+def test_reklama5_fetch_classifies_cf_challenge_before_status_handling(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet(
+            [
+                StubResponse(
+                    b"<html><div id='challenge-platform'></div></html>",
+                    status_code=status_code,
+                    headers={"CF-Mitigated": " challenge "},
+                ),
+            ],
+        ),
+    )
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+
+    assert fetch_error.value.cause_type == "BotChallenge"
+    assert fetch_error.value.status_code == status_code
+    assert not fetch_error.value.retryable
+    assert "challenge-platform" not in str(fetch_error.value)
+
+
+def test_reklama5_fetch_keeps_challenge_platform_body_as_ordinary_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"<html><div id='challenge-platform'></div></html>"
+    monkeypatch.setattr(
+        reklama5_http,
+        "_create_session",
+        lambda: RecordingGet([StubResponse(content)]),
+    )
+
+    assert fetch_reklama5_page(search_scope().page_request(1), scan_budget()) == content
+
+
 def test_reklama5_fetch_rejects_empty_response_completed_after_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

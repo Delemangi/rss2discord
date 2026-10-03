@@ -1,16 +1,16 @@
 """Opt-in CCCenter catalog price monitoring."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import partial
-from typing import Protocol, assert_never
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordDeliveryResult, DiscordSender
+from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -19,14 +19,19 @@ from rss2discord.retries import (
 from rss2discord.transports.cccenter import format_cccenter_mkd
 from rss2discord.transports.cccenter_bounds import (
     CCCENTER_LABEL,
-    MAX_CCCENTER_PRICE_CHANGES_PER_SCAN,
     MAX_CCCENTER_RETAINED_SNAPSHOTS,
 )
-from rss2discord.transports.cccenter_models import CCCenterProduct
+from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
+    deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    pause_price_recovery,
+    prepare_price_delivery,
     price_direction,
+    record_price_health,
 )
 
 
@@ -39,8 +44,15 @@ class CCCenterCatalog(Protocol):
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[CCCenterProduct, ...]: ...
 
+    def fetch_product_details(
+        self,
+        listings: Sequence[CCCenterListing | CCCenterProduct],
+        *,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[CCCenterProduct, ...]: ...
 
-class CCCenterSnapshotStore(PriceSnapshotStore, Protocol):
+
+class CCCenterSnapshotStore(PriceRecoveryStore, Protocol):
     def load_price_snapshots(
         self,
         feed_id: str,
@@ -76,6 +88,17 @@ class CCCenterPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -110,8 +133,10 @@ class CCCenterPriceMonitor:
             raise FeedFetchError(CCCENTER_LABEL, "SnapshotLimitExceeded")
         silent: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
         for product in available:
             current = self._snapshot(product)
+            current_snapshots[product.product_id] = current
             previous = by_id.get(product.product_id)
             if previous is None:
                 silent.append(current)
@@ -122,13 +147,77 @@ class CCCenterPriceMonitor:
                 changes.append(_PriceChange(product, previous, current))
             elif previous.formatted != current.formatted:
                 silent.append(current)
-        if len(changes) > MAX_CCCENTER_PRICE_CHANGES_PER_SCAN:
-            raise FeedFetchError(CCCENTER_LABEL, "PriceChangeLimitExceeded")
-        if silent:
+        store = self._dependencies.snapshots
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider="cccenter",
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
+                ),
+                current=current_snapshots,
+                persisted=by_id,
+                catalog_count=len(products),
+            ),
+        )
+        if plan.blocked:
+            return
+        changes_by_id = {change.current.product_id: change for change in changes}
+        selected = [changes_by_id[product_id] for product_id in plan.selected_ids]
+        confirmed = self._confirm_changes(selected) if selected else []
+        unconfirmed = len(confirmed) != len(selected)
+        if unconfirmed and plan.batch_id is not None:
+            pause_price_recovery(store, self._feed.id, "PriceConfirmationMismatch")
+            return
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        if silent and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        self._deliver(changes)
+        deliver_price_changes(confirmed, self._dependencies, self._message, plan=plan)
+        if unconfirmed:
+            record_price_health(
+                store,
+                self._feed.id,
+                "failed",
+                "PriceConfirmationDeferred",
+                len(current_snapshots),
+            )
+        else:
+            finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
+
+    def _confirm_changes(self, changes: Sequence[_PriceChange]) -> list[_PriceChange]:
+        details = self._dependencies.catalog.fetch_product_details(
+            tuple(change.product for change in changes),
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+        )
+        selected_ids = {change.current.product_id for change in changes}
+        by_id: dict[str, CCCenterProduct] = {}
+        for product in details:
+            if (
+                product.product_id not in selected_ids
+                or product.url != product.product_id
+                or product.product_id in by_id
+            ):
+                raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+            by_id[product.product_id] = product
+        return [
+            _PriceChange(
+                by_id[change.current.product_id],
+                change.previous,
+                change.current,
+            )
+            for change in changes
+            if change.current.product_id in by_id
+            and by_id[change.current.product_id].price_status == "scalar"
+            and change.current.currency == "MKD"
+            and by_id[change.current.product_id].current_price == change.current.amount
+        ]
 
     def _snapshot(self, product: CCCenterProduct) -> PriceSnapshot:
         if product.current_price is None:
@@ -140,39 +229,6 @@ class CCCenterPriceMonitor:
             formatted=format_cccenter_mkd(product.current_price),
             currency="MKD",
         )
-
-    def _deliver(self, changes: list[_PriceChange]) -> None:
-        delay = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            result = self._dependencies.sender.send(
-                self._message(change),
-                self._dependencies.delivery.sleep,
-            )
-            match result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._dependencies.sqlite_retry_policy.execute(
-                        partial(self._persist_snapshot, change.current),
-                    )
-                    delay = True
-                case DiscordDeliveryResult.FAILED:
-                    delay = False
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case other:
-                    assert_never(other)
-
-    def _persist_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self._dependencies.snapshots.upsert_price_snapshot(snapshot)
 
     def _message(self, change: _PriceChange) -> WebhookMessage:
         product = change.product

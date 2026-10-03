@@ -1,9 +1,6 @@
 from pathlib import Path
 
-import pytest
-
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.transports import FeedFetchError, neksio_price_monitor
 from tests.neksio_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -16,19 +13,15 @@ from tests.neksio_price_monitor_helpers import (
 
 def test_scan_repeatedly_rejects_too_many_price_changes_without_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    before = (
-        make_product(1, amount="100", formatted="100 MKD"),
-        make_product(2, amount="200", formatted="200 MKD"),
+    before = tuple(
+        make_product(i, amount="100", formatted="100 MKD") for i in range(1, 102)
     )
     after = (
-        make_product(1, amount="90", formatted="90 MKD"),
-        make_product(2, amount="190", formatted="190 MKD"),
-        make_product(3, amount="300", formatted="300 MKD"),
+        *(make_product(i, amount="90", formatted="90 MKD") for i in range(1, 102)),
+        make_product(102, amount="300", formatted="300 MKD"),
     )
-    monkeypatch.setattr(neksio_price_monitor, "MAX_NEKSIO_PRICE_CHANGES_PER_SCAN", 1)
     sender = RecordingSender([True, True])
 
     # When / Then
@@ -42,9 +35,7 @@ def test_scan_repeatedly_rejects_too_many_price_changes_without_mutation(
         monitor.scan()
         baseline_snapshots = snapshots_by_product(store)
         for _ in range(2):
-            with pytest.raises(FeedFetchError) as error_info:
-                monitor.scan()
-            assert error_info.value.strategy == "Neksio"
-            assert error_info.value.cause_type == "PriceChangeLimitExceeded"
+            monitor.scan()
+            assert len(store.list_price_change_batches(feed_id="neksio")) == 1
         assert sender.messages == []
         assert snapshots_by_product(store) == baseline_snapshots

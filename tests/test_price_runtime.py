@@ -263,9 +263,13 @@ def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
         )
         scheduler = RuntimeScheduler(
             SchedulerJobs(
-                ordinary=ScheduledJob(
-                    1,
-                    lambda: events.append(("ordinary", clock.now)),
+                ordinary=(
+                    ScheduledJob(
+                        "ordinary",
+                        "ordinary",
+                        1,
+                        lambda: events.append(("ordinary", clock.now)),
+                    ),
                 ),
                 prices=price_jobs,
             ),

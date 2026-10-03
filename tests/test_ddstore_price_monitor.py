@@ -8,7 +8,6 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.ddstore_models import DDStoreProduct
@@ -120,12 +119,13 @@ def test_ddstore_price_monitor_silently_seeds_then_delivers_price_change(
     )
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
     feed = make_feed()
-    catalog = CatalogStub([(baseline,), (changed,)])
+    catalog = CatalogStub([(baseline,), (changed,), (changed,)])
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(feed, catalog, store, sender)
 
         # When
+        monitor.scan()
         monitor.scan()
         monitor.scan()
 
@@ -180,14 +180,18 @@ def test_ddstore_price_monitor_delivers_one_hundred_changes(tmp_path: Path) -> N
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
             make_feed(),
-            CatalogStub([baseline, changed]),
+            CatalogStub([baseline, changed, *([changed] * 10)]),
             store,
             sender,
         )
         monitor.scan()
+        monitor.scan()
 
         # When
-        monitor.scan()
+        assert len(sender.messages) == 10
+        assert store.list_price_change_batches("ddstore") == ()
+        for _ in range(9):
+            monitor.scan()
 
         # Then
         assert len(sender.messages) == 100
@@ -212,15 +216,15 @@ def test_ddstore_price_monitor_rejects_more_than_one_hundred_changes(
         monitor.scan()
 
         # When / Then
-        with pytest.raises(FeedFetchError) as error:
-            monitor.scan()
+        monitor.scan()
 
-        assert error.value.strategy == "DDStore"
-        assert error.value.cause_type == "PriceChangeLimitExceeded"
         assert sender.messages == []
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
         } == {Decimal(100)}
+        assert store.list_price_change_batches("ddstore")[0].status == "candidate"
+        assert store.list_price_change_batches("ddstore")[0].pending_count == 101
+        assert store.list_health("ddstore")[0].state == "quarantined"
 
 
 @pytest.mark.parametrize(
@@ -233,7 +237,11 @@ def test_ddstore_price_monitor_does_not_advance_failed_or_interrupted_delivery(
 ) -> None:
     # Given
     catalog = CatalogStub(
-        [(make_product("1", amount=100),), (make_product("1", amount=90),)],
+        [
+            (make_product("1", amount=100),),
+            (make_product("1", amount=90),),
+            (make_product("1", amount=90),),
+        ],
     )
     sender = RecordingSender([outcome])
 
@@ -255,7 +263,11 @@ def test_ddstore_price_monitor_surfaces_persistence_failure_after_delivery(
 ) -> None:
     # Given
     catalog = CatalogStub(
-        [(make_product("1", amount=100),), (make_product("1", amount=90),)],
+        [
+            (make_product("1", amount=100),),
+            (make_product("1", amount=90),),
+            (make_product("1", amount=90),),
+        ],
     )
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
 
@@ -263,7 +275,9 @@ def test_ddstore_price_monitor_surfaces_persistence_failure_after_delivery(
         monitor = make_monitor(make_feed(), catalog, store, sender)
         monitor.scan()
 
-        def fail_persistence(snapshot: PriceSnapshot) -> None:
+        def fail_persistence(
+            snapshot: PriceSnapshot,
+        ) -> None:
             del snapshot
             raise sqlite3.OperationalError("disk failure")
 

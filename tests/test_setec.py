@@ -145,6 +145,7 @@ def test_setec_strategy_issues_a_single_sorted_discovery_query(
         "thumbnail",
         "created_at",
         "product_categories.name",
+        "variants.id",
         "variants.calculated_price.calculated_amount",
         "variants.calculated_price.original_amount",
         "variants.calculated_price.currency_code",

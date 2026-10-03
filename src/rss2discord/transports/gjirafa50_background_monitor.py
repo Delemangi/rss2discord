@@ -1,7 +1,9 @@
 """Run the expensive Gjirafa50 price scan outside the scheduler thread."""
 
 import logging
+import re
 import sqlite3
+import time
 from dataclasses import replace
 from threading import Event, Lock, Thread
 from typing import ClassVar, Final
@@ -11,6 +13,7 @@ import requests
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.recovery_models import HealthUpdate
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.gjirafa50_price_monitor import (
@@ -58,11 +61,21 @@ class Gjirafa50BackgroundPriceMonitor:
         try:
             if self._cancel_requested.is_set():
                 return
+            attempted_at = int(time.time())
+            started_at = time.monotonic()
             try:
                 with (
                     DeliveryStore(self._dependencies.database_path) as store,
                     requests.Session() as discord_session,
                 ):
+                    if any(
+                        (store.get_blocked_until(feed_id) or 0) > int(time.time())
+                        for feed_id in (
+                            self._feed.id,
+                            *self._dependencies.cooldown_peer_feed_ids,
+                        )
+                    ):
+                        return
                     dependencies = replace(
                         self._dependencies,
                         fetch_retry_policy=replace(
@@ -84,26 +97,59 @@ class Gjirafa50BackgroundPriceMonitor:
                     Gjirafa50PriceMonitor(self._feed, dependencies).scan()
             except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
                 return
-            except FeedFetchError as error:
-                logger.exception(
-                    "Gjirafa50 price scan failed for feed %s (%s)",
-                    self._feed.id,
-                    error.cause_type,
-                )
-            except sqlite3.Error as error:
-                logger.exception(
-                    "Gjirafa50 price persistence failed for feed %s (%s)",
-                    self._feed.id,
-                    type(error).__name__,
-                )
             except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK
-                logger.exception(
-                    "Unexpected Gjirafa50 price scan failure for feed %s (%s)",
-                    self._feed.id,
-                    type(error).__name__,
-                )
+                self._record_failure(error, attempted_at, started_at)
         finally:
             self._scan_lock.release()
+
+    def _record_failure(
+        self,
+        error: Exception,
+        attempted_at: int,
+        started_at: float,
+    ) -> None:
+        cause = (
+            error.cause_type
+            if isinstance(error, FeedFetchError)
+            else type(error).__name__
+        )
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", cause):
+            cause = "FetchError"
+        blocked = isinstance(error, FeedFetchError) and (
+            error.cause_type in {"AccessChallenge", "BotChallenge"}
+            or error.status_code == 403
+        )
+        try:
+            # The worker owns this connection too; never use the scheduler's
+            # connection across threads, including on failure paths.
+            with DeliveryStore(self._dependencies.database_path) as store:
+                notice = store.record_health(
+                    HealthUpdate(
+                        feed_id=self._feed.id,
+                        job_kind="price",
+                        state="blocked" if blocked else "failed",
+                        cause=cause,
+                        attempted_at=attempted_at,
+                        success=False,
+                        nonempty=False,
+                        item_count=0,
+                        duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                    ),
+                )
+        except sqlite3.Error as persistence_error:
+            logger.error(  # noqa: TRY400 - exception payloads may contain credentials
+                "Gjirafa50 health persistence failed for feed %s (%s; scan %s)",
+                self._feed.id,
+                type(persistence_error).__name__,
+                cause,
+            )
+            return
+        if notice.should_log:
+            logger.error(
+                "Gjirafa50 price scan failed for feed %s (%s)",
+                self._feed.id,
+                cause,
+            )
 
     def _is_shutdown_requested(self) -> bool:
         return (

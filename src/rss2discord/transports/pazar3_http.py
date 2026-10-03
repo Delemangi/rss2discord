@@ -111,6 +111,12 @@ def fetch_pazar3_page(
         while True:
             pacer.wait(sleep, is_shutdown_requested, budget.expires_at)
             response, content = _get_response(session, current_url, budget)
+            if _is_cf_challenge(response):
+                raise FeedFetchError(
+                    PAZAR3_LABEL,
+                    "AccessChallenge",
+                    status_code=response.status_code,
+                )
             if 300 <= response.status_code < 400:
                 location = _header(response.headers, "location")
                 if location is None or "#" in location:
@@ -203,6 +209,11 @@ def _http_error(response: Pazar3HttpResponse) -> FeedFetchError:
         retryable=status_code in {408, 429} or 500 <= status_code < 600,
         retry_after=parse_retry_after(_header(response.headers, "retry-after")),
     )
+
+
+def _is_cf_challenge(response: Pazar3HttpResponse) -> bool:
+    value = _header(response.headers, "cf-mitigated")
+    return value is not None and value.strip().casefold() == "challenge"
 
 
 def _header(headers: Mapping[str, str], name: str) -> str | None:

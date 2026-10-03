@@ -137,7 +137,7 @@ def test_scan_retains_prior_snapshot_when_previously_priced_product_has_no_varia
         assert snapshots_by_product(store)["prod-1"] == prior_snapshot
 
 
-def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
+def test_scan_delivers_in_persistent_cursor_id_order_with_exact_setec_message_fields(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -173,30 +173,30 @@ def test_scan_delivers_ordered_price_changes_with_exact_setec_message_fields(
 
         # Then
         assert [message.entry.title for message in sender.messages] == [
-            "Product prod-30",
             "Product prod-10",
+            "Product prod-30",
         ]
         assert [message.entry.price_direction for message in sender.messages] == [
-            PriceDirection.DECREASE,
             PriceDirection.INCREASE,
+            PriceDirection.DECREASE,
         ]
         assert [message.entry.description for message in sender.messages] == ["", ""]
         assert (
-            sender.messages[0].entry.link == "https://setec.mk/products/product-prod-30"
+            sender.messages[1].entry.link == "https://setec.mk/products/product-prod-30"
         )
-        assert sender.messages[0].entry.image_url == (
+        assert sender.messages[1].entry.image_url == (
             "https://images.example.test/prod-30.webp"
         )
-        assert sender.messages[0].entry.categories == ("Computers", "Accessories")
-        assert sender.messages[0].entry.source_metrics == (
+        assert sender.messages[1].entry.categories == ("Computers", "Accessories")
+        assert sender.messages[1].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
             SourceMetric(label="Previous", value="100 ден.", prior=True),
             SourceMetric(label="Original", value="120 ден."),
         )
-        assert sender.messages[0].source_title == "Setec Deals"
+        assert sender.messages[1].source_title == "Setec Deals"
 
 
-def test_alert_omits_original_when_display_document_reports_another_price(
+def test_alert_is_deferred_when_display_document_reports_another_price(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -222,15 +222,8 @@ def test_alert_omits_original_when_display_document_reports_another_price(
 
         # Then
         assert catalog.requested_id_batches == [("prod-1",)]
-        assert [message.entry.title for message in sender.messages] == [
-            "Product prod-1",
-        ]
-        assert sender.messages[0].entry.source_metrics == (
-            SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден.", prior=True),
-        )
-        assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
-        assert sender.messages[0].entry.description == ""
+        assert sender.messages == []
+        assert snapshots_by_product(store)["prod-1"].amount == Decimal(100)
 
 
 def test_alert_carries_original_from_display_document_when_prices_agree(
@@ -269,7 +262,7 @@ def test_alert_carries_original_from_display_document_when_prices_agree(
         )
 
 
-def test_alert_ships_without_original_when_display_document_has_no_variants(
+def test_alert_is_deferred_when_display_document_has_no_variants(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -291,14 +284,8 @@ def test_alert_ships_without_original_when_display_document_has_no_variants(
 
         # Then
         assert unpriced_display.variants == ()
-        assert [message.entry.title for message in sender.messages] == [
-            "Product prod-1",
-        ]
-        assert sender.messages[0].entry.source_metrics == (
-            SourceMetric(label="Price", value="90 ден."),
-            SourceMetric(label="Previous", value="100 ден.", prior=True),
-        )
-        assert snapshots_by_product(store)["prod-1"].amount == Decimal(90)
+        assert sender.messages == []
+        assert snapshots_by_product(store)["prod-1"].amount == Decimal(100)
 
 
 def test_scan_requests_display_data_only_for_changed_product_ids(

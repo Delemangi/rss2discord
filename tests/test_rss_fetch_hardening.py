@@ -1,4 +1,6 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from email.utils import format_datetime
 from types import TracebackType
 from typing import Self
 
@@ -121,6 +123,25 @@ def test_http_error_exposes_only_safe_retry_metadata(
     assert "secret-token" not in str(fetch_error.value)
     assert response.iter_content_calls == 0
     assert response.closed
+
+
+def test_http_date_retry_after_uses_shared_retry_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retry_at = datetime(2099, 7, 26, 15, 0, tzinfo=UTC)
+    response = FakeResponse(
+        429,
+        [],
+        {"Retry-After": format_datetime(retry_at, usegmt=True)},
+    )
+    install_response(monkeypatch, response)
+
+    with pytest.raises(FeedFetchError) as fetch_error:
+        RSSStrategy().fetch_entries("https://feed.test/rss")
+
+    assert fetch_error.value.retryable
+    assert fetch_error.value.retry_after is not None
+    assert fetch_error.value.retry_after > 0
 
 
 def test_content_length_over_limit_is_rejected_before_streaming(

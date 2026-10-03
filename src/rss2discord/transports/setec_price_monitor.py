@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol, assert_never
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import (
-    DiscordDeliveryResult,
     DiscordSender,
     WebhookMessage,
 )
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -21,12 +23,20 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
+    deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    pause_price_recovery,
+    prepare_price_delivery,
     price_direction,
+    record_price_health,
 )
 from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
 from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
 from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
+
+logger = logging.getLogger(__name__)
 
 
 class SetecCatalog(Protocol):
@@ -55,7 +65,7 @@ class SetecPriceMonitorDependencies:
     """Typed collaborators used by one Setec price-monitor scan."""
 
     catalog: SetecCatalog
-    snapshots: PriceSnapshotStore
+    snapshots: PriceRecoveryStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -67,6 +77,7 @@ class _PendingChange:
     product_id: str
     previous: PriceSnapshot
     current: PriceSnapshot
+    variant_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +99,17 @@ class SetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         """Compare prices, persist silent updates, then alert on changed products."""
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -107,11 +129,13 @@ class SetecPriceMonitor:
         }
         silent_updates: list[PriceSnapshot] = []
         pending_changes: list[_PendingChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
 
         for entry in price_entries:
             current = self._snapshot(entry)
             if current is None:
                 continue
+            current_snapshots[entry.id] = current
             previous = snapshots_by_product.get(entry.id)
             if previous is None:
                 silent_updates.append(current)
@@ -123,21 +147,88 @@ class SetecPriceMonitor:
                 if previous.formatted != current.formatted:
                     silent_updates.append(current)
                 continue
-            pending_changes.append(_PendingChange(entry.id, previous, current))
+            pending_changes.append(
+                _PendingChange(entry.id, previous, current, entry.variants[0].id),
+            )
+
+        ambiguous_count = sum(len(entry.variants) > 1 for entry in price_entries)
+        if ambiguous_count:
+            logger.warning(
+                "Deferred %d ambiguous multi-variant prices for feed %s",
+                ambiguous_count,
+                self._feed.id,
+            )
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=snapshot_store,
+                feed_id=self._feed.id,
+                provider="setec",
+                changes=tuple(
+                    PriceChangeRecord(p.product_id, p.previous, p.current)
+                    for p in pending_changes
+                ),
+                current=current_snapshots,
+                persisted=snapshots_by_product,
+                catalog_count=len(price_entries),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: snapshot_store.upsert_price_snapshots(silent_updates),
             )
 
-        if not pending_changes:
+        if not plan.selected_ids:
+            if ambiguous_count:
+                record_price_health(
+                    snapshot_store,
+                    self._feed.id,
+                    "failed",
+                    "PriceConfirmationDeferred",
+                    len(current_snapshots),
+                )
+                return
+            finish_price_delivery(
+                snapshot_store,
+                self._feed.id,
+                plan,
+                len(current_snapshots),
+            )
             return
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        changes = self._resolve_changes(pending_changes)
-        self._deliver(changes)
+        by_id = {pending.product_id: pending for pending in pending_changes}
+        changes = self._resolve_changes(
+            [by_id[product_id] for product_id in plan.selected_ids],
+        )
+        unconfirmed = len(changes) != len(plan.selected_ids)
+        if unconfirmed and plan.batch_id is not None:
+            pause_price_recovery(
+                snapshot_store,
+                self._feed.id,
+                "PriceConfirmationMismatch",
+            )
+            return
+        deliver_price_changes(changes, self._dependencies, self._message_for, plan=plan)
+        if unconfirmed or ambiguous_count:
+            record_price_health(
+                snapshot_store,
+                self._feed.id,
+                "failed",
+                "PriceConfirmationDeferred",
+                len(current_snapshots),
+            )
+        else:
+            finish_price_delivery(
+                snapshot_store,
+                self._feed.id,
+                plan,
+                len(current_snapshots),
+            )
 
     def _resolve_changes(
         self,
@@ -150,47 +241,31 @@ class SetecPriceMonitor:
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
         products_by_id = {product.id: product for product in products}
-        return [
-            _PriceChange(
-                products_by_id[pending.product_id],
-                pending.previous,
-                pending.current,
-            )
-            for pending in pending_changes
-            if pending.product_id in products_by_id
-        ]
-
-    def _deliver(self, changes: Sequence[_PriceChange]) -> None:
-        delay_before_next_attempt = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
+        changes: list[_PriceChange] = []
+        for pending in pending_changes:
+            product = products_by_id.get(pending.product_id)
+            if product is None or len(product.variants) != 1:
+                continue
+            variant = product.variants[0]
             if (
-                delay_before_next_attempt
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
+                not pending.variant_id
+                or not variant.id
+                or variant.id != pending.variant_id
+                or variant.calculated_price.currency_code.upper()
+                != pending.current.currency
+                or variant.calculated_price.calculated_amount != pending.current.amount
             ):
-                return
-            delay_before_next_attempt = False
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            delivery_result = self._dependencies.sender.send(
-                self._message_for(change),
-                self._dependencies.delivery.sleep,
+                continue
+            changes.append(_PriceChange(product, pending.previous, pending.current))
+        deferred_count = len(pending_changes) - len(changes)
+        if deferred_count:
+            logger.warning(
+                "Deferred %d unconfirmed price changes for feed %s; "
+                "product details must agree with indexed price and variant",
+                deferred_count,
+                self._feed.id,
             )
-            match delivery_result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._persist_changed_snapshot(change.current)
-                    delay_before_next_attempt = True
-                case DiscordDeliveryResult.FAILED:
-                    if self._dependencies.delivery.is_shutdown_requested():
-                        return
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case unreachable:
-                    assert_never(unreachable)
+        return changes
 
     def _snapshot(self, entry: SetecPriceEntry) -> PriceSnapshot | None:
         calculated_amount = entry.calculated_amount
@@ -202,11 +277,6 @@ class SetecPriceMonitor:
             amount=calculated_amount,
             formatted=format_setec_mkd(calculated_amount),
             currency="MKD",
-        )
-
-    def _persist_changed_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.upsert_price_snapshot(snapshot),
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

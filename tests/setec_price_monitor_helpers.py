@@ -12,7 +12,7 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceSnapshotStore
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
 from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 from rss2discord.transports.setec_price_monitor import (
     SetecCatalog,
@@ -25,6 +25,7 @@ def price_entry_for(product: SetecProduct) -> SetecPriceEntry:
     """Project a product down to what the price index would carry for it."""
     variants = [
         {
+            "id": variant.id,
             "calculated_price": {
                 "calculated_amount": variant.calculated_price.calculated_amount,
                 "currency_code": variant.calculated_price.currency_code,
@@ -46,6 +47,7 @@ def make_price_entry(
         if calculated_amount is None
         else [
             {
+                "id": f"variant-{product_id}",
                 "calculated_price": {
                     "calculated_amount": calculated_amount,
                     "currency_code": "mkd",
@@ -228,6 +230,7 @@ def make_product(
         if calculated_amount is None
         else [
             {
+                "id": f"variant-{product_id}",
                 "calculated_price": {
                     "calculated_amount": calculated_amount,
                     "original_amount": (
@@ -264,7 +267,7 @@ def is_not_shutdown() -> bool:
 def make_monitor(
     feed: FeedConfig,
     catalog: SetecCatalog,
-    snapshots: PriceSnapshotStore,
+    snapshots: PriceRecoveryStore,
     sender: DiscordSender,
     *,
     sleep: SleepCallback = keep_running,
