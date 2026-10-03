@@ -10,9 +10,7 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
-from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
-    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
@@ -26,10 +24,9 @@ from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
-    deliver_price_changes,
-    finish_price_delivery,
+    deliver_catalog_price_changes,
     pause_price_fetch_failure,
-    prepare_price_delivery,
+    prepare_price_scan,
     price_direction,
 )
 
@@ -99,23 +96,22 @@ class DDStorePriceMonitor:
                 raise
 
     def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(
-                self._feed.id,
-                limit=MAX_DDSTORE_RETAINED_SNAPSHOTS + 1,
+        products, persisted = prepare_price_scan(
+            fetch_products=lambda: self._dependencies.catalog.fetch_catalog(
+                self._feed.url,
+                retry_policy=self._dependencies.fetch_retry_policy,
+                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
             ),
+            load_snapshots=lambda: self._dependencies.sqlite_retry_policy.execute(
+                lambda: self._dependencies.snapshots.load_price_snapshots(
+                    self._feed.id,
+                    limit=MAX_DDSTORE_RETAINED_SNAPSHOTS + 1,
+                ),
+            ),
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+            snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
+            label=DDSTORE_LABEL,
         )
-        if len(persisted) > MAX_DDSTORE_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
         by_id = {snapshot.product_id: snapshot for snapshot in persisted}
         if len({product.uid for product in products}) != len(products):
             raise FeedFetchError(DDSTORE_LABEL, "ConflictingProductIDs")
@@ -131,53 +127,21 @@ class DDStorePriceMonitor:
             > MAX_DDSTORE_RETAINED_SNAPSHOTS
         ):
             raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
-        current_by_id: dict[str, PriceSnapshot] = {}
-        silent: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        for product in available:
-            current = self._snapshot(product)
-            current_by_id[product.uid] = current
-            previous = by_id.get(product.uid)
-            if previous is None:
-                silent.append(current)
-            elif (
-                previous.amount != current.amount
-                or previous.currency != current.currency
-            ):
-                changes.append(_PriceChange(product, previous, current))
-            elif previous.formatted != current.formatted:
-                silent.append(current)
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        store = self._dependencies.snapshots
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=store,
-                feed_id=self._feed.id,
-                provider=DDSTORE_LABEL,
-                changes=tuple(
-                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
-                ),
-                current=current_by_id,
-                persisted=by_id,
-                catalog_count=len(products),
-            ),
-        )
-        if plan.blocked:
-            return
-        if silent and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: store.upsert_price_snapshots(silent),
-            )
-        changes_by_id = {change.current.product_id: change for change in changes}
-        deliver_price_changes(
-            (changes_by_id[product_id] for product_id in plan.selected_ids),
+        products_by_id = {product.uid: product for product in available}
+        deliver_catalog_price_changes(
             self._dependencies,
             self._message_for,
-            plan=plan,
+            change_for=lambda previous, current: _PriceChange(
+                products_by_id[current.product_id],
+                previous,
+                current,
+            ),
+            feed_id=self._feed.id,
+            provider=DDSTORE_LABEL,
+            current={product.uid: self._snapshot(product) for product in available},
+            persisted=by_id,
+            catalog_count=len(products),
         )
-        finish_price_delivery(store, self._feed.id, plan, len(current_by_id))
 
     def _snapshot(self, product: DDStoreProduct) -> PriceSnapshot:
         final_price = product.price_range.minimum_price.final_price

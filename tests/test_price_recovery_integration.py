@@ -21,6 +21,7 @@ from rss2discord.recovery_models import (
     PriceChangeRecord,
     PriceDeliveryClaim,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.ddstore_price_monitor import DDStorePriceMonitor
 from rss2discord.transports.hivetec_price_monitor import HivetecPriceMonitor
 from tests import test_ddstore_price_monitor as dd
@@ -67,6 +68,76 @@ def monitor_for(
         ],
     )
     return hive.monitor(catalog_h, store, sender)
+
+
+@pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
+@pytest.mark.parametrize("checkpoint", [1, 2, 3])
+def test_catalog_shutdown_before_planning_never_writes_or_sends(
+    tmp_path: Path,
+    provider: str,
+    checkpoint: int,
+) -> None:
+    sender = RecordingSender([])
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = monitor_for(provider, [(100,)], store, sender)
+        checks = iter([False] * (checkpoint - 1) + [True])
+        monitor._dependencies = replace(
+            monitor._dependencies,
+            delivery=replace(
+                monitor._dependencies.delivery,
+                is_shutdown_requested=lambda: next(checks),
+            ),
+        )
+        with pytest.raises(FeedFetchInterruptedError):
+            monitor.scan()
+        assert store.load_price_snapshots(provider) == ()
+        assert store.list_price_change_batches(provider) == ()
+        assert store.list_health(provider) == ()
+        assert sender.messages == []
+
+
+@pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
+def test_catalog_silent_updates_wait_until_approved_batch_finishes(
+    tmp_path: Path,
+    provider: str,
+) -> None:
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        changed = (90,) * 101 + (100,)
+        live = (*changed, 70)
+        monitor = monitor_for(
+            provider,
+            [(100,) * 102, changed, *([live] * 12)],
+            store,
+            sender,
+        )
+        monitor.scan()
+        unchanged = next(
+            snapshot
+            for snapshot in store.load_price_snapshots(provider)
+            if snapshot.product_id == "102"
+        )
+        stale = replace(unchanged, formatted="stale display")
+        store.upsert_price_snapshot(stale)
+        monitor.scan()
+        candidate = store.list_price_change_batches(provider)[0]
+        store.approve_price_change_batch(
+            feed_id=provider,
+            fingerprint=candidate.fingerprint,
+            reason="fixture review",
+        )
+        for _ in range(11):
+            monitor.scan()
+        snapshots = {s.product_id: s for s in store.load_price_snapshots(provider)}
+        assert len(sender.messages) == 101
+        assert store.load_active_price_batch(provider) is None
+        assert snapshots["102"] == stale
+        assert "103" not in snapshots
+        monitor.scan()
+        snapshots = {s.product_id: s for s in store.load_price_snapshots(provider)}
+        assert snapshots["102"] == unchanged
+        assert snapshots["103"].amount == 70
+        assert len(sender.messages) == 101
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])

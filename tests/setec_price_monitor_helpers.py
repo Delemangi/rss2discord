@@ -25,6 +25,7 @@ def price_entry_for(product: SetecProduct) -> SetecPriceEntry:
     """Project a product down to what the price index would carry for it."""
     variants = [
         {
+            "id": variant.id,
             "calculated_price": {
                 "calculated_amount": variant.calculated_price.calculated_amount,
                 "currency_code": variant.calculated_price.currency_code,
@@ -46,6 +47,7 @@ def make_price_entry(
         if calculated_amount is None
         else [
             {
+                "id": f"variant-{product_id}",
                 "calculated_price": {
                     "calculated_amount": calculated_amount,
                     "currency_code": "mkd",
@@ -228,6 +230,7 @@ def make_product(
         if calculated_amount is None
         else [
             {
+                "id": f"variant-{product_id}",
                 "calculated_price": {
                     "calculated_amount": calculated_amount,
                     "original_amount": (

@@ -146,13 +146,24 @@ def record_price_health(
 
 
 def pause_price_recovery(store: PriceRecoveryStore, feed_id: str, cause: str) -> bool:
-    batch = store.load_active_price_batch(feed_id)
+    batch = _pause_price_batch(store, feed_id, cause)
     if batch is None:
         return False
-    if batch.status == "approved":
-        store.pause_price_change_batch(batch.batch_id, cause)
     record_price_health(store, feed_id, "recovery_required", cause, batch.pending_count)
     return True
+
+
+def _pause_price_batch(
+    store: PriceRecoveryStore,
+    feed_id: str,
+    cause: str,
+) -> PriceBatch | None:
+    batch = store.load_active_price_batch(feed_id)
+    if batch is None:
+        return None
+    if batch.status == "approved":
+        store.pause_price_change_batch(batch.batch_id, cause)
+    return batch
 
 
 def pause_price_fetch_failure(
@@ -160,13 +171,21 @@ def pause_price_fetch_failure(
     feed_id: str,
     error: FeedFetchError,
 ) -> bool:
-    paused = pause_price_recovery(store, feed_id, error.cause_type)
-    if paused and (
+    batch = _pause_price_batch(store, feed_id, error.cause_type)
+    if batch is None:
+        return False
+    blocked = (
         error.cause_type in {"AccessChallenge", "BotChallenge"}
         or error.status_code == 403
-    ):
-        record_price_health(store, feed_id, "blocked", error.cause_type, 0)
-    return paused
+    )
+    record_price_health(
+        store,
+        feed_id,
+        "blocked" if blocked else "recovery_required",
+        error.cause_type,
+        0 if blocked else batch.pending_count,
+    )
+    return True
 
 
 def prepare_price_delivery(
@@ -313,6 +332,68 @@ class PriceChangeDeliveryDependencies(Protocol):
 
     @property
     def delivery(self) -> PriceAlertDelivery: ...
+
+
+class CatalogPriceChange(DeliverablePriceChange, Protocol):
+    @property
+    def previous(self) -> PriceSnapshot: ...
+
+
+def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[ChangeT], WebhookMessage],
+    *,
+    change_for: Callable[[PriceSnapshot, PriceSnapshot], ChangeT],
+    feed_id: str,
+    provider: str,
+    current: Mapping[str, PriceSnapshot],
+    persisted: Mapping[str, PriceSnapshot],
+    catalog_count: int,
+) -> None:
+    """Compare complete catalog snapshots and deliver without extra confirmation I/O."""
+    silent: list[PriceSnapshot] = []
+    changes: list[ChangeT] = []
+    for snapshot in current.values():
+        previous = persisted.get(snapshot.product_id)
+        if previous is None:
+            silent.append(snapshot)
+        elif (
+            previous.amount != snapshot.amount or previous.currency != snapshot.currency
+        ):
+            changes.append(change_for(previous, snapshot))
+        elif previous.formatted != snapshot.formatted:
+            silent.append(snapshot)
+    if dependencies.delivery.is_shutdown_requested():
+        raise FeedFetchInterruptedError
+    store = dependencies.snapshots
+    plan = dependencies.sqlite_retry_policy.execute(
+        lambda: prepare_price_delivery(
+            store=store,
+            feed_id=feed_id,
+            provider=provider,
+            changes=tuple(
+                PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                for c in changes
+            ),
+            current=current,
+            persisted=persisted,
+            catalog_count=catalog_count,
+        ),
+    )
+    if plan.blocked:
+        return
+    if silent and plan.allow_silent_updates:
+        dependencies.sqlite_retry_policy.execute(
+            lambda: store.upsert_price_snapshots(silent),
+        )
+    changes_by_id = {change.current.product_id: change for change in changes}
+    deliver_price_changes(
+        (changes_by_id[product_id] for product_id in plan.selected_ids),
+        dependencies,
+        message_for,
+        plan=plan,
+    )
+    finish_price_delivery(store, feed_id, plan, len(current))
 
 
 def prepare_price_scan[ProductT](

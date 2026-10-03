@@ -1,16 +1,21 @@
+import logging
 import sqlite3
 import time
 from pathlib import Path
 
 import pytest
 
+from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.price_runtime import feed_is_blocked
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
 from rss2discord.transports import gjirafa50_background_monitor
+from rss2discord.transports.price_monitor import pause_price_fetch_failure
 from tests.setec_price_monitor_helpers import RecordingSender
-from tests.test_adapter_c2_provider_caps import build
+from tests.test_adapter_c2_provider_caps import Monitor, build
 from tests.test_gjirafa50_background_monitor import _build_background_monitor
+from tests.test_price_recovery_integration import monitor_for
 
 
 @pytest.mark.parametrize(
@@ -25,22 +30,40 @@ from tests.test_gjirafa50_background_monitor import _build_background_monitor
         "pazar3",
         "reklama5",
         "technomarket",
+        "ddstore",
+        "hivetec",
     ],
 )
 @pytest.mark.parametrize(
-    ("cause", "status"),
-    [("AccessChallenge", 503), ("BotChallenge", 200), ("HTTPError", 403)],
+    ("cause", "status", "state"),
+    [
+        ("AccessChallenge", 503, "blocked"),
+        ("BotChallenge", 200, "blocked"),
+        ("HTTPError", 403, "blocked"),
+        ("IncompleteCatalog", 200, "recovery_required"),
+    ],
 )
-def test_consumed_challenge_pauses_batch_and_preserves_blocked_cooldown(
+def test_consumed_failure_records_one_outcome_and_preserves_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    *,
     provider: str,
     cause: str,
     status: int,
+    state: str,
 ) -> None:
-    with DeliveryStore(tmp_path / "state.db") as store:
+    now = int(time.time())
+    monkeypatch.setattr("rss2discord.transports.price_monitor.time.time", lambda: now)
+    caplog.set_level(logging.INFO, logger="rss2discord.transports.price_monitor")
+    path = tmp_path / "state.db"
+    with DeliveryStore(path) as store:
         sender = RecordingSender([])
-        monitor = build(provider, 101, store, sender)
+        monitor: Monitor = (
+            monitor_for(provider, [(100,) * 101, (90,) * 101], store, sender)
+            if provider in {"ddstore", "hivetec"}
+            else build(provider, 101, store, sender)
+        )
         monitor.scan()
         monitor.scan()
         candidate = store.list_price_change_batches(feed_id=provider)[0]
@@ -54,19 +77,69 @@ def test_consumed_challenge_pauses_batch_and_preserves_blocked_cooldown(
             raise FeedFetchError(provider, cause, status_code=status)
 
         monkeypatch.setattr(monitor, "_scan", fail)
-        before = int(time.time())
+        before = store.list_health(provider)[0]
+        snapshots = store.load_price_snapshots(provider)
+        caplog.clear()
         monitor.scan()
         batch = store.load_active_price_batch(provider)
         assert batch is not None
         assert batch.status == "paused"
         health = store.list_health(provider)[0]
-        assert health.state == "blocked"
+        assert health.state == state
         assert health.cause == cause
-        assert (store.get_blocked_until(provider) or 0) >= before + 21_600
+        assert health.total_attempts == before.total_attempts + 1
+        assert health.consecutive_failures == before.consecutive_failures + 1
+        assert health.total_successes == before.total_successes
+        assert health.last_success_at == before.last_success_at
+        assert health.transition_at == now
+        assert caplog.messages == [
+            f"Price health for feed {provider}: {state} ({cause})",
+        ]
+        deadline = now + 21_600 if state == "blocked" else None
+        assert store.get_blocked_until(provider) == deadline
         assert not sender.messages
-        assert all(
-            snapshot.amount == 100 for snapshot in store.load_price_snapshots(provider)
-        )
+        assert store.load_price_snapshots(provider) == snapshots
+
+    with DeliveryStore(path) as reopened:
+        assert reopened.list_health(provider)[0] == health
+        assert reopened.get_blocked_until(provider) == deadline
+        assert reopened.load_price_snapshots(provider) == snapshots
+        if deadline is not None:
+            feed = FeedConfig(
+                id=provider,
+                url="https://example.test/catalog",
+                webhook="https://discord.example.test/hook",
+            )
+            assert feed_is_blocked(feed, (feed,), reopened, deadline - 1)
+            assert not feed_is_blocked(feed, (feed,), reopened, deadline)
+            assert reopened.list_health(provider)[0] == health
+            monkeypatch.setattr(
+                "rss2discord.transports.price_monitor.time.time",
+                lambda: deadline + 1,
+            )
+            caplog.clear()
+            error = FeedFetchError(provider, cause, status_code=status)
+            assert pause_price_fetch_failure(reopened, provider, error)
+            retried = reopened.list_health(provider)[0]
+            assert retried.total_attempts == health.total_attempts + 1
+            assert retried.consecutive_failures == health.consecutive_failures + 1
+            assert retried.total_successes == health.total_successes
+            assert reopened.get_blocked_until(provider) == deadline + 21_601
+            assert caplog.messages == [
+                f"Price health for feed {provider}: blocked ({cause})",
+            ]
+
+
+@pytest.mark.parametrize("cause", ["BotChallenge", "IncompleteCatalog"])
+def test_failure_without_active_recovery_leaves_health_to_caller(
+    tmp_path: Path,
+    cause: str,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        error = FeedFetchError("fixture", cause)
+        assert not pause_price_fetch_failure(store, "fixture", error)
+        assert store.list_health("fixture") == ()
+        assert store.list_price_change_batches("fixture") == ()
 
 
 @pytest.mark.parametrize(

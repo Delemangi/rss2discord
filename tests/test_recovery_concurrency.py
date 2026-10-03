@@ -112,6 +112,7 @@ def test_claim_generations_are_not_a_lifetime_ten_attempt_cap(tmp_path: Path) ->
             assert claim == PriceDeliveryClaim(batch_id, "p", generation)
             if generation < 11:
                 assert store.release_price_delivery_attempt(claim)
+        assert claim is not None
         store.record_approved_price_delivery(claim, _change().current)
 
 

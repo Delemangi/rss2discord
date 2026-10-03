@@ -248,7 +248,9 @@ class SetecPriceMonitor:
                 continue
             variant = product.variants[0]
             if (
-                variant.id != pending.variant_id
+                not pending.variant_id
+                or not variant.id
+                or variant.id != pending.variant_id
                 or variant.calculated_price.currency_code.upper()
                 != pending.current.currency
                 or variant.calculated_price.calculated_amount != pending.current.amount
