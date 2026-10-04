@@ -3,9 +3,9 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import requests
 
+from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
 from tests.anhoch_helpers import (
     CATALOG_URL,
     RecordingGet,

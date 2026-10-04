@@ -5,8 +5,8 @@ import pytest
 import requests
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
 from tests.anhoch_helpers import (
     RecordingGet,
     StubResponse,

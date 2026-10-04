@@ -10,18 +10,18 @@ from urllib.parse import urljoin
 import requests
 from pydantic import ValidationError
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.anhoch_catalog_bounds import (
+from rss2discord.providers.anhoch.catalog_bounds import (
     ANHOCH_LABEL,
     CatalogScanBounds,
     CatalogScanTotals,
     FetchedCatalogPage,
 )
-from rss2discord.transports.anhoch_catalog_url import catalog_base_url, page_url
-from rss2discord.transports.anhoch_models import (
+from rss2discord.providers.anhoch.catalog_url import catalog_base_url, page_url
+from rss2discord.providers.anhoch.models import (
     AnhochCatalogResponse,
     AnhochProduct,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports.base import FeedFetchError
 
 ANHOCH_PRODUCT_BASE_URL: Final = "https://www.anhoch.com/products/"

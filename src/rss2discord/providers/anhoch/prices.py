@@ -14,14 +14,14 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.providers.anhoch.catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
+from rss2discord.providers.anhoch.models import AnhochProduct
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.anhoch_catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
-from rss2discord.transports.anhoch_models import AnhochProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

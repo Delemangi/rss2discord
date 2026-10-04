@@ -11,21 +11,21 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.anhoch_models import (
+from rss2discord.providers.anhoch.models import (
     AnhochDisplayPrice,
     AnhochImage,
     AnhochInstallments,
     AnhochMoney,
     AnhochProduct,
 )
-from rss2discord.transports.anhoch_price_monitor import (
+from rss2discord.providers.anhoch.prices import (
     AnhochCatalog,
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
     PriceAlertDelivery,
     PriceRecoveryStore,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 
 
 class CatalogStub:

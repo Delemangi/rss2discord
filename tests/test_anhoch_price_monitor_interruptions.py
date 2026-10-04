@@ -7,16 +7,16 @@ import requests
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.providers.anhoch.prices import (
+    AnhochPriceMonitor,
+    AnhochPriceMonitorDependencies,
+    PriceAlertDelivery,
+)
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
-)
-from rss2discord.transports.anhoch_price_monitor import (
-    AnhochPriceMonitor,
-    AnhochPriceMonitorDependencies,
-    PriceAlertDelivery,
 )
 from tests.anhoch_price_monitor_helpers import (
     CatalogStub,

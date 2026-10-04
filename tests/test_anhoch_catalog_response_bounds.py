@@ -1,14 +1,15 @@
 import pytest
 import requests
 
-from rss2discord.transports import FeedFetchError, anhoch_catalog
-from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
-from rss2discord.transports.anhoch_catalog_bounds import (
+from rss2discord.providers.anhoch import catalog as anhoch_catalog
+from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
+from rss2discord.providers.anhoch.catalog_bounds import (
     CatalogScanBounds,
     CatalogScanTotals,
     FetchedCatalogPage,
 )
-from rss2discord.transports.anhoch_models import AnhochCatalogResponse, AnhochProduct
+from rss2discord.providers.anhoch.models import AnhochCatalogResponse, AnhochProduct
+from rss2discord.transports import FeedFetchError
 from tests.anhoch_helpers import (
     CATALOG_URL,
     RecordingGet,

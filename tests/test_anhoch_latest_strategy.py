@@ -5,8 +5,8 @@ import pytest
 import requests
 
 from rss2discord.models import SourceMetric
+from rss2discord.providers.anhoch.strategy import AnhochStrategy
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.anhoch import AnhochStrategy
 from tests.anhoch_helpers import (
     CATALOG_URL,
     RaisingGet,
