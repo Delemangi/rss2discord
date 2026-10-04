@@ -2,11 +2,11 @@ import pytest
 from pydantic import ValidationError
 
 from rss2discord.models import SourceMetric
-from rss2discord.transports import ddstore_http
+from rss2discord.providers.ddstore import client as ddstore_http
+from rss2discord.providers.ddstore.client import DDSTORE_USER_AGENT
+from rss2discord.providers.ddstore.models import DDStoreProduct
+from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.ddstore import DDStoreStrategy
-from rss2discord.transports.ddstore_http import DDSTORE_USER_AGENT
-from rss2discord.transports.ddstore_models import DDStoreProduct
 from tests.ddstore_helpers import (
     CATALOG_URL,
     RecordingPost,

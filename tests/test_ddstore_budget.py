@@ -5,15 +5,15 @@ import pytest
 from curl_cffi import CurlOpt
 from pydantic import JsonValue
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports import ddstore_http
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.ddstore_budget import DDStoreScanBudget, DDStoreScanLimits
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
-from rss2discord.transports.ddstore_http import (
+from rss2discord.providers.ddstore import client as ddstore_http
+from rss2discord.providers.ddstore.budget import DDStoreScanBudget, DDStoreScanLimits
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.providers.ddstore.client import (
     CatalogPageRequest,
     DDStoreHttpClient,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 from tests.ddstore_helpers import (
     CATALOG_URL,
     RecordingPost,

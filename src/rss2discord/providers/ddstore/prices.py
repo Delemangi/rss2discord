@@ -10,6 +10,12 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.providers.ddstore.client import DDSTORE_LABEL
+from rss2discord.providers.ddstore.models import DDStoreProduct
+from rss2discord.providers.ddstore.strategy import (
+    format_ddstore_mkd,
+    format_ddstore_stock,
+)
 from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
@@ -18,12 +24,6 @@ from rss2discord.transports.catalog_normalization import (
     MAX_DDSTORE_RETAINED_SNAPSHOTS,
     normalize_ddstore_catalog,
 )
-from rss2discord.transports.ddstore import (
-    format_ddstore_mkd,
-    format_ddstore_stock,
-)
-from rss2discord.transports.ddstore_http import DDSTORE_LABEL
-from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

@@ -1,7 +1,13 @@
 import pytest
 
-from rss2discord.transports import FeedFetchError, ddstore_catalog, ddstore_http
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
+from rss2discord.providers.ddstore import (
+    catalog as ddstore_catalog,
+)
+from rss2discord.providers.ddstore import (
+    client as ddstore_http,
+)
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.transports import FeedFetchError
 from tests.ddstore_helpers import (
     CATALOG_URL,
     RecordingPost,

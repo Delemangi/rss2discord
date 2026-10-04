@@ -6,7 +6,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.transports.ddstore import DDStoreStrategy
+from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from tests.app_helpers import FakeSender
 from tests.test_ddstore_price_monitor import make_product
 

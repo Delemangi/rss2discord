@@ -5,6 +5,11 @@ from typing import Final, Protocol, assert_never
 from .configuration import FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender
+from .providers.ddstore.catalog import DDStoreCatalogClient
+from .providers.ddstore.prices import (
+    DDStorePriceMonitor,
+    DDStorePriceMonitorDependencies,
+)
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
 from .transports.anhoch_catalog import AnhochCatalogClient
 from .transports.anhoch_price_monitor import (
@@ -15,11 +20,6 @@ from .transports.cccenter_catalog import CCCenterCatalogClient
 from .transports.cccenter_price_monitor import (
     CCCenterPriceMonitor,
     CCCenterPriceMonitorDependencies,
-)
-from .transports.ddstore_catalog import DDStoreCatalogClient
-from .transports.ddstore_price_monitor import (
-    DDStorePriceMonitor,
-    DDStorePriceMonitorDependencies,
 )
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient

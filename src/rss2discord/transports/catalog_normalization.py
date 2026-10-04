@@ -4,13 +4,13 @@ from dataclasses import dataclass
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.reconciliation_models import canonical_json, digest
-from rss2discord.recovery_models import PriceSnapshot
-from rss2discord.transports.ddstore import (
+from rss2discord.providers.ddstore.models import DDStoreProduct
+from rss2discord.providers.ddstore.strategy import (
     format_ddstore_mkd,
     is_ddstore_price_available,
 )
-from rss2discord.transports.ddstore_models import DDStoreProduct
+from rss2discord.reconciliation_models import canonical_json, digest
+from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.transports.hivetec import format_hivetec_mkd
 from rss2discord.transports.hivetec_models import HivetecProduct
 
