@@ -1,16 +1,27 @@
-"""Local, network-free administrative inspection and approval CLI."""
+"""Local administration; only reconciliation plan/apply fetch source catalogs."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import sqlite3
+from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import yaml
+from pydantic import ValidationError
+
+from rss2discord.configuration import load_config
+from rss2discord.database_ownership import DatabaseOwnership, DatabaseOwnershipError
 from rss2discord.delivery_store import DeliveryStore
+from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.reconciliation import apply_plan, create_plan
+from rss2discord.reconciliation_models import MAX_PLAN_BYTES, ReconciliationPlan
 from rss2discord.recovery_models import BaselineCandidateSummary, PriceBatch
+from rss2discord.retries import FeedFetchInterruptedError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,20 +69,156 @@ def build_parser() -> argparse.ArgumentParser:
     health = commands.add_parser("health")
     health.add_argument("health_command", nargs="?", choices=("list",), default="list")
     health.add_argument("--feed-id")
+
+    reconcile = commands.add_parser("reconcile")
+    reconciliation_commands = reconcile.add_subparsers(
+        dest="reconciliation_command",
+        required=True,
+    )
+    for name in ("plan", "apply"):
+        command = reconciliation_commands.add_parser(name)
+        command.add_argument("--config", type=Path, required=True)
+        command.add_argument("--feed-id", required=True)
+        command.add_argument(
+            "--writers-stopped",
+            action="store_true",
+            required=True,
+            help="confirm ALL services/old binaries writing this database were manually stopped",
+        )
+        if name == "plan":
+            command.add_argument("--batch-id", type=int, required=True)
+            command.add_argument("--batch-fingerprint", required=True)
+            command.add_argument(
+                "--reason",
+                required=True,
+                help="identify the actual operator and review ticket/reference; do not include credentials",
+            )
+            command.add_argument("--output", type=Path, required=True)
+        else:
+            command.add_argument("--plan", type=Path, required=True)
+            command.add_argument("--fingerprint", required=True)
+    review = reconciliation_commands.add_parser("review")
+    review.add_argument("--plan", type=Path, required=True)
+    review.add_argument("--output", type=Path, required=True)
+    holds = reconciliation_commands.add_parser("holds")
+    holds.add_argument("--feed-id")
+    receipt = reconciliation_commands.add_parser("receipt")
+    receipt.add_argument("--fingerprint", required=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    with DeliveryStore(args.database) as store:
-        if args.command == "price":
-            return _price_command(store, args)
-        if args.command == "baseline":
-            return _baseline_command(store, args)
-        if args.command == "health":
-            _print_json([asdict(record) for record in store.list_health(args.feed_id)])
-            return 0
+    if args.command == "reconcile":
+        return _reconciliation_command(args)
+    writes = (
+        args.command == "price" and args.price_command in {"approve", "revoke"}
+    ) or (args.command == "baseline" and args.baseline_command == "approve")
+    try:
+        with (
+            DatabaseOwnership(args.database) if writes else nullcontext(),
+            DeliveryStore(args.database, read_only=not writes) as store,
+        ):
+            if args.command == "price":
+                return _price_command(store, args)
+            if args.command == "baseline":
+                return _baseline_command(store, args)
+            if args.command == "health":
+                _print_json(
+                    [asdict(record) for record in store.list_health(args.feed_id)],
+                )
+                return 0
+    except DatabaseOwnershipError as error:
+        return _error(str(error))
     return 2
+
+
+def _read_plan(path: Path) -> ReconciliationPlan:
+    with path.open("rb") as handle:
+        data = handle.read(MAX_PLAN_BYTES + 1)
+    if len(data) > MAX_PLAN_BYTES:
+        raise ValueError("reconciliation artifact exceeds size limit")
+    return ReconciliationPlan.model_validate_json(data)
+
+
+def _write_plan(path: Path, plan: ReconciliationPlan) -> None:
+    data = plan.model_dump_json(indent=2)
+    if len(data.encode("utf-8")) > MAX_PLAN_BYTES:
+        raise ValueError("reconciliation artifact exceeds size limit")
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(data + "\n")
+
+
+def _reconciliation_command(args: argparse.Namespace) -> int:
+    try:
+        action = args.reconciliation_command
+        if action == "review":
+            plan = _read_plan(args.plan).sealed()
+            _write_plan(args.output, plan)
+            _print_json({"reconciliation_fingerprint": plan.reconciliation_fingerprint})
+            return 0
+        if action in {"holds", "receipt"}:
+            with DeliveryStore(args.database, read_only=True) as store:
+                if action == "holds":
+                    records = store.list_price_product_holds(args.feed_id)
+                    _print_json({"count": len(records), "holds": records})
+                else:
+                    receipt = store.load_price_reconciliation(args.fingerprint)
+                    if receipt is None:
+                        return _error("reconciliation receipt not found")
+                    _print_json(receipt)
+            return 0
+        config = load_config(args.config)
+        feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
+        if feed is None:
+            return _error("feed not found in configuration")
+        with DatabaseOwnership(args.database) as ownership:
+            if action == "plan":
+                with DeliveryStore(args.database, read_only=True) as store:
+                    plan = create_plan(
+                        store,
+                        feed,
+                        batch_id=args.batch_id,
+                        batch_fingerprint=args.batch_fingerprint,
+                        reason=args.reason,
+                    )
+                _write_plan(args.output, plan)
+                _print_json(
+                    {
+                        "artifact": str(args.output),
+                        "review_required": sum(
+                            item.disposition == "review" for item in plan.items
+                        ),
+                    },
+                )
+            else:
+                plan = _read_plan(args.plan)
+                # Avoid even additive schema writes until evidence passes; the
+                # reconciliation schema is created inside its atomic transaction.
+                if not args.database.is_file():
+                    return _error("existing database required")
+                with DeliveryStore(args.database, initialize=False) as store:
+                    _print_json(
+                        apply_plan(
+                            store,
+                            feed,
+                            plan,
+                            ownership,
+                            fingerprint=args.fingerprint,
+                        ),
+                    )
+    except ValidationError:
+        return _error("invalid reconciliation artifact or configuration")
+    except yaml.YAMLError:
+        return _error("invalid YAML reconciliation configuration")
+    except (FeedFetchError, FeedFetchInterruptedError) as error:
+        return _error(
+            "reconciliation catalog collection failed (" + type(error).__name__ + ")",
+        )
+    except (DatabaseOwnershipError, ValueError, OSError, sqlite3.Error) as error:
+        return _error("reconciliation refused: " + str(error))
+    else:
+        return 0
 
 
 def _price_command(store: DeliveryStore, args: argparse.Namespace) -> int:

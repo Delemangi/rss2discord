@@ -3,6 +3,9 @@
 # How often to check feeds (in seconds)
 refresh_interval: 300
 
+# Optional per-feed ordinary discovery interval; omit/null inherits refresh_interval.
+# It does not change posting delays or independent price_check_interval scans.
+
 # Delay between fetching separate feeds (in seconds)
 # Increase this when a source rate-limits consecutive requests
 delay_between_feeds: 0
@@ -23,6 +26,7 @@ feeds:
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', or 'technomarket'
+    # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -243,6 +247,8 @@ feeds:
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   - 'technomarket': For new products from one public Technomarket category
+# - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;
+#   omit or set to null to inherit the global refresh_interval. Independent of price_check_interval.
 # - seed_existing_on_first_fetch: Set to true for an RSS/Atom feed whose current
 #   entries should be silently baselined before notifications. An empty fetch waits
 #   for entries rather than initializing the feed. GitLab commit feeds expose only

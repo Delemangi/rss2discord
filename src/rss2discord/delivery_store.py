@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
 from collections.abc import Iterable
 from decimal import Decimal
 from itertools import chain
@@ -12,12 +13,20 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from rss2discord.database_ownership import DatabaseOwnership
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.price_safety import (
     HEALTH_REMINDER_SECONDS,
     MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
     MAX_PRICE_MANIFEST_ITEMS,
     canonical_manifest_fingerprint,
+)
+from rss2discord.reconciliation_models import (
+    MAX_OPERATION_SECONDS,
+    MAX_PLAN_AGE_SECONDS,
+    ReconciliationPlan,
+    digest,
+    validate_dispositions,
 )
 from rss2discord.recovery_models import (
     BaselineCandidateSummary,
@@ -36,13 +45,27 @@ from rss2discord.recovery_models import (
 class DeliveryStore:
     """Own the additive state tables while preserving legacy delivery rows."""
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        read_only: bool = False,
+        initialize: bool = True,
+    ) -> None:
         self._database_path = database_path
-        database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(database_path)
+        if read_only:
+            self._connection = sqlite3.connect(
+                database_path.resolve().as_uri() + "?mode=ro",
+                uri=True,
+            )
+        else:
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+            self._connection = sqlite3.connect(database_path)
         self._connection.execute("PRAGMA foreign_keys = ON")
+        self._connection.execute("PRAGMA busy_timeout = 5000")
         try:
-            self._initialize()
+            if not read_only and initialize:
+                self._initialize()
         except sqlite3.Error:
             self._connection.close()
             raise
@@ -144,7 +167,8 @@ class DeliveryStore:
             self._connection.executemany(
                 "INSERT INTO price_snapshots "
                 "(feed_id, product_id, amount, formatted, currency) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS ("
+                "SELECT 1 FROM price_product_holds WHERE feed_id = ? AND product_id = ?) "
                 "ON CONFLICT(feed_id, product_id) DO UPDATE SET "
                 "amount = excluded.amount, formatted = excluded.formatted, "
                 "currency = excluded.currency, updated_at = unixepoch() "
@@ -158,12 +182,242 @@ class DeliveryStore:
                         canonicalize_price_amount(snapshot.amount),
                         snapshot.formatted,
                         snapshot.currency,
+                        snapshot.feed_id,
+                        snapshot.product_id,
                     )
                     for snapshot in snapshots
                 ),
             )
 
     # Additive price-change manifests ------------------------------------
+
+    def held_price_product_ids(self, feed_id: str) -> frozenset[str]:
+        if not self._has_reconciliation_schema():
+            return frozenset()
+        return frozenset(
+            str(row[0])
+            for row in self._connection.execute(
+                "SELECT product_id FROM price_product_holds WHERE feed_id = ?",
+                (feed_id,),
+            )
+        )
+
+    def list_price_product_holds(
+        self,
+        feed_id: str | None = None,
+    ) -> tuple[dict[str, object], ...]:
+        if not self._has_reconciliation_schema():
+            return ()
+        return tuple(
+            dict(
+                zip(
+                    (
+                        "feed_id",
+                        "product_id",
+                        "reconciliation_fingerprint",
+                        "reason",
+                        "created_at",
+                    ),
+                    row,
+                    strict=True,
+                ),
+            )
+            for row in self._connection.execute(
+                "SELECT feed_id, product_id, reconciliation_fingerprint, reason, created_at "
+                "FROM price_product_holds WHERE (? IS NULL OR feed_id = ?) ORDER BY feed_id, product_id",
+                (feed_id, feed_id),
+            )
+        )
+
+    def price_snapshots_digest(self, feed_id: str) -> str:
+        return digest(
+            tuple(
+                self._connection.execute(
+                    "SELECT product_id, amount, formatted, currency, updated_at FROM price_snapshots "
+                    "WHERE feed_id = ? ORDER BY product_id",
+                    (feed_id,),
+                ),
+            ),
+        )
+
+    def price_holds_digest(self, feed_id: str) -> str:
+        return digest(self.list_price_product_holds(feed_id))
+
+    def price_batch_state_digest(self, batch_id: int) -> str:
+        return digest(
+            {
+                "batch": self._connection.execute(
+                    "SELECT * FROM price_change_batches WHERE batch_id = ?",
+                    (batch_id,),
+                ).fetchone(),
+                "items": tuple(
+                    self._connection.execute(
+                        "SELECT * FROM price_change_batch_items WHERE batch_id = ? ORDER BY product_id",
+                        (batch_id,),
+                    ),
+                ),
+            },
+        )
+
+    def require_no_open_price_claims(self, feed_id: str) -> None:
+        if (
+            self._connection.execute(
+                "SELECT 1 FROM price_change_batch_items i JOIN price_change_batches b "
+                "ON b.batch_id = i.batch_id WHERE b.feed_id = ? AND i.claim_open = 1 LIMIT 1",
+                (feed_id,),
+            ).fetchone()
+            is not None
+        ):
+            raise ValueError(
+                "feed has open price delivery claims, including historical revoked batches",
+            )
+
+    def load_price_reconciliation(self, fingerprint: str) -> dict[str, object] | None:
+        if not self._has_reconciliation_schema():
+            return None
+        row = self._connection.execute(
+            "SELECT reconciliation_fingerprint, feed_id, batch_id, reason, accepted_count, held_count, noop_count, created_at "
+            "FROM price_reconciliations WHERE reconciliation_fingerprint = ?",
+            (fingerprint,),
+        ).fetchone()
+        return (
+            None
+            if row is None
+            else dict(
+                zip(
+                    (
+                        "reconciliation_fingerprint",
+                        "feed_id",
+                        "batch_id",
+                        "reason",
+                        "accepted_count",
+                        "held_count",
+                        "noop_count",
+                        "created_at",
+                    ),
+                    row,
+                    strict=True,
+                ),
+            )
+        )
+
+    def apply_price_reconciliation(
+        self,
+        plan: ReconciliationPlan,
+        ownership: DatabaseOwnership,
+        *,
+        operation_started_at: float,
+    ) -> dict[str, object]:
+        """Commit an independently refetched, sealed plan without delivery effects."""
+        ownership.require(self.database_path)
+        validate_dispositions(plan)
+        if plan.reconciliation_fingerprint != plan.fingerprint():
+            raise ValueError("reconciliation fingerprint mismatch")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            receipt = self.load_price_reconciliation(plan.reconciliation_fingerprint)
+            if receipt is not None:
+                return receipt
+            elapsed = time.monotonic() - operation_started_at
+            age = int(time.time()) - plan.captured_at
+            if (
+                not 0 <= elapsed <= MAX_OPERATION_SECONDS
+                or not 0 <= age <= MAX_PLAN_AGE_SECONDS
+            ):
+                raise ValueError("stale reconciliation evidence")
+            self.require_no_open_price_claims(plan.feed_id)
+            batch = self.load_price_batch(plan.batch_id)
+            if (
+                batch is None
+                or batch.feed_id != plan.feed_id
+                or batch.provider != plan.provider
+                or batch.fingerprint != plan.batch_fingerprint
+                or batch.status not in {"candidate", "approved", "paused", "revoked"}
+                or self.price_batch_state_digest(plan.batch_id)
+                != plan.batch_state_digest
+                or self.price_snapshots_digest(plan.feed_id) != plan.snapshots_digest
+                or self.price_holds_digest(plan.feed_id) != plan.holds_digest
+            ):
+                raise ValueError("reconciliation database state drift")
+            others = self._connection.execute(
+                "SELECT 1 FROM price_change_batches WHERE feed_id = ? AND batch_id <> ? "
+                "AND status IN ('candidate','approved','paused') LIMIT 1",
+                (plan.feed_id, plan.batch_id),
+            ).fetchone()
+            if others is not None:
+                raise ValueError("another nonterminal price batch exists for this feed")
+            pending_ids = {
+                item.product_id for item in batch.items if item.status == "pending"
+            }
+            if pending_ids != {item.product_id for item in plan.items if item.pending}:
+                raise ValueError("reconciliation must cover every pending item")
+            actual_holds = self.held_price_product_ids(plan.feed_id)
+            if any(
+                item.product_id in actual_holds and item.disposition != "hold"
+                for item in plan.items
+            ):
+                raise ValueError("existing holds cannot be released")
+            self._initialize_reconciliation_schema()
+            self._connection.execute(
+                "INSERT INTO price_reconciliations (reconciliation_fingerprint, feed_id, batch_id, reason, "
+                "plan_json, accepted_count, held_count, noop_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    plan.reconciliation_fingerprint,
+                    plan.feed_id,
+                    plan.batch_id,
+                    plan.reason,
+                    plan.model_dump_json(),
+                    sum(item.disposition == "accept" for item in plan.items),
+                    sum(item.disposition == "hold" for item in plan.items),
+                    sum(item.disposition == "noop" for item in plan.items),
+                ),
+            )
+            for item in plan.items:
+                self._connection.execute(
+                    "INSERT INTO price_reconciliation_items (reconciliation_fingerprint, product_id, disposition, item_json) VALUES (?, ?, ?, ?)",
+                    (
+                        plan.reconciliation_fingerprint,
+                        item.product_id,
+                        item.disposition,
+                        item.model_dump_json(),
+                    ),
+                )
+                if item.disposition == "hold":
+                    self._connection.execute(
+                        "INSERT OR IGNORE INTO price_product_holds (feed_id, product_id, reconciliation_fingerprint, reason) VALUES (?, ?, ?, ?)",
+                        (
+                            plan.feed_id,
+                            item.product_id,
+                            plan.reconciliation_fingerprint,
+                            item.reason.strip() or plan.reason,
+                        ),
+                    )
+                elif item.disposition == "accept" and item.target is not None:
+                    self._connection.execute(
+                        "INSERT INTO price_snapshots (feed_id, product_id, amount, formatted, currency) VALUES (?, ?, ?, ?, ?) "
+                        "ON CONFLICT(feed_id, product_id) DO UPDATE SET amount = excluded.amount, formatted = excluded.formatted, currency = excluded.currency, updated_at = unixepoch()",
+                        (
+                            plan.feed_id,
+                            item.product_id,
+                            item.target.amount,
+                            item.target.formatted,
+                            item.target.currency,
+                        ),
+                    )
+            self._connection.execute(
+                "UPDATE price_change_batches SET status = 'revoked', reason = ?, updated_at = unixepoch() WHERE batch_id = ?",
+                (
+                    "FutureOnlyReconciliation:" + plan.reconciliation_fingerprint,
+                    plan.batch_id,
+                ),
+            )
+            # Check again immediately before committing, after all database work.
+            if time.monotonic() - operation_started_at > MAX_OPERATION_SECONDS:
+                raise ValueError("stale reconciliation evidence")
+            receipt = self.load_price_reconciliation(plan.reconciliation_fingerprint)
+            if receipt is None:  # pragma: no cover
+                raise RuntimeError("reconciliation receipt missing")
+            return receipt
 
     def record_price_change_candidate(
         self,
@@ -183,6 +437,9 @@ class DeliveryStore:
                 raise ValueError("price manifest item limit exceeded")
         records = tuple(sorted(records_list, key=lambda item: item.product_id))
         _validate_price_records(records, feed_id)
+        held = self.held_price_product_ids(feed_id)
+        if any(record.product_id in held for record in records):
+            raise ValueError("held products cannot enter a price delivery manifest")
         if not records:
             raise ValueError("price manifest must contain items")
         if not 0 <= available_count <= catalog_count:
@@ -276,6 +533,13 @@ class DeliveryStore:
             if row is None:
                 raise ValueError("price batch fingerprint is not pending approval")
             batch_id = int(row[0])
+            held = self.held_price_product_ids(feed_id)
+            if any(
+                item.product_id in held
+                for item in self._load_price_batch(batch_id).items
+                if item.status == "pending"
+            ):
+                raise ValueError("held products cannot be approved for price delivery")
             self._connection.execute(
                 "UPDATE price_change_batches SET status = 'approved', reason = ?, "
                 "approved_at = unixepoch(), paused_at = NULL WHERE batch_id = ?",
@@ -352,8 +616,9 @@ class DeliveryStore:
             try:
                 active = self._connection.execute(
                     "SELECT 1 FROM price_change_batches "
-                    "WHERE batch_id = ? AND status = 'approved'",
-                    (batch_id,),
+                    "WHERE batch_id = ? AND status = 'approved' AND NOT EXISTS ("
+                    "SELECT 1 FROM price_product_holds h WHERE h.feed_id = price_change_batches.feed_id AND h.product_id = ?)",
+                    (batch_id, product_id),
                 ).fetchone()
                 if active is None:
                     self._connection.rollback()
@@ -423,6 +688,8 @@ class DeliveryStore:
                 raise ValueError("price delivery attempt was not reserved")
             if snapshot.feed_id != batch[0] or snapshot.product_id != claim.product_id:
                 raise ValueError("delivered snapshot identity mismatch")
+            if snapshot.product_id in self.held_price_product_ids(snapshot.feed_id):
+                raise ValueError("held products cannot acknowledge price deliveries")
             if (
                 canonicalize_price_amount(snapshot.amount) != item[0]
                 or snapshot.formatted != item[1]
@@ -526,7 +793,9 @@ class DeliveryStore:
         """
         if not 1 <= limit <= MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN:
             raise ValueError("limit must be between 1 and 10")
-        normalized = tuple(sorted(set(product_ids)))
+        normalized = tuple(
+            sorted(set(product_ids) - self.held_price_product_ids(feed_id)),
+        )
         if any(not product_id for product_id in normalized):
             raise ValueError("normal price product IDs must be non-empty")
         with self._connection:
@@ -1084,6 +1353,7 @@ class DeliveryStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS price_change_active_one "
                 "ON price_change_batches(feed_id) WHERE status IN ('approved','paused')",
             )
+            self._initialize_reconciliation_schema()
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS baseline_candidates (feed_id TEXT PRIMARY KEY, "
                 "fingerprint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'candidate' "
@@ -1124,6 +1394,44 @@ class DeliveryStore:
                     self._connection.execute(
                         f"ALTER TABLE health_state ADD COLUMN {column} INTEGER",
                     )
+
+    def _has_reconciliation_schema(self) -> bool:
+        return (
+            self._connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'price_reconciliations'",
+            ).fetchone()
+            is not None
+        )
+
+    def _initialize_reconciliation_schema(self) -> None:
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS price_reconciliations ("
+            "reconciliation_fingerprint TEXT PRIMARY KEY, feed_id TEXT NOT NULL, "
+            "batch_id INTEGER NOT NULL REFERENCES price_change_batches(batch_id), reason TEXT NOT NULL, "
+            "plan_json TEXT NOT NULL, accepted_count INTEGER NOT NULL, held_count INTEGER NOT NULL, noop_count INTEGER NOT NULL, "
+            "created_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS price_reconciliation_items ("
+            "reconciliation_fingerprint TEXT NOT NULL REFERENCES price_reconciliations(reconciliation_fingerprint), "
+            "product_id TEXT NOT NULL, disposition TEXT NOT NULL CHECK(disposition IN ('accept','hold','noop')), item_json TEXT NOT NULL, "
+            "PRIMARY KEY(reconciliation_fingerprint, product_id)) WITHOUT ROWID",
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS price_product_holds (feed_id TEXT NOT NULL, product_id TEXT NOT NULL, "
+            "reconciliation_fingerprint TEXT NOT NULL REFERENCES price_reconciliations(reconciliation_fingerprint), reason TEXT NOT NULL, "
+            "created_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY(feed_id, product_id)) WITHOUT ROWID",
+        )
+        for table in (
+            "price_reconciliations",
+            "price_reconciliation_items",
+            "price_product_holds",
+        ):
+            for action in ("UPDATE", "DELETE"):
+                self._connection.execute(
+                    f"CREATE TRIGGER IF NOT EXISTS {table}_immutable_{action.lower()} BEFORE {action} ON {table} "
+                    "BEGIN SELECT RAISE(ABORT, 'immutable reconciliation audit/hold'); END",
+                )
 
     def _insert_price_items(
         self,
@@ -1291,6 +1599,7 @@ class DeliveryStore:
             "AND status IN ('completed','revoked') "
             "AND NOT EXISTS (SELECT 1 FROM price_change_batch_items i "
             "WHERE i.batch_id = price_change_batches.batch_id AND i.claim_open = 1) "
+            "AND NOT EXISTS (SELECT 1 FROM price_reconciliations r WHERE r.batch_id = price_change_batches.batch_id) "
             "AND batch_id NOT IN (SELECT batch_id FROM price_change_batches "
             "WHERE feed_id = ? AND status IN ('completed','revoked') "
             "ORDER BY batch_id DESC LIMIT 10))",

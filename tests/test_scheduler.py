@@ -1,5 +1,7 @@
 from functools import partial
 from itertools import pairwise
+from math import nextafter
+from typing import Literal
 
 import pytest
 
@@ -435,6 +437,69 @@ def test_extreme_overrun_skips_arithmetically_and_preserves_due_peer() -> None:
     ).run()
     assert starts == [0, 1_000_000_000_000]
     assert clock.sleep_calls == []
+
+
+@pytest.mark.parametrize("kind", ["ordinary", "price"])
+@pytest.mark.parametrize("interval", [1e-320, 5e-324, 1e-20])
+@pytest.mark.parametrize("duration", [0.1, 1_000_000_000_000.0])
+def test_tiny_interval_overrun_preserves_peer_and_future_deadline(
+    kind: Literal["ordinary", "price"],
+    interval: float,
+    duration: float,
+) -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def tiny() -> None:
+        events.append(("tiny", clock.now))
+        clock.now += duration
+
+    jobs = (
+        ScheduledJob("tiny", kind, interval, tiny),
+        ScheduledJob("peer", kind, 300, lambda: events.append(("peer", clock.now))),
+    )
+    RuntimeScheduler(
+        SchedulerJobs(
+            jobs if kind == "ordinary" else (),
+            jobs if kind == "price" else (),
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(events) == 3),
+    ).run()
+
+    assert events == [
+        ("tiny", 0),
+        ("peer", duration),
+        ("tiny", nextafter(duration, float("inf"))),
+    ]
+    assert clock.sleep_calls == [nextafter(duration, float("inf")) - duration]
+
+
+@pytest.mark.parametrize("kind", ["ordinary", "price"])
+@pytest.mark.parametrize(
+    ("started_at", "interval"),
+    [(1.0, 1e-320), (1.0, 5e-324), (1e16, 0.1)],
+)
+def test_zero_duration_sub_ulp_interval_sleeps_before_every_repeat(
+    kind: Literal["ordinary", "price"],
+    started_at: float,
+    interval: float,
+) -> None:
+    clock = FakeSchedulerClock()
+    clock.now = started_at
+    starts: list[float] = []
+    jobs = (ScheduledJob("tiny", kind, interval, lambda: starts.append(clock.now)),)
+    RuntimeScheduler(
+        SchedulerJobs(
+            jobs if kind == "ordinary" else (),
+            jobs if kind == "price" else (),
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(starts) == 3),
+    ).run()
+
+    second = nextafter(started_at, float("inf"))
+    third = nextafter(second, float("inf"))
+    assert starts == [started_at, second, third]
+    assert clock.sleep_calls == [second - started_at, third - second]
 
 
 def test_empty_scheduler_finishes_without_sleeping() -> None:

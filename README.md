@@ -1,342 +1,109 @@
 # RSS2Discord
 
-Forward RSS/Atom feeds, XenForo thread posts, IT.mk Oglasnik, Pazar3, and Reklama5 listings, and Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, or Technomarket product updates to Discord webhooks.
+Monitor feeds, forums, marketplaces, and product catalogs; send new-item and optional price-change notifications to Discord.
 
-## What it supports
+## Supported sources
 
-- RSS and Atom feeds, including public GitHub release and self-hosted GitLab commit feeds
-- Optional RSS adapters for Hacker News and Reddit
-- XenForo forum threads
-- IT.mk Oglasnik index and category pages
-- New Pazar3 listings from scoped public search URLs and opt-in MKD/EUR price alerts
-- New Reklama5 ads from generic search URLs and opt-in category price alerts
-- New products from Anhoch's catalog and opt-in selling-price alerts
-- New products from Neksio's full public catalog and opt-in selling-price alerts
-- New products from Setec's online catalog and opt-in selling-price alerts
-- New products from DDStore's public GraphQL catalog and opt-in selling-price alerts
-- New products from Hivetec's public WooCommerce catalog and opt-in selling-price alerts
-- New products from CCCenter's public WooCommerce catalog and opt-in selling-price alerts
-- New in-stock products from Gjirafa50.mk and Gjirafa50.com, with opt-in full-catalog price alerts
-- New products from one Neptun category and opt-in actual-price alerts
-- New products from one Technomarket category and opt-in SMART/regular effective-price alerts
-- SQLite delivery history and persistent price snapshots for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, and Technomarket
-- Discord Components v2 messages with labels, links, categories, thumbnails, and text fallbacks
-- Cards led by the entry's own figures: the headline metric at body size, the price it replaced struck through beside it, each supporting detail on its own line, and only provenance left in the footer
+- RSS/Atom (including GitHub releases and GitLab commits), Hacker News and Reddit adapters
+- XenForo and IT.mk Oglasnik
+- Pazar3 and Reklama5 listings
+- Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, and Technomarket products
 
-## Docker Compose setup
+See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Complete Gjirafa50 price enumeration remains unresolved on both storefronts; Reklama5 access can be blocked by upstream challenges.
 
-```bash
+## Docker quick start
+
+```sh
 git clone https://github.com/Delemangi/rss2discord.git
 cd rss2discord
 mkdir -p config data
 cp config/config.example.yaml config/config.yaml
-# Edit config/config.yaml and replace the example feeds and webhook URLs.
-sudo chown -R 10001:10001 data
-docker compose up -d --build
+# Edit config/config.yaml: remove unused examples and set real webhook URLs.
+sudo chown -R 10001:10001 data  # Usually unnecessary with Docker Desktop.
+docker compose up -d --build   # Build from this checkout.
 ```
 
-Docker Desktop users may not need the `chown` step. View logs or stop the service with:
-
-```bash
-docker compose logs -f rss2discord
-docker compose down
-```
-
-To run the published image instead of building locally:
-
-```bash
-docker compose -f compose.prod.yaml up -d
-```
+To use the published image instead, run `docker compose -f compose.prod.yaml up -d`. Follow logs with `docker compose logs -f rss2discord`; stop with `docker compose down`.
 
 ## Configuration
 
-The checked-in `config/config.example.yaml` contains safe placeholders. Copy it to the ignored deployment configuration, then edit `config/config.yaml`; Compose mounts that active file read-only at `/app/config/config.yaml`. Each feed needs a stable, unique `id`; changing it later makes old entries eligible for reposting.
+Start with this minimal RSS feed, then use the [annotated configuration](config/config.example.yaml) for all provider examples and options:
 
 ```yaml
 refresh_interval: 300
 delay_between_feeds: 0
 delay_between_posts: 2
 max_post_age_days: 7
-
 feeds:
-  - id: "my-feed"
-    name: "My Feed"
-    url: "https://example.com/feed.xml"
-    webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-    strategy: "rss"
-    webhook_name: "RSS Bot"
-    webhook_avatar: "https://example.com/avatar.png"
-    embed_color: 5814783
+  - id: my-feed                 # Stable unique ID; changing it can repost old items.
+    name: My Feed
+    url: https://example.com/feed.xml
+    webhook: https://discord.com/api/webhooks/ID/TOKEN
+    strategy: rss
 ```
 
-Common feed types:
+`refresh_interval` is the ordinary discovery fallback; a feed's optional `ordinary_check_interval` overrides it without changing price scans. `price_check_interval` independently enables an immediate price scan and later periodic scans; its first scan silently establishes a baseline. `delay_between_feeds` spaces ordinary jobs, not individual provider requests; `delay_between_posts` spaces Discord posts. Pazar3 requests also share a 20-second host-wide pacer. Scheduling is best-effort, not a promise of exact scan times. Keep feed IDs stable. Treat webhook URLs as secrets.
 
-```yaml
-# Hacker News RSS with API enrichment
-- id: "hacker-news"
-  name: "Hacker News"
-  url: "https://news.ycombinator.com/rss"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "rss"
-  adapter: "hackernews"
+## Inspecting and recovering state
 
-# Reddit RSS without OAuth
-- id: "reddit-python"
-  name: "r/Python"
-  url: "https://www.reddit.com/r/python/.rss"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "rss"
-  adapter: "reddit"
-
-# GitHub releases
-- id: "github-cli-releases"
-  name: "GitHub CLI Releases"
-  url: "https://github.com/cli/cli/releases.atom"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "rss"
-
-# Self-hosted GitLab commits for one selected branch
-- id: "gitlab-horizon-application-main"
-  name: "Horizon Application commits (main)"
-  url: "https://gitlab.finki.ukim.mk/wp/horizon-application/-/commits/main.atom"
-  webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-  strategy: "rss"
-  seed_existing_on_first_fetch: true
-
-# XenForo thread
-- id: "forum-thread"
-  name: "Forum Thread"
-  url: "https://forum.example.com/threads/topic.12345/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "xenforo"
-
-# IT.mk Oglasnik
-- id: "itmk-oglasnik"
-  name: "IT.mk Oglasnik"
-  url: "https://forum.it.mk/oglasnik/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "itmk_oglasnik"
-
-# Reklama5 computer parts and accessories (category 584)
-- id: "reklama5-computer-parts"
-  name: "Reklama5 Computer Parts and Accessories"
-  url: "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "reklama5"
-  price_check_interval: 3600
-
-# Pazar3 computer parts and accessories
-- id: "pazar3-computer-parts"
-  name: "Pazar3 Computer Parts and Accessories"
-  url: "https://www.pazar3.mk/oglasi/elektronika/delovi-za-kompjuteri-dodatoci/prodazba"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "pazar3"
-  # Enable price_check_interval only for a scope with at most 500 listings.
-
-# Anhoch new products and opt-in selling-price monitoring
-- id: "anhoch-new-products"
-  name: "Anhoch New Products"
-  url: "https://www.anhoch.com/products?inStockOnly=2"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "anhoch"
-  price_check_interval: 3600
-  webhook_name: "Anhoch"
-  webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
-
-# Neksio new products and opt-in selling-price monitoring
-- id: "neksio-products"
-  name: "Neksio Products"
-  url: "https://g.store.neksio.mk/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "neksio"
-  price_check_interval: 3600
-  webhook_name: "Neksio"
-
-# Hivetec new products and opt-in selling-price monitoring
-- id: "hivetec-products"
-  name: "Hivetec Products"
-  url: "https://hivetec.mk/shop/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "hivetec"
-  price_check_interval: 3600
-  webhook_name: "Hivetec"
-
-# Gjirafa50 newest in-stock products and full-catalog price monitoring.
-# Use https://gjirafa50.com/ with a separate stable feed ID for that storefront.
-- id: "gjirafa50-products"
-  name: "Gjirafa50 Products"
-  url: "https://gjirafa50.mk/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "gjirafa50"
-  price_check_interval: 21600
-  webhook_name: "Gjirafa50"
-
-# Setec new products and opt-in selling-price monitoring
-- id: "setec-new-products"
-  name: "Setec New Products"
-  url: "https://setec.mk/e-prodazba"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "setec"
-  price_check_interval: 3600
-  webhook_name: "Setec"
-
-# DDStore new products and opt-in selling-price monitoring
-- id: "ddstore-new-products"
-  name: "DDStore New Products"
-  url: "https://ddstore.mk/"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "ddstore"
-  price_check_interval: 3600
-  webhook_name: "DDStore"
-
-# Technomarket category discovery and opt-in effective-price monitoring
-- id: "technomarket-laptops"
-  name: "Technomarket Laptops"
-  url: "https://tehnomarket.com.mk/category/4003/laptopi"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "technomarket"
-  price_check_interval: 3600
-  webhook_name: "Technomarket"
-
-# CCCenter new products and opt-in selling-price monitoring
-- id: "cccenter-products"
-  name: "CCCenter Products"
-  url: "https://cccenter.mk/shop/?orderby=date"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "cccenter"
-  price_check_interval: 3600
-  webhook_name: "CCCenter"
-
-# Neptun category products and opt-in actual-price monitoring
-- id: "neptun-computers"
-  name: "Neptun Computers"
-  url: "https://www.neptun.mk/KOMPJUTERI.nspx"
-  webhook: "https://discord.com/api/webhooks/ID/TOKEN"
-  strategy: "neptun"
-  price_check_interval: 3600
-  webhook_name: "Neptun"
-```
-
-`price_check_interval` opts an Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket feed into an immediate, independent price scan. The first scan silently stores a baseline; later scans run at the configured interval. Gjirafa50 full-catalog scans should use at least 21600 seconds because they require thousands of requests. Neptun, Pazar3, Reklama5, and Technomarket scan only the category or search scope named by the feed URL. Omit the key or set it to `null` to disable price monitoring.
-
-Useful options:
-
-| Key | Notes |
-| --- | --- |
-| `strategy` | `rss` by default; also supports `xenforo`, `itmk_oglasnik`, `pazar3`, `reklama5`, `anhoch`, `cccenter`, `ddstore`, `gjirafa50`, `hivetec`, `neksio`, `neptun`, `setec`, and `technomarket`. |
-| `adapter` | Optional for RSS only: `hackernews` or `reddit`. |
-| `seed_existing_on_first_fetch` | Optional RSS/Atom baseline. Set to `true` to seed the first non-empty fetch without notifications; an empty first fetch does not initialize the feed. |
-| `max_post_age_days` | Set to `0` to disable age filtering. |
-| `delay_between_feeds` | Increase if a source rate-limits requests. |
-| `webhook_avatar` | Optional HTTPS URL, up to 2,048 encoded characters. Localhost, non-global IP literals, malformed hosts, and URLs with credentials are rejected. DNS names are not resolved by rss2discord. |
-| `embed_color` | Components v2 accent color; key name is kept for compatibility. Price alerts override it with green for a drop and red for a rise. |
-| `price_check_interval` | Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket only. Omit or set to `null` to disable. |
-
-See `config/config.example.yaml` for the fully annotated configuration.
-
-## Runtime notes
-
-Operational recovery is covered by [price recovery](#price-recovery), [CCCenter baseline](#cccenter-baseline), and [recovery safety](#recovery-safety).
-
-### Price recovery
-
-The admin CLI is local and makes no feed requests or Discord sends, but it is not read-only: even `list` and `show` open the store and can create or migrate the database. A wrong `--database` path can create a new empty database, so back up before inspection. Stop **all** writers and database clients for a file backup, then copy the database and any remaining `-wal`/`-shm` sidecars together; never delete a WAL. Alternatively, use SQLite's online backup API and verify the copy separately.
-
-These examples assume the package is installed. Replace `data/state.db`, feed IDs, batch ID `42`, and `FULL_FINGERPRINT` with inspected values. Put `--database` before the subcommand; if omitted, the CLI uses `STATE_DB_PATH` and then `data/state.db`.
+The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Health and price/baseline inspection commands are read-only. Replace example batch `42`, feed IDs, and fingerprints with inspected values. Before a state-changing operation, stop every writer and back up the database safely, including any WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.
 
 ```sh
 python -m rss2discord.admin --database data/state.db health list
-python -m rss2discord.admin --database data/state.db price list --feed-id ddstore --all
+python -m rss2discord.admin --database data/state.db price list --feed-id FEED_ID --all
 python -m rss2discord.admin --database data/state.db price show 42 --offset 0 --sample-limit 100
-python -m rss2discord.admin --database data/state.db price approve --feed-id ddstore --fingerprint FULL_FINGERPRINT --reason "Reviewed exact targets"
+python -m rss2discord.admin --database data/state.db baseline list --feed-id cccenter
+python -m rss2discord.admin --database data/state.db baseline show cccenter --offset 0 --sample-limit 100
+```
+
+For `price show`, inspect every page (`--offset` advances by the returned count) and confirm the same full fingerprint, batch, and total throughout. More than 100 changed prices require manual approval; normal and approved scans allow at most ten delivery attempts, not ten guaranteed deliveries. Approval permits later scans to deliver; it does not send immediately. Revocation prevents new deliveries but cannot stop an already in-flight send or undo one already sent. Both approval and revocation require the full fingerprint and a meaningful reason:
+
+```sh
+python -m rss2discord.admin --database data/state.db price approve --feed-id FEED_ID --fingerprint FULL_FINGERPRINT --reason "Reviewed exact targets"
 python -m rss2discord.admin --database data/state.db price revoke 42 --fingerprint FULL_FINGERPRINT --reason "Withdraw review"
 ```
 
-Price approval, revocation, and baseline approval require the full fingerprint and a meaningful nonempty reason. `price show` is paginated: inspect every page, advancing `--offset` by `returned` until `remaining` is zero, and verify the same batch, full fingerprint, and total on every page. Changes to more than 100 prices are quarantined for manual approval; exactly 100 is not. There is no automatic approval, and normal or approved scans allow at most ten delivery attempts, not ten guaranteed deliveries.
-
-Approval permits later valid scans to deliver; it does not send immediately. Changed or disappeared pending targets pause recovery for review. Revocation stops new deliveries, but an already in-flight delivery may finish, and revocation does not undo sends.
-
-### CCCenter baseline
-
-CCCenter has separate baseline commands. A fresh feed silently records its first complete nonempty inventory. An already initialized feed that lacks a complete baseline creates a candidate and waits for approval; approval suppresses those existing IDs, it does **not** deliver them. Baseline IDs remain separate from legacy delivery history, and there is no baseline-revoke command.
+CCCenter baseline approval suppresses the reviewed existing inventory; it does not notify for those products. Inspect every page and verify its full fingerprint and count before approval. There is no baseline-revoke command:
 
 ```sh
-python -m rss2discord.admin --database data/state.db baseline list --feed-id cccenter
-python -m rss2discord.admin --database data/state.db baseline show cccenter --offset 0 --sample-limit 100
 python -m rss2discord.admin --database data/state.db baseline approve --feed-id cccenter --fingerprint FULL_FINGERPRINT --reason "Suppress reviewed inventory"
 ```
 
-Audit every baseline page and require the current full fingerprint and entry count before approval. If the candidate changes while it is being reviewed, restart the audit.
+## DDStore / Hivetec future-only reconciliation
 
-### Recovery safety
+This offline workflow applies only to DDStore and Hivetec. It silently accepts reviewed **current** prices as the future baseline; it does not send historical alerts. Holds suppress price alerts and snapshot updates, not product discovery, and this workflow has no hold-release command. Never use it as a way to approve products automatically: there are no automatic legitimacy thresholds.
 
-Access challenges and HTTP 403 establish a shared six-hour cooldown for configured feeds using the same URL origin. Skips do not extend it; a real probe after expiry can establish another cooldown or record recovery. There is no force-probe or cooldown-clear command. Health reports fetch state, not proof that a Discord delivery succeeded.
+1. Stop **all** writers, including old binaries and database clients, and verify a consistent backup. Keep them stopped through apply. `--writers-stopped` is an operator acknowledgment, not an automated check. Do not bypass `.writer.lock` or clear claims to proceed.
+2. Use read-only `price list` / `price show` to select the feed, batch, and exact full batch fingerprint. Create a fresh plan with a truthful operator and review reference:
 
-The scheduler skips missed fixed-phase slots and runs callbacks serially; Gjirafa50 retains its background price worker. The global ordinary-feed gap remains in force (default 0 seconds; a configured 61-second gap is also supported), while price jobs can run during that gap. Cooldown skips do not consume the gap. When both job classes are due and the gap has elapsed, ordinary and price callbacks alternate; an already-running callback cannot be preempted. Startup warns when feed count times the configured gap meets or exceeds the refresh interval. A `300`-second refresh interval is not a promise of one scan every five minutes. Delivery is at-least-once: an ambiguous webhook timeout or a crash after Discord accepts a message can produce a duplicate. Do not delete snapshots, delivery rows, or recovery rows to roll back. Stop the service, make a new consistent backup, disable the affected `price_check_interval` and/or discovery feed, then reconcile state before re-enabling it.
+   ```sh
+   python -m rss2discord.admin --database data/state.db reconcile plan --config config/config.yaml --feed-id ddstore --batch-id 42 --batch-fingerprint FULL_BATCH_FINGERPRINT --reason "Operator: YOUR_NAME; review ticket: YOUR_REFERENCE" --writers-stopped --output draft.json
+   ```
 
-### Provider behavior
+3. Preserve the draft and edit a separate copy. Review **every** item and its context. Explicitly choose `accept`, `hold`, or `noop` for every review item. Accept adopts the exact positive MKD price; hold preserves the old snapshot; missing/unavailable products require hold; noop is only for unchanged prices. Existing holds must remain held. Noop/hold do not silently accept a changed price.
+4. Seal the edited artifact, independently inspect it and retain the full reconciliation fingerprint, then apply and inspect the receipt and holds:
 
-- Delivery state is stored in `data/state.db` as `(feed_id, entry_id)`.
-- GitLab commit feeds use the project Atom URL shape `https://HOST/NAMESPACE/PROJECT/-/commits/BRANCH.atom`; the final path segment selects one branch, such as `main`. GitLab returns bounded recent history, so commits that age out of the feed cannot be recovered by this monitor. Configure one feed per branch; feeds are not automatically enumerated.
-- Selling-price snapshots are stored persistently in the same SQLite database by feed and product.
-- The database is created automatically on first startup.
-- RSS, IT.mk, ordinary Anhoch new-product, Setec, and Neksio first-party responses are capped at 1 MiB and transient fetch failures are retried. Neksio accepts only `https://g.store.neksio.mk/`, follows only same-origin redirects, and applies a 30-second request timeout. Anhoch price responses are capped at 2 MiB.
-- IT.mk Oglasnik seeds the first successful fetch without notifications.
-- Pazar3 accepts Macedonian public listing URLs below `/oglasi/`. Discovery observes at most the newest three pages and silently seeds every organic ID on the first successful scan; promoted rows, renewals, and edits of known IDs remain silent. All Pazar3 requests in one process share a 20-second host-wide pacer.
-- Reklama5 accepts generic search URLs. The category-584 example tracks computer parts and accessories. Its first successful result window is a silent baseline. Each ordinary feed cycle requests at most three pages, so this is a bounded best-effort future-listing feed rather than a complete current-inventory import. Edits, renewals, reactivations, and price changes for an already seen ad ID remain silent in that ordinary feed. Optional price monitoring runs as a separate complete-category job.
-- Anhoch new-product checks follow `refresh_interval` (300 seconds by default), inspect at most the latest 90 products, and seed the first successful fetch without notifications.
-- Neksio discovery fetches the full public catalog by enumerating homepage categories and their pages. It uses separate bounded first-party requests for the homepage and catalog pages, with up to 100 categories, 100 pages per category, 100 products per page, and 10,000 products total. This bounds request count and response cost, but a large catalog can still require many first-party requests. The first successful discovery seeds without notifications.
-- Hivetec accepts only `https://hivetec.mk/shop/` without credentials, query parameters, fragments, or an explicit port. Discovery requests the latest 30 products from both the WooCommerce Store API and WordPress product API, requires exact bounded ID/order agreement, uses UTC `date_gmt` publication times, and delivers newly observed products oldest first. Empty discovery does not initialize the feed; the first successful non-empty discovery seeds without notifications. Delivery history is capped at 10,000 products.
-- CCCenter accepts only the exact `https://cccenter.mk/shop/?orderby=date` URL. Discovery enumerates at most twelve validated WooCommerce listing pages under shared 36-request, 24-MiB, and 300-second scan limits, without fetching every product detail or inventing publication timestamps. Fresh feeds receive an explicit silent complete baseline; already initialized feeds require [manual cutover baseline approval](#cccenter-baseline) before discovery delivery. Variable/range/unpriced products do not supply scalar price alerts.
-- Technomarket accepts only credential-free HTTPS roots matching `https://tehnomarket.com.mk/category/<numeric-id>/<slug>`. Because the provider has no usable newest-first server-side ordering, discovery traverses the complete configured category under the same 100-page / 5,000-product, 5 MiB-per-response, 500 MiB-total, and 300-second bounds as price scans. The first successful non-empty scan seeds silently; use a conservative refresh interval because every discovery refresh is a full category traversal. Listing prices use SMART when present and regular otherwise; a regular-price-only change is silent when the effective SMART price is unchanged. No stock state is inferred.
-- Gjirafa50 accepts only the exact roots `https://gjirafa50.mk/` and `https://gjirafa50.com/`. Each feed stays on its selected origin for searches, redirects, and product links. Discovery requests the newest 30 in-stock products across two bounded pages, assigns one UTC observation time, and seeds the first successful window silently.
-- Anhoch and Neksio new-product and price checks intentionally use separate catalog requests. Discovery retains its source-specific behavior, while price monitoring compares the complete catalog without coupling either job's failures to the other.
-- Anhoch and DDStore product images are downloaded with browser-compatible TLS and uploaded to Discord as Components v2 thumbnail attachments. Each provider is restricted to its own first-party image paths and same-provider redirects. Transient image failures are retried at most twice across redirects within one 30-second operation deadline, honoring `Retry-After` only when it fits within that deadline. If an image cannot be retrieved safely, the product update is delivered without a thumbnail.
-- Setec queries the storefront's own search index rather than its product API. Discovery reads the newest 100 published products in one sorted request and seeds the first successful fetch without notifications. Only published, web-active products are indexed, so a product staged before it goes on sale is announced when it is published rather than while its page is still unreachable.
-- DDStore performs a bounded traversal of its public GraphQL catalog, then selects the latest 30 products by `created_at` and stable product UID in oldest-to-newest delivery order. The first successful fetch seeds without notifications. As a fail-closed integration policy, a zero GraphQL price is treated as unavailable and labeled `Ask for price` rather than displayed as free.
-- Neptun accepts only credential-free, query-free, fragment-free HTTPS category URLs on exact host `neptun.mk` or `www.neptun.mk`; requests normalize to `https://www.neptun.mk` and redirects must remain on that origin. Discovery reads the category's embedded initial search model, requests exactly newest sort `7`, page 1, and 30 products, then delivers API-newest results oldest first. Each category/API response is capped at 5 MiB. The first successful non-empty window seeds without notifications, and delivery history is capped at 10,000 entries.
-- Enabled price jobs are immediately eligible, then scheduled at `price_check_interval`; the initial price snapshot is silent. Anhoch full-catalog scans request 500 products per page, cap each response at 2 MiB, and allow up to 100 bounded pages (200 MiB total). DDStore scans request 500 products per page and allow at most 20,000 products across 40 pages, with a 2 MiB per-response cap, an 80 MiB total response cap, and a 300-second absolute scan bound across requests, redirects, transfers, and retry handling. DDStore also rejects products with more than 64 categories and retains at most 50,000 price snapshots per feed. Zero-valued unavailable prices do not consume snapshot capacity or replace the last real price. Full-catalog price retries share that one deadline and byte budget. Ordinary discovery uses the app's generic retry policy, where each retry is a separate fetch attempt with a fresh bounded scan budget. Neksio price scans use the same full-category bounds as discovery, with each response capped at 1 MiB. Setec price scans reconcile a partitioned search-index enumeration with its reported count, then fetch details for selected changed products. A scan allows at most 25,000 products and 1,000 requests, caps each response at 5 MiB and the whole scan at 500 MiB. Ambiguous variants and index/detail price mismatches are deferred without advancing the affected price; failed confirmation during approved recovery pauses the batch.
-- Gjirafa50 price monitoring partitions the in-stock catalog into bounded storefront-currency ranges and validates counts, unique IDs, prices, and terminal pages before advancing state. The `.mk` enumeration contract remains unresolved; expanded `.com` capacity is fixture-tested, but a live complete scan within its budgets remains unproven. See the [recovery limitations](#recovery-safety).
-- DDStore quarantines more than 100 changed prices for exact-fingerprint manual approval before any affected snapshot advancement. Normal and approved scans allow at most ten delivery attempts. Its 50,000-entry discovery delivery-history limit remains fail-closed. Use [recovery safety](#recovery-safety) rather than deleting snapshot or delivery rows.
-- Neptun price monitoring traverses only the configured category with 50 products per page, at most 100 pages / 5,000 products, a 5 MiB per-response cap, and a 500 MiB total cap. Retries restart at page one. Changed totals, incomplete traversal, oversized pages, and conflicting duplicate IDs fail closed. Only positive `ActualPrice` values are compared; unavailable values never replace a previous real snapshot. A feed retains at most 10,000 snapshots and allows at most ten delivery attempts per scan. Changed snapshots persist only after Discord accepts their alert.
-- Hivetec price monitoring traverses the complete public Store API catalog independently from discovery, with 100 products per page, at most 50 pages / 5,000 products, a 1 MiB per-response cap, a retry-wide 20 MiB header-and-body budget, a 300-second absolute operation deadline, and aggregate limits of 20,000 images and 20,000 category records. Retries restart at page one while sharing those limits. Changed totals, incomplete traversal, oversized pages, duplicate IDs, and aggregate metadata excess fail closed. Prices are parsed from WooCommerce integer minor units as MKD; only positive prices are snapshotted. A feed retains at most 10,000 snapshots and allows at most ten delivery attempts per scan. Changed snapshots persist only after Discord accepts their alert.
-- CCCenter price monitoring baselines silently, compares only positive scalar MKD prices, retains at most 10,000 snapshots, and detail-confirms selected changes before delivery. Up to ten selected confirmations share one aggregate deadline/request/byte budget. Variable/range, unavailable, malformed, or listing/detail-mismatched prices do not advance a prior valid snapshot; changed snapshots persist only after Discord accepts the alert.
-- Reklama5 price monitoring traverses the configured search scope independently from three-page discovery, at most 250 pages / 10,000 organic ads, with a 2 MiB per-response cap and a 500 MiB / 300-second attempt bound. Retries restart at page one. Cycles, incomplete traversal, and bound violations fail closed. Only positive MKD prices are compared; negotiable, missing, malformed, zero, and other-currency prices do not replace the last numeric snapshot. A feed retains at most 10,000 snapshots and allows at most ten delivery attempts per scan. Changed snapshots persist only after Discord accepts their alert. The observed Cloudflare challenge still requires upstream-approved access.
-- Pazar3 price monitoring traverses the complete configured scope independently from three-page discovery, at most 10 pages / 500 organic listings, with a 2 MiB response cap and a 20 MiB / 300-second attempt bound. Scopes above that limit, including the full electronics category, are unsupported and fail closed. Positive MKD and EUR values are compared without conversion; unavailable prices preserve the last valid snapshot. A feed retains at most 10,000 snapshots and allows at most ten delivery attempts per scan. Changed snapshots persist only after Discord accepts their alert.
-- A Discord delivery is recorded immediately after Discord accepts the message.
-- If a database write is interrupted after delivery, that entry may be posted again on the next startup.
-- External feed mentions are not expanded in Discord messages.
+   ```sh
+   python -m rss2discord.admin reconcile review --plan edited.json --output reviewed.json
+   python -m rss2discord.admin --database data/state.db reconcile apply --config config/config.yaml --feed-id ddstore --plan reviewed.json --fingerprint FULL_RECONCILIATION_FINGERPRINT --writers-stopped
+   python -m rss2discord.admin --database data/state.db reconcile receipt --fingerprint FULL_RECONCILIATION_FINGERPRINT
+   python -m rss2discord.admin --database data/state.db reconcile holds --feed-id ddstore
+   ```
 
-Runtime paths:
+Plan output files must not already exist. Sealing validates an artifact; it is not a signature or authorization. Plans expire after 24 hours; each evidence operation is limited to 300 seconds. Apply refetches and rechecks complete source and database evidence. Drift, incomplete evidence, or invalid decisions cause refusal without database changes: regenerate and review a fresh plan; never force a mismatch. Retain the receipt, artifacts, and backup. Reconciliation records an audit receipt without marking historical alerts as delivered.
 
-| Environment variable | Container default | Purpose |
-| --- | --- | --- |
-| `CONFIG_PATH` | `/app/config/config.yaml` | YAML configuration |
-| `STATE_DB_PATH` | `/app/data/state.db` | SQLite delivery ledger |
+## Runtime and development
 
-## Local development
+Container paths can be overridden with `CONFIG_PATH` (default `/app/config/config.yaml`) and `STATE_DB_PATH` (default `/app/data/state.db`). Delivery is at-least-once: an ambiguous Discord timeout or crash can cause a duplicate. There is no rollback command; do not delete database history or snapshots to undo a send.
 
-Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
+Python 3.12 and [uv](https://docs.astral.sh/uv/) are required for local development:
 
-```bash
+```sh
 uv sync --frozen --dev
 uv run pytest
 uv run ruff check .
 uv run mypy .
+CONFIG_PATH=config/config.yaml STATE_DB_PATH=data/state.db uv run rss2discord
 ```
 
-Run locally:
-
-```bash
-CONFIG_PATH=config/config.yaml \
-STATE_DB_PATH=data/state.db \
-uv run rss2discord
-```
-
-## Discord webhook
-
-In Discord, open the target channel settings, go to **Integrations** > **Webhooks**, create a webhook, and copy its URL into `config/config.yaml`.
-
-## License
-
-This project is licensed under the terms of the MIT license.
+Create a webhook in Discord under **Channel Settings → Integrations → Webhooks**. Licensed under the MIT License; see [`LICENSE`](LICENSE).

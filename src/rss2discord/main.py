@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from .app import RSSToDiscord
 from .configuration import load_config
+from .database_ownership import DatabaseOwnership, DatabaseOwnershipError
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordWebhookClient
 
@@ -31,6 +32,7 @@ SAFE_VALIDATION_FIELDS = frozenset(
         "id",
         "max_post_age_days",
         "name",
+        "ordinary_check_interval",
         "price_check_interval",
         "refresh_interval",
         "strategy",
@@ -48,7 +50,7 @@ def main() -> int:
 
     try:
         config = load_config(config_path)
-        with DeliveryStore(database_path) as store:
+        with DatabaseOwnership(database_path), DeliveryStore(database_path) as store:
             application = RSSToDiscord(
                 config=config,
                 store=store,
@@ -56,6 +58,9 @@ def main() -> int:
             )
             _install_signal_handlers(application)
             application.run()
+    except DatabaseOwnershipError as error:
+        logger.log(logging.ERROR, "Database writer startup refused: %s", error)
+        return 1
     except FileNotFoundError:
         logger.log(logging.ERROR, "Configuration file not found: %s", config_path)
         return 1

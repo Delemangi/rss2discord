@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
@@ -14,10 +14,13 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
+from rss2discord.transports.catalog_normalization import (
+    MAX_DDSTORE_RETAINED_SNAPSHOTS,
+    normalize_ddstore_catalog,
+)
 from rss2discord.transports.ddstore import (
     format_ddstore_mkd,
     format_ddstore_stock,
-    is_ddstore_price_available,
 )
 from rss2discord.transports.ddstore_http import DDSTORE_LABEL
 from rss2discord.transports.ddstore_models import DDStoreProduct
@@ -29,8 +32,6 @@ from rss2discord.transports.price_monitor import (
     prepare_price_scan,
     price_direction,
 )
-
-MAX_DDSTORE_RETAINED_SNAPSHOTS: Final = 50_000
 
 
 class DDStoreCatalog(Protocol):
@@ -113,21 +114,13 @@ class DDStorePriceMonitor:
             label=DDSTORE_LABEL,
         )
         by_id = {snapshot.product_id: snapshot for snapshot in persisted}
-        if len({product.uid for product in products}) != len(products):
-            raise FeedFetchError(DDSTORE_LABEL, "ConflictingProductIDs")
-        available = tuple(
-            product
-            for product in products
-            if is_ddstore_price_available(
-                product.price_range.minimum_price.final_price.value,
-            )
+        observations = normalize_ddstore_catalog(
+            self._feed.id,
+            products,
+            persisted,
+            snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
         )
-        if (
-            len(set(by_id).union(product.uid for product in available))
-            > MAX_DDSTORE_RETAINED_SNAPSHOTS
-        ):
-            raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
-        products_by_id = {product.uid: product for product in available}
+        products_by_id = {product.uid: product for product in products}
         deliver_catalog_price_changes(
             self._dependencies,
             self._message_for,
@@ -138,19 +131,13 @@ class DDStorePriceMonitor:
             ),
             feed_id=self._feed.id,
             provider=DDSTORE_LABEL,
-            current={product.uid: self._snapshot(product) for product in available},
+            current={
+                item.product_id: item.snapshot
+                for item in observations
+                if item.snapshot is not None
+            },
             persisted=by_id,
             catalog_count=len(products),
-        )
-
-    def _snapshot(self, product: DDStoreProduct) -> PriceSnapshot:
-        final_price = product.price_range.minimum_price.final_price
-        return PriceSnapshot(
-            feed_id=self._feed.id,
-            product_id=product.uid,
-            amount=final_price.value,
-            formatted=format_ddstore_mkd(final_price.value),
-            currency=final_price.currency,
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:
