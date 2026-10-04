@@ -232,10 +232,11 @@ def test_overlapping_price_filter_counts_log_parent_and_child_ranges(
 
 def test_distinct_cent_filters_can_return_identical_boundary_products() -> None:
     products = [(489_034, Decimal(16)), (488_476, Decimal(16))]
+    payload = catalog_payload(2, products)
     get = RecordingGet(
         [
-            StubResponse(catalog_payload(1, [products[0]])),
-            StubResponse(catalog_payload(1, [products[1]])),
+            StubResponse(payload),
+            StubResponse(payload),
         ],
     )
     observed_at = datetime.now().astimezone()
@@ -263,14 +264,52 @@ def test_distinct_cent_filters_can_return_identical_boundary_products() -> None:
     assert get.params[1]["price"] == "15,99-15,99"
     assert "." not in str(get.params[0]["price"])
     assert "." not in str(get.params[1]["price"])
-    assert [product.id for product in first.products] == [489_034]
-    assert [product.id for product in second.products] == [488_476]
+    expected_ids = [489_034, 488_476]
+    assert [product.id for product in first.products] == expected_ids
+    assert [product.id for product in second.products] == expected_ids
     assert all(
         product.price == Decimal(16) for product in (*first.products, *second.products)
     )
     assert all(
         product.currency == "EUR" for product in (*first.products, *second.products)
     )
+
+
+def test_overlapping_out_of_shard_results_fail_without_partial_inventory() -> None:
+    payload = catalog_payload(
+        2,
+        [(489_034, Decimal(16)), (488_476, Decimal(16))],
+    )
+    get = RecordingGet([StubResponse(payload), StubResponse(payload)])
+    price_ranges = (
+        Gjirafa50PriceRange(1_598, 1_599),
+        Gjirafa50PriceRange(1_599, 1_600),
+    )
+
+    with Gjirafa50HttpClient(get) as http:
+        for price_range in price_ranges:
+            collected: list[Gjirafa50Product] = []
+            seen: set[int] = set()
+            scan = _CatalogScan(
+                "https://gjirafa50.com/",
+                _OperationBudget(lambda: False),
+                http,
+            )
+            with pytest.raises(FeedFetchError, match="PriceOutsideShard"):
+                Gjirafa50CatalogClient()._scan_shard(
+                    scan,
+                    price_range,
+                    2,
+                    collected,
+                    seen,
+                )
+            assert collected == []
+            assert seen == set()
+
+    assert [params["price"] for params in get.params] == [
+        "15,98-15,98",
+        "15,99-15,99",
+    ]
 
 
 def test_larger_catalog_capacity_keeps_byte_and_time_ceilings() -> None:
