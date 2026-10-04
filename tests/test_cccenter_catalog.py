@@ -15,6 +15,7 @@ from rss2discord.transports.cccenter_catalog import (
     parse_product_listing,
     validate_cccenter_url,
 )
+from rss2discord.transports.cccenter_models import CCCenterProduct
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cccenter"
 
@@ -56,6 +57,62 @@ def test_cccenter_treats_missing_stock_marker_as_in_stock() -> None:
     )
 
     assert product.is_in_stock is True
+
+
+@pytest.mark.parametrize(
+    ("detail_stock_markup", "expected_stock"),
+    [
+        ("", False),
+        ('<p class="stock in-stock">In stock</p>', False),
+        ('<p class="stock out-of-stock">Out of stock</p>', False),
+    ],
+)
+def test_cccenter_detail_does_not_restore_listing_out_of_stock(
+    detail_stock_markup: str,
+    expected_stock: bool,
+) -> None:
+    listing = CCCenterProduct(
+        product_id="https://cccenter.mk/product/alpha/",
+        name="Alpha",
+        url="https://cccenter.mk/product/alpha/",
+        sku="",
+        current_price=None,
+        original_price=None,
+        image_url=None,
+        categories=(),
+        is_in_stock=False,
+    )
+
+    product = parse_product_detail(
+        BeautifulSoup(
+            f'<h1 class="product_title">Alpha</h1>{detail_stock_markup}',
+            "html.parser",
+        ),
+        listing,
+    )
+
+    assert product.is_in_stock is expected_stock
+
+
+def test_cccenter_detail_out_of_stock_marker_overrides_in_stock_listing() -> None:
+    listing = parse_product_listing(
+        BeautifulSoup(
+            '<li class="product"><a href="/product/alpha/"><img src="/alpha.jpg">'
+            '<h2 class="woocommerce-loop-product__title">Alpha</h2></a></li>',
+            "html.parser",
+        ).select_one("li.product"),
+    )
+
+    product = parse_product_detail(
+        BeautifulSoup(
+            '<h1 class="product_title">Alpha</h1>'
+            '<p class="stock out-of-stock">Out of stock</p>',
+            "html.parser",
+        ),
+        listing,
+    )
+
+    assert product.is_in_stock is False
 
 
 @pytest.mark.parametrize(

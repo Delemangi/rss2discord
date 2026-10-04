@@ -1,8 +1,10 @@
+from functools import partial
 from itertools import pairwise
 
 import pytest
 
 from rss2discord.scheduler import (
+    JobOutcome,
     JobTiming,
     RuntimeScheduler,
     ScheduledJob,
@@ -442,6 +444,133 @@ def test_empty_scheduler_finishes_without_sleeping() -> None:
         SchedulerControl(clock.monotonic, clock.sleep, lambda: False),
     ).run()
     assert clock.sleep_calls == []
+
+
+@pytest.mark.parametrize("gap", [0, 61])
+def test_price_convoy_is_bounded_and_both_classes_keep_getting_service(
+    gap: float,
+) -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def ordinary(name: str) -> None:
+        events.append((name, clock.now))
+
+    def price(name: str) -> None:
+        events.append((name, clock.now))
+        clock.now += 124
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            tuple(
+                ScheduledJob(
+                    f"ordinary-{index}",
+                    "ordinary",
+                    300,
+                    partial(ordinary, f"ordinary-{index}"),
+                )
+                for index in range(34)
+            ),
+            tuple(
+                ScheduledJob(
+                    f"price-{index}",
+                    "price",
+                    300,
+                    partial(price, f"price-{index}"),
+                )
+                for index in range(4)
+            ),
+            ordinary_gap=gap,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(events) >= 140),
+    ).run()
+
+    assert events[:5] == [
+        ("ordinary-0", 0),
+        ("price-0", 0),
+        ("ordinary-1", 124),
+        ("price-1", 124),
+        ("ordinary-2", 248),
+    ]
+    ordinary_events = [(name, at) for name, at in events if name.startswith("ordinary")]
+    assert [name for name, _ in ordinary_events[:34]] == [
+        f"ordinary-{index}" for index in range(34)
+    ]
+    # Once ready, an ordinary job waits only for the current price callback,
+    # rather than all four simultaneously due 124-second price callbacks.
+    assert all(
+        following - previous == 124
+        for (_, previous), (_, following) in pairwise(ordinary_events)
+    )
+    for index in range(4):
+        starts = [at for name, at in events if name == f"price-{index}"]
+        assert len(starts) > 10
+        # Fixed-phase deadlines can change peer order; this is not strict
+        # round-robin within the price class, but service remains bounded.
+        assert max(b - a for a, b in pairwise(starts)) <= 5 * 124
+
+
+def test_skipped_job_preserves_gap_phase_and_does_not_emit_attempt_timing() -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+    timings: list[JobTiming] = []
+
+    def skip() -> JobOutcome:
+        events.append(("skip", clock.now))
+        return JobOutcome.SKIPPED
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            (
+                ScheduledJob("skip", "ordinary", 60, skip),
+                ScheduledJob(
+                    "attempt",
+                    "ordinary",
+                    60,
+                    lambda: events.append(("attempt", clock.now)),
+                ),
+            ),
+            (),
+            ordinary_gap=61,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(events) >= 6),
+        observer=timings.append,
+    ).run()
+
+    assert events == [
+        ("skip", 0),
+        ("attempt", 0),
+        ("skip", 61),
+        ("attempt", 61),
+        ("skip", 122),
+        ("attempt", 122),
+    ]
+    assert [timing.scheduled_at for timing in timings] == [0, 60, 120]
+    assert [timing.name for timing in timings] == ["attempt"] * 3
+
+
+def test_overdue_skips_advance_fixed_phase_without_catchup_or_gap() -> None:
+    clock = FakeSchedulerClock()
+    skips: list[float] = []
+
+    def skip() -> JobOutcome:
+        skips.append(clock.now)
+        return JobOutcome.SKIPPED
+
+    def price() -> None:
+        clock.now += 1000
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            (ScheduledJob("skip", "ordinary", 300, skip),),
+            (ScheduledJob("price", "price", 3600, price),),
+            ordinary_gap=61,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(skips) >= 3),
+    ).run()
+
+    assert skips == [0, 1000, 1200]
+    assert clock.sleep_calls == [200]
 
 
 def test_failed_job_observation_cannot_mask_primary_exception() -> None:

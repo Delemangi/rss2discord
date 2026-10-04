@@ -378,6 +378,8 @@ def parse_product_detail(
     )
     sku = _text(product_document.select_one(".sku"))
     is_in_stock = _is_in_stock(product_document.select_one(".stock"))
+    if isinstance(listing, CCCenterProduct):
+        is_in_stock = listing.is_in_stock and is_in_stock
     categories = tuple(
         category
         for category in (

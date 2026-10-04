@@ -157,6 +157,122 @@ def test_observed_mk_anomalies_remain_fail_closed(
     assert "https://" not in caplog.text
 
 
+def test_price_outlier_diagnostic_identifies_product_and_displayed_mk_amount(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                catalog_payload(
+                    5_873,
+                    [
+                        (489_034, Decimal(20_790)),
+                        *((product_id, Decimal(12_000)) for product_id in range(1, 24)),
+                    ],
+                    total_pages=245,
+                ),
+            ),
+        ],
+    )
+    with Gjirafa50HttpClient(get) as http:
+        scan = _CatalogScan(
+            "https://gjirafa50.mk/",
+            _OperationBudget(lambda: False),
+            http,
+        )
+        with pytest.raises(FeedFetchError, match="PriceOutsideShard"):
+            Gjirafa50CatalogClient()._scan_shard(
+                scan,
+                Gjirafa50PriceRange(1_000_000, 1_999_901),
+                5_873,
+                [],
+                set(),
+            )
+
+    assert (
+        "phase=enumeration page=1 product_id=489034 "
+        "expected_range=10000-19999 displayed_amount=20.790,00 MKD. "
+        "currency=MKD price_cents=2079000"
+    ) in caplog.text
+    assert "https://" not in caplog.text
+
+
+def test_overlapping_price_filter_counts_log_parent_and_child_ranges(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        gjirafa50_catalog,
+        "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
+        3_199,
+    )
+    responses = [
+        catalog_payload(65_616, []),
+        catalog_payload(38_790, []),
+        catalog_payload(26_828, []),
+    ]
+    get = RecordingGet([StubResponse(payload) for payload in responses])
+    with Gjirafa50HttpClient(get) as http:
+        scan = _CatalogScan(
+            "https://gjirafa50.com/",
+            _OperationBudget(lambda: False),
+            http,
+        )
+        with pytest.raises(FeedFetchError, match="CatalogChanged"):
+            Gjirafa50CatalogClient()._build_shards(scan, 65_616)
+
+    assert (
+        "phase=split parent_range=0-31,98 parent_count=65616 "
+        "lower_range=0-15,98 lower_count=38790 "
+        "upper_range=15,99-31,98 upper_count=26828 child_sum=65618"
+    ) in caplog.text
+    assert "may overlap" in caplog.text
+    assert "https://" not in caplog.text
+
+
+def test_distinct_cent_filters_can_return_identical_boundary_products() -> None:
+    products = [(489_034, Decimal(16)), (488_476, Decimal(16))]
+    get = RecordingGet(
+        [
+            StubResponse(catalog_payload(1, [products[0]])),
+            StubResponse(catalog_payload(1, [products[1]])),
+        ],
+    )
+    observed_at = datetime.now().astimezone()
+    with Gjirafa50HttpClient(get) as http:
+        first = http.fetch_page(
+            "https://gjirafa50.com/",
+            Gjirafa50PageRequest(
+                1,
+                _OperationBudget(lambda: False),
+                Gjirafa50PriceRange(1_598, 1_599),
+            ),
+            observed_at,
+        ).page
+        second = http.fetch_page(
+            "https://gjirafa50.com/",
+            Gjirafa50PageRequest(
+                1,
+                _OperationBudget(lambda: False),
+                Gjirafa50PriceRange(1_599, 1_600),
+            ),
+            observed_at,
+        ).page
+
+    assert get.params[0]["price"] == "15,98-15,98"
+    assert get.params[1]["price"] == "15,99-15,99"
+    assert "." not in str(get.params[0]["price"])
+    assert "." not in str(get.params[1]["price"])
+    assert [product.id for product in first.products] == [489_034]
+    assert [product.id for product in second.products] == [488_476]
+    assert all(
+        product.price == Decimal(16) for product in (*first.products, *second.products)
+    )
+    assert all(
+        product.currency == "EUR" for product in (*first.products, *second.products)
+    )
+
+
 def test_larger_catalog_capacity_keeps_byte_and_time_ceilings() -> None:
     budget = _OperationBudget(lambda: False)
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):

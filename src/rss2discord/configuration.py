@@ -119,9 +119,9 @@ class AppConfig(BaseModel):
         hide_input_in_errors=True,
     )
 
-    refresh_interval: Annotated[float, Field(gt=0)] = 300
-    delay_between_feeds: Annotated[float, Field(ge=0)] = 0
-    delay_between_posts: Annotated[float, Field(ge=0)] = 2
+    refresh_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 300
+    delay_between_feeds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0
+    delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
     feeds: tuple[FeedConfig, ...] = ()
 

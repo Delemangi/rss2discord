@@ -160,7 +160,7 @@ def test_build_price_jobs_defaults_select_exact_provider_monitors(
     assert type(neksio_monitor._dependencies.catalog) is NeksioCatalogClient
 
 
-def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
+def test_run_alternates_due_classes_on_independent_cadences(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -230,10 +230,10 @@ def test_run_schedules_ordinary_before_price_jobs_on_independent_cadences(
     # Then
     assert events == [
         ("ordinary", 0),
-        ("first", 0),
-        ("second", 0),
         ("price-first", 0),
+        ("first", 0),
         ("price-second", 0),
+        ("second", 0),
         ("ordinary", 3),
         ("first", 3),
         ("second", 3),
