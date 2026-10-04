@@ -211,6 +211,14 @@ class Gjirafa50CatalogClient:
         entire_range = Gjirafa50PriceRange(0, MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS)
         entire_total = scan.fetch(1, entire_range).total_hits
         if entire_total != root_total:
+            logger.warning(
+                "Gjirafa50 catalog count mismatch: phase=whole_range "
+                "range=%s parent_count=%d range_count=%d; catalog completeness "
+                "is unverified",
+                entire_range,
+                root_total,
+                entire_total,
+            )
             raise FeedFetchError(
                 GJIRAFA50_LABEL,
                 "IncompletePriceRange",
@@ -237,6 +245,20 @@ class Gjirafa50CatalogClient:
             lower_total = scan.fetch(1, lower).total_hits
             upper_total = scan.fetch(1, upper).total_hits
             if lower_total + upper_total != total:
+                logger.warning(
+                    "Gjirafa50 catalog child counts differ from parent: "
+                    "phase=split parent_range=%s parent_count=%d "
+                    "lower_range=%s lower_count=%d upper_range=%s "
+                    "upper_count=%d child_sum=%d; storefront filters may overlap "
+                    "or catalog counts may have changed; completeness is unverified",
+                    price_range,
+                    total,
+                    lower,
+                    lower_total,
+                    upper,
+                    upper_total,
+                    lower_total + upper_total,
+                )
                 raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             queue.extend(((lower, lower_total), (upper, upper_total)))
             if len(queue) + len(shards) > MAX_GJIRAFA50_SHARDS:
@@ -283,12 +305,15 @@ class Gjirafa50CatalogClient:
                 ):
                     logger.warning(
                         "Gjirafa50 displayed price outside filter shard: "
-                        "page=%d price_cents=%d minimum_cents=%d "
-                        "maximum_exclusive_cents=%d; filter contract is unverified",
+                        "phase=enumeration page=%d product_id=%d "
+                        "expected_range=%s displayed_amount=%s currency=%s "
+                        "price_cents=%d; filter contract is unverified",
                         page_number,
+                        product.id,
+                        price_range,
+                        product.formatted_price,
+                        product.currency,
                         price_cents,
-                        price_range.minimum_cents,
-                        price_range.maximum_exclusive_cents,
                     )
                     raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
             self._append_unique(products, seen, page.products)

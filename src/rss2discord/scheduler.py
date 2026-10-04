@@ -1,9 +1,18 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from math import floor, isfinite
 from typing import Literal
 
-type JobAction = Callable[[], None]
+
+class JobOutcome(StrEnum):
+    """Fetch outcome; legacy callbacks returning None count as attempted."""
+
+    ATTEMPTED = "attempted"
+    SKIPPED = "skipped"
+
+
+type JobAction = Callable[[], JobOutcome | None]
 type MonotonicClock = Callable[[], float]
 type InterruptibleSleeper = Callable[[float], bool]
 type ShutdownRequested = Callable[[], bool]
@@ -15,7 +24,7 @@ class ScheduledJob:
     kind: Literal["ordinary", "price"]
     interval: float
     run: JobAction
-    close: JobAction | None = None
+    close: Callable[[], None] | None = None
 
     def __post_init__(self) -> None:
         if not isfinite(self.interval) or self.interval <= 0:
@@ -69,6 +78,7 @@ class RuntimeScheduler:
         deadlines = [started_at for _ in jobs]
         ordinary_ready = started_at
         cursor = 0
+        last_kind: Literal["ordinary", "price"] = "price"
 
         primary_error: BaseException | None = None
         try:
@@ -90,19 +100,38 @@ class RuntimeScheduler:
                         (index - cursor) % len(jobs),
                     ),
                 )
+                # Once both classes are ready, give each one service in turn.
+                # This is equal-weight class fairness, not unconditional
+                # ordinary priority (which would starve prices at gap zero).
+                # Keep oldest-deadline ordering within a class, but do not let
+                # a convoy of overdue prices delay an eligible ordinary job.
+                due_other = [
+                    candidate
+                    for candidate, job in enumerate(jobs)
+                    if eligible[candidate] <= now and job.kind != last_kind
+                ]
+                if due_other:
+                    index = min(
+                        due_other,
+                        key=lambda candidate: (
+                            deadlines[candidate],
+                            (candidate - cursor) % len(jobs),
+                        ),
+                    )
                 if eligible[index] > now:
                     if not self._control.sleep(eligible[index] - now):
                         return
                     continue
                 job = jobs[index]
-                finished_at = self._execute(job, deadlines[index], now)
+                finished_at, outcome = self._execute(job, deadlines[index], now)
                 # Fixed phase; skip missed slots arithmetically, without a
                 # catch-up loop or completion-relative drift after long scans.
                 missed = max(0, floor((finished_at - deadlines[index]) / job.interval))
                 deadlines[index] += (missed + 1) * job.interval
-                if job.kind == "ordinary":
+                if job.kind == "ordinary" and outcome != JobOutcome.SKIPPED:
                     ordinary_ready = finished_at + self._jobs.ordinary_gap
                 cursor = (index + 1) % len(jobs)
+                last_kind = job.kind
         except BaseException as error:
             primary_error = error
             raise
@@ -127,9 +156,9 @@ class RuntimeScheduler:
         job: ScheduledJob,
         scheduled_at: float,
         started_at: float,
-    ) -> float:
+    ) -> tuple[float, JobOutcome | None]:
         try:
-            job.run()
+            outcome = job.run()
         except BaseException as error:
             try:
                 self._observe(job, scheduled_at, started_at, self._control.monotonic())
@@ -139,8 +168,9 @@ class RuntimeScheduler:
                 )
             raise
         finished_at = self._control.monotonic()
-        self._observe(job, scheduled_at, started_at, finished_at)
-        return finished_at
+        if outcome != JobOutcome.SKIPPED:
+            self._observe(job, scheduled_at, started_at, finished_at)
+        return finished_at, outcome
 
     def _observe(
         self,

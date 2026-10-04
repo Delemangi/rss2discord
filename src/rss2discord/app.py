@@ -27,6 +27,7 @@ from .retries import (
     SQLiteRetryPolicy,
 )
 from .scheduler import (
+    JobOutcome,
     JobTiming,
     RuntimeScheduler,
     ScheduledJob,
@@ -103,18 +104,18 @@ class RSSToDiscord:
     def is_shutdown_requested(self) -> bool:
         return self._shutdown_requested
 
-    def process_feed(self, feed: FeedConfig) -> None:
+    def process_feed(self, feed: FeedConfig) -> JobOutcome:
         if self._shutdown_requested:
-            return
+            return JobOutcome.SKIPPED
         attempted_at = int(time.time())
         if feed_is_blocked(feed, self._config.feeds, self._store, attempted_at):
-            return
+            return JobOutcome.SKIPPED
         started_at = time.monotonic()
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
         if self._shutdown_requested:
-            return
+            return JobOutcome.ATTEMPTED
         baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
         if baseline_state == "ready" and not self._process_entries(
             feed,
@@ -122,9 +123,9 @@ class RSSToDiscord:
             entries,
             fetched_source_title,
         ):
-            return
+            return JobOutcome.ATTEMPTED
         if self._shutdown_requested:
-            return
+            return JobOutcome.ATTEMPTED
         record_runtime_health(
             self._store,
             HealthUpdate(
@@ -146,6 +147,7 @@ class RSSToDiscord:
                 scheduler_lag_ms=0,
             ),
         )
+        return JobOutcome.ATTEMPTED
 
     def _process_entries(
         self,
@@ -245,6 +247,18 @@ class RSSToDiscord:
             len(self._config.feeds),
             self._config.refresh_interval,
         )
+        if (
+            len(self._config.feeds) * self._config.delay_between_feeds
+            >= self._config.refresh_interval
+        ):
+            logger.warning(
+                "Ordinary-feed gap budget (%d feeds * %.1f seconds) meets or "
+                "exceeds refresh interval %.1f seconds; cadence is best-effort "
+                "and fetch durations and price jobs can add further delay",
+                len(self._config.feeds),
+                self._config.delay_between_feeds,
+                self._config.refresh_interval,
+            )
         RuntimeScheduler(
             SchedulerJobs(
                 tuple(
@@ -330,13 +344,13 @@ class RSSToDiscord:
                 type(error).__name__,
             )
 
-    def _process_feed_safely(self, feed: FeedConfig) -> None:
+    def _process_feed_safely(self, feed: FeedConfig) -> JobOutcome | None:
         attempted_at = int(time.time())
         started_at = time.monotonic()
         try:
-            self.process_feed(feed)
+            return self.process_feed(feed)
         except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
-            return
+            return JobOutcome.ATTEMPTED
         except Exception as error:
             record_fetch_failure(
                 self._store,
@@ -346,6 +360,7 @@ class RSSToDiscord:
                 attempted_at,
                 duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
             )
+            return JobOutcome.ATTEMPTED
 
     def _fetch_entries(
         self,
