@@ -193,6 +193,117 @@ def test_cccenter_rejects_noncanonical_product_url_variants(product_url: str) ->
         parse_product_listing(card)
 
 
+def test_cccenter_preserves_realistic_percent_encoded_product_identity() -> None:
+    product_url = (
+        "https://cccenter.mk/product/ssd-2-5%e2%80%b3-500gb-samsung-870-evo-retail/"
+    )
+    listing = parse_product_listing(
+        BeautifulSoup(
+            f'<li class="product"><a href="{product_url}">'
+            '<img src="/ssd.jpg">'
+            '<h2 class="woocommerce-loop-product__title">Samsung 870 EVO</h2>'
+            '<span class="price">5.000 ден</span></a></li>',
+            "html.parser",
+        ).select_one("li.product"),
+    )
+
+    product = parse_product_detail(
+        BeautifulSoup('<h1 class="product_title">Samsung 870 EVO</h1>', "html.parser"),
+        listing,
+    )
+
+    assert listing.product_id == product_url
+    assert listing.url == product_url
+    assert product.product_id == product_url
+    assert product.url == product_url
+
+
+def test_cccenter_complete_multipage_catalog_keeps_encoded_product_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    encoded_url = "https://cccenter.mk/product/ssd-2-5%E2%80%B3-500gb/"
+
+    def card(url: str, title: str) -> str:
+        return (
+            f'<li class="product"><a href="{url}">'
+            f'<img src="/images/{title}.jpg">'
+            f'<h2 class="woocommerce-loop-product__title">{title}</h2>'
+            '<span class="price">5.000 ден</span></a></li>'
+        )
+
+    first_cards = card(encoded_url, "SSD") + "".join(
+        card(f"/product/item-{number}/", f"Item {number}") for number in range(2, 25)
+    )
+    page_one = (
+        '<p class="woocommerce-result-count">Showing 1–24 of 25 results</p>'
+        f'<ul class="products">{first_cards}</ul>'
+        '<nav class="woocommerce-pagination">'
+        '<span class="page-numbers current">1</span>'
+        '<a class="page-numbers" href="/shop/page/2/?orderby=date">2</a>'
+        "</nav>"
+    )
+    page_two = (
+        '<p class="woocommerce-result-count">Showing 25–25 of 25 results</p>'
+        '<ul class="products">'
+        f"{card('/product/item-25/', 'Item 25')}"
+        "</ul>"
+        '<nav class="woocommerce-pagination">'
+        '<a class="page-numbers" href="/shop/page/2/?orderby=date">2</a>'
+        '<span class="page-numbers current">2</span>'
+        "</nav>"
+    )
+    responses = {
+        CCCENTER_FEED_URL: page_one,
+        CCCenterCatalogClient._page_url(2): page_two,
+    }
+    monkeypatch.setattr(
+        CCCenterCatalogClient,
+        "_fetch_html",
+        staticmethod(lambda url, **kwargs: responses[url]),
+    )
+
+    products = CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+
+    assert len(products) == 25
+    encoded = products[0]
+    assert encoded.product_id == encoded_url
+    assert encoded.url == encoded_url
+
+
+@pytest.mark.parametrize(
+    "product_url",
+    [
+        "/product/alpha/../beta/",
+        "/product/alpha/./beta/",
+        "/product/alpha//beta/",
+        "/product/alpha%2fbeta/",
+        "/product/alpha%2Fbeta/",
+        "/product/alpha%5cbeta/",
+        "/product/alpha%5CBeta/",
+        "/product/alpha%2e%2ebeta/",
+        "/product/alpha%2E%2ebeta/",
+        "/product/alpha%252f/beta/",
+        "/product/alpha%zz/",
+        "/product/alpha%e2%80%zz/",
+        "/product/alpha%e2%80%/",
+        "/product/alpha%c0%af/",
+        "/product/alpha%e2%28%a1/",
+        "/product/alpha\x00/",
+        "/product/alpha\n/",
+        "/product/alpha /",
+        "http://cccenter.mk/product/alpha/",
+        "https://evil.example/product/alpha/",
+        "https://cccenter.mk:443/product/alpha/",
+        "https://user:secret@cccenter.mk/product/alpha/",
+        "/product/alpha/?source=feed",
+        "/product/alpha/#fragment",
+    ],
+)
+def test_cccenter_rejects_unsafe_raw_product_paths(product_url: str) -> None:
+    with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
+        cccenter_catalog._safe_product_url(product_url)
+
+
 def test_cccenter_marks_variable_and_range_prices_unavailable() -> None:
     variable = BeautifulSoup(
         '<li class="product product-type-variable"><a href="/product/variable/"><img src="/variable.jpg"><h2 class="woocommerce-loop-product__title">Variable</h2><span class="price">56.000,00 ден – 60.000,00 ден</span></a></li>',

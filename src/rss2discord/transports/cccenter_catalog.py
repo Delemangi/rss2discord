@@ -57,6 +57,11 @@ _PRICE_RE: Final = re.compile(
 _CCCENTER_HOST: Final = "cccenter.mk"
 _HTML_PARSER: Final = "html.parser"
 MAX_CCCENTER_DETAIL_PRODUCTS: Final = 10
+_ENCODED_DOUBLE_PRIME: Final = r"(?i:%e2%80%b3)"
+_PRODUCT_SLUG_PART: Final = rf"(?:[a-z0-9]|{_ENCODED_DOUBLE_PRIME})+"
+_PRODUCT_PATH_RE: Final = re.compile(
+    rf"/product/{_PRODUCT_SLUG_PART}(?:-{_PRODUCT_SLUG_PART})*/",
+)
 
 
 @dataclass(slots=True)
@@ -269,14 +274,21 @@ def _merge_price_status(
 
 
 def _safe_product_url(url: str) -> str:
+    if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in url):
+        raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl")
     try:
         raw = urlsplit(url)
+    except ValueError:
+        raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl") from None
+    raw_path = raw.path
+    if _PRODUCT_PATH_RE.fullmatch(raw_path) is None:
+        raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl")
+    try:
         absolute = urljoin(CCCENTER_ORIGIN + "/", url)
         parsed = urlsplit(absolute)
         port = parsed.port
     except ValueError:
         raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl") from None
-    raw_path = raw.path
     if not raw.scheme and not raw.netloc and not url.startswith("/product/"):
         raise FeedFetchError(CCCENTER_LABEL, "InvalidProductUrl")
     if (
@@ -285,7 +297,6 @@ def _safe_product_url(url: str) -> str:
         or port is not None
         or parsed.username is not None
         or parsed.password is not None
-        or not re.fullmatch(r"/product/[a-z0-9]+(?:-[a-z0-9]+)*/", raw_path)
         or parsed.query
         or parsed.fragment
     ):
