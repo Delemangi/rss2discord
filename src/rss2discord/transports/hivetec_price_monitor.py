@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
@@ -14,7 +14,11 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.hivetec import format_hivetec_mkd, hivetec_product_metrics
+from rss2discord.transports.catalog_normalization import (
+    MAX_HIVETEC_RETAINED_SNAPSHOTS,
+    normalize_hivetec_catalog,
+)
+from rss2discord.transports.hivetec import hivetec_product_metrics
 from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL
 from rss2discord.transports.hivetec_models import HivetecProduct
 from rss2discord.transports.price_monitor import (
@@ -25,8 +29,6 @@ from rss2discord.transports.price_monitor import (
     prepare_price_scan,
     price_direction,
 )
-
-MAX_HIVETEC_RETAINED_SNAPSHOTS: Final = 10_000
 
 
 class HivetecCatalog(Protocol):
@@ -103,17 +105,13 @@ class HivetecPriceMonitor:
             label=HIVETEC_LABEL,
         )
         by_id = {snapshot.product_id: snapshot for snapshot in persisted}
-        if len({product.id for product in products}) != len(products):
-            raise FeedFetchError(HIVETEC_LABEL, "ConflictingProductIDs")
-        available = tuple(
-            product for product in products if product.prices.current_amount > 0
+        observations = normalize_hivetec_catalog(
+            self._feed.id,
+            products,
+            persisted,
+            snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
         )
-        if (
-            len(set(by_id).union(str(product.id) for product in available))
-            > MAX_HIVETEC_RETAINED_SNAPSHOTS
-        ):
-            raise FeedFetchError(HIVETEC_LABEL, "SnapshotLimitExceeded")
-        products_by_id = {str(product.id): product for product in available}
+        products_by_id = {str(product.id): product for product in products}
         deliver_catalog_price_changes(
             self._dependencies,
             self._message_for,
@@ -124,18 +122,13 @@ class HivetecPriceMonitor:
             ),
             feed_id=self._feed.id,
             provider=HIVETEC_LABEL,
-            current={str(product.id): self._snapshot(product) for product in available},
+            current={
+                item.product_id: item.snapshot
+                for item in observations
+                if item.snapshot is not None
+            },
             persisted=by_id,
             catalog_count=len(products),
-        )
-
-    def _snapshot(self, product: HivetecProduct) -> PriceSnapshot:
-        return PriceSnapshot(
-            feed_id=self._feed.id,
-            product_id=str(product.id),
-            amount=product.prices.current_amount,
-            formatted=format_hivetec_mkd(product.prices.current_amount),
-            currency=product.prices.currency_code,
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

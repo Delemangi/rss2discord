@@ -64,6 +64,8 @@ class PriceSnapshotStore(Protocol):
 
 
 class PriceRecoveryStore(PriceSnapshotStore, Protocol):
+    def held_price_product_ids(self, feed_id: str) -> frozenset[str]: ...
+
     def record_price_change_candidate(
         self,
         *,
@@ -199,6 +201,10 @@ def prepare_price_delivery(
     catalog_count: int,
 ) -> PriceDeliveryPlan:
     """Validate the complete diff and select bounded work without claiming sends."""
+    held = store.held_price_product_ids(feed_id)
+    current = {key: value for key, value in current.items() if key not in held}
+    persisted = {key: value for key, value in persisted.items() if key not in held}
+    changes = tuple(change for change in changes if change.product_id not in held)
     batch = store.load_active_price_batch(feed_id)
     if batch is not None and batch.status == "paused":
         record_price_health(
@@ -218,7 +224,11 @@ def prepare_price_delivery(
             return PriceDeliveryPlan(blocked=True)
         raise FeedFetchError(provider, "CurrencyChanged")
     if batch is not None:
-        pending = tuple(item for item in batch.items if item.status == "pending")
+        pending = tuple(
+            item
+            for item in batch.items
+            if item.status == "pending" and item.product_id not in held
+        )
         decision = assess_price_safety(
             expected=pending,
             current=current,
@@ -351,6 +361,9 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
     catalog_count: int,
 ) -> None:
     """Compare complete catalog snapshots and deliver without extra confirmation I/O."""
+    held = dependencies.snapshots.held_price_product_ids(feed_id)
+    current = {key: value for key, value in current.items() if key not in held}
+    persisted = {key: value for key, value in persisted.items() if key not in held}
     silent: list[PriceSnapshot] = []
     changes: list[ChangeT] = []
     for snapshot in current.values():

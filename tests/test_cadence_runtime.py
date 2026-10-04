@@ -9,7 +9,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.recovery_models import HealthUpdate
-from rss2discord.scheduler import JobOutcome
+from rss2discord.scheduler import JobOutcome, SchedulerJobs
 from tests.app_helpers import FakeSender, FakeStrategy, make_feed
 
 
@@ -49,6 +49,84 @@ def test_startup_warns_for_gap_budget_but_still_runs(
         assert store.list_health("a")[0].total_attempts == 1
 
     assert ("cadence is best-effort" in caplog.text) == (gap >= 150)
+
+
+def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fast = make_feed("fast").model_copy(update={"ordinary_check_interval": 300})
+    slow = make_feed("slow").model_copy(
+        update={
+            "ordinary_check_interval": 3600,
+            "strategy": "anhoch",
+            "price_check_interval": 7200,
+        },
+    )
+    captured: list[SchedulerJobs] = []
+
+    class CaptureScheduler:
+        def __init__(
+            self,
+            jobs: SchedulerJobs,
+            *_args: object,
+            **_kwargs: object,
+        ) -> None:
+            captured.append(jobs)
+
+        def run(self) -> None:
+            return
+
+    monkeypatch.setattr("rss2discord.app.RuntimeScheduler", CaptureScheduler)
+    caplog.set_level(logging.WARNING)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(
+            AppConfig(
+                feeds=(fast, slow),
+                refresh_interval=300,
+                delay_between_feeds=150,
+            ),
+            store,
+            FakeSender([]),
+        )
+        app.run()
+
+    jobs = captured[0]
+    assert [job.interval for job in jobs.ordinary] == [300, 3600]
+    assert [(job.name, job.interval) for job in jobs.prices] == [
+        ("slow", 7200),
+    ]
+    assert "cadence is best-effort" not in caplog.text
+
+
+def test_per_feed_gap_capacity_warns_at_one_or_more(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    feeds = (
+        make_feed("fast").model_copy(update={"ordinary_check_interval": 300}),
+        make_feed("slow").model_copy(update={"ordinary_check_interval": 3600}),
+    )
+
+    class CaptureScheduler:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def run(self) -> None:
+            return
+
+    monkeypatch.setattr("rss2discord.app.RuntimeScheduler", CaptureScheduler)
+    caplog.set_level(logging.WARNING)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        RSSToDiscord(
+            AppConfig(feeds=feeds, delay_between_feeds=300),
+            store,
+            FakeSender([]),
+        ).run()
+
+    assert "cadence is best-effort" in caplog.text
 
 
 def test_cooldown_skip_does_not_delay_peer_or_change_health(

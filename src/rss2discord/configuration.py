@@ -54,6 +54,13 @@ class FeedConfig(BaseModel):
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
     embed_color: Annotated[int, Field(ge=0, le=0xFFFFFF)] | None = None
+    ordinary_check_interval: (
+        Annotated[
+            float,
+            Field(gt=0, allow_inf_nan=False),
+        ]
+        | None
+    ) = None
     price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
         None
     )

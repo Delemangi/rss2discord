@@ -247,17 +247,21 @@ class RSSToDiscord:
             len(self._config.feeds),
             self._config.refresh_interval,
         )
-        if (
-            len(self._config.feeds) * self._config.delay_between_feeds
-            >= self._config.refresh_interval
-        ):
+        ordinary_intervals = tuple(
+            feed.ordinary_check_interval
+            if feed.ordinary_check_interval is not None
+            else self._config.refresh_interval
+            for feed in self._config.feeds
+        )
+        gap_utilization = self._config.delay_between_feeds * sum(
+            1 / interval for interval in ordinary_intervals
+        )
+        if gap_utilization >= 1:
             logger.warning(
-                "Ordinary-feed gap budget (%d feeds * %.1f seconds) meets or "
-                "exceeds refresh interval %.1f seconds; cadence is best-effort "
-                "and fetch durations and price jobs can add further delay",
-                len(self._config.feeds),
-                self._config.delay_between_feeds,
-                self._config.refresh_interval,
+                "Ordinary-feed gap budget utilization %.3f meets or exceeds "
+                "available cadence capacity; cadence is best-effort and fetch "
+                "durations and price jobs can add further delay",
+                gap_utilization,
             )
         RuntimeScheduler(
             SchedulerJobs(
@@ -265,7 +269,9 @@ class RSSToDiscord:
                     ScheduledJob(
                         feed.id,
                         "ordinary",
-                        self._config.refresh_interval,
+                        feed.ordinary_check_interval
+                        if feed.ordinary_check_interval is not None
+                        else self._config.refresh_interval,
                         partial(self._process_feed_safely, feed),
                     )
                     for feed in self._config.feeds
