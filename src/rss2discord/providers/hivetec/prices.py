@@ -10,6 +10,9 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData
+from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
+from rss2discord.providers.hivetec.models import HivetecProduct
+from rss2discord.providers.hivetec.strategy import hivetec_product_metrics
 from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
@@ -18,9 +21,6 @@ from rss2discord.transports.catalog_normalization import (
     MAX_HIVETEC_RETAINED_SNAPSHOTS,
     normalize_hivetec_catalog,
 )
-from rss2discord.transports.hivetec import hivetec_product_metrics
-from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL
-from rss2discord.transports.hivetec_models import HivetecProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

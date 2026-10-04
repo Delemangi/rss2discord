@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from rss2discord.transports.hivetec_models import HivetecProduct
+from rss2discord.providers.hivetec.models import HivetecProduct
 from tests.hivetec_helpers import product_payload
 
 

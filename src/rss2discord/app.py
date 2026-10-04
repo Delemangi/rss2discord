@@ -20,6 +20,7 @@ from .price_runtime import (
     safe_error_cause,
 )
 from .providers.ddstore.strategy import DDStoreStrategy
+from .providers.hivetec.strategy import HivetecStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -39,7 +40,6 @@ from .transports import (
     AnhochStrategy,
     FeedFetchError,
     Gjirafa50Strategy,
-    HivetecStrategy,
     ITMkOglasnikStrategy,
     NeksioStrategy,
     NeptunStrategy,

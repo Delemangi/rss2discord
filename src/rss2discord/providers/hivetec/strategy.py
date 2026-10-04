@@ -6,13 +6,13 @@ from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL, HIVETEC_WINDOW_SIZE
-from rss2discord.transports.hivetec_catalog import HivetecCatalogClient
-from rss2discord.transports.hivetec_models import (
+from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL, HIVETEC_WINDOW_SIZE
+from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
+from rss2discord.providers.hivetec.models import (
     HivetecDiscoveryProduct,
     HivetecProduct,
 )
+from rss2discord.transports.base import ScraperStrategy
 
 
 @final

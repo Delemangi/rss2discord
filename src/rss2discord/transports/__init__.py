@@ -4,7 +4,6 @@ from .anhoch import AnhochStrategy
 from .base import FeedFetchError, ScraperStrategy
 from .cccenter import CCCenterStrategy
 from .gjirafa50 import Gjirafa50Strategy
-from .hivetec import HivetecStrategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
 from .neksio import NeksioStrategy
 from .neptun import NeptunStrategy
@@ -20,7 +19,6 @@ __all__ = [
     "CCCenterStrategy",
     "FeedFetchError",
     "Gjirafa50Strategy",
-    "HivetecStrategy",
     "ITMkOglasnikStrategy",
     "NeksioStrategy",
     "NeptunStrategy",

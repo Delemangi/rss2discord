@@ -5,9 +5,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic
 
+from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.hivetec_bounds import HIVETEC_LABEL
 
 
 @dataclass(frozen=True, slots=True)
