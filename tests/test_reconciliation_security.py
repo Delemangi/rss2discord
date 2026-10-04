@@ -194,6 +194,102 @@ def test_valid_provider_projection_bytes_and_fingerprints_are_unchanged(
 
 
 @pytest.mark.parametrize("provider", ["DDStore", "Hivetec"])
+@pytest.mark.parametrize("action", ["review", "apply"])
+@pytest.mark.parametrize(
+    "duplicate_key",
+    ["name", "categories", "source_context_digest"],
+)
+def test_duplicate_context_keys_are_refused_privately_before_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    provider: str,
+    action: str,
+    duplicate_key: str,
+) -> None:
+    database = tmp_path / "state.db"
+    with DeliveryStore(database) as store:
+        if provider == "DDStore":
+            plan = reviewed(setup_plan(store))
+            feed = make_feed()
+        else:
+            draft = _hivetec_draft(store, _unsafe_image_product())
+            plan = draft.model_copy(
+                update={
+                    "items": (
+                        draft.items[0].model_copy(update={"disposition": "accept"}),
+                    ),
+                },
+            ).sealed()
+            feed = hivetec_feed()
+        before = database_state(store)
+
+    context = json.loads(plan.items[0].context or "{}")
+    entries: list[str] = []
+    for key, value in context.items():
+        if key == duplicate_key:
+            entries.append(json.dumps(key) + ":" + json.dumps({"nested": SECRET}))
+        entries.append(json.dumps(key) + ":" + json.dumps(value))
+    duplicated_context = "{" + ",".join(entries) + "}"
+    altered = plan.model_copy(
+        update={
+            "items": (
+                plan.items[0].model_copy(update={"context": duplicated_context}),
+                *plan.items[1:],
+            ),
+        },
+    )
+    altered = altered.model_copy(
+        update={"reconciliation_fingerprint": altered.fingerprint()},
+    )
+    artifact = tmp_path / "invalid.json"
+    artifact.write_text(altered.model_dump_json(), encoding="utf-8")
+    output = tmp_path / "sealed.json"
+
+    def forbidden_fetch(
+        *_args: object,
+        **_kwargs: object,
+    ) -> tuple[HivetecProduct, ...]:
+        pytest.fail("invalid context must be refused before any provider fetch")
+
+    monkeypatch.setattr(DDStoreCatalogClient, "fetch_catalog", forbidden_fetch)
+    monkeypatch.setattr(HivetecCatalogClient, "fetch_catalog", forbidden_fetch)
+    if action == "review":
+        args = ["reconcile", "review", "--plan", str(artifact), "--output", str(output)]
+    else:
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            json.dumps({"feeds": [feed.model_dump(mode="json")]}),
+            encoding="utf-8",
+        )
+        args = [
+            "--database",
+            str(database),
+            "reconcile",
+            "apply",
+            "--config",
+            str(config),
+            "--feed-id",
+            feed.id,
+            "--plan",
+            str(artifact),
+            "--fingerprint",
+            altered.fingerprint(),
+            "--writers-stopped",
+        ]
+    assert main(args) == 2
+    captured = capsys.readouterr()
+    assert "regenerate the plan" in captured.out
+    assert SECRET not in captured.out + captured.err
+    assert "Traceback" not in captured.out + captured.err
+    assert captured.err == ""
+    assert not output.exists()
+    with DeliveryStore(database, read_only=True) as store:
+        assert database_state(store) == before
+
+
+@pytest.mark.parametrize("provider", ["DDStore", "Hivetec"])
 def test_context_type_contract_rejects_coercions_and_cross_provider_shapes(
     tmp_path: Path,
     provider: str,

@@ -184,7 +184,7 @@ def require_safe_source_url(url: str, strategy: str) -> None:
 def require_sanitized_context(context: str, provider: str) -> None:
     """Refuse legacy raw-model contexts when sealing or applying artifacts."""
     try:
-        value = json.loads(context)
+        value = json.loads(context, object_pairs_hook=_reject_duplicate_json_keys)
     except ValueError:
         raise ValueError(
             "invalid reconciliation context; regenerate the plan",
@@ -248,6 +248,15 @@ def require_sanitized_context(context: str, provider: str) -> None:
         )
     if not common_valid or not projection_valid:
         raise ValueError("invalid reconciliation context; regenerate the plan")
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON object key")
+        value[key] = item
+    return value
 
 
 def _is_context_price(value: object, *, nullable: bool = False) -> bool:

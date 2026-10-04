@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from math import floor, isfinite
+from math import floor, fmod, inf, isfinite, nextafter
 from typing import Literal
 
 
@@ -16,6 +16,21 @@ type JobAction = Callable[[], JobOutcome | None]
 type MonotonicClock = Callable[[], float]
 type InterruptibleSleeper = Callable[[float], bool]
 type ShutdownRequested = Callable[[], bool]
+
+
+def _next_deadline(deadline: float, finished_at: float, interval: float) -> float:
+    elapsed = max(0.0, finished_at - deadline)
+    slots = elapsed / interval
+    if isfinite(slots):
+        following = deadline + (floor(slots) + 1) * interval
+    else:
+        # A finite elapsed time divided by a tiny interval can overflow.
+        # Recover the phase remainder without constructing the slot count.
+        following = finished_at + (interval - fmod(elapsed, interval))
+    # Sub-ULP intervals (or rounded large slot counts) can leave the deadline
+    # at completion. Skip to the next representable instant, never catch up
+    # repeatedly at the same timestamp.
+    return max(following, nextafter(finished_at, inf))
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +141,11 @@ class RuntimeScheduler:
                 finished_at, outcome = self._execute(job, deadlines[index], now)
                 # Fixed phase; skip missed slots arithmetically, without a
                 # catch-up loop or completion-relative drift after long scans.
-                missed = max(0, floor((finished_at - deadlines[index]) / job.interval))
-                deadlines[index] += (missed + 1) * job.interval
+                deadlines[index] = _next_deadline(
+                    deadlines[index],
+                    finished_at,
+                    job.interval,
+                )
                 if job.kind == "ordinary" and outcome != JobOutcome.SKIPPED:
                     ordinary_ready = finished_at + self._jobs.ordinary_gap
                 cursor = (index + 1) % len(jobs)
