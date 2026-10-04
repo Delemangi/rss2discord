@@ -1,5 +1,6 @@
 """Newest-window and price-sharded Gjirafa50 catalog traversal."""
 
+import logging
 import time
 from collections import deque
 from collections.abc import Callable
@@ -24,11 +25,17 @@ GJIRAFA50_WINDOW_SIZE: Final = 30
 GJIRAFA50_PAGE_SIZE: Final = 24
 MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS: Final = 2_147_483_647 * 100 + 1
 MAX_GJIRAFA50_SHARD_PRODUCTS: Final = 8_999
-MAX_GJIRAFA50_PRODUCTS: Final = 100_000
-MAX_GJIRAFA50_PAGES: Final = 5_000
+# The observed .com catalog has 137,124 products. At 24 per page, 150,000
+# products plus 128 shards' probes/sentinels/reconciliation fit in 7,000
+# requests. Retries share this work budget; they do not get a fresh allowance.
+MAX_GJIRAFA50_PRODUCTS: Final = 150_000
+MAX_GJIRAFA50_PAGES: Final = 7_000
+MAX_GJIRAFA50_FETCHED_PRODUCTS: Final = MAX_GJIRAFA50_PAGES * GJIRAFA50_PAGE_SIZE
 MAX_GJIRAFA50_SHARDS: Final = 128
 MAX_GJIRAFA50_SCAN_BYTES: Final = 500 * 1024 * 1024
 MAX_GJIRAFA50_SCAN_SECONDS: Final = 1_800
+
+logger = logging.getLogger(__name__)
 
 
 class _OperationBudget:
@@ -60,9 +67,10 @@ class _OperationBudget:
             raise FeedFetchError(GJIRAFA50_LABEL, "ScanResponseTooLarge")
 
     def consume_products(self, products: int) -> None:
+        """Bound cumulative parsed cards, including probes and retry attempts."""
         self.products += products
-        if self.products > MAX_GJIRAFA50_PRODUCTS:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+        if self.products > MAX_GJIRAFA50_FETCHED_PRODUCTS:
+            raise FeedFetchError(GJIRAFA50_LABEL, "ProductWorkLimitExceeded")
 
     def consume_shard(self) -> None:
         self.shards += 1
@@ -174,6 +182,11 @@ class Gjirafa50CatalogClient:
         scan = _CatalogScan(root_url, budget, http)
         root_total = scan.fetch(1).total_hits
         if root_total > MAX_GJIRAFA50_PRODUCTS:
+            logger.warning(
+                "Gjirafa50 catalog exceeds unique product capacity: reported=%d limit=%d",
+                root_total,
+                MAX_GJIRAFA50_PRODUCTS,
+            )
             raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
         shards = self._build_shards(scan, root_total)
         products: list[Gjirafa50Product] = []
@@ -248,6 +261,14 @@ class Gjirafa50CatalogClient:
             if page.total_hits != total or page.total_pages != pages:
                 raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             if len(page.products) != expected:
+                logger.warning(
+                    "Gjirafa50 incomplete shard page: page=%d expected=%d rendered=%d "
+                    "shard_total=%d; catalog completeness is unverified",
+                    page_number,
+                    expected,
+                    len(page.products),
+                    total,
+                )
                 raise FeedFetchError(
                     GJIRAFA50_LABEL,
                     "IncompleteCatalog",
@@ -260,6 +281,15 @@ class Gjirafa50CatalogClient:
                     <= price_cents
                     < price_range.maximum_exclusive_cents
                 ):
+                    logger.warning(
+                        "Gjirafa50 displayed price outside filter shard: "
+                        "page=%d price_cents=%d minimum_cents=%d "
+                        "maximum_exclusive_cents=%d; filter contract is unverified",
+                        page_number,
+                        price_cents,
+                        price_range.minimum_cents,
+                        price_range.maximum_exclusive_cents,
+                    )
                     raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
             self._append_unique(products, seen, page.products)
         sentinel = scan.fetch(pages + 1, price_range)
@@ -283,5 +313,7 @@ class Gjirafa50CatalogClient:
                     "DuplicateProductId",
                     retryable=True,
                 )
+            if len(seen) >= MAX_GJIRAFA50_PRODUCTS:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
             seen.add(product.id)
             products.append(product)

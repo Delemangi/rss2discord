@@ -33,6 +33,7 @@ class _SetecCalculatedPrice(BaseModel):
 class _SetecVariant(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", frozen=True)
 
+    id: Annotated[str, Field(min_length=1)] | None = None
     calculated_price: _SetecCalculatedPrice
 
 
@@ -75,6 +76,7 @@ class _SetecIndexedPrice(BaseModel):
 class _SetecIndexedVariant(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", frozen=True)
 
+    id: Annotated[str, Field(min_length=1)] | None = None
     calculated_price: _SetecIndexedPrice
 
 
@@ -88,8 +90,8 @@ class SetecPriceEntry(BaseModel):
 
     @property
     def calculated_amount(self) -> Decimal | None:
-        """Return the first variant's calculated amount, or None when unpriced."""
-        if not self.variants:
+        """Return an unambiguous price; no multi-variant selection is assumed."""
+        if len(self.variants) != 1:
             return None
         return self.variants[0].calculated_price.calculated_amount
 

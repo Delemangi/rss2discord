@@ -1,9 +1,10 @@
 from collections.abc import Iterable
+from pathlib import Path
 
 import pytest
 import requests
 
-from rss2discord.delivery_store import PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
 from tests.anhoch_helpers import (
@@ -22,13 +23,19 @@ from tests.anhoch_price_monitor_helpers import (
 )
 
 
-class SnapshotStoreSpy:
+class SnapshotStoreSpy(DeliveryStore):
     def __init__(self) -> None:
+        super().__init__(Path(":memory:"))
         self.load_calls = 0
         self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
 
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]:
-        del feed_id
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]:
+        del feed_id, limit
         self.load_calls += 1
         return ()
 

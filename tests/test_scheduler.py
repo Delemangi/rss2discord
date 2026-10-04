@@ -1,6 +1,9 @@
+from itertools import pairwise
+
 import pytest
 
 from rss2discord.scheduler import (
+    JobTiming,
     RuntimeScheduler,
     ScheduledJob,
     SchedulerControl,
@@ -44,8 +47,10 @@ def test_scheduler_runs_ordinary_and_price_jobs_immediately_and_by_deadline() ->
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=run_ordinary),
-            prices=(ScheduledJob(interval=3600, run=run_price),),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=run_ordinary),
+            ),
+            prices=(ScheduledJob("price", "price", interval=3600, run=run_price),),
         ),
         control=SchedulerControl(
             monotonic=clock.monotonic,
@@ -64,7 +69,7 @@ def test_scheduler_runs_ordinary_and_price_jobs_immediately_and_by_deadline() ->
         ("ordinary", 300),
         ("ordinary", 600),
     ]
-    assert events[-2:] == [("ordinary", 3600), ("price", 3600)]
+    assert events[-2:] == [("price", 3600), ("ordinary", 3600)]
     assert clock.sleep_calls == [300] * 13
 
 
@@ -83,7 +88,9 @@ def test_scheduler_runs_once_when_a_sleep_overruns_a_job_deadline() -> None:
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=run_ordinary),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=run_ordinary),
+            ),
             prices=(),
         ),
         control=SchedulerControl(
@@ -98,7 +105,7 @@ def test_scheduler_runs_once_when_a_sleep_overruns_a_job_deadline() -> None:
 
     # Then
     assert events == [0, 1000]
-    assert clock.sleep_calls == [300, 300]
+    assert clock.sleep_calls == [300, 200]
 
 
 def test_scheduler_runs_ordinary_immediately_after_price_job_overruns_deadline() -> (
@@ -122,8 +129,10 @@ def test_scheduler_runs_ordinary_immediately_after_price_job_overruns_deadline()
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=run_ordinary),
-            prices=(ScheduledJob(interval=3600, run=run_price),),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=run_ordinary),
+            ),
+            prices=(ScheduledJob("price", "price", interval=3600, run=run_price),),
         ),
         control=SchedulerControl(
             monotonic=clock.monotonic,
@@ -151,7 +160,14 @@ def test_scheduler_stops_when_its_sleep_is_interrupted() -> None:
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=lambda: events.append(clock.now)),
+            ordinary=(
+                ScheduledJob(
+                    "ordinary",
+                    "ordinary",
+                    interval=300,
+                    run=lambda: events.append(clock.now),
+                ),
+            ),
             prices=(),
         ),
         control=SchedulerControl(
@@ -175,9 +191,13 @@ def test_scheduler_closes_price_jobs_after_interrupted_sleep() -> None:
     events: list[str] = []
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=lambda: None),
+            ),
             prices=(
                 ScheduledJob(
+                    "price",
+                    "price",
                     interval=3600,
                     run=lambda: events.append("run"),
                     close=lambda: events.append("close"),
@@ -209,10 +229,20 @@ def test_scheduler_preserves_run_failure_and_attempts_every_close() -> None:
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=fail_run),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=fail_run),
+            ),
             prices=(
-                ScheduledJob(interval=3600, run=lambda: None, close=fail_close),
                 ScheduledJob(
+                    "first",
+                    "price",
+                    interval=3600,
+                    run=lambda: None,
+                    close=fail_close,
+                ),
+                ScheduledJob(
+                    "second",
+                    "price",
                     interval=3600,
                     run=lambda: None,
                     close=lambda: closed.append("second"),
@@ -230,7 +260,7 @@ def test_scheduler_preserves_run_failure_and_attempts_every_close() -> None:
         scheduler.run()
 
     assert closed == ["first", "second"]
-    assert error.value.__notes__ == ["Price job cleanup failed: first close failed"]
+    assert error.value.__notes__ == ["Job cleanup failed: first close failed"]
 
 
 def test_scheduler_groups_multiple_cleanup_failures_without_primary_failure() -> None:
@@ -245,10 +275,24 @@ def test_scheduler_groups_multiple_cleanup_failures_without_primary_failure() ->
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=lambda: None),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=lambda: None),
+            ),
             prices=(
-                ScheduledJob(interval=3600, run=lambda: None, close=fail_first_close),
-                ScheduledJob(interval=3600, run=lambda: None, close=fail_second_close),
+                ScheduledJob(
+                    "first",
+                    "price",
+                    interval=3600,
+                    run=lambda: None,
+                    close=fail_first_close,
+                ),
+                ScheduledJob(
+                    "second",
+                    "price",
+                    interval=3600,
+                    run=lambda: None,
+                    close=fail_second_close,
+                ),
             ),
         ),
         control=SchedulerControl(
@@ -279,8 +323,18 @@ def test_scheduler_does_not_treat_outer_handled_exception_as_primary() -> None:
 
     scheduler = RuntimeScheduler(
         jobs=SchedulerJobs(
-            ordinary=ScheduledJob(interval=300, run=lambda: None),
-            prices=(ScheduledJob(interval=3600, run=lambda: None, close=fail_close),),
+            ordinary=(
+                ScheduledJob("ordinary", "ordinary", interval=300, run=lambda: None),
+            ),
+            prices=(
+                ScheduledJob(
+                    "price",
+                    "price",
+                    interval=3600,
+                    run=lambda: None,
+                    close=fail_close,
+                ),
+            ),
         ),
         control=SchedulerControl(
             monotonic=clock.monotonic,
@@ -293,8 +347,171 @@ def test_scheduler_does_not_treat_outer_handled_exception_as_primary() -> None:
     try:
         fail_outer()
     except ValueError as outer_error:
-        with pytest.raises(ExceptionGroup, match="Price job cleanup failed"):
+        with pytest.raises(ExceptionGroup, match="Job cleanup failed"):
             scheduler.run()
         outer_notes = getattr(outer_error, "__notes__", None)
 
     assert outer_notes is None
+
+
+def test_long_ordinary_job_does_not_starve_prices_or_next_feed() -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+    timings: list[JobTiming] = []
+
+    def slow() -> None:
+        events.append(("slow", clock.now))
+        clock.now += 1000
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            ordinary=(
+                ScheduledJob("slow", "ordinary", 300, slow),
+                ScheduledJob(
+                    "next",
+                    "ordinary",
+                    300,
+                    lambda: events.append(("next", clock.now)),
+                ),
+            ),
+            prices=(
+                ScheduledJob(
+                    "price-a",
+                    "price",
+                    500,
+                    lambda: events.append(("price-a", clock.now)),
+                ),
+                ScheduledJob(
+                    "price-b",
+                    "price",
+                    500,
+                    lambda: events.append(("price-b", clock.now)),
+                ),
+            ),
+            ordinary_gap=61,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(events) >= 4),
+        observer=timings.append,
+    ).run()
+
+    assert events == [("slow", 0), ("price-a", 1000), ("price-b", 1000), ("next", 1061)]
+    assert clock.sleep_calls == [61]
+    assert timings[0] == JobTiming("slow", "ordinary", 0, 0, 1000)
+    assert timings[-1] == JobTiming("next", "ordinary", 0, 1061, 1061)
+
+
+def test_job_duration_keeps_original_phase_and_skips_missed_slots() -> None:
+    clock = FakeSchedulerClock()
+    starts: list[float] = []
+
+    def run() -> None:
+        starts.append(clock.now)
+        clock.now += 25
+
+    RuntimeScheduler(
+        SchedulerJobs((ScheduledJob("a", "ordinary", 10, run),), ()),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(starts) == 3),
+    ).run()
+    assert starts == [0, 30, 60]
+    assert clock.sleep_calls == [5, 5]
+
+
+def test_extreme_overrun_skips_arithmetically_and_preserves_due_peer() -> None:
+    clock = FakeSchedulerClock()
+    starts: list[float] = []
+
+    def overrun() -> None:
+        starts.append(clock.now)
+        clock.now += 1_000_000_000_000
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            (ScheduledJob("slow", "ordinary", 1, overrun),),
+            (ScheduledJob("peer", "price", 1, lambda: starts.append(clock.now)),),
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: len(starts) == 2),
+    ).run()
+    assert starts == [0, 1_000_000_000_000]
+    assert clock.sleep_calls == []
+
+
+def test_empty_scheduler_finishes_without_sleeping() -> None:
+    clock = FakeSchedulerClock()
+    RuntimeScheduler(
+        SchedulerJobs((), ()),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: False),
+    ).run()
+    assert clock.sleep_calls == []
+
+
+def test_failed_job_observation_cannot_mask_primary_exception() -> None:
+    clock = FakeSchedulerClock()
+
+    def fail_job() -> None:
+        raise ValueError("primary")
+
+    def fail_observer(timing: JobTiming) -> None:
+        assert timing.name == "a"
+        raise RuntimeError("observer")
+
+    with pytest.raises(ValueError, match="primary") as caught:
+        RuntimeScheduler(
+            SchedulerJobs((ScheduledJob("a", "ordinary", 1, fail_job),), ()),
+            SchedulerControl(clock.monotonic, clock.sleep, lambda: False),
+            observer=fail_observer,
+        ).run()
+    assert caught.value.__notes__ == ["Job timing observer failed: RuntimeError"]
+
+
+@pytest.mark.parametrize(
+    ("interval", "first_duration", "horizon"),
+    [(60, 0, 86400), (300, 240, 3600)],
+)
+def test_gap_preserves_overdue_feed_priority_despite_price_cursor_resets(
+    interval: float,
+    first_duration: float,
+    horizon: float,
+) -> None:
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def first() -> None:
+        events.append(("first", clock.now))
+        clock.now += first_duration
+
+    RuntimeScheduler(
+        SchedulerJobs(
+            (
+                ScheduledJob("first", "ordinary", interval, first),
+                ScheduledJob(
+                    "second",
+                    "ordinary",
+                    interval,
+                    lambda: events.append(("second", clock.now)),
+                ),
+            ),
+            (
+                ScheduledJob(
+                    "price",
+                    "price",
+                    interval,
+                    lambda: events.append(("price", clock.now)),
+                ),
+            ),
+            ordinary_gap=61,
+        ),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: clock.now >= horizon),
+    ).run()
+
+    ordinary = [(name, at) for name, at in events if name != "price"]
+    assert len(ordinary) > 10
+    assert [name for name, _ in ordinary] == [
+        "first" if index % 2 == 0 else "second" for index in range(len(ordinary))
+    ]
+    assert ordinary[1] == ("second", first_duration + 61)
+    for (name, previous), (_, following) in pairwise(ordinary):
+        duration = first_duration if name == "first" else 0
+        assert following - previous >= duration + 61
+    for name in ("first", "second", "price"):
+        starts = [at for kind, at in events if kind == name]
+        assert starts[-1] >= horizon - 2 * (interval + first_duration + 61)

@@ -1,7 +1,9 @@
 import logging
+import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from functools import partial
+from typing import Any, Final, Literal
 
 from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
 from .configuration import AppConfig, FeedConfig
@@ -9,14 +11,28 @@ from .delivery_limits import enforce_delivery_limits
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, WebhookMessage
 from .models import EntryData, EntryId
-from .price_runtime import PriceJobDependencies, build_price_jobs
+from .price_runtime import (
+    PriceJobDependencies,
+    build_price_jobs,
+    feed_is_blocked,
+    record_fetch_failure,
+    record_runtime_health,
+    safe_error_cause,
+)
+from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
 )
-from .scheduler import RuntimeScheduler, ScheduledJob, SchedulerControl, SchedulerJobs
+from .scheduler import (
+    JobTiming,
+    RuntimeScheduler,
+    ScheduledJob,
+    SchedulerControl,
+    SchedulerJobs,
+)
 from .transports import (
     AnhochStrategy,
     DDStoreStrategy,
@@ -39,10 +55,6 @@ from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
-
-
-def _log_feed_fetch_error(feed_id: str, error: FeedFetchError) -> None:
-    logger.error("Error processing feed %s: %s", feed_id, error)
 
 
 class RSSToDiscord:
@@ -92,9 +104,57 @@ class RSSToDiscord:
         return self._shutdown_requested
 
     def process_feed(self, feed: FeedConfig) -> None:
+        if self._shutdown_requested:
+            return
+        attempted_at = int(time.time())
+        if feed_is_blocked(feed, self._config.feeds, self._store, attempted_at):
+            return
+        started_at = time.monotonic()
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
+        if self._shutdown_requested:
+            return
+        baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
+        if baseline_state == "ready" and not self._process_entries(
+            feed,
+            strategy,
+            entries,
+            fetched_source_title,
+        ):
+            return
+        if self._shutdown_requested:
+            return
+        record_runtime_health(
+            self._store,
+            HealthUpdate(
+                feed_id=feed.id,
+                job_kind="ordinary",
+                state="recovery_required"
+                if baseline_state == "recovery_required"
+                else "healthy"
+                if entries
+                else "empty",
+                cause="CompleteBaselineRequired"
+                if baseline_state == "recovery_required"
+                else None,
+                attempted_at=attempted_at,
+                success=True,
+                nonempty=bool(entries),
+                item_count=len(entries),
+                duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                scheduler_lag_ms=0,
+            ),
+        )
+
+    def _process_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+        fetched_source_title: str,
+    ) -> bool:
+        """Return whether processing completed rather than being interrupted."""
         should_seed_existing = (
             feed.seed_existing_on_first_fetch or strategy.seed_existing_on_first_fetch
         )
@@ -104,10 +164,10 @@ class RSSToDiscord:
                 feed.seed_existing_on_first_fetch
                 or strategy.require_entries_for_initialization
             ):
-                return
+                return True
             if self._store.seed_feed(feed.id, entry_ids):
                 logger.info("Initialized feed %s with existing entries", feed.id)
-                return
+                return True
         enforce_delivery_limits(feed.id, entries, strategy, self._store)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
@@ -121,7 +181,7 @@ class RSSToDiscord:
 
         for entry in entries:
             if self._shutdown_requested:
-                return
+                return False
 
             entry_id = strategy.get_entry_id(entry)
             if entry_id is None:
@@ -130,7 +190,7 @@ class RSSToDiscord:
             is_seen = entry_id in seen_entry_ids
             seen_entry_ids.add(entry_id)
 
-            if is_seen or self._store.has_delivered(feed.id, entry_id):
+            if is_seen or self._store.has_handled_entry(feed.id, entry_id):
                 continue
 
             entry_data = strategy.get_entry_data(entry)
@@ -153,7 +213,12 @@ class RSSToDiscord:
                     feed.id,
                 )
                 enrichment_limit_logged = True
-            if self._is_too_old(entry_data, feed.id):
+            if self._is_too_old(
+                entry_data,
+                feed.id,
+                allow_missing_timestamp=strategy.allow_missing_timestamp_after_complete_baseline
+                and self._store.has_complete_baseline(feed.id),
+            ):
                 continue
 
             message = WebhookMessage(
@@ -165,9 +230,10 @@ class RSSToDiscord:
                 continue
 
             if not self._persist_delivery(feed.id, entry_id):
-                return
+                return False
             if not self._interruptible_sleep(self._config.delay_between_posts):
-                return
+                return False
+        return True
 
     def run(self) -> None:
         if not self._config.feeds:
@@ -181,7 +247,15 @@ class RSSToDiscord:
         )
         RuntimeScheduler(
             SchedulerJobs(
-                ScheduledJob(self._config.refresh_interval, self._run_feed_cycle),
+                tuple(
+                    ScheduledJob(
+                        feed.id,
+                        "ordinary",
+                        self._config.refresh_interval,
+                        partial(self._process_feed_safely, feed),
+                    )
+                    for feed in self._config.feeds
+                ),
                 build_price_jobs(
                     self._config,
                     PriceJobDependencies(
@@ -193,36 +267,85 @@ class RSSToDiscord:
                         pazar3_pacer=self._pazar3_pacer,
                     ),
                 ),
+                ordinary_gap=self._config.delay_between_feeds,
             ),
             SchedulerControl(
                 time.monotonic,
                 self._interruptible_sleep,
                 self.is_shutdown_requested,
             ),
+            observer=self._record_job_timing,
         ).run()
 
         logger.info("Shutdown complete")
 
-    def _run_feed_cycle(self) -> None:
-        delay_between_feeds = self._config.delay_between_feeds
-        for feed_index, feed in enumerate(self._config.feeds):
-            if self._shutdown_requested:
-                break
-            self._process_feed_safely(feed)
-            has_next_feed = feed_index < len(self._config.feeds) - 1
-            should_wait = has_next_feed and delay_between_feeds > 0
-            if should_wait and not self._interruptible_sleep(delay_between_feeds):
-                break
+    def _prepare_complete_baseline(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+    ) -> Literal["ready", "initialized", "recovery_required", "empty"]:
+        if not strategy.allow_missing_timestamp_after_complete_baseline:
+            return "ready"
+        if self._store.has_complete_baseline(feed.id):
+            return "ready"
+        if not entries:
+            return "empty"
+        entry_ids = strategy.get_initialization_entry_ids(entries)
+        if len(entry_ids) != len(entries):
+            raise FeedFetchError("Feed", "InvalidBaselineEntries")
+        if self._store.is_feed_initialized(feed.id):
+            self._store.record_feed_baseline_candidate(
+                feed_id=feed.id,
+                entry_ids=entry_ids,
+                reason="Complete catalog recovery baseline required",
+            )
+            return "recovery_required"
+        self._store.initialize_feed_with_baseline(
+            feed_id=feed.id,
+            entry_ids=entry_ids,
+            reason="Initial complete catalog baseline",
+        )
+        return "initialized"
+
+    def _record_job_timing(self, timing: JobTiming) -> None:
+        try:
+            self._store.record_job_timing(
+                feed_id=timing.name,
+                job_kind=timing.kind,
+                duration_ms=max(
+                    0,
+                    int((timing.finished_at - timing.started_at) * 1000),
+                ),
+                scheduler_lag_ms=max(
+                    0,
+                    int((timing.started_at - timing.scheduled_at) * 1000),
+                ),
+            )
+        except sqlite3.Error as error:
+            logger.log(
+                logging.ERROR,
+                "Job timing persistence failed for feed %s (%s)",
+                timing.name,
+                type(error).__name__,
+            )
 
     def _process_feed_safely(self, feed: FeedConfig) -> None:
+        attempted_at = int(time.time())
+        started_at = time.monotonic()
         try:
             self.process_feed(feed)
-        except FeedFetchInterruptedError:
+        except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
             return
-        except FeedFetchError as error:
-            _log_feed_fetch_error(feed.id, error)
-        except Exception:
-            logger.exception("Error processing feed %s", feed.id)
+        except Exception as error:
+            record_fetch_failure(
+                self._store,
+                feed.id,
+                "ordinary",
+                error,
+                attempted_at,
+                duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+            )
 
     def _fetch_entries(
         self,
@@ -234,17 +357,25 @@ class RSSToDiscord:
             on_retry=lambda error, delay: logger.warning(
                 "Error processing feed %s: %s; retrying in %.1f seconds",
                 feed.id,
-                error,
+                safe_error_cause(error),
                 delay,
             ),
         )
         return retry_policy.execute(lambda: strategy.fetch_entries(feed.url))
 
-    def _is_too_old(self, entry: EntryData, feed_id: str) -> bool:
+    def _is_too_old(
+        self,
+        entry: EntryData,
+        feed_id: str,
+        *,
+        allow_missing_timestamp: bool = False,
+    ) -> bool:
         max_age_days = self._config.max_post_age_days
         if max_age_days <= 0:
             return False
         if entry.timestamp is None:
+            if allow_missing_timestamp:
+                return False
             logger.warning(
                 "Skipping entry without a timestamp in feed %s: %s",
                 feed_id,

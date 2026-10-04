@@ -24,7 +24,7 @@ from rss2discord.transports.anhoch_price_monitor import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
 )
 
 
@@ -136,7 +136,7 @@ def is_not_shutdown() -> bool:
 def make_monitor(
     feed: FeedConfig,
     catalog: AnhochCatalog,
-    snapshots: PriceSnapshotStore,
+    snapshots: PriceRecoveryStore,
     sender: DiscordSender,
     *,
     sleep: SleepCallback = keep_running,

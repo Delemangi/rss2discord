@@ -54,6 +54,7 @@ DISPLAY_PROJECTION_FIELDS = [
     "thumbnail",
     "created_at",
     "product_categories.name",
+    "variants.id",
     "variants.calculated_price.calculated_amount",
     "variants.calculated_price.original_amount",
     "variants.calculated_price.currency_code",

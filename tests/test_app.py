@@ -76,26 +76,29 @@ def test_run_waits_between_feeds(
     sender = FakeSender([])
     strategy = FakeStrategy([])
     sleep_calls: list[float] = []
+    now = 0.0
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=sender)
         app._strategies["rss"] = strategy
 
         def record_sleep(seconds: float) -> bool:
+            nonlocal now
             sleep_calls.append(seconds)
-            if seconds == config.refresh_interval:
+            now += seconds
+            if len(sleep_calls) == 2:
                 app.request_shutdown()
                 return False
             return True
 
-        monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: 0.0)
+        monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: now)
         monkeypatch.setattr(app, "_interruptible_sleep", record_sleep)
 
         # When
         app.run()
 
     # Then
-    assert sleep_calls == [61, 60]
+    assert sleep_calls == [61, 61]
 
 
 def test_same_url_delivers_independently_for_each_feed_id(tmp_path: Path) -> None:

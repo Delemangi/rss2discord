@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, assert_never
+from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import (
-    DiscordDeliveryResult,
     DiscordSender,
     WebhookMessage,
 )
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -23,7 +24,11 @@ from rss2discord.transports.anhoch_catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_B
 from rss2discord.transports.anhoch_models import AnhochProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
-    PriceSnapshotStore,
+    PriceRecoveryStore,
+    deliver_price_changes,
+    finish_price_delivery,
+    pause_price_fetch_failure,
+    prepare_price_delivery,
     price_direction,
 )
 
@@ -45,7 +50,7 @@ class AnhochPriceMonitorDependencies:
     """Typed collaborators used by one price-monitor scan."""
 
     catalog: AnhochCatalog
-    snapshots: PriceSnapshotStore
+    snapshots: PriceRecoveryStore
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -71,6 +76,17 @@ class AnhochPriceMonitor:
         self._dependencies: AnhochPriceMonitorDependencies = dependencies
 
     def scan(self) -> None:
+        try:
+            self._scan()
+        except FeedFetchError as error:
+            if not pause_price_fetch_failure(
+                self._dependencies.snapshots,
+                self._feed.id,
+                error,
+            ):
+                raise
+
+    def _scan(self) -> None:
         """Fetch, classify, persist silent updates, then deliver changed prices in order."""
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -89,9 +105,11 @@ class AnhochPriceMonitor:
         }
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
 
         for product in products:
             current = self._snapshot(product)
+            current_snapshots[current.product_id] = current
             previous = snapshots_by_product.get(str(product.id))
             if previous is None:
                 silent_updates.append(current)
@@ -107,43 +125,38 @@ class AnhochPriceMonitor:
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        if silent_updates:
+        store = self._dependencies.snapshots
+        plan = self._dependencies.sqlite_retry_policy.execute(
+            lambda: prepare_price_delivery(
+                store=store,
+                feed_id=self._feed.id,
+                provider="anhoch",
+                changes=tuple(
+                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                    for c in changes
+                ),
+                current=current_snapshots,
+                persisted=snapshots_by_product,
+                catalog_count=len(products),
+            ),
+        )
+        if plan.blocked:
+            return
+        if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(
                     silent_updates,
                 ),
             )
 
-        delay_before_next_attempt = False
-        for change in changes:
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            if (
-                delay_before_next_attempt
-                and self._dependencies.delivery.delay_between_posts > 0
-                and not self._dependencies.delivery.sleep(
-                    self._dependencies.delivery.delay_between_posts,
-                )
-            ):
-                return
-            delay_before_next_attempt = False
-            if self._dependencies.delivery.is_shutdown_requested():
-                return
-            delivery_result = self._dependencies.sender.send(
-                self._message_for(change),
-                self._dependencies.delivery.sleep,
-            )
-            match delivery_result:
-                case DiscordDeliveryResult.DELIVERED:
-                    self._persist_changed_snapshot(change.current)
-                    delay_before_next_attempt = True
-                case DiscordDeliveryResult.FAILED:
-                    if self._dependencies.delivery.is_shutdown_requested():
-                        return
-                case DiscordDeliveryResult.INTERRUPTED:
-                    return
-                case unreachable:
-                    assert_never(unreachable)
+        by_id = {change.current.product_id: change for change in changes}
+        deliver_price_changes(
+            (by_id[product_id] for product_id in plan.selected_ids),
+            self._dependencies,
+            self._message_for,
+            plan=plan,
+        )
+        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: AnhochProduct) -> PriceSnapshot:
         return PriceSnapshot(
@@ -152,11 +165,6 @@ class AnhochPriceMonitor:
             amount=product.selling_price.amount,
             formatted=product.selling_price.formatted,
             currency=product.selling_price.currency,
-        )
-
-    def _persist_changed_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.upsert_price_snapshot(snapshot),
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

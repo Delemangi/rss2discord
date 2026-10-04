@@ -25,13 +25,19 @@ from tests.setec_price_monitor_helpers import (
 )
 
 
-class SnapshotStoreSpy:
+class SnapshotStoreSpy(DeliveryStore):
     def __init__(self) -> None:
+        super().__init__(Path(":memory:"))
         self.load_calls = 0
         self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
 
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]:
-        del feed_id
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]:
+        del feed_id, limit
         self.load_calls += 1
         return ()
 

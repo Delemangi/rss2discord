@@ -139,6 +139,7 @@ class SharedPriceMonitorDependencies:
     sqlite_retry_policy: SQLiteRetryPolicy
     delivery: PriceAlertDelivery
     pazar3_pacer: Pazar3RequestPacer
+    cooldown_peer_feed_ids: tuple[str, ...] = ()
 
 
 def build_provider_price_monitor(
@@ -206,6 +207,7 @@ def build_provider_price_monitor(
                     sqlite_retry_policy=dependencies.sqlite_retry_policy,
                     delivery=dependencies.delivery,
                     database_path=dependencies.snapshots.database_path,
+                    cooldown_peer_feed_ids=dependencies.cooldown_peer_feed_ids,
                 ),
             )
         case "neksio":

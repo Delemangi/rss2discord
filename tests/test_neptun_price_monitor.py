@@ -145,8 +145,8 @@ def test_price_monitor_rejects_more_than_one_hundred_changes_without_mutation(
         monitor = make_monitor(CatalogStub([baseline, changed]), store, sender)
         monitor.scan()
 
-        with pytest.raises(FeedFetchError, match="PriceChangeLimitExceeded"):
-            monitor.scan()
+        monitor.scan()
+        assert len(store.list_price_change_batches(feed_id="neptun")) == 1
 
         assert sender.messages == []
         assert {
