@@ -1,9 +1,9 @@
 import pytest
 
+from rss2discord.providers.ddstore import client as ddstore_http
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import ddstore_http
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
 from tests.ddstore_helpers import (
     CATALOG_URL,
     RecordingPost,

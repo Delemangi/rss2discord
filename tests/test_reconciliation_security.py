@@ -8,6 +8,8 @@ from rss2discord.admin import main
 from rss2discord.database_ownership import DatabaseOwnership
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_safety import canonical_manifest_fingerprint
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.reconciliation import apply_plan, create_plan
 from rss2discord.reconciliation_models import (
     ReconciliationPlan,
@@ -20,8 +22,6 @@ from rss2discord.transports.catalog_normalization import (
     normalize_ddstore_catalog,
     normalize_hivetec_catalog,
 )
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
-from rss2discord.transports.ddstore_models import DDStoreProduct
 from rss2discord.transports.hivetec_catalog import HivetecCatalogClient
 from rss2discord.transports.hivetec_models import HivetecProduct
 from tests.reconciliation_helpers import database_state, reviewed, setup_plan

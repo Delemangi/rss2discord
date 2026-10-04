@@ -9,12 +9,12 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.ddstore_models import DDStoreProduct
-from rss2discord.transports.ddstore_price_monitor import (
+from rss2discord.providers.ddstore.models import DDStoreProduct
+from rss2discord.providers.ddstore.prices import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.setec_price_monitor_helpers import RecordingSender
 

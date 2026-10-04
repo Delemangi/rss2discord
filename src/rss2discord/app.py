@@ -19,6 +19,7 @@ from .price_runtime import (
     record_runtime_health,
     safe_error_cause,
 )
+from .providers.ddstore.strategy import DDStoreStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -36,7 +37,6 @@ from .scheduler import (
 )
 from .transports import (
     AnhochStrategy,
-    DDStoreStrategy,
     FeedFetchError,
     Gjirafa50Strategy,
     HivetecStrategy,

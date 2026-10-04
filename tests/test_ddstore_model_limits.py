@@ -1,7 +1,7 @@
 import pytest
 from pydantic import JsonValue, ValidationError
 
-from rss2discord.transports.ddstore_models import DDStoreProduct
+from rss2discord.providers.ddstore.models import DDStoreProduct
 from tests.ddstore_helpers import product_payload
 
 

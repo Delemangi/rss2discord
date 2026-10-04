@@ -12,15 +12,15 @@ from curl_cffi import requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from pydantic import JsonValue, ValidationError
 
-from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.ddstore_budget import DDSTORE_LABEL, DDStoreScanBudget
-from rss2discord.transports.ddstore_models import DDStoreCatalogResponse
-from rss2discord.transports.ddstore_session import (
+from rss2discord.providers.ddstore.budget import DDSTORE_LABEL, DDStoreScanBudget
+from rss2discord.providers.ddstore.models import DDStoreCatalogResponse
+from rss2discord.providers.ddstore.session import (
     DDStoreHttpResponse,
     DDStoreHttpSession,
     create_ddstore_session,
 )
+from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 DDSTORE_ORIGIN: Final = "https://ddstore.mk"
 DDSTORE_GRAPHQL_URL: Final = f"{DDSTORE_ORIGIN}/graphql"

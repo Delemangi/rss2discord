@@ -6,8 +6,8 @@ import pytest
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.transports import ddstore_price_monitor
-from rss2discord.transports.ddstore import DDStoreStrategy
+from rss2discord.providers.ddstore import prices as ddstore_price_monitor
+from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_ddstore_price_monitor import (
     CatalogStub,

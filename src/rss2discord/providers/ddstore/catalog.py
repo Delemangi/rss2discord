@@ -3,16 +3,16 @@
 from collections.abc import Callable
 from time import monotonic
 
-from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.ddstore_budget import DDStoreScanBudget, DDStoreScanLimits
-from rss2discord.transports.ddstore_http import (
+from rss2discord.providers.ddstore.budget import DDStoreScanBudget, DDStoreScanLimits
+from rss2discord.providers.ddstore.client import (
     DDSTORE_LABEL,
     DDSTORE_PAGE_SIZE,
     CatalogPageRequest,
     DDStoreHttpClient,
 )
-from rss2discord.transports.ddstore_models import DDStoreProduct
+from rss2discord.providers.ddstore.models import DDStoreProduct
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 MAX_DDSTORE_CATALOG_PRODUCTS = 20_000
 MAX_DDSTORE_CATALOG_PAGES = 40

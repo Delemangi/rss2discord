@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
-from rss2discord.transports import FeedFetchError, ddstore_price_monitor
+from rss2discord.providers.ddstore import prices as ddstore_price_monitor
+from rss2discord.transports import FeedFetchError
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_ddstore_price_monitor import (
     CatalogStub,

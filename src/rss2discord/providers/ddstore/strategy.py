@@ -6,10 +6,10 @@ from typing import Final, assert_never, final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.providers.ddstore.client import DDSTORE_LABEL
+from rss2discord.providers.ddstore.models import DDStoreProduct, DDStoreStockStatus
 from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
-from rss2discord.transports.ddstore_http import DDSTORE_LABEL
-from rss2discord.transports.ddstore_models import DDStoreProduct, DDStoreStockStatus
 
 DDSTORE_UNAVAILABLE_PRICE_LABEL: Final = "Ask for price"
 MAX_DDSTORE_DELIVERY_HISTORY: Final = 50_000

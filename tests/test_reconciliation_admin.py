@@ -8,11 +8,11 @@ from rss2discord import reconciliation
 from rss2discord.admin import main
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
+from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.reconciliation_models import ReconciliationPlan
 from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.transports.catalog_normalization import CatalogObservation
-from rss2discord.transports.ddstore_catalog import DDStoreCatalogClient
-from rss2discord.transports.ddstore_models import DDStoreProduct
 from tests.reconciliation_helpers import (
     database_state,
     reviewed,
