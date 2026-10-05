@@ -78,12 +78,12 @@ class ReconciliationItem(ArtifactModel):
     context: str | None = Field(max_length=100_000)
     pending: bool
     already_held: bool
-    disposition: Literal["review", "accept", "hold", "noop"]
+    disposition: Literal["review", "accept", "hold", "noop", "defer"]
     reason: str = Field(default="", max_length=2048)
 
 
 class ReconciliationPlan(ArtifactModel):
-    version: Literal[1] = 1
+    version: Literal[1, 2] = 1
     feed_id: str = Field(min_length=1, max_length=256)
     provider: Literal["DDStore", "Hivetec"]
     source_strategy: Literal["ddstore", "hivetec"]
@@ -104,7 +104,23 @@ class ReconciliationPlan(ArtifactModel):
     @model_validator(mode="after")
     def require_safe_source(self) -> Self:
         require_safe_source_url(self.source_url, self.source_strategy)
+        for item in self.items:
+            if item.disposition != "defer":
+                continue
+            if self.version != 2:
+                raise ValueError("defer requires reconciliation version 2")
+            if item.target is not None or item.already_held:
+                raise ValueError(
+                    "defer is only valid for missing or unavailable products",
+                )
         return self
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def require_exact_version(cls, value: object) -> object:
+        if type(value) is not int or value not in (1, 2):
+            raise ValueError("unsupported reconciliation version")
+        return value
 
     def fingerprint(self) -> str:
         return digest(
@@ -139,8 +155,20 @@ def validate_dispositions(plan: ReconciliationPlan) -> None:
             )
         if item.already_held and item.disposition != "hold":
             raise ValueError("existing holds cannot be released by reconciliation")
-        if item.target is None and item.disposition != "hold":
-            raise ValueError("missing or unavailable products require hold")
+        if item.disposition == "defer":
+            if plan.version != 2:
+                raise ValueError("defer requires reconciliation version 2")
+            if item.target is not None or item.already_held:
+                raise ValueError(
+                    "defer is only valid for missing or unavailable products",
+                )
+        if item.target is None and item.disposition not in {"hold", "defer"}:
+            message = (
+                "missing or unavailable products require hold"
+                if plan.version == 1
+                else "missing or unavailable products require hold or defer"
+            )
+            raise ValueError(message)
         if item.disposition == "noop" and item.previous != item.target:
             raise ValueError("noop requires an unchanged snapshot")
         if item.disposition == "accept" and item.target is not None:

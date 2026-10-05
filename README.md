@@ -71,23 +71,30 @@ python -m rss2discord.admin --database data/state.db baseline approve --feed-id 
 
 ## DDStore / Hivetec future-only reconciliation
 
-This offline workflow applies only to DDStore and Hivetec. It silently accepts reviewed **current** prices as the future baseline; it does not send historical alerts. Holds suppress price alerts and snapshot updates, not product discovery, and this workflow has no hold-release command. Never use it as a way to approve products automatically: there are no automatic legitimacy thresholds.
+This offline workflow applies only to DDStore and Hivetec. It silently accepts reviewed **current** prices as the future baseline; it does not send historical alerts. Price holds do not suppress product discovery. New V2 plans distinguish review-only `hold` from availability `defer`; V1 plans and existing holds remain review-only. There are no automatic price-legitimacy thresholds or commands to release review holds.
 
-1. Stop **all** writers, including old binaries and database clients, and verify a consistent backup. Keep them stopped through apply. `--writers-stopped` is an operator acknowledgment, not an automated check. Do not bypass `.writer.lock` or clear claims to proceed.
+1. Stop **all** writers, including old binaries and database clients, and verify a consistent backup. Keep them stopped through apply and any discovery-baseline approval. `--writers-stopped` is an operator acknowledgment, not an automated check. Do not bypass `.writer.lock` or clear claims to proceed.
 2. Use read-only `price list` / `price show` to select the feed, batch, and exact full batch fingerprint. Create a fresh plan with a truthful operator and review reference:
 
    ```sh
    python -m rss2discord.admin --database data/state.db reconcile plan --config config/config.yaml --feed-id ddstore --batch-id 42 --batch-fingerprint FULL_BATCH_FINGERPRINT --reason "Operator: YOUR_NAME; review ticket: YOUR_REFERENCE" --writers-stopped --output draft.json
    ```
 
-3. Preserve the draft and edit a separate copy. Review **every** item and its context. Explicitly choose `accept`, `hold`, or `noop` for every review item. Accept adopts the exact positive MKD price; hold preserves the old snapshot; missing/unavailable products require hold; noop is only for unchanged prices. Existing holds must remain held. Noop/hold do not silently accept a changed price.
+3. Preserve the draft and edit a separate copy. Review **every** item and its context. `accept` adopts the exact positive MKD price; `hold` preserves the old snapshot and requires review indefinitely; `defer` is only for missing/unpriced products and permits a later silent reset when a complete valid catalog supplies a price; `noop` is only for unchanged prices. Missing/unpriced products require `hold` or V2 `defer`. Existing hold kinds cannot be downgraded. Active recovery batches or open claims can delay deferred products' return; their release and replacement baseline are recorded atomically without sending.
 4. Seal the edited artifact, independently inspect it and retain the full reconciliation fingerprint, then apply and inspect the receipt and holds:
 
    ```sh
    python -m rss2discord.admin reconcile review --plan edited.json --output reviewed.json
    python -m rss2discord.admin --database data/state.db reconcile apply --config config/config.yaml --feed-id ddstore --plan reviewed.json --fingerprint FULL_RECONCILIATION_FINGERPRINT --writers-stopped
    python -m rss2discord.admin --database data/state.db reconcile receipt --fingerprint FULL_RECONCILIATION_FINGERPRINT
-   python -m rss2discord.admin --database data/state.db reconcile holds --feed-id ddstore
+    python -m rss2discord.admin --database data/state.db reconcile holds --feed-id ddstore
+    ```
+
+5. For future-only **discovery** too, separately prepare the known inventory from the applied receipt, inspect every page with `baseline show`, and approve its exact baseline fingerprint before restarting writers. This suppresses historical accepted, held, missing and unpriced identities without marking them delivered. An incompatible complete ordinary baseline is immutable: preparation refuses it; stop and review the mismatch rather than expecting replacement:
+
+   ```sh
+   python -m rss2discord.admin --database data/state.db baseline prepare --config config/config.yaml --feed-id ddstore --reconciliation-fingerprint FULL_RECONCILIATION_FINGERPRINT --writers-stopped --reason "Prepare reviewed historical inventory"
+   python -m rss2discord.admin --database data/state.db baseline approve --feed-id ddstore --fingerprint FULL_BASELINE_FINGERPRINT --reason "Suppress reviewed historical inventory"
    ```
 
 Plan output files must not already exist. Sealing validates an artifact; it is not a signature or authorization. Plans expire after 24 hours; each evidence operation is limited to 300 seconds. Apply refetches and rechecks complete source and database evidence. Drift, incomplete evidence, or invalid decisions cause refusal without database changes: regenerate and review a fresh plan; never force a mismatch. Retain the receipt, artifacts, and backup. Reconciliation records an audit receipt without marking historical alerts as delivered.
