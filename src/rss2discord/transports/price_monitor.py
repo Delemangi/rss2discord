@@ -53,6 +53,33 @@ def price_direction(
     return PriceDirection.INCREASE
 
 
+def diff_price_snapshots(
+    current: Iterable[PriceSnapshot],
+    persisted: Mapping[str, PriceSnapshot],
+) -> tuple[tuple[PriceSnapshot, ...], tuple[PriceChangeRecord, ...]]:
+    """Return silent updates and price transitions in current observation order.
+
+    New IDs and formatting-only changes are silent; amount or currency changes
+    produce records even when their display text is unchanged. Equal snapshots
+    and persisted IDs absent from current produce no work. This pure comparison
+    does not filter held IDs, gate currencies, or persist anything: delivery
+    planning owns those decisions.
+    """
+    silent: list[PriceSnapshot] = []
+    changes: list[PriceChangeRecord] = []
+    for snapshot in current:
+        previous = persisted.get(snapshot.product_id)
+        if previous is None:
+            silent.append(snapshot)
+        elif (
+            previous.amount != snapshot.amount or previous.currency != snapshot.currency
+        ):
+            changes.append(PriceChangeRecord(snapshot.product_id, previous, snapshot))
+        elif previous.formatted != snapshot.formatted:
+            silent.append(snapshot)
+    return tuple(silent), tuple(changes)
+
+
 class PriceSnapshotStore(Protocol):
     """Persist source-neutral price snapshots for one feed."""
 
