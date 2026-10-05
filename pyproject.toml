@@ -21,14 +21,14 @@ rss2discord = "rss2discord.main:main"
 rss2discord-admin = "rss2discord.admin:main"
 
 [build-system]
-requires = ["uv_build>=0.12.20,<0.13"]
+requires = ["uv_build>=0.12.22,<0.13"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "mypy>=2.3.1",
+    "mypy>=2.4.0",
     "pytest>=9.0.2",
-    "ruff>=0.16.9",
+    "ruff>=0.16.10",
     "types-pyyaml>=6.0.12.20260906",
     "types-requests>=2.33.0.20260906",
 ]
