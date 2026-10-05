@@ -69,6 +69,7 @@ def create_plan(
     batch_fingerprint: str,
     reason: str,
     catalog_fetch: CatalogFetch = fetch_catalog,
+    version: Literal[1, 2] = 1,
 ) -> ReconciliationPlan:
     started = time.monotonic()
     captured_at = int(time.time())
@@ -80,6 +81,7 @@ def create_plan(
         reason=reason,
         captured_at=captured_at,
         catalog_fetch=catalog_fetch,
+        version=version,
     )
     if time.monotonic() - started > MAX_OPERATION_SECONDS:
         raise ValueError("stale reconciliation evidence")
@@ -95,6 +97,7 @@ def _build_plan(
     reason: str,
     captured_at: int,
     catalog_fetch: CatalogFetch,
+    version: Literal[1, 2] = 1,
 ) -> ReconciliationPlan:
     if feed.strategy not in {"ddstore", "hivetec"}:
         raise ValueError("reconciliation supports only DDStore and Hivetec")
@@ -115,7 +118,7 @@ def _build_plan(
     store.require_no_open_price_claims(feed.id)
     snapshots_digest = store.price_snapshots_digest(feed.id)
     batch_digest = store.price_batch_state_digest(batch_id)
-    holds_digest = store.price_holds_digest(feed.id)
+    holds_digest = store.price_holds_digest(feed.id, version=version)
     persisted = store.load_price_snapshots(feed.id)
     observations = catalog_fetch(feed, persisted)
     if not observations or len({item.product_id for item in observations}) != len(
@@ -166,7 +169,7 @@ def _build_plan(
     if (
         store.price_snapshots_digest(feed.id) != snapshots_digest
         or store.price_batch_state_digest(batch_id) != batch_digest
-        or store.price_holds_digest(feed.id) != holds_digest
+        or store.price_holds_digest(feed.id, version=version) != holds_digest
     ):
         raise ValueError("database changed during catalog collection")
     return ReconciliationPlan(
@@ -190,6 +193,7 @@ def _build_plan(
         captured_at=captured_at,
         reason=reason,
         items=tuple(items),
+        version=version,
     )
 
 
@@ -232,6 +236,7 @@ def apply_plan(
         reason=plan.reason,
         captured_at=plan.captured_at,
         catalog_fetch=catalog_fetch,
+        version=plan.version,
     )
     # Operator decisions are the only fields not derived from fresh evidence.
     if len(plan.items) != len(fresh.items):

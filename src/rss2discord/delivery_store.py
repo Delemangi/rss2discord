@@ -26,6 +26,7 @@ from rss2discord.reconciliation_models import (
     MAX_PLAN_AGE_SECONDS,
     ReconciliationPlan,
     digest,
+    require_sanitized_context,
     validate_dispositions,
 )
 from rss2discord.recovery_models import (
@@ -208,6 +209,13 @@ class DeliveryStore:
     ) -> tuple[dict[str, object], ...]:
         if not self._has_reconciliation_schema():
             return ()
+        has_kind = any(
+            row[1] == "kind"
+            for row in self._connection.execute(
+                "PRAGMA table_info(price_product_holds)",
+            )
+        )
+        kind_projection = "kind" if has_kind else "'review'"
         return tuple(
             dict(
                 zip(
@@ -217,13 +225,16 @@ class DeliveryStore:
                         "reconciliation_fingerprint",
                         "reason",
                         "created_at",
+                        "kind",
                     ),
                     row,
                     strict=True,
                 ),
             )
             for row in self._connection.execute(
-                "SELECT feed_id, product_id, reconciliation_fingerprint, reason, created_at "
+                "SELECT feed_id, product_id, reconciliation_fingerprint, reason, created_at, "
+                + kind_projection
+                + " "
                 "FROM price_product_holds WHERE (? IS NULL OR feed_id = ?) ORDER BY feed_id, product_id",
                 (feed_id, feed_id),
             )
@@ -240,8 +251,196 @@ class DeliveryStore:
             ),
         )
 
-    def price_holds_digest(self, feed_id: str) -> str:
-        return digest(self.list_price_product_holds(feed_id))
+    def price_holds_digest(self, feed_id: str, *, version: int = 1) -> str:
+        holds = self.list_price_product_holds(feed_id)
+        if version == 1:
+            has_release_history = (
+                self._connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'price_hold_releases'",
+                ).fetchone()
+                is not None
+                and self._connection.execute(
+                    "SELECT 1 FROM price_hold_releases WHERE feed_id = ? LIMIT 1",
+                    (feed_id,),
+                ).fetchone()
+                is not None
+            )
+            if has_release_history or any(hold["kind"] != "review" for hold in holds):
+                raise ValueError("version 1 cannot digest availability holds")
+            return digest(
+                tuple(
+                    {key: value for key, value in hold.items() if key != "kind"}
+                    for hold in holds
+                ),
+            )
+        if version != 2:
+            raise ValueError("unsupported reconciliation version")
+        return digest(holds)
+
+    def availability_hold_origins(self, feed_id: str) -> tuple[dict[str, object], ...]:
+        if not self._has_reconciliation_schema():
+            return ()
+        if not any(
+            row[1] == "kind"
+            for row in self._connection.execute(
+                "PRAGMA table_info(price_product_holds)",
+            )
+        ):
+            return ()
+        return tuple(
+            {
+                "product_id": row[0],
+                "reconciliation_fingerprint": row[1],
+                "reason": row[2],
+            }
+            for row in self._connection.execute(
+                "SELECT product_id, reconciliation_fingerprint, reason FROM price_product_holds "
+                "WHERE feed_id = ? AND kind = 'availability' ORDER BY product_id",
+                (feed_id,),
+            )
+        )
+
+    def restore_availability_hold(
+        self,
+        *,
+        feed_id: str,
+        provider: str,
+        product_id: str,
+        origin_fingerprint: str,
+        previous: PriceSnapshot | None,
+        observed: PriceSnapshot,
+        context: str,
+        source: str,
+        operation_started_at: float,
+    ) -> bool:
+        """Atomically adopt a validated returning product and release its hold."""
+        if (
+            previous is not None
+            and (previous.feed_id, previous.product_id) != (feed_id, product_id)
+        ) or (observed.feed_id, observed.product_id) != (feed_id, product_id):
+            raise ValueError("availability restoration identity mismatch")
+        if (
+            observed.currency != "MKD"
+            or not observed.amount.is_finite()
+            or observed.amount <= 0
+        ):
+            raise ValueError("availability restoration requires a positive MKD price")
+        if source != "validated_full_catalog" or provider not in {"DDStore", "Hivetec"}:
+            raise ValueError("availability restoration evidence is incomplete")
+        require_sanitized_context(context, provider)
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            if time.monotonic() - operation_started_at > MAX_OPERATION_SECONDS:
+                raise ValueError("stale availability restoration")
+            hold = self._connection.execute(
+                "SELECT kind, reconciliation_fingerprint FROM price_product_holds "
+                "WHERE feed_id = ? AND product_id = ?",
+                (feed_id, product_id),
+            ).fetchone()
+            if hold != ("availability", origin_fingerprint):
+                return False
+            origin_row = self._connection.execute(
+                "SELECT feed_id, plan_json FROM price_reconciliations "
+                "WHERE reconciliation_fingerprint = ?",
+                (origin_fingerprint,),
+            ).fetchone()
+            if origin_row is None or origin_row[0] != feed_id:
+                return False
+            origin_plan = ReconciliationPlan.model_validate_json(origin_row[1])
+            validate_dispositions(origin_plan)
+            origin_item = next(
+                (item for item in origin_plan.items if item.product_id == product_id),
+                None,
+            )
+            if (
+                origin_plan.version != 2
+                or origin_plan.feed_id != feed_id
+                or origin_plan.provider != provider
+                or origin_plan.reconciliation_fingerprint != origin_fingerprint
+                or origin_plan.fingerprint() != origin_fingerprint
+                or origin_item is None
+                or origin_item.disposition != "defer"
+                or origin_item.target is not None
+                or (origin_item.previous is None) != (previous is None)
+            ):
+                return False
+            if (
+                origin_item.previous is not None
+                and previous is not None
+                and origin_item.previous.snapshot(feed_id, product_id) != previous
+            ):
+                return False
+            batch = self._connection.execute(
+                "SELECT 1 FROM price_change_batches WHERE feed_id = ? "
+                "AND status IN ('candidate','approved','paused') LIMIT 1",
+                (feed_id,),
+            ).fetchone()
+            if batch is not None:
+                return False
+            self.require_no_open_price_claims(feed_id)
+            current = self._connection.execute(
+                "SELECT amount, formatted, currency FROM price_snapshots WHERE feed_id = ? AND product_id = ?",
+                (feed_id, product_id),
+            ).fetchone()
+            expected = (
+                None
+                if previous is None
+                else canonicalize_price_amount(previous.amount),
+                None if previous is None else previous.formatted,
+                None if previous is None else previous.currency,
+            )
+            if (previous is None and current is not None) or (
+                previous is not None and current != expected
+            ):
+                return False
+            self._connection.execute(
+                "INSERT INTO price_hold_releases (feed_id, product_id, originating_reconciliation_fingerprint, "
+                "previous_amount, previous_formatted, previous_currency, adopted_amount, adopted_formatted, "
+                "adopted_currency, context, source, provider, released_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
+                (
+                    feed_id,
+                    product_id,
+                    origin_fingerprint,
+                    *expected,
+                    canonicalize_price_amount(observed.amount),
+                    observed.formatted,
+                    observed.currency,
+                    context,
+                    source,
+                    provider,
+                ),
+            )
+            if previous is None:
+                self._connection.execute(
+                    "INSERT INTO price_snapshots (feed_id, product_id, amount, formatted, currency) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        feed_id,
+                        product_id,
+                        canonicalize_price_amount(observed.amount),
+                        observed.formatted,
+                        observed.currency,
+                    ),
+                )
+            else:
+                self._connection.execute(
+                    "UPDATE price_snapshots SET amount = ?, formatted = ?, currency = ?, updated_at = unixepoch() "
+                    "WHERE feed_id = ? AND product_id = ?",
+                    (
+                        canonicalize_price_amount(observed.amount),
+                        observed.formatted,
+                        observed.currency,
+                        feed_id,
+                        product_id,
+                    ),
+                )
+            self._connection.execute(
+                "DELETE FROM price_product_holds WHERE feed_id = ? AND product_id = ?",
+                (feed_id, product_id),
+            )
+            if time.monotonic() - operation_started_at > MAX_OPERATION_SECONDS:
+                raise ValueError("stale availability restoration")
+        return True
 
     def price_batch_state_digest(self, batch_id: int) -> str:
         return digest(
@@ -276,7 +475,7 @@ class DeliveryStore:
         if not self._has_reconciliation_schema():
             return None
         row = self._connection.execute(
-            "SELECT reconciliation_fingerprint, feed_id, batch_id, reason, accepted_count, held_count, noop_count, created_at "
+            "SELECT reconciliation_fingerprint, feed_id, batch_id, reason, accepted_count, held_count, noop_count, created_at, plan_json "
             "FROM price_reconciliations WHERE reconciliation_fingerprint = ?",
             (fingerprint,),
         ).fetchone()
@@ -294,6 +493,7 @@ class DeliveryStore:
                         "held_count",
                         "noop_count",
                         "created_at",
+                        "plan_json",
                     ),
                     row,
                     strict=True,
@@ -336,7 +536,8 @@ class DeliveryStore:
                 or self.price_batch_state_digest(plan.batch_id)
                 != plan.batch_state_digest
                 or self.price_snapshots_digest(plan.feed_id) != plan.snapshots_digest
-                or self.price_holds_digest(plan.feed_id) != plan.holds_digest
+                or self.price_holds_digest(plan.feed_id, version=plan.version)
+                != plan.holds_digest
             ):
                 raise ValueError("reconciliation database state drift")
             others = self._connection.execute(
@@ -368,7 +569,7 @@ class DeliveryStore:
                     plan.reason,
                     plan.model_dump_json(),
                     sum(item.disposition == "accept" for item in plan.items),
-                    sum(item.disposition == "hold" for item in plan.items),
+                    sum(item.disposition in {"hold", "defer"} for item in plan.items),
                     sum(item.disposition == "noop" for item in plan.items),
                 ),
             )
@@ -378,18 +579,19 @@ class DeliveryStore:
                     (
                         plan.reconciliation_fingerprint,
                         item.product_id,
-                        item.disposition,
+                        "hold" if item.disposition == "defer" else item.disposition,
                         item.model_dump_json(),
                     ),
                 )
-                if item.disposition == "hold":
+                if item.disposition in {"hold", "defer"}:
                     self._connection.execute(
-                        "INSERT OR IGNORE INTO price_product_holds (feed_id, product_id, reconciliation_fingerprint, reason) VALUES (?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO price_product_holds (feed_id, product_id, reconciliation_fingerprint, reason, kind) VALUES (?, ?, ?, ?, ?)",
                         (
                             plan.feed_id,
                             item.product_id,
                             plan.reconciliation_fingerprint,
                             item.reason.strip() or plan.reason,
+                            "availability" if item.disposition == "defer" else "review",
                         ),
                     )
                 elif item.disposition == "accept" and item.target is not None:
@@ -1420,18 +1622,62 @@ class DeliveryStore:
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS price_product_holds (feed_id TEXT NOT NULL, product_id TEXT NOT NULL, "
             "reconciliation_fingerprint TEXT NOT NULL REFERENCES price_reconciliations(reconciliation_fingerprint), reason TEXT NOT NULL, "
-            "created_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY(feed_id, product_id)) WITHOUT ROWID",
+            "created_at INTEGER NOT NULL DEFAULT (unixepoch()), kind TEXT NOT NULL DEFAULT 'review' CHECK(kind IN ('review','availability')), "
+            "PRIMARY KEY(feed_id, product_id)) WITHOUT ROWID",
         )
+        hold_columns = {
+            str(row[1])
+            for row in self._connection.execute(
+                "PRAGMA table_info(price_product_holds)",
+            )
+        }
+        if "kind" not in hold_columns:
+            self._connection.execute(
+                "ALTER TABLE price_product_holds ADD COLUMN kind TEXT NOT NULL DEFAULT 'review' "
+                "CHECK(kind IN ('review','availability'))",
+            )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS price_hold_releases ("
+            "feed_id TEXT NOT NULL, product_id TEXT NOT NULL, originating_reconciliation_fingerprint TEXT NOT NULL "
+            "REFERENCES price_reconciliations(reconciliation_fingerprint), previous_amount TEXT, "
+            "previous_formatted TEXT, previous_currency TEXT, adopted_amount TEXT NOT NULL, "
+            "adopted_formatted TEXT NOT NULL, adopted_currency TEXT NOT NULL, context TEXT NOT NULL, "
+            "source TEXT NOT NULL, provider TEXT NOT NULL, released_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+            "PRIMARY KEY(feed_id, product_id, originating_reconciliation_fingerprint)) WITHOUT ROWID",
+        )
+        self._connection.execute(
+            "DROP TRIGGER IF EXISTS price_product_holds_immutable_delete",
+        )
+        self._connection.execute(
+            "DROP TRIGGER IF EXISTS price_product_holds_guarded_delete",
+        )
+        self._connection.execute(
+            "CREATE TRIGGER IF NOT EXISTS price_product_holds_guarded_delete BEFORE DELETE ON price_product_holds "
+            "BEGIN SELECT CASE WHEN OLD.kind <> 'availability' "
+            "THEN RAISE(ABORT, 'immutable reconciliation audit/hold') "
+            "WHEN NOT EXISTS (SELECT 1 FROM price_hold_releases r "
+            "WHERE r.feed_id = OLD.feed_id AND r.product_id = OLD.product_id "
+            "AND r.originating_reconciliation_fingerprint = OLD.reconciliation_fingerprint) "
+            "THEN RAISE(ABORT, 'hold release receipt required') END; END",
+        )
+        for action in ("UPDATE", "DELETE"):
+            self._connection.execute(
+                f"CREATE TRIGGER IF NOT EXISTS price_hold_releases_immutable_{action.lower()} BEFORE {action} ON price_hold_releases "
+                "BEGIN SELECT RAISE(ABORT, 'immutable hold release audit'); END",
+            )
         for table in (
             "price_reconciliations",
             "price_reconciliation_items",
-            "price_product_holds",
         ):
             for action in ("UPDATE", "DELETE"):
                 self._connection.execute(
                     f"CREATE TRIGGER IF NOT EXISTS {table}_immutable_{action.lower()} BEFORE {action} ON {table} "
                     "BEGIN SELECT RAISE(ABORT, 'immutable reconciliation audit/hold'); END",
                 )
+        self._connection.execute(
+            "CREATE TRIGGER IF NOT EXISTS price_product_holds_immutable_update BEFORE UPDATE ON price_product_holds "
+            "BEGIN SELECT RAISE(ABORT, 'immutable reconciliation audit/hold'); END",
+        )
 
     def _insert_price_items(
         self,

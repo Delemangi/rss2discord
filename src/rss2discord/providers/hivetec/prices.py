@@ -1,5 +1,6 @@
 """Sequential Hivetec price comparison and Discord delivery for one feed."""
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -88,6 +89,7 @@ class HivetecPriceMonitor:
                 raise
 
     def _scan(self) -> None:
+        observation_started_at = time.monotonic()
         products, persisted = prepare_price_scan(
             fetch_products=lambda: self._dependencies.catalog.fetch_catalog(
                 self._feed.url,
@@ -112,6 +114,21 @@ class HivetecPriceMonitor:
             snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
         )
         products_by_id = {str(product.id): product for product in products}
+        origins_query = getattr(
+            self._dependencies.snapshots,
+            "availability_hold_origins",
+            None,
+        )
+        availability_ids = (
+            {str(row["product_id"]) for row in origins_query(self._feed.id)}
+            if origins_query is not None
+            else set()
+        )
+        availability_returns = {
+            item.product_id: (item.snapshot, item.context)
+            for item in observations
+            if item.snapshot is not None and item.product_id in availability_ids
+        }
         deliver_catalog_price_changes(
             self._dependencies,
             self._message_for,
@@ -129,6 +146,8 @@ class HivetecPriceMonitor:
             },
             persisted=by_id,
             catalog_count=len(products),
+            availability_returns=availability_returns,
+            operation_started_at=observation_started_at,
         )
 
     def _message_for(self, change: _PriceChange) -> WebhookMessage:

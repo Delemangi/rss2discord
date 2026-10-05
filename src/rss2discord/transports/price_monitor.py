@@ -386,8 +386,11 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
     current: Mapping[str, PriceSnapshot],
     persisted: Mapping[str, PriceSnapshot],
     catalog_count: int,
+    availability_returns: Mapping[str, tuple[PriceSnapshot, str]] | None = None,
+    operation_started_at: float,
 ) -> None:
     """Compare complete catalog snapshots and deliver without extra confirmation I/O."""
+    restoration_baseline = persisted
     held = dependencies.snapshots.held_price_product_ids(feed_id)
     current = {key: value for key, value in current.items() if key not in held}
     persisted = {key: value for key, value in persisted.items() if key not in held}
@@ -422,6 +425,39 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
     )
     if plan.blocked:
         return
+    if availability_returns and plan.allow_silent_updates:
+        origins_query = getattr(
+            dependencies.snapshots,
+            "availability_hold_origins",
+            None,
+        )
+        restore = getattr(dependencies.snapshots, "restore_availability_hold", None)
+        if origins_query is not None and restore is not None:
+            origins = {
+                str(row["product_id"]): str(row["reconciliation_fingerprint"])
+                for row in origins_query(feed_id)
+            }
+            for product_id, (observed, context) in availability_returns.items():
+                origin = origins.get(product_id)
+                previous = restoration_baseline.get(product_id)
+                if origin is None:
+                    continue
+                if dependencies.delivery.is_shutdown_requested():
+                    return
+                dependencies.sqlite_retry_policy.execute(
+                    partial(
+                        restore,
+                        feed_id=feed_id,
+                        provider=provider,
+                        product_id=product_id,
+                        origin_fingerprint=origin,
+                        previous=previous,
+                        observed=observed,
+                        context=context,
+                        source="validated_full_catalog",
+                        operation_started_at=operation_started_at,
+                    ),
+                )
     if silent and plan.allow_silent_updates:
         dependencies.sqlite_retry_policy.execute(
             lambda: store.upsert_price_snapshots(silent),

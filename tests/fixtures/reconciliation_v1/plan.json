@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "feed_id": "ddstore",
+  "provider": "DDStore",
+  "source_strategy": "ddstore",
+  "source_url": "https://ddstore.mk/shop/",
+  "batch_id": 7,
+  "batch_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+  "batch_state_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+  "snapshots_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+  "holds_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+  "catalog_digest": "5555555555555555555555555555555555555555555555555555555555555555",
+  "catalog_count": 1,
+  "available_count": 1,
+  "captured_at": 1700000000,
+  "reason": "golden fixture",
+  "items": [
+    {
+      "product_id": "item-1",
+      "previous": null,
+      "target": null,
+      "context": "{\"categories\":[],\"created_at\":\"2023-01-01T00:00:00\",\"currency\":\"MKD\",\"final_price\":\"1\",\"name\":\"Fixture item\",\"regular_price\":\"2\",\"source_context_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stock_status\":\"IN_STOCK\"}",
+      "pending": false,
+      "already_held": false,
+      "disposition": "hold",
+      "reason": ""
+    }
+  ],
+  "reconciliation_fingerprint": "c64f602fbb44d1321967de95d4048415340d1f69de844d525e33f70ad33a8dec"
+}

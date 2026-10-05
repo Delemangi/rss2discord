@@ -19,7 +19,11 @@ from rss2discord.database_ownership import DatabaseOwnership, DatabaseOwnershipE
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.reconciliation import apply_plan, create_plan
-from rss2discord.reconciliation_models import MAX_PLAN_BYTES, ReconciliationPlan
+from rss2discord.reconciliation_models import (
+    MAX_PLAN_BYTES,
+    ReconciliationPlan,
+    validate_dispositions,
+)
 from rss2discord.recovery_models import BaselineCandidateSummary, PriceBatch
 from rss2discord.retries import FeedFetchInterruptedError
 
@@ -65,6 +69,17 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_approve.add_argument("--feed-id", required=True)
     baseline_approve.add_argument("--fingerprint", required=True)
     baseline_approve.add_argument("--reason", required=True)
+    baseline_prepare = baseline_commands.add_parser("prepare")
+    baseline_prepare.add_argument("--config", type=Path, required=True)
+    baseline_prepare.add_argument("--feed-id", required=True)
+    baseline_prepare.add_argument("--reconciliation-fingerprint", required=True)
+    baseline_prepare.add_argument(
+        "--writers-stopped",
+        action="store_true",
+        required=True,
+        help="confirm ALL services/old binaries writing this database were manually stopped",
+    )
+    baseline_prepare.add_argument("--reason", required=True)
 
     health = commands.add_parser("health")
     health.add_argument("health_command", nargs="?", choices=("list",), default="list")
@@ -113,7 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         return _reconciliation_command(args)
     writes = (
         args.command == "price" and args.price_command in {"approve", "revoke"}
-    ) or (args.command == "baseline" and args.baseline_command == "approve")
+    ) or (
+        args.command == "baseline" and args.baseline_command in {"approve", "prepare"}
+    )
     try:
         with (
             DatabaseOwnership(args.database) if writes else nullcontext(),
@@ -130,6 +147,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
     except DatabaseOwnershipError as error:
         return _error(str(error))
+    except (
+        ValueError,
+        OSError,
+        sqlite3.Error,
+        ValidationError,
+        yaml.YAMLError,
+    ) as error:
+        if args.command == "baseline" and args.baseline_command == "prepare":
+            return _error("baseline preparation refused: " + str(error))
+        raise
     return 2
 
 
@@ -166,7 +193,7 @@ def _reconciliation_command(args: argparse.Namespace) -> int:
                     receipt = store.load_price_reconciliation(args.fingerprint)
                     if receipt is None:
                         return _error("reconciliation receipt not found")
-                    _print_json(receipt)
+                    _print_json(_public_reconciliation_receipt(receipt))
             return 0
         config = load_config(args.config)
         feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
@@ -181,6 +208,7 @@ def _reconciliation_command(args: argparse.Namespace) -> int:
                         batch_id=args.batch_id,
                         batch_fingerprint=args.batch_fingerprint,
                         reason=args.reason,
+                        version=2,
                     )
                 _write_plan(args.output, plan)
                 _print_json(
@@ -199,12 +227,14 @@ def _reconciliation_command(args: argparse.Namespace) -> int:
                     return _error("existing database required")
                 with DeliveryStore(args.database, initialize=False) as store:
                     _print_json(
-                        apply_plan(
-                            store,
-                            feed,
-                            plan,
-                            ownership,
-                            fingerprint=args.fingerprint,
+                        _public_reconciliation_receipt(
+                            apply_plan(
+                                store,
+                                feed,
+                                plan,
+                                ownership,
+                                fingerprint=args.fingerprint,
+                            ),
                         ),
                     )
     except ValidationError:
@@ -265,6 +295,41 @@ def _baseline_command(store: DeliveryStore, args: argparse.Namespace) -> int:
         if candidate is None:
             return _error("baseline candidate not found")
         _print_json(_bounded_baseline(candidate, args.sample_limit, args.offset))
+        return 0
+    if args.baseline_command == "prepare":
+        config = load_config(args.config)
+        feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
+        if feed is None:
+            return _error("feed not found in configuration")
+        receipt = store.load_price_reconciliation(
+            args.reconciliation_fingerprint,
+        )
+        if receipt is None:
+            return _error("reconciliation receipt not found; baseline not prepared")
+        if (
+            receipt.get("reconciliation_fingerprint") != args.reconciliation_fingerprint
+            or receipt.get("feed_id") != feed.id
+        ):
+            return _error("reconciliation receipt identity mismatch")
+        plan_json = receipt.get("plan_json")
+        if not isinstance(plan_json, str):
+            return _error("immutable reconciliation artifact unavailable in receipt")
+        plan = ReconciliationPlan.model_validate_json(plan_json)
+        validate_dispositions(plan)
+        if (
+            plan.reconciliation_fingerprint != args.reconciliation_fingerprint
+            or plan.fingerprint() != args.reconciliation_fingerprint
+            or plan.feed_id != feed.id
+            or plan.source_strategy != feed.strategy
+            or plan.source_url != feed.url
+        ):
+            return _error("reconciliation receipt identity mismatch")
+        candidate = store.record_feed_baseline_candidate(
+            feed_id=feed.id,
+            entry_ids=(item.product_id for item in plan.items),
+            reason=args.reason,
+        )
+        _print_json(_bounded_baseline(candidate, 5))
         return 0
     candidate = store.approve_feed_baseline_candidate(
         feed_id=args.feed_id,
@@ -344,6 +409,13 @@ def _offset(value: str) -> int:
 
 def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=True, sort_keys=True, default=str))
+
+
+def _public_reconciliation_receipt(
+    receipt: dict[str, object],
+) -> dict[str, object]:
+    """Keep the large immutable artifact out of the existing CLI receipt view."""
+    return {key: value for key, value in receipt.items() if key != "plan_json"}
 
 
 def _error(message: str) -> int:
