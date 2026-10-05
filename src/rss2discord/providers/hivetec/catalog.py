@@ -2,10 +2,8 @@
 
 from collections.abc import Callable
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports import hivetec_bounds as bounds
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.hivetec_bounds import (
+from rss2discord.providers.hivetec import bounds
+from rss2discord.providers.hivetec.bounds import (
     HIVETEC_CATALOG_PAGE_SIZE,
     HIVETEC_LABEL,
     HIVETEC_WINDOW_SIZE,
@@ -18,12 +16,14 @@ from rss2discord.transports.hivetec_bounds import (
     MAX_HIVETEC_SCAN_SECONDS,
     HivetecPageRequest,
 )
-from rss2discord.transports.hivetec_budget import HivetecScanBudget, HivetecScanLimits
-from rss2discord.transports.hivetec_http import HivetecHttpClient
-from rss2discord.transports.hivetec_models import (
+from rss2discord.providers.hivetec.budget import HivetecScanBudget, HivetecScanLimits
+from rss2discord.providers.hivetec.client import HivetecHttpClient
+from rss2discord.providers.hivetec.models import (
     HivetecDiscoveryProduct,
     HivetecProduct,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 
 class HivetecCatalogClient:

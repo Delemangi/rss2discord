@@ -8,6 +8,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.database_ownership import DatabaseOwnership
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
+from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.reconciliation_models import (
     MAX_OPERATION_SECONDS,
     MAX_PLAN_AGE_SECONDS,
@@ -25,7 +26,6 @@ from rss2discord.transports.catalog_normalization import (
     normalize_ddstore_catalog,
     normalize_hivetec_catalog,
 )
-from rss2discord.transports.hivetec_catalog import HivetecCatalogClient
 
 type CatalogFetch = Callable[
     [FeedConfig, tuple[PriceSnapshot, ...]],

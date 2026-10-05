@@ -7,13 +7,14 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import FeedFetchError, hivetec_price_monitor
-from rss2discord.transports.hivetec_models import HivetecProduct
-from rss2discord.transports.hivetec_price_monitor import (
+from rss2discord.providers.hivetec import prices as hivetec_price_monitor
+from rss2discord.providers.hivetec.models import HivetecProduct
+from rss2discord.providers.hivetec.prices import (
     HivetecPriceMonitor,
     HivetecPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.hivetec_helpers import SHOP_URL, product_payload
 from tests.setec_price_monitor_helpers import RecordingSender

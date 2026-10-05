@@ -7,7 +7,7 @@ import pytest
 from curl_cffi import CurlError
 from curl_cffi.const import CurlECode
 
-from rss2discord.transports.hivetec_transport import _perform_request
+from rss2discord.providers.hivetec.transport import _perform_request
 
 
 class _SlowTrickleHandler(BaseHTTPRequestHandler):

@@ -7,8 +7,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 from pydantic import TypeAdapter, ValidationError
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.retries import parse_retry_after
-from rss2discord.transports.hivetec_bounds import (
+from rss2discord.providers.hivetec.bounds import (
     HIVETEC_DATES_API_PATH,
     HIVETEC_LABEL,
     HIVETEC_ORIGIN,
@@ -17,9 +16,10 @@ from rss2discord.transports.hivetec_bounds import (
     MAX_HIVETEC_REDIRECTS,
     HivetecPageRequest,
 )
-from rss2discord.transports.hivetec_budget import HivetecScanBudget
-from rss2discord.transports.hivetec_models import HivetecProduct, HivetecProductDate
-from rss2discord.transports.hivetec_transport import HivetecTransport
+from rss2discord.providers.hivetec.budget import HivetecScanBudget
+from rss2discord.providers.hivetec.models import HivetecProduct, HivetecProductDate
+from rss2discord.providers.hivetec.transport import HivetecTransport
+from rss2discord.retries import parse_retry_after
 
 PRODUCT_FIELDS = "id,name,permalink,sku,prices,images,categories,is_in_stock"
 DATE_FIELDS = "id,date_gmt,status"

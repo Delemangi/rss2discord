@@ -2,12 +2,14 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from rss2discord.transports import (
-    FeedFetchError,
-    hivetec_bounds,
-    hivetec_transport,
+from rss2discord.providers.hivetec import (
+    bounds as hivetec_bounds,
 )
-from rss2discord.transports.hivetec_catalog import HivetecCatalogClient
+from rss2discord.providers.hivetec import (
+    transport as hivetec_transport,
+)
+from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
+from rss2discord.transports import FeedFetchError
 from tests.hivetec_helpers import (
     SHOP_URL,
     RecordingGet,
