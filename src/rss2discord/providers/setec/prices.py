@@ -15,6 +15,12 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.providers.setec.catalog_bounds import SETEC_LABEL
+from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
+from rss2discord.providers.setec.strategy import (
+    SETEC_PRODUCT_BASE_URL,
+    format_setec_mkd,
+)
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -32,9 +38,6 @@ from rss2discord.transports.price_monitor import (
     price_direction,
     record_price_health,
 )
-from rss2discord.transports.setec import SETEC_PRODUCT_BASE_URL, format_setec_mkd
-from rss2discord.transports.setec_catalog_bounds import SETEC_LABEL
-from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 
 logger = logging.getLogger(__name__)
 

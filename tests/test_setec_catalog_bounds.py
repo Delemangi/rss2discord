@@ -1,14 +1,16 @@
 import pytest
 import requests
 
-from rss2discord.transports import FeedFetchError, setec_catalog, setec_catalog_bounds
-from rss2discord.transports.setec_catalog import SetecCatalogClient
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec import catalog as setec_catalog
+from rss2discord.providers.setec import catalog_bounds as setec_catalog_bounds
+from rss2discord.providers.setec.catalog import SetecCatalogClient
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_CATALOG_PRODUCTS,
     MAX_SETEC_CATALOG_RESPONSE_BYTES,
     SETEC_SEARCH_PAGE_SIZE,
     SETEC_WINDOW_SIZE,
 )
+from rss2discord.transports import FeedFetchError
 from tests.setec_helpers import (
     CATALOG_URL,
     FakeMeilisearchIndex,

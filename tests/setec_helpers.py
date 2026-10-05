@@ -8,12 +8,12 @@ from decimal import Decimal
 import requests
 from pydantic import JsonValue
 
-from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec.catalog_bounds import (
     SETEC_COUNT_FIELD,
     SETEC_PRICE_FIELD,
     SETEC_SEARCH_PAGE_SIZE,
 )
+from rss2discord.retries import FetchRetryPolicy
 
 CATALOG_URL = "https://setec.mk/e-prodazba"
 

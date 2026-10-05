@@ -6,9 +6,7 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
-from rss2discord.retries import parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_REDIRECTS,
     SETEC_LABEL,
     SETEC_SEARCH_KEY,
@@ -17,6 +15,8 @@ from rss2discord.transports.setec_catalog_bounds import (
     SETEC_USER_AGENT,
     SetecSearchRequest,
 )
+from rss2discord.retries import parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 SEARCH_REQUEST_TIMEOUT_SECONDS = 30
 

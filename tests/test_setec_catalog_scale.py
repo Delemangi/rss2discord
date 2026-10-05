@@ -7,8 +7,8 @@ import pytest
 import requests
 from pydantic import JsonValue
 
-from rss2discord.transports.setec_catalog import SetecCatalogClient
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec.catalog import SetecCatalogClient
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_SEARCH_REQUESTS,
     SETEC_PRICE_FIELD,
 )
