@@ -3,8 +3,14 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from rss2discord.models import SourceMetric
-from rss2discord.transports import FeedFetchError, hivetec_budget, hivetec_transport
-from rss2discord.transports.hivetec import HivetecStrategy
+from rss2discord.providers.hivetec import (
+    budget as hivetec_budget,
+)
+from rss2discord.providers.hivetec import (
+    transport as hivetec_transport,
+)
+from rss2discord.providers.hivetec.strategy import HivetecStrategy
+from rss2discord.transports import FeedFetchError
 from tests.hivetec_helpers import (
     SHOP_URL,
     RecordingGet,

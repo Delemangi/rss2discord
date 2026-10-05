@@ -5,8 +5,8 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports import HivetecStrategy
-from rss2discord.transports.hivetec_price_monitor import HivetecPriceMonitorDependencies
+from rss2discord.providers.hivetec.prices import HivetecPriceMonitorDependencies
+from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 

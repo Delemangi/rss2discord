@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from pydantic import JsonValue
 
+from rss2discord.providers.hivetec.transport import HivetecCurlResponse
 from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.hivetec_transport import HivetecCurlResponse
 
 SHOP_URL = "https://hivetec.mk/shop/"
 

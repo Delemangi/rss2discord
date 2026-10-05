@@ -8,13 +8,13 @@ from curl_cffi.const import CurlECode
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.hivetec_bounds import (
+from rss2discord.providers.hivetec.bounds import (
     HIVETEC_LABEL,
     HIVETEC_USER_AGENT,
     HivetecPageRequest,
 )
-from rss2discord.transports.hivetec_budget import HivetecScanBudget
+from rss2discord.providers.hivetec.budget import HivetecScanBudget
+from rss2discord.retries import FeedFetchInterruptedError
 
 TRANSIENT_HIVETEC_CURL_ERRORS = frozenset(
     {

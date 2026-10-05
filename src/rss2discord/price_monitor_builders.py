@@ -15,6 +15,11 @@ from .providers.ddstore.prices import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from .providers.hivetec.catalog import HivetecCatalogClient
+from .providers.hivetec.prices import (
+    HivetecPriceMonitor,
+    HivetecPriceMonitorDependencies,
+)
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
 from .transports.cccenter_catalog import CCCenterCatalogClient
 from .transports.cccenter_price_monitor import (
@@ -24,11 +29,6 @@ from .transports.cccenter_price_monitor import (
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
-from .transports.hivetec_catalog import HivetecCatalogClient
-from .transports.hivetec_price_monitor import (
-    HivetecPriceMonitor,
-    HivetecPriceMonitorDependencies,
-)
 from .transports.neksio_catalog import NeksioCatalogClient
 from .transports.neksio_price_monitor import (
     NeksioPriceMonitor,
