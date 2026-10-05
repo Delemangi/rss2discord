@@ -5,6 +5,11 @@ from typing import Final, Protocol, assert_never
 from .configuration import FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender
+from .providers.anhoch.catalog import AnhochCatalogClient
+from .providers.anhoch.prices import (
+    AnhochPriceMonitor,
+    AnhochPriceMonitorDependencies,
+)
 from .providers.ddstore.catalog import DDStoreCatalogClient
 from .providers.ddstore.prices import (
     DDStorePriceMonitor,
@@ -16,11 +21,6 @@ from .providers.hivetec.prices import (
     HivetecPriceMonitorDependencies,
 )
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
-from .transports.anhoch_catalog import AnhochCatalogClient
-from .transports.anhoch_price_monitor import (
-    AnhochPriceMonitor,
-    AnhochPriceMonitorDependencies,
-)
 from .transports.cccenter_catalog import CCCenterCatalogClient
 from .transports.cccenter_price_monitor import (
     CCCenterPriceMonitor,

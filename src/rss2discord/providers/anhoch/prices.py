@@ -14,18 +14,18 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
-from rss2discord.recovery_models import PriceChangeRecord
+from rss2discord.providers.anhoch.catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
+from rss2discord.providers.anhoch.models import AnhochProduct
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.anhoch_catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
-from rss2discord.transports.anhoch_models import AnhochProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
     deliver_price_changes,
+    diff_price_snapshots,
     finish_price_delivery,
     pause_price_fetch_failure,
     prepare_price_delivery,
@@ -103,25 +103,15 @@ class AnhochPriceMonitor:
         snapshots_by_product = {
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
-        silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
         current_snapshots: dict[str, PriceSnapshot] = {}
 
         for product in products:
             current = self._snapshot(product)
             current_snapshots[current.product_id] = current
-            previous = snapshots_by_product.get(str(product.id))
-            if previous is None:
-                silent_updates.append(current)
-                continue
-            if (
-                previous.amount == current.amount
-                and previous.currency == current.currency
-            ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-                continue
-            changes.append(_PriceChange(product, previous, current))
+        silent_updates, changes = diff_price_snapshots(
+            current_snapshots.values(),
+            snapshots_by_product,
+        )
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -131,10 +121,7 @@ class AnhochPriceMonitor:
                 store=store,
                 feed_id=self._feed.id,
                 provider="anhoch",
-                changes=tuple(
-                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
-                ),
+                changes=changes,
                 current=current_snapshots,
                 persisted=snapshots_by_product,
                 catalog_count=len(products),
@@ -149,7 +136,15 @@ class AnhochPriceMonitor:
                 ),
             )
 
-        by_id = {change.current.product_id: change for change in changes}
+        products_by_id = {str(product.id): product for product in products}
+        by_id = {
+            change.product_id: _PriceChange(
+                products_by_id[change.product_id],
+                change.previous,
+                change.current,
+            )
+            for change in changes
+        }
         deliver_price_changes(
             (by_id[product_id] for product_id in plan.selected_ids),
             self._dependencies,

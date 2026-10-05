@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.transports.anhoch_catalog import (
+from rss2discord.providers.anhoch.catalog import (
     ANHOCH_LABEL,
     ANHOCH_PRODUCT_BASE_URL,
     AnhochCatalogClient,
 )
-from rss2discord.transports.anhoch_models import (
+from rss2discord.providers.anhoch.models import (
     AnhochImage,
     AnhochInstallments,
     AnhochMoney,

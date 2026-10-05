@@ -1,6 +1,5 @@
 """Scraping strategies for different sources."""
 
-from .anhoch import AnhochStrategy
 from .base import FeedFetchError, ScraperStrategy
 from .cccenter import CCCenterStrategy
 from .gjirafa50 import Gjirafa50Strategy
@@ -15,7 +14,6 @@ from .technomarket import TechnomarketStrategy
 from .xenforo import XenForoStrategy
 
 __all__ = [
-    "AnhochStrategy",
     "CCCenterStrategy",
     "FeedFetchError",
     "Gjirafa50Strategy",

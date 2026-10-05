@@ -8,7 +8,8 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
-from rss2discord.transports import AnhochStrategy, ITMkOglasnikStrategy, SetecStrategy
+from rss2discord.providers.anhoch.strategy import AnhochStrategy
+from rss2discord.transports import ITMkOglasnikStrategy, SetecStrategy
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,

@@ -7,12 +7,12 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.scheduler import ScheduledJob
-from rss2discord.transports.anhoch_catalog import AnhochCatalogClient
-from rss2discord.transports.anhoch_price_monitor import (
+from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
+from rss2discord.providers.anhoch.prices import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from rss2discord.scheduler import ScheduledJob
 from rss2discord.transports.neksio_catalog import NeksioCatalogClient
 from rss2discord.transports.neksio_price_monitor import (
     NeksioPriceMonitor,

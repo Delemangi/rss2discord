@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from rss2discord.transports.anhoch_models import AnhochProductPage
+from rss2discord.providers.anhoch.models import AnhochProductPage
 from rss2discord.transports.base import FeedFetchError
 
 ANHOCH_LABEL: Final = "Anhoch"

@@ -19,6 +19,7 @@ from .price_runtime import (
     record_runtime_health,
     safe_error_cause,
 )
+from .providers.anhoch.strategy import AnhochStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
 from .recovery_models import HealthUpdate
@@ -37,7 +38,6 @@ from .scheduler import (
     SchedulerJobs,
 )
 from .transports import (
-    AnhochStrategy,
     FeedFetchError,
     Gjirafa50Strategy,
     ITMkOglasnikStrategy,

@@ -2,7 +2,7 @@
 
 from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
 
-from rss2discord.transports.anhoch_catalog_bounds import ANHOCH_LABEL
+from rss2discord.providers.anhoch.catalog_bounds import ANHOCH_LABEL
 from rss2discord.transports.base import FeedFetchError
 
 

@@ -3,9 +3,9 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-import rss2discord.transports.anhoch as anhoch_transport
+import rss2discord.providers.anhoch.strategy as anhoch_transport
 from rss2discord.anhoch_money import canonicalize_anhoch_amount
-from rss2discord.transports.anhoch_models import AnhochMoney
+from rss2discord.providers.anhoch.models import AnhochMoney
 from tests.anhoch_helpers import product_payload
 
 
