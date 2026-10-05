@@ -15,15 +15,15 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
+from rss2discord.providers.neksio.client import NEKSIO_LABEL
+from rss2discord.providers.neksio.models import NeksioProduct
+from rss2discord.providers.neksio.strategy import _entry_data
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.neksio import _entry_data
-from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL
-from rss2discord.transports.neksio_models import NeksioProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

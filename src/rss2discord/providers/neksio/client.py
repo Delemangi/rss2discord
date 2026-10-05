@@ -13,8 +13,8 @@ from urllib.parse import urljoin, urlsplit
 
 from curl_cffi import CurlOpt, requests
 
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
-from rss2discord.transports.base import FeedFetchError
 
 NEKSIO_LABEL: Final = "Neksio"
 NEKSIO_HOST: Final = "g.store.neksio.mk"

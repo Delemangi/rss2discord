@@ -1,8 +1,8 @@
 import pytest
 from curl_cffi import requests
 
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
 from tests.neksio_helpers import (
     CATALOG_URL,
     RecordingGet,

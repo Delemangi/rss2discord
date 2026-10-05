@@ -4,7 +4,6 @@ from .base import FeedFetchError, ScraperStrategy
 from .cccenter import CCCenterStrategy
 from .gjirafa50 import Gjirafa50Strategy
 from .itmk_oglasnik import ITMkOglasnikStrategy
-from .neksio import NeksioStrategy
 from .neptun import NeptunStrategy
 from .pazar3 import Pazar3Strategy
 from .reklama5 import Reklama5Strategy
@@ -18,7 +17,6 @@ __all__ = [
     "FeedFetchError",
     "Gjirafa50Strategy",
     "ITMkOglasnikStrategy",
-    "NeksioStrategy",
     "NeptunStrategy",
     "Pazar3Strategy",
     "RSSStrategy",

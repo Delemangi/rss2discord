@@ -8,9 +8,10 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.transports import FeedFetchError, NeksioStrategy
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_models import NeksioProduct
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
+from rss2discord.providers.neksio.models import NeksioProduct
+from rss2discord.providers.neksio.strategy import NeksioStrategy
+from rss2discord.transports import FeedFetchError
 from tests.app_helpers import FakeSender
 
 

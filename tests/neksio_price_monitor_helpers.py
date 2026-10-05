@@ -10,13 +10,13 @@ from rss2discord.discord.client import (
     SleepCallback,
     WebhookMessage,
 )
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.neksio_models import NeksioProduct
-from rss2discord.transports.neksio_price_monitor import (
+from rss2discord.providers.neksio.models import NeksioProduct
+from rss2discord.providers.neksio.prices import (
     NeksioCatalog,
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
 
 
