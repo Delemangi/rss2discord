@@ -3,7 +3,7 @@ from typing import cast
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.transports.setec_models import SetecProduct
+from rss2discord.providers.setec.models import SetecProduct
 from tests import setec_price_monitor_helpers as setec
 
 

@@ -7,8 +7,8 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
 from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
 from tests.setec_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,

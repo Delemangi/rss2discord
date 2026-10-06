@@ -22,6 +22,7 @@ from .price_runtime import (
 from .providers.anhoch.strategy import AnhochStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
+from .providers.setec.strategy import SetecStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -47,7 +48,6 @@ from .transports import (
     Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
-    SetecStrategy,
     TechnomarketStrategy,
     XenForoStrategy,
 )

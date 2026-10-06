@@ -11,14 +11,14 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
-from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
-from rss2discord.transports.setec_price_monitor import (
+from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
+from rss2discord.providers.setec.prices import (
     SetecCatalog,
     SetecPriceMonitor,
     SetecPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
 
 
 def price_entry_for(product: SetecProduct) -> SetecPriceEntry:
