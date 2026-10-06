@@ -8,10 +8,8 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports import setec_catalog_bounds as bounds
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec import catalog_bounds as bounds
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_BAND_DEPTH,
     MAX_SETEC_CATALOG_PRODUCTS,
     MAX_SETEC_CATALOG_RESPONSE_BYTES,
@@ -29,8 +27,8 @@ from rss2discord.transports.setec_catalog_bounds import (
     SETEC_WINDOW_SIZE,
     SetecSearchRequest,
 )
-from rss2discord.transports.setec_http import SetecSearchClient
-from rss2discord.transports.setec_models import (
+from rss2discord.providers.setec.client import SetecSearchClient
+from rss2discord.providers.setec.models import (
     SetecCountResponse,
     SetecPriceEntry,
     SetecPriceIndexResponse,
@@ -38,6 +36,8 @@ from rss2discord.transports.setec_models import (
     SetecProductResponse,
     SetecRawHitsResponse,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 
 @dataclass(slots=True)

@@ -25,6 +25,11 @@ from .providers.neksio.prices import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from .providers.setec.catalog import SetecCatalogClient
+from .providers.setec.prices import (
+    SetecPriceMonitor,
+    SetecPriceMonitorDependencies,
+)
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
 from .transports.cccenter_catalog import CCCenterCatalogClient
 from .transports.cccenter_price_monitor import (
@@ -50,11 +55,6 @@ from .transports.reklama5_catalog import Reklama5CatalogClient
 from .transports.reklama5_price_monitor import (
     Reklama5PriceMonitor,
     Reklama5PriceMonitorDependencies,
-)
-from .transports.setec_catalog import SetecCatalogClient
-from .transports.setec_price_monitor import (
-    SetecPriceMonitor,
-    SetecPriceMonitorDependencies,
 )
 from .transports.technomarket_catalog import TechnomarketCatalogClient
 from .transports.technomarket_price_monitor import (

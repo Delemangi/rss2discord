@@ -6,12 +6,11 @@ from urllib.parse import urljoin
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.setec_catalog import SetecCatalogClient
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec.catalog import SetecCatalogClient
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_LATEST_RESPONSE_BYTES as MAX_SETEC_RESPONSE_BYTES,
 )
-from rss2discord.transports.setec_catalog_bounds import (
+from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_REDIRECTS,
     SETEC_LABEL,
     SETEC_PRICE_FIELD,
@@ -21,7 +20,8 @@ from rss2discord.transports.setec_catalog_bounds import (
     SETEC_USER_AGENT,
     SETEC_WINDOW_SIZE,
 )
-from rss2discord.transports.setec_models import SetecPriceEntry, SetecProduct
+from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
+from rss2discord.transports.base import ScraperStrategy
 
 SETEC_PRODUCT_BASE_URL: Final = "https://setec.mk/products/"
 

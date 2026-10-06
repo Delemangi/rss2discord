@@ -3,8 +3,8 @@ from pathlib import Path
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports.setec_catalog import SetecCatalogClient
-from rss2discord.transports.setec_price_monitor import SetecPriceMonitorDependencies
+from rss2discord.providers.setec.catalog import SetecCatalogClient
+from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 
