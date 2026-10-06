@@ -4,10 +4,10 @@ from collections.abc import Callable
 from typing import Final
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
+from rss2discord.providers.neksio.client import NEKSIO_LABEL, NEKSIO_ORIGIN
+from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_catalog_http import NEKSIO_LABEL, NEKSIO_ORIGIN
-from rss2discord.transports.neksio_models import NeksioProduct
 
 NEKSIO_PRODUCT_DETAILS_PATH: Final = "Product/Details/"
 MAX_NEKSIO_NEW_PRODUCTS_PER_FETCH: Final = 100

@@ -3,12 +3,12 @@ import math
 import pytest
 from curl_cffi import requests
 
-from rss2discord.transports import FeedFetchError
-from rss2discord.transports.neksio_catalog_http import (
+from rss2discord.providers.neksio.client import (
     NEKSIO_ORIGIN,
     NeksioScanBudget,
     fetch_homepage,
 )
+from rss2discord.transports import FeedFetchError
 from tests.neksio_helpers import RecordingGet, StubResponse
 
 

@@ -4,13 +4,14 @@ from email.utils import format_datetime
 import pytest
 from curl_cffi import requests
 
-from rss2discord.transports import FeedFetchError, neksio_catalog_http
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_catalog_http import (
+from rss2discord.providers.neksio import client as neksio_catalog_http
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
+from rss2discord.providers.neksio.client import (
     NEKSIO_ORIGIN,
     NeksioScanBudget,
     fetch_homepage,
 )
+from rss2discord.transports import FeedFetchError
 from tests.neksio_helpers import (
     CATALOG_URL,
     RaisingPost,

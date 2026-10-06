@@ -5,7 +5,8 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.transports import FeedFetchError, neksio_price_monitor
+from rss2discord.providers.neksio import prices as neksio_price_monitor
+from rss2discord.transports import FeedFetchError
 from tests.discord_components_helpers import get_text_display_contents
 from tests.neksio_price_monitor_helpers import (
     CatalogStub,

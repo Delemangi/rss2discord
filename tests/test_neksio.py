@@ -5,9 +5,9 @@ from decimal import Decimal
 import pytest
 
 from rss2discord.models import EntryId, SourceMetric
-from rss2discord.transports.neksio import NeksioStrategy
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_models import NeksioProduct
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
+from rss2discord.providers.neksio.models import NeksioProduct
+from rss2discord.providers.neksio.strategy import NeksioStrategy
 
 CATALOG_URL = "https://g.store.neksio.mk/"
 OBSERVED_AT = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)

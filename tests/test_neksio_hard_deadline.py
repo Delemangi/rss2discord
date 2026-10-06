@@ -3,8 +3,8 @@ from collections.abc import Mapping
 import pytest
 from curl_cffi import CurlOpt, requests
 
-from rss2discord.transports import neksio_catalog_http
-from rss2discord.transports.neksio_catalog_http import (
+from rss2discord.providers.neksio import client as neksio_catalog_http
+from rss2discord.providers.neksio.client import (
     NEKSIO_ORIGIN,
     NeksioScanBudget,
     fetch_homepage,

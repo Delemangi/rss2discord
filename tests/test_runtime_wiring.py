@@ -12,12 +12,12 @@ from rss2discord.providers.anhoch.prices import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
-from rss2discord.scheduler import ScheduledJob
-from rss2discord.transports.neksio_catalog import NeksioCatalogClient
-from rss2discord.transports.neksio_price_monitor import (
+from rss2discord.providers.neksio.catalog import NeksioCatalogClient
+from rss2discord.providers.neksio.prices import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from rss2discord.scheduler import ScheduledJob
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 

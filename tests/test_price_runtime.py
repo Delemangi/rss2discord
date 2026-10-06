@@ -9,6 +9,7 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
+from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
 from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
 from rss2discord.scheduler import (
     RuntimeScheduler,
@@ -16,7 +17,6 @@ from rss2discord.scheduler import (
     SchedulerControl,
     SchedulerJobs,
 )
-from rss2discord.transports.neksio_price_monitor import NeksioPriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 

@@ -20,6 +20,11 @@ from .providers.hivetec.prices import (
     HivetecPriceMonitor,
     HivetecPriceMonitorDependencies,
 )
+from .providers.neksio.catalog import NeksioCatalogClient
+from .providers.neksio.prices import (
+    NeksioPriceMonitor,
+    NeksioPriceMonitorDependencies,
+)
 from .providers.setec.catalog import SetecCatalogClient
 from .providers.setec.prices import (
     SetecPriceMonitor,
@@ -34,11 +39,6 @@ from .transports.cccenter_price_monitor import (
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
-from .transports.neksio_catalog import NeksioCatalogClient
-from .transports.neksio_price_monitor import (
-    NeksioPriceMonitor,
-    NeksioPriceMonitorDependencies,
-)
 from .transports.neptun_catalog import NeptunCatalogClient
 from .transports.neptun_price_monitor import (
     NeptunPriceMonitor,

@@ -12,9 +12,8 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.neksio_catalog_http import (
+from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.providers.neksio.client import (
     NEKSIO_LABEL,
     NEKSIO_PAGE_SIZE,
     NeksioCatalogRequest,
@@ -23,10 +22,11 @@ from rss2discord.transports.neksio_catalog_http import (
     fetch_page_content,
     origin_url,
 )
-from rss2discord.transports.neksio_models import (
+from rss2discord.providers.neksio.models import (
     NeksioCatalogPage,
     NeksioProduct,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 
 NEKSIO_FILTER_PATH: Final = "/FilterAndPaginateProducts"
 MAX_NEKSIO_CATEGORIES: Final = 100

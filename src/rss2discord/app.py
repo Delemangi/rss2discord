@@ -22,6 +22,7 @@ from .price_runtime import (
 from .providers.anhoch.strategy import AnhochStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
+from .providers.neksio.strategy import NeksioStrategy
 from .providers.setec.strategy import SetecStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
@@ -42,7 +43,6 @@ from .transports import (
     FeedFetchError,
     Gjirafa50Strategy,
     ITMkOglasnikStrategy,
-    NeksioStrategy,
     NeptunStrategy,
     Pazar3Strategy,
     Reklama5Strategy,
