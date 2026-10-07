@@ -20,6 +20,7 @@ from .price_runtime import (
     safe_error_cause,
 )
 from .providers.anhoch.strategy import AnhochStrategy
+from .providers.cccenter.strategy import CCCenterStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
 from .providers.neksio.strategy import NeksioStrategy
@@ -51,7 +52,6 @@ from .transports import (
     ScraperStrategy,
     XenForoStrategy,
 )
-from .transports.cccenter import CCCenterStrategy
 from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)

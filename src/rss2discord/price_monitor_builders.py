@@ -10,6 +10,11 @@ from .providers.anhoch.prices import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .providers.cccenter.catalog import CCCenterCatalogClient
+from .providers.cccenter.prices import (
+    CCCenterPriceMonitor,
+    CCCenterPriceMonitorDependencies,
+)
 from .providers.ddstore.catalog import DDStoreCatalogClient
 from .providers.ddstore.prices import (
     DDStorePriceMonitor,
@@ -41,11 +46,6 @@ from .providers.technomarket.prices import (
     TechnomarketPriceMonitorDependencies,
 )
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
-from .transports.cccenter_catalog import CCCenterCatalogClient
-from .transports.cccenter_price_monitor import (
-    CCCenterPriceMonitor,
-    CCCenterPriceMonitorDependencies,
-)
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies

@@ -9,14 +9,14 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.providers.setec.models import SetecPriceEntry
-from rss2discord.providers.setec.prices import SetecPriceMonitor
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
-from rss2discord.transports.cccenter_price_monitor import (
+from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
+from rss2discord.providers.cccenter.prices import (
     CCCenterPriceMonitor,
     CCCenterPriceMonitorDependencies,
 )
+from rss2discord.providers.setec.models import SetecPriceEntry
+from rss2discord.providers.setec.prices import SetecPriceMonitor
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests import setec_price_monitor_helpers as setec
 from tests.test_cccenter_price_monitor import CatalogStub, product
