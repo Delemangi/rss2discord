@@ -11,6 +11,15 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
+from rss2discord.providers.technomarket.bounds import (
+    MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
+    TECHNOMARKET_LABEL,
+)
+from rss2discord.providers.technomarket.models import TechnomarketProduct
+from rss2discord.providers.technomarket.strategy import (
+    TechnomarketStrategy,
+    format_technomarket_mkd,
+)
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -27,15 +36,6 @@ from rss2discord.transports.price_monitor import (
     prepare_price_scan,
     price_direction,
 )
-from rss2discord.transports.technomarket import (
-    TechnomarketStrategy,
-    format_technomarket_mkd,
-)
-from rss2discord.transports.technomarket_bounds import (
-    MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
-    TECHNOMARKET_LABEL,
-)
-from rss2discord.transports.technomarket_models import TechnomarketProduct
 
 
 class TechnomarketCatalog(Protocol):

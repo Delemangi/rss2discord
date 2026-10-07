@@ -6,12 +6,12 @@ from typing import Final, final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.technomarket_bounds import (
+from rss2discord.providers.technomarket.bounds import (
     TECHNOMARKET_LABEL,
 )
-from rss2discord.transports.technomarket_catalog import TechnomarketCatalogClient
-from rss2discord.transports.technomarket_models import TechnomarketProduct
+from rss2discord.providers.technomarket.catalog import TechnomarketCatalogClient
+from rss2discord.providers.technomarket.models import TechnomarketProduct
+from rss2discord.transports.base import ScraperStrategy
 
 MAX_TECHNOMARKET_DELIVERY_HISTORY: Final = 10_000
 

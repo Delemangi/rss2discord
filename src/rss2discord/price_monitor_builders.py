@@ -10,6 +10,11 @@ from .providers.anhoch.prices import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .providers.cccenter.catalog import CCCenterCatalogClient
+from .providers.cccenter.prices import (
+    CCCenterPriceMonitor,
+    CCCenterPriceMonitorDependencies,
+)
 from .providers.ddstore.catalog import DDStoreCatalogClient
 from .providers.ddstore.prices import (
     DDStorePriceMonitor,
@@ -41,12 +46,12 @@ from .providers.setec.prices import (
     SetecPriceMonitor,
     SetecPriceMonitorDependencies,
 )
-from .retries import FetchRetryPolicy, SQLiteRetryPolicy
-from .transports.cccenter_catalog import CCCenterCatalogClient
-from .transports.cccenter_price_monitor import (
-    CCCenterPriceMonitor,
-    CCCenterPriceMonitorDependencies,
+from .providers.technomarket.catalog import TechnomarketCatalogClient
+from .providers.technomarket.prices import (
+    TechnomarketPriceMonitor,
+    TechnomarketPriceMonitorDependencies,
 )
+from .retries import FetchRetryPolicy, SQLiteRetryPolicy
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
@@ -55,11 +60,6 @@ from .transports.reklama5_catalog import Reklama5CatalogClient
 from .transports.reklama5_price_monitor import (
     Reklama5PriceMonitor,
     Reklama5PriceMonitorDependencies,
-)
-from .transports.technomarket_catalog import TechnomarketCatalogClient
-from .transports.technomarket_price_monitor import (
-    TechnomarketPriceMonitor,
-    TechnomarketPriceMonitorDependencies,
 )
 
 
