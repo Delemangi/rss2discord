@@ -20,12 +20,14 @@ from .price_runtime import (
     safe_error_cause,
 )
 from .providers.anhoch.strategy import AnhochStrategy
+from .providers.cccenter.strategy import CCCenterStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
 from .providers.reklama5.strategy import Reklama5Strategy
 from .providers.setec.strategy import SetecStrategy
+from .providers.technomarket.strategy import TechnomarketStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -48,10 +50,8 @@ from .transports import (
     Pazar3Strategy,
     RSSStrategy,
     ScraperStrategy,
-    TechnomarketStrategy,
     XenForoStrategy,
 )
-from .transports.cccenter import CCCenterStrategy
 from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)

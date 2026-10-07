@@ -10,18 +10,18 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.providers.cccenter.bounds import (
+    CCCENTER_LABEL,
+    MAX_CCCENTER_RETAINED_SNAPSHOTS,
+)
+from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
+from rss2discord.providers.cccenter.strategy import format_cccenter_mkd
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.cccenter import format_cccenter_mkd
-from rss2discord.transports.cccenter_bounds import (
-    CCCENTER_LABEL,
-    MAX_CCCENTER_RETAINED_SNAPSHOTS,
-)
-from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

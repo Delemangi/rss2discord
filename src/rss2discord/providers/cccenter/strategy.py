@@ -6,10 +6,10 @@ from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.providers.cccenter.bounds import CCCENTER_LABEL
+from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
+from rss2discord.providers.cccenter.models import CCCenterProduct
 from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.cccenter_bounds import CCCENTER_LABEL
-from rss2discord.transports.cccenter_catalog import CCCenterCatalogClient
-from rss2discord.transports.cccenter_models import CCCenterProduct
 
 
 @final

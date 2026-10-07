@@ -7,13 +7,13 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery
-from rss2discord.transports.technomarket_models import TechnomarketProduct
-from rss2discord.transports.technomarket_price_monitor import (
+from rss2discord.providers.technomarket.models import TechnomarketProduct
+from rss2discord.providers.technomarket.prices import (
     TechnomarketPriceMonitor,
     TechnomarketPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.setec_price_monitor_helpers import RecordingSender
 
 

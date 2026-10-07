@@ -5,9 +5,8 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import FeedFetchError, cccenter_catalog
-from rss2discord.transports.cccenter_catalog import (
+from rss2discord.providers.cccenter import catalog as cccenter_catalog
+from rss2discord.providers.cccenter.catalog import (
     CCCENTER_FEED_URL,
     CCCenterCatalogClient,
     parse_mkd_price,
@@ -15,7 +14,9 @@ from rss2discord.transports.cccenter_catalog import (
     parse_product_listing,
     validate_cccenter_url,
 )
-from rss2discord.transports.cccenter_models import CCCenterProduct
+from rss2discord.providers.cccenter.models import CCCenterProduct
+from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import FeedFetchError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cccenter"
 
