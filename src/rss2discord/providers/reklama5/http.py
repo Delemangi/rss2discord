@@ -10,20 +10,20 @@ from urllib.parse import urljoin
 from curl_cffi import CurlECode, requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.retries import parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.reklama5_scope import (
+from rss2discord.providers.reklama5.scope import (
     REKLAMA5_LABEL,
     Reklama5PageRequest,
 )
-from rss2discord.transports.reklama5_scope import (
+from rss2discord.providers.reklama5.scope import (
     Reklama5SearchScope as _Reklama5SearchScope,
 )
-from rss2discord.transports.reklama5_session import (
+from rss2discord.providers.reklama5.session import (
     Reklama5HttpResponse,
     Reklama5HttpSession,
     create_reklama5_session,
 )
+from rss2discord.retries import parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 Reklama5SearchScope = _Reklama5SearchScope
 

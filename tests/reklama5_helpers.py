@@ -15,7 +15,7 @@ from curl_cffi import CurlECode
 from curl_cffi import requests as curl_requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5.http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
     Reklama5PageRequest,
     Reklama5ScanBudget,

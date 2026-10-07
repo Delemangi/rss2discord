@@ -11,6 +11,9 @@ from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
+from rss2discord.providers.reklama5.parser import Reklama5Listing
+from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
+from rss2discord.providers.reklama5.strategy import Reklama5Strategy
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -27,9 +30,6 @@ from rss2discord.transports.price_monitor import (
     prepare_price_delivery,
     price_direction,
 )
-from rss2discord.transports.reklama5_parser import Reklama5Listing
-from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL
-from rss2discord.transports.reklama5_strategy import Reklama5Strategy
 
 MAX_REKLAMA5_RETAINED_SNAPSHOTS: Final = 10_000
 MAX_REKLAMA5_PRICE_CHANGES_PER_SCAN: Final = 100

@@ -10,9 +10,9 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryId
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.exports import Reklama5Listing, Reklama5Strategy
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import reklama5_http
-from rss2discord.transports.reklama5 import Reklama5Listing, Reklama5Strategy
 from tests.app_helpers import FakeSender
 from tests.configuration_helpers import write_config
 from tests.reklama5_helpers import (

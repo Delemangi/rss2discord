@@ -4,13 +4,14 @@ import pytest
 from curl_cffi import CurlECode
 from curl_cffi import requests as curl_requests
 
-from rss2discord.transports import FeedFetchError, reklama5_http
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
     MAX_REKLAMA5_RESPONSE_BYTES,
     Reklama5ScanBudget,
     fetch_reklama5_page,
 )
+from rss2discord.transports import FeedFetchError
 from tests.reklama5_helpers import RecordingGet, StubResponse, scan_budget, search_scope
 
 

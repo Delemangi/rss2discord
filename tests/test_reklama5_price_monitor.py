@@ -9,10 +9,10 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import EntryId, PriceDirection, SourceMetric
+from rss2discord.providers.reklama5 import exports as reklama5_transport
+from rss2discord.providers.reklama5.exports import Reklama5Listing
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import reklama5 as reklama5_transport
 from rss2discord.transports.price_monitor import PriceAlertDelivery
-from rss2discord.transports.reklama5 import Reklama5Listing
 from tests.reklama5_helpers import FIXED_NOW, SEARCH_URL
 from tests.setec_price_monitor_helpers import RecordingSender
 
