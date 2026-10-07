@@ -24,6 +24,7 @@ from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.hivetec.strategy import HivetecStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
+from .providers.reklama5.strategy import Reklama5Strategy
 from .providers.setec.strategy import SetecStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
@@ -45,7 +46,6 @@ from .transports import (
     Gjirafa50Strategy,
     ITMkOglasnikStrategy,
     Pazar3Strategy,
-    Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
     TechnomarketStrategy,

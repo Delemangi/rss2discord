@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from rss2discord.models import EntryId
-from rss2discord.transports import FeedFetchError
-from rss2discord.transports.reklama5 import (
+from rss2discord.providers.reklama5.exports import (
     SKOPJE,
     Reklama5Listing,
     Reklama5Page,
     parse_reklama5_page,
 )
+from rss2discord.transports import FeedFetchError
 from tests.reklama5_helpers import (
     FIXED_NOW,
     Reklama5Card,

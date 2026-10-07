@@ -30,6 +30,11 @@ from .providers.neptun.prices import (
     NeptunPriceMonitor,
     NeptunPriceMonitorDependencies,
 )
+from .providers.reklama5.catalog import Reklama5CatalogClient
+from .providers.reklama5.prices import (
+    Reklama5PriceMonitor,
+    Reklama5PriceMonitorDependencies,
+)
 from .providers.setec.catalog import SetecCatalogClient
 from .providers.setec.prices import (
     SetecPriceMonitor,
@@ -51,11 +56,6 @@ from .transports.pazar3_price_monitor import (
     Pazar3PriceMonitorDependencies,
 )
 from .transports.price_monitor import PriceAlertDelivery
-from .transports.reklama5_catalog import Reklama5CatalogClient
-from .transports.reklama5_price_monitor import (
-    Reklama5PriceMonitor,
-    Reklama5PriceMonitorDependencies,
-)
 from .transports.technomarket_catalog import TechnomarketCatalogClient
 from .transports.technomarket_price_monitor import (
     TechnomarketPriceMonitor,

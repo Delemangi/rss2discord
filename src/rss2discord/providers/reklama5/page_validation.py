@@ -6,8 +6,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 
+from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL, Reklama5PageRequest
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL, Reklama5PageRequest
 
 REKLAMA5_APPLICATION_ERROR_TEXT: Final = (
     "Настана грешка. Оваа грешка е испратена до нашиот технички оддел."

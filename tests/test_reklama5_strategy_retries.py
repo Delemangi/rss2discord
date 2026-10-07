@@ -12,9 +12,9 @@ from rss2discord.discord.client import (
     SleepCallback,
     WebhookMessage,
 )
-from rss2discord.transports import reklama5 as reklama5_transport
-from rss2discord.transports import reklama5_http
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5 import exports as reklama5_transport
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
     MAX_REKLAMA5_ATTEMPT_SECONDS,
     Reklama5ScanBudget,
