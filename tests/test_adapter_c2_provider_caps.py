@@ -7,7 +7,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.transports.technomarket_price_monitor import TechnomarketPriceMonitor
+from rss2discord.providers.technomarket.prices import TechnomarketPriceMonitor
 from tests import anhoch_price_monitor_helpers as anhoch
 from tests import neksio_price_monitor_helpers as neksio
 from tests import setec_price_monitor_helpers as setec
