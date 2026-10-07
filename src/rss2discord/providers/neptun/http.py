@@ -9,12 +9,12 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import JsonValue, ValidationError
 
-from rss2discord.retries import parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.neptun_models import (
+from rss2discord.providers.neptun.models import (
     NeptunInitialSearchModel,
     NeptunProductsResponse,
 )
+from rss2discord.retries import parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 NEPTUN_LABEL: Final = "Neptun"
 NEPTUN_ORIGIN: Final = "https://www.neptun.mk"

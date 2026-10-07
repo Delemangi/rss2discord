@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from rss2discord.models import SourceMetric
-from rss2discord.transports.neptun import NeptunStrategy, format_neptun_mkd
-from rss2discord.transports.neptun_models import NeptunProduct
+from rss2discord.providers.neptun.models import NeptunProduct
+from rss2discord.providers.neptun.strategy import NeptunStrategy, format_neptun_mkd
 from tests.neptun_helpers import product_payload
 
 

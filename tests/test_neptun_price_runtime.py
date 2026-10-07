@@ -3,8 +3,8 @@ from pathlib import Path
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports.neptun_catalog import NeptunCatalogClient
-from rss2discord.transports.neptun_price_monitor import NeptunPriceMonitorDependencies
+from rss2discord.providers.neptun.catalog import NeptunCatalogClient
+from rss2discord.providers.neptun.prices import NeptunPriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 from tests.test_neptun_wiring import make_feed

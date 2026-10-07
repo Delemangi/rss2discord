@@ -6,13 +6,13 @@ from zoneinfo import ZoneInfo
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.neptun_catalog import (
+from rss2discord.providers.neptun.catalog import (
     NEPTUN_WINDOW_SIZE,
     NeptunCatalogClient,
 )
-from rss2discord.transports.neptun_http import NEPTUN_LABEL, NEPTUN_ORIGIN
-from rss2discord.transports.neptun_models import NeptunProduct
+from rss2discord.providers.neptun.http import NEPTUN_LABEL, NEPTUN_ORIGIN
+from rss2discord.providers.neptun.models import NeptunProduct
+from rss2discord.transports.base import ScraperStrategy
 
 MAX_NEPTUN_DELIVERY_HISTORY: Final = 10_000
 NEPTUN_TIME_ZONE: Final = "Europe/Skopje"

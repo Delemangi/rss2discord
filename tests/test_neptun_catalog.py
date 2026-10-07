@@ -1,9 +1,10 @@
 import pytest
 import requests
 
+from rss2discord.providers.neptun import catalog as neptun_catalog
+from rss2discord.providers.neptun.catalog import NeptunCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import FeedFetchError, neptun_catalog
-from rss2discord.transports.neptun_catalog import NeptunCatalogClient
+from rss2discord.transports import FeedFetchError
 from tests.neptun_helpers import (
     CATEGORY_URL,
     RecordingRequests,
