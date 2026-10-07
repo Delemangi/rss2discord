@@ -2,40 +2,36 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Final
 from urllib.parse import parse_qsl, urljoin, urlsplit
-from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup, Tag
 
 from rss2discord.models import EntryId
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_dates import (
+    MONTH_ABBREVIATIONS as _MONTHS,
+)
+from rss2discord.transports.listing_dates import (
+    SKOPJE,
+    localize_skopje,
+)
+from rss2discord.transports.listing_dates import (
+    TIME_PATTERN as _TIME_PATTERN,
+)
+from rss2discord.transports.listing_dates import (
+    TODAY_PATTERN as _TODAY_PATTERN,
+)
+from rss2discord.transports.listing_dates import (
+    YESTERDAY_PATTERN as _YESTERDAY_PATTERN,
+)
 from rss2discord.transports.reklama5_page_validation import (
     normalized_text,
     validate_reklama5_page,
 )
 from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL, Reklama5PageRequest
 
-SKOPJE: Final = ZoneInfo("Europe/Skopje")
-
-_MONTHS: Final = {
-    "јан": 1,
-    "фев": 2,
-    "мар": 3,
-    "апр": 4,
-    "мај": 5,
-    "јун": 6,
-    "јул": 7,
-    "авг": 8,
-    "сеп": 9,
-    "окт": 10,
-    "ное": 11,
-    "дек": 12,
-}
-_TIME_PATTERN: Final = r"(?P<hour>\d{2}):(?P<minute>\d{2})"
-_TODAY_PATTERN: Final = re.compile(rf"Денес {_TIME_PATTERN}", re.ASCII)
-_YESTERDAY_PATTERN: Final = re.compile(rf"Вчера {_TIME_PATTERN}", re.ASCII)
 _DATE_PATTERN: Final = re.compile(
     rf"(?P<day>\d{{2}})/(?P<month>\d{{2}})/(?P<year>\d{{4}}) {_TIME_PATTERN}",
     re.ASCII,
@@ -198,7 +194,11 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
                     wall_date = date(year, month, day)
                 except ValueError:
                     continue
-                candidate = _localize(wall_date, match)
+                candidate = localize_skopje(
+                    wall_date,
+                    int(match.group("hour")),
+                    int(match.group("minute")),
+                )
                 if candidate is None:
                     continue
                 if candidate.astimezone(UTC) <= local_now.astimezone(UTC):
@@ -206,21 +206,13 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
             return None
         else:
             return None
-        return _localize(wall_date, match)
+        return localize_skopje(
+            wall_date,
+            int(match.group("hour")),
+            int(match.group("minute")),
+        )
     except ValueError:
         return None
-
-
-def _localize(wall_date: date, match: re.Match[str]) -> datetime | None:
-    wall = datetime.combine(
-        wall_date,
-        time(int(match.group("hour")), int(match.group("minute"))),
-    )
-    localized = wall.replace(tzinfo=SKOPJE, fold=0)
-    round_trip = localized.astimezone(UTC).astimezone(SKOPJE)
-    if round_trip.replace(tzinfo=None) != wall or round_trip.fold != localized.fold:
-        return None
-    return localized
 
 
 def _image_url(card: Tag, request: Reklama5PageRequest) -> str | None:
