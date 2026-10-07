@@ -11,6 +11,7 @@ from rss2discord.price_monitor_builders import (
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import gjirafa50_background_monitor
 from rss2discord.transports.gjirafa50_background_monitor import (
@@ -19,7 +20,6 @@ from rss2discord.transports.gjirafa50_background_monitor import (
 from rss2discord.transports.gjirafa50_price_monitor import (
     Gjirafa50PriceMonitorDependencies,
 )
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock

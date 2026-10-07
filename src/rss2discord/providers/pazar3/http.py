@@ -11,15 +11,15 @@ from curl_cffi import CurlECode, requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.discord.client import SleepCallback
-from rss2discord.retries import parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_scope import PAZAR3_LABEL, Pazar3PageRequest
-from rss2discord.transports.pazar3_session import (
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3PageRequest
+from rss2discord.providers.pazar3.session import (
     Pazar3HttpResponse,
     Pazar3HttpSession,
     create_pazar3_session,
 )
+from rss2discord.retries import parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 MAX_PAZAR3_RESPONSE_BYTES: Final = 2_097_152
 MAX_PAZAR3_ATTEMPT_BYTES: Final = 6_291_456

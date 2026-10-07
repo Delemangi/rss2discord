@@ -6,12 +6,12 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports.pazar3 import Pazar3Strategy
-from rss2discord.transports.pazar3_catalog import Pazar3CatalogClient
-from rss2discord.transports.pazar3_price_monitor import (
+from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
+from rss2discord.providers.pazar3.prices import (
     Pazar3PriceMonitor,
     Pazar3PriceMonitorDependencies,
 )
+from rss2discord.providers.pazar3.strategy import Pazar3Strategy
 from tests.app_helpers import FakeSender
 
 

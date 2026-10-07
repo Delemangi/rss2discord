@@ -30,6 +30,12 @@ from .providers.neptun.prices import (
     NeptunPriceMonitor,
     NeptunPriceMonitorDependencies,
 )
+from .providers.pazar3.catalog import Pazar3CatalogClient
+from .providers.pazar3.pacing import Pazar3RequestPacer
+from .providers.pazar3.prices import (
+    Pazar3PriceMonitor,
+    Pazar3PriceMonitorDependencies,
+)
 from .providers.setec.catalog import SetecCatalogClient
 from .providers.setec.prices import (
     SetecPriceMonitor,
@@ -44,12 +50,6 @@ from .transports.cccenter_price_monitor import (
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
-from .transports.pazar3_catalog import Pazar3CatalogClient
-from .transports.pazar3_pacing import Pazar3RequestPacer
-from .transports.pazar3_price_monitor import (
-    Pazar3PriceMonitor,
-    Pazar3PriceMonitorDependencies,
-)
 from .transports.price_monitor import PriceAlertDelivery
 from .transports.reklama5_catalog import Reklama5CatalogClient
 from .transports.reklama5_price_monitor import (

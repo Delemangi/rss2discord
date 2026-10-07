@@ -7,8 +7,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 
+from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3PageRequest
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.pazar3_scope import PAZAR3_LABEL, Pazar3PageRequest
 
 _RANGE_PATTERN: Final = re.compile(r"(?P<start>\d+)\s*-\s*(?P<end>\d+)")
 _MAX_DECIMAL_DIGITS: Final = 10

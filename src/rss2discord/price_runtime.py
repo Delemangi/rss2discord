@@ -34,6 +34,7 @@ from .price_monitor_builders import (
     TechnomarketPriceMonitorFactory,
     build_provider_price_monitor,
 )
+from .providers.pazar3.pacing import Pazar3RequestPacer
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -42,7 +43,6 @@ from .retries import (
     SQLiteRetryPolicy,
 )
 from .scheduler import ScheduledJob
-from .transports.pazar3_pacing import Pazar3RequestPacer
 from .transports.price_monitor import PriceAlertDelivery
 
 logger = logging.getLogger(__name__)
