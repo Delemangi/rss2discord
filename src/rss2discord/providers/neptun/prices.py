@@ -23,12 +23,12 @@ from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
-    deliver_price_changes,
-    finish_price_delivery,
-    pause_price_fetch_failure,
+    deliver_planned_price_changes,
+    diff_price_snapshots,
     prepare_price_delivery,
     prepare_price_scan,
     price_direction,
+    run_price_scan,
 )
 
 MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
@@ -83,15 +83,7 @@ class NeptunPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        run_price_scan(self._scan, self._dependencies.snapshots, self._feed.id)
 
     def _scan(self) -> None:
         products, persisted = prepare_price_scan(
@@ -114,28 +106,31 @@ class NeptunPriceMonitor:
             label=NEPTUN_LABEL,
         )
         by_product = {snapshot.product_id: snapshot for snapshot in persisted}
-        silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
         current_snapshots: dict[str, PriceSnapshot] = {}
-        positive_product_ids: set[str] = set()
+        products_by_id: dict[str, NeptunProduct] = {}
         for product in products:
             current = self._snapshot(product)
             if current is None:
                 continue
-            positive_product_ids.add(current.product_id)
             current_snapshots[current.product_id] = current
-            previous = by_product.get(current.product_id)
-            if previous is None:
-                silent_updates.append(current)
-            elif (
-                previous.amount != current.amount
-                or previous.currency != current.currency
-            ):
-                changes.append(_PriceChange(product, previous, current))
-            elif previous.formatted != current.formatted:
-                silent_updates.append(current)
-        if len(set(by_product) | positive_product_ids) > MAX_NEPTUN_RETAINED_SNAPSHOTS:
+            products_by_id[current.product_id] = product
+        if (
+            len(by_product.keys() | current_snapshots.keys())
+            > MAX_NEPTUN_RETAINED_SNAPSHOTS
+        ):
             raise FeedFetchError(NEPTUN_LABEL, "SnapshotLimitExceeded")
+        silent_updates, records = diff_price_snapshots(
+            current_snapshots.values(),
+            by_product,
+        )
+        changes = tuple(
+            _PriceChange(
+                products_by_id[record.product_id],
+                record.previous,
+                record.current,
+            )
+            for record in records
+        )
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         store = self._dependencies.snapshots
@@ -153,22 +148,15 @@ class NeptunPriceMonitor:
                 catalog_count=len(products),
             ),
         )
-        if plan.blocked:
-            return
-        if silent_updates and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
-                ),
-            )
-        by_id = {change.current.product_id: change for change in changes}
-        deliver_price_changes(
-            (by_id[product_id] for product_id in plan.selected_ids),
+        deliver_planned_price_changes(
             self._dependencies,
             self._message_for,
+            feed_id=self._feed.id,
             plan=plan,
+            silent_updates=silent_updates,
+            changes=changes,
+            item_count=len(current_snapshots),
         )
-        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: NeptunProduct) -> PriceSnapshot | None:
         if product.actual_price <= 0:
