@@ -25,6 +25,7 @@ from .providers.hivetec.strategy import HivetecStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
 from .providers.setec.strategy import SetecStrategy
+from .providers.technomarket.strategy import TechnomarketStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
     FeedFetchInterruptedError,
@@ -48,7 +49,6 @@ from .transports import (
     Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
-    TechnomarketStrategy,
     XenForoStrategy,
 )
 from .transports.cccenter import CCCenterStrategy

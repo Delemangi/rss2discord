@@ -35,6 +35,11 @@ from .providers.setec.prices import (
     SetecPriceMonitor,
     SetecPriceMonitorDependencies,
 )
+from .providers.technomarket.catalog import TechnomarketCatalogClient
+from .providers.technomarket.prices import (
+    TechnomarketPriceMonitor,
+    TechnomarketPriceMonitorDependencies,
+)
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
 from .transports.cccenter_catalog import CCCenterCatalogClient
 from .transports.cccenter_price_monitor import (
@@ -55,11 +60,6 @@ from .transports.reklama5_catalog import Reklama5CatalogClient
 from .transports.reklama5_price_monitor import (
     Reklama5PriceMonitor,
     Reklama5PriceMonitorDependencies,
-)
-from .transports.technomarket_catalog import TechnomarketCatalogClient
-from .transports.technomarket_price_monitor import (
-    TechnomarketPriceMonitor,
-    TechnomarketPriceMonitorDependencies,
 )
 
 
