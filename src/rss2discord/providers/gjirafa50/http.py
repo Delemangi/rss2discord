@@ -12,21 +12,21 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from curl_cffi import requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.gjirafa50_models import (
+from rss2discord.providers.gjirafa50.models import (
     Gjirafa50CatalogPage,
     Gjirafa50PriceRange,
 )
-from rss2discord.transports.gjirafa50_parser import (
+from rss2discord.providers.gjirafa50.parser import (
     GJIRAFA50_LABEL,
     parse_gjirafa50_page,
 )
-from rss2discord.transports.gjirafa50_session import (
+from rss2discord.providers.gjirafa50.session import (
     Gjirafa50HttpResponse,
     Gjirafa50HttpSession,
     create_gjirafa50_session,
 )
+from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
+from rss2discord.transports.base import FeedFetchError
 
 GJIRAFA50_HOSTS: Final = frozenset({"gjirafa50.com", "gjirafa50.mk"})
 GJIRAFA50_RESPONSE_BYTES: Final = 5 * 1024 * 1024

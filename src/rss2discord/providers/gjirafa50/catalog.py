@@ -8,18 +8,18 @@ from datetime import UTC, datetime
 from math import ceil
 from typing import Final
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.gjirafa50_http import (
+from rss2discord.providers.gjirafa50.http import (
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
 )
-from rss2discord.transports.gjirafa50_models import (
+from rss2discord.providers.gjirafa50.models import (
     Gjirafa50CatalogPage,
     Gjirafa50PriceRange,
     Gjirafa50Product,
 )
-from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
+from rss2discord.providers.gjirafa50.parser import GJIRAFA50_LABEL
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 GJIRAFA50_WINDOW_SIZE: Final = 30
 GJIRAFA50_PAGE_SIZE: Final = 24

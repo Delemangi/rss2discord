@@ -13,13 +13,13 @@ import requests
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
-from rss2discord.recovery_models import HealthUpdate
-from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.gjirafa50_price_monitor import (
+from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitor,
     Gjirafa50PriceMonitorDependencies,
 )
+from rss2discord.recovery_models import HealthUpdate
+from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
+from rss2discord.transports.base import FeedFetchError
 
 logger = logging.getLogger(__name__)
 GJIRAFA50_SCAN_LOCK_POLL_SECONDS: Final = 0.1

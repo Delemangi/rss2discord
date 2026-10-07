@@ -20,6 +20,9 @@ from .providers.ddstore.prices import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from .providers.gjirafa50.background_monitor import Gjirafa50BackgroundPriceMonitor
+from .providers.gjirafa50.catalog import Gjirafa50CatalogClient
+from .providers.gjirafa50.prices import Gjirafa50PriceMonitorDependencies
 from .providers.hivetec.catalog import HivetecCatalogClient
 from .providers.hivetec.prices import (
     HivetecPriceMonitor,
@@ -46,9 +49,6 @@ from .providers.technomarket.prices import (
     TechnomarketPriceMonitorDependencies,
 )
 from .retries import FetchRetryPolicy, SQLiteRetryPolicy
-from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
-from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
-from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
 from .transports.pazar3_catalog import Pazar3CatalogClient
 from .transports.pazar3_pacing import Pazar3RequestPacer
 from .transports.pazar3_price_monitor import (

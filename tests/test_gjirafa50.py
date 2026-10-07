@@ -2,8 +2,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from rss2discord.models import SourceMetric
-from rss2discord.transports.gjirafa50 import Gjirafa50Strategy, format_gjirafa50_mkd
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.strategy import (
+    Gjirafa50Strategy,
+    format_gjirafa50_mkd,
+)
 
 
 def test_gjirafa50_strategy_maps_product_to_entry() -> None:

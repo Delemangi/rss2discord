@@ -5,8 +5,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from rss2discord.transports import FeedFetchError, gjirafa50_parser
-from rss2discord.transports.gjirafa50_parser import parse_gjirafa50_page
+from rss2discord.providers.gjirafa50 import parser as gjirafa50_parser
+from rss2discord.providers.gjirafa50.parser import parse_gjirafa50_page
+from rss2discord.transports import FeedFetchError
 from tests.gjirafa50_helpers import ROOT_URL, catalog_payload
 
 

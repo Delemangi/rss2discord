@@ -22,6 +22,7 @@ from .price_runtime import (
 from .providers.anhoch.strategy import AnhochStrategy
 from .providers.cccenter.strategy import CCCenterStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
+from .providers.gjirafa50.strategy import Gjirafa50Strategy
 from .providers.hivetec.strategy import HivetecStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
@@ -44,7 +45,6 @@ from .scheduler import (
 )
 from .transports import (
     FeedFetchError,
-    Gjirafa50Strategy,
     ITMkOglasnikStrategy,
     Pazar3Strategy,
     Reklama5Strategy,
