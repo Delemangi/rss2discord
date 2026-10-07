@@ -19,9 +19,7 @@ from rss2discord.price_amount import (
     PriceAmountValidationError,
     canonicalize_price_amount,
 )
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.catalog_http import BoundedContentCallback
-from rss2discord.transports.cccenter_bounds import (
+from rss2discord.providers.cccenter.bounds import (
     CCCENTER_FEED_URL,
     CCCENTER_LABEL,
     CCCENTER_ORIGIN,
@@ -35,11 +33,13 @@ from rss2discord.transports.cccenter_bounds import (
     MAX_CCCENTER_SCAN_BYTES,
     MAX_CCCENTER_SCAN_SECONDS,
 )
-from rss2discord.transports.cccenter_models import (
+from rss2discord.providers.cccenter.models import (
     CCCenterListing,
     CCCenterPriceStatus,
     CCCenterProduct,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.catalog_http import BoundedContentCallback
 
 __all__ = [
     "CCCENTER_FEED_URL",
