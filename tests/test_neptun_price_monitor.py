@@ -8,13 +8,14 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import FeedFetchError, neptun_price_monitor
-from rss2discord.transports.neptun_models import NeptunProduct
-from rss2discord.transports.neptun_price_monitor import (
+from rss2discord.providers.neptun import prices as neptun_price_monitor
+from rss2discord.providers.neptun.models import NeptunProduct
+from rss2discord.providers.neptun.prices import (
     NeptunPriceMonitor,
     NeptunPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.neptun_helpers import product_payload
 from tests.setec_price_monitor_helpers import RecordingSender

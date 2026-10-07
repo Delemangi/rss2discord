@@ -3,15 +3,15 @@
 from collections.abc import Callable
 from typing import Final
 
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.neptun_http import (
+from rss2discord.providers.neptun.http import (
     NEPTUN_LABEL,
     NEPTUN_RESPONSE_BYTES,
     NeptunHttpClient,
     NeptunPageRequest,
 )
-from rss2discord.transports.neptun_models import NeptunProduct
+from rss2discord.providers.neptun.models import NeptunProduct
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 NEPTUN_WINDOW_SIZE: Final = 30
 NEPTUN_CATALOG_PAGE_SIZE: Final = 50

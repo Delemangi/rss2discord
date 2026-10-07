@@ -25,6 +25,11 @@ from .providers.neksio.prices import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from .providers.neptun.catalog import NeptunCatalogClient
+from .providers.neptun.prices import (
+    NeptunPriceMonitor,
+    NeptunPriceMonitorDependencies,
+)
 from .providers.setec.catalog import SetecCatalogClient
 from .providers.setec.prices import (
     SetecPriceMonitor,
@@ -39,11 +44,6 @@ from .transports.cccenter_price_monitor import (
 from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
 from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
 from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
-from .transports.neptun_catalog import NeptunCatalogClient
-from .transports.neptun_price_monitor import (
-    NeptunPriceMonitor,
-    NeptunPriceMonitorDependencies,
-)
 from .transports.pazar3_catalog import Pazar3CatalogClient
 from .transports.pazar3_pacing import Pazar3RequestPacer
 from .transports.pazar3_price_monitor import (
