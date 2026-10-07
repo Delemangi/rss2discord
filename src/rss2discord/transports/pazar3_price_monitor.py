@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from functools import partial
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
@@ -24,11 +25,11 @@ from rss2discord.transports.pazar3_scope import PAZAR3_LABEL
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
-    deliver_price_changes,
-    finish_price_delivery,
-    pause_price_fetch_failure,
+    deliver_planned_price_changes,
     prepare_price_delivery,
+    prepare_price_scan,
     price_direction,
+    run_price_scan,
 )
 
 MAX_PAZAR3_RETAINED_SNAPSHOTS: Final = 10_000
@@ -87,34 +88,28 @@ class Pazar3PriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        run_price_scan(self._scan, self._dependencies.snapshots, self._feed.id)
 
     def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        listings = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(
-                self._feed.id,
-                limit=MAX_PAZAR3_RETAINED_SNAPSHOTS + 1,
+        listings, persisted = prepare_price_scan(
+            fetch_products=partial(
+                self._dependencies.catalog.fetch_catalog,
+                self._feed.url,
+                retry_policy=self._dependencies.fetch_retry_policy,
+                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
             ),
+            load_snapshots=partial(
+                self._dependencies.sqlite_retry_policy.execute,
+                partial(
+                    self._dependencies.snapshots.load_price_snapshots,
+                    self._feed.id,
+                    limit=MAX_PAZAR3_RETAINED_SNAPSHOTS + 1,
+                ),
+            ),
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+            snapshot_limit=MAX_PAZAR3_RETAINED_SNAPSHOTS,
+            label=PAZAR3_LABEL,
         )
-        if len(persisted) > MAX_PAZAR3_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(PAZAR3_LABEL, "SnapshotLimitExceeded")
         by_listing = {snapshot.product_id: snapshot for snapshot in persisted}
         silent_updates: list[PriceSnapshot] = []
         changes: list[_PriceChange] = []
@@ -155,22 +150,15 @@ class Pazar3PriceMonitor:
                 catalog_count=len(listings),
             ),
         )
-        if plan.blocked:
-            return
-        if silent_updates and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
-                ),
-            )
-        by_id = {change.current.product_id: change for change in changes}
-        deliver_price_changes(
-            (by_id[product_id] for product_id in plan.selected_ids),
+        deliver_planned_price_changes(
             self._dependencies,
             self._message_for,
+            feed_id=self._feed.id,
             plan=plan,
+            silent_updates=silent_updates,
+            changes=changes,
+            item_count=len(current_snapshots),
         )
-        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, listing: Pazar3Listing) -> PriceSnapshot | None:
         match = _PRICE_PATTERN.fullmatch(listing.price.strip())

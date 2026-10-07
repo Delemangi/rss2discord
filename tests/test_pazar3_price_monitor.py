@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -9,7 +9,11 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.retries import (
+    FeedFetchInterruptedError,
+    FetchRetryPolicy,
+    SQLiteRetryPolicy,
+)
 from rss2discord.transports import FeedFetchError, pazar3_price_monitor
 from rss2discord.transports.pazar3_models import Pazar3Listing
 from rss2discord.transports.pazar3_price_monitor import (
@@ -239,3 +243,107 @@ def test_pazar3_price_monitor_rejects_snapshot_limit_before_changes(
 
         assert fetch_error.value.cause_type == "SnapshotLimitExceeded"
         assert store.load_price_snapshots("pazar3") == snapshots
+
+
+@pytest.mark.parametrize(
+    ("shutdown_checkpoint", "fetches", "loads"),
+    [(1, False, False), (2, True, False), (3, True, True)],
+)
+def test_pazar3_price_monitor_preserves_scan_shutdown_checkpoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shutdown_checkpoint: int,
+    fetches: bool,
+    loads: bool,
+) -> None:
+    catalog = CatalogStub([(priced("1", "100 МКД"),)])
+    with DeliveryStore(tmp_path / "state.db") as store:
+        price_monitor = monitor(catalog, store, RecordingSender([]))
+        checks = 0
+
+        def is_shutdown_requested() -> bool:
+            nonlocal checks
+            checks += 1
+            return checks == shutdown_checkpoint
+
+        price_monitor._dependencies = replace(
+            price_monitor._dependencies,
+            delivery=replace(
+                price_monitor._dependencies.delivery,
+                is_shutdown_requested=is_shutdown_requested,
+            ),
+        )
+        load_count = 0
+        load = store.load_price_snapshots
+
+        def count_load(
+            feed_id: str,
+            *,
+            limit: int | None = None,
+        ) -> tuple[PriceSnapshot, ...]:
+            nonlocal load_count
+            load_count += 1
+            return load(feed_id, limit=limit)
+
+        monkeypatch.setattr(store, "load_price_snapshots", count_load)
+
+        with pytest.raises(FeedFetchInterruptedError):
+            price_monitor.scan()
+
+        assert bool(catalog._batches) is not fetches
+        assert load_count == loads
+        assert store.load_price_snapshots("pazar3") == ()
+        assert store.list_health("pazar3") == ()
+        assert store.list_price_change_batches(feed_id="pazar3") == ()
+
+
+def test_pazar3_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sender = RecordingSender([])
+    catalog = CatalogStub(
+        [
+            (priced("1", "100 МКД"),),
+            (priced("1", "90 МКД"), priced("2", "200 МКД")),
+        ],
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        price_monitor = monitor(catalog, store, sender)
+        price_monitor.scan()
+        shutdown_requested = False
+        price_monitor._dependencies = replace(
+            price_monitor._dependencies,
+            delivery=replace(
+                price_monitor._dependencies.delivery,
+                is_shutdown_requested=lambda: shutdown_requested,
+            ),
+        )
+        select = store.select_normal_price_deliveries
+
+        def select_then_shutdown(
+            *,
+            feed_id: str,
+            product_ids: Iterable[str],
+            limit: int = 10,
+        ) -> tuple[str, ...] | None:
+            nonlocal shutdown_requested
+            selected = select(feed_id=feed_id, product_ids=product_ids, limit=limit)
+            shutdown_requested = True
+            return selected
+
+        monkeypatch.setattr(
+            store,
+            "select_normal_price_deliveries",
+            select_then_shutdown,
+        )
+        price_monitor.scan()
+
+        snapshots = {
+            snapshot.product_id: snapshot
+            for snapshot in store.load_price_snapshots("pazar3")
+        }
+        assert snapshots["1"].amount == Decimal(100)
+        assert snapshots["2"].amount == Decimal(200)
+        assert sender.messages == []
+        assert store.list_health("pazar3")[0].item_count == 2

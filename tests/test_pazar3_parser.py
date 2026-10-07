@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
 from rss2discord.models import EntryId
 from rss2discord.transports import FeedFetchError
+from rss2discord.transports.listing_dates import MONTH_ABBREVIATIONS, SKOPJE
 from rss2discord.transports.pazar3_models import Pazar3Listing
 from rss2discord.transports.pazar3_parser import parse_pazar3_page
 from tests.pazar3_helpers import (
@@ -118,6 +119,92 @@ def test_pazar3_parser_parses_localized_display_timestamps(
     assert parse_cards(Pazar3Card(timestamp=timestamp))[0].activity_at == (
         datetime.fromisoformat(expected)
     )
+
+
+@pytest.mark.parametrize(
+    ("month_token", "month", "year"),
+    [
+        ("јан", 1, 2026),
+        ("фев", 2, 2026),
+        ("мар", 3, 2026),
+        ("апр", 4, 2026),
+        ("мај", 5, 2026),
+        ("јун", 6, 2026),
+        ("јул", 7, 2026),
+        ("авг", 8, 2026),
+        ("сеп", 9, 2025),
+        ("окт", 10, 2025),
+        ("ное", 11, 2025),
+        ("дек", 12, 2025),
+    ],
+)
+def test_pazar3_parser_uses_shared_months_with_required_period(
+    month_token: str,
+    month: int,
+    year: int,
+) -> None:
+    assert MONTH_ABBREVIATIONS[month_token] == month
+    timestamp = f"1 {month_token}. 09:15"
+
+    assert parse_cards(Pazar3Card(timestamp=timestamp))[0].activity_at == datetime(
+        year,
+        month,
+        1,
+        9,
+        15,
+        tzinfo=SKOPJE,
+    )
+    assert parse_cards(Pazar3Card(timestamp=f"1 {month_token} 09:15")) == ()
+
+
+def test_pazar3_parser_keeps_eight_year_leap_day_search_and_fold_zero() -> None:
+    leap_page = parse_pazar3_page(
+        listing_page(1, [Pazar3Card(timestamp="29 фев. 09:00").html()], total=1),
+        page_request(),
+        FIXED_NOW,
+    )
+    century_clock = datetime(2104, 1, 1, 12, 0, tzinfo=SKOPJE)
+    century_page = parse_pazar3_page(
+        listing_page(1, [Pazar3Card(timestamp="29 фев. 09:00").html()], total=1),
+        page_request(),
+        century_clock,
+    )
+    fold_clock = datetime(2026, 10, 25, 2, 15, tzinfo=SKOPJE, fold=1)
+    fold_page = parse_pazar3_page(
+        listing_page(1, [Pazar3Card(timestamp="Денес 02:30").html()], total=1),
+        page_request(),
+        fold_clock,
+    )
+
+    assert leap_page.listings[0].activity_at == datetime(
+        2024,
+        2,
+        29,
+        9,
+        0,
+        tzinfo=SKOPJE,
+    )
+    assert century_page.listings[0].activity_at == datetime(
+        2096,
+        2,
+        29,
+        9,
+        0,
+        tzinfo=SKOPJE,
+    )
+    assert fold_page.listings[0].activity_at.fold == 0
+    assert fold_page.listings[0].activity_at.astimezone(UTC) <= fold_clock.astimezone(
+        UTC,
+    )
+
+
+def test_pazar3_parser_rejects_naive_clock_and_invalid_time_components() -> None:
+    html = listing_page(1, [Pazar3Card().html()], total=1)
+    with pytest.raises(FeedFetchError) as fetch_error:
+        parse_pazar3_page(html, page_request(), FIXED_NOW.replace(tzinfo=None))
+
+    assert fetch_error.value.cause_type == "InvalidClock"
+    assert parse_cards(Pazar3Card(timestamp="Денес 24:00")) == ()
 
 
 def test_pazar3_parser_rejects_non_media_image_host() -> None:
