@@ -7,11 +7,11 @@ from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports import TechnomarketStrategy
-from rss2discord.transports.technomarket_catalog import (
+from rss2discord.providers.technomarket.catalog import (
     TECHNOMARKET_FEED_URL,
     TechnomarketCatalogClient,
 )
+from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from tests.app_helpers import FakeSender
 
 FIXTURES = Path(__file__).parent / "fixtures" / "technomarket"

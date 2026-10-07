@@ -20,13 +20,7 @@ from rss2discord.price_amount import (
     PriceAmountValidationError,
     canonicalize_price_amount,
 )
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-    parse_retry_after,
-)
-from rss2discord.transports.catalog_http import BoundedContentCallback
-from rss2discord.transports.technomarket_bounds import (
+from rss2discord.providers.technomarket.bounds import (
     MAX_TECHNOMARKET_PAGES,
     MAX_TECHNOMARKET_PRODUCTS,
     MAX_TECHNOMARKET_REQUESTS,
@@ -39,7 +33,13 @@ from rss2discord.transports.technomarket_bounds import (
     TECHNOMARKET_ORIGIN,
     TECHNOMARKET_USER_AGENT,
 )
-from rss2discord.transports.technomarket_models import TechnomarketProduct
+from rss2discord.providers.technomarket.models import TechnomarketProduct
+from rss2discord.retries import (
+    FeedFetchInterruptedError,
+    FetchRetryPolicy,
+    parse_retry_after,
+)
+from rss2discord.transports.catalog_http import BoundedContentCallback
 
 __all__ = [
     "TECHNOMARKET_FEED_URL",

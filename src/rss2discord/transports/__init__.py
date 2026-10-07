@@ -7,7 +7,6 @@ from .itmk_oglasnik import ITMkOglasnikStrategy
 from .pazar3 import Pazar3Strategy
 from .reklama5 import Reklama5Strategy
 from .rss import RSSStrategy
-from .technomarket import TechnomarketStrategy
 from .xenforo import XenForoStrategy
 
 __all__ = [
@@ -19,6 +18,5 @@ __all__ = [
     "RSSStrategy",
     "Reklama5Strategy",
     "ScraperStrategy",
-    "TechnomarketStrategy",
     "XenForoStrategy",
 ]
