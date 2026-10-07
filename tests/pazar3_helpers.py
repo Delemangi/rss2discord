@@ -10,11 +10,11 @@ from zoneinfo import ZoneInfo
 
 from curl_cffi import requests as curl_requests
 
-from rss2discord.transports.pazar3_http import (
+from rss2discord.providers.pazar3.http import (
     MAX_PAZAR3_ATTEMPT_BYTES,
     Pazar3ScanBudget,
 )
-from rss2discord.transports.pazar3_scope import Pazar3PageRequest, Pazar3SearchScope
+from rss2discord.providers.pazar3.scope import Pazar3PageRequest, Pazar3SearchScope
 
 SEARCH_URL: Final = (
     "https://www.pazar3.mk/oglasi/elektronika/delovi-za-kompjuteri-dodatoci/prodazba"

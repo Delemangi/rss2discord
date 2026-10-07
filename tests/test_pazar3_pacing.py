@@ -1,7 +1,7 @@
 import pytest
 
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
 
 
 def test_pazar3_pacer_allows_first_request_then_waits_between_starts() -> None:

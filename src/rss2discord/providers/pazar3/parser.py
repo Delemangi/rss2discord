@@ -9,17 +9,17 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup, Tag
 
 from rss2discord.models import EntryId
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.pazar3_models import Pazar3Listing, Pazar3Page
-from rss2discord.transports.pazar3_page_validation import (
+from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
+from rss2discord.providers.pazar3.page_validation import (
     normalized_text,
     validate_pazar3_page,
 )
-from rss2discord.transports.pazar3_scope import (
+from rss2discord.providers.pazar3.scope import (
     PAZAR3_LABEL,
     Pazar3PageRequest,
     is_canonical_pazar3_path,
 )
+from rss2discord.transports.base import FeedFetchError
 
 SKOPJE: Final = ZoneInfo("Europe/Skopje")
 _MONTHS: Final = {
