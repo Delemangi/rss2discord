@@ -29,6 +29,7 @@ from rss2discord.reconciliation_models import (
 )
 from rss2discord.recovery_models import BaselineCandidateSummary, PriceSnapshot
 from tests.neksio_helpers import (
+    ProductCardPayload,
     catalog_request,
     homepage_payload,
     page_payload,
@@ -64,7 +65,7 @@ def _state(path: Path) -> RecoveryPreflightState:
 
 def _page(
     category_id: int,
-    cards: tuple[dict[str, object], ...],
+    cards: tuple[ProductCardPayload, ...],
     *,
     page_number: int = 1,
     page_count: int = 1,
@@ -108,13 +109,16 @@ def _capture(
 
 
 def _single_capture(
-    cards: tuple[dict[str, object], ...],
+    cards: tuple[ProductCardPayload, ...],
     *,
     category_id: int = 1,
     total: int | None = None,
     request_body: bytes | None = None,
     response_body: bytes | None = None,
-    **kwargs: object,
+    started_at: datetime = STARTED,
+    finished_at: datetime | None = None,
+    homepage_body: bytes | None = None,
+    source_url: str = NEKSIO_ORIGIN,
 ) -> NeksioCatalogCapture:
     return _capture(
         (
@@ -127,7 +131,10 @@ def _single_capture(
             ),
         ),
         categories=(category_id,),
-        **kwargs,
+        started_at=started_at,
+        finished_at=finished_at,
+        homepage_body=homepage_body,
+        source_url=source_url,
     )
 
 
@@ -309,7 +316,9 @@ def test_preflight_projects_baselines_cursor_batches_claims_holds_and_releases(
                 "VALUES (?, 'neksio', ?, 1, 1, ?)",
                 (FEED_ID, f"fingerprint-{status}", status),
             )
-            batch_ids[status] = int(cursor.lastrowid)
+            if cursor.lastrowid is None:
+                raise AssertionError("price batch insert did not return a row ID")
+            batch_ids[status] = cursor.lastrowid
         connection.execute(
             "INSERT INTO price_change_batches "
             "(feed_id,provider,fingerprint,catalog_count,available_count,status) "
