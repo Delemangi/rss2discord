@@ -11,6 +11,10 @@ from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
+from rss2discord.providers.gjirafa50.catalog import MAX_GJIRAFA50_PRODUCTS
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.parser import GJIRAFA50_LABEL
+from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -18,10 +22,6 @@ from rss2discord.retries import (
     SQLiteRetryPolicy,
 )
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.gjirafa50 import Gjirafa50Strategy
-from rss2discord.transports.gjirafa50_catalog import MAX_GJIRAFA50_PRODUCTS
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
-from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,

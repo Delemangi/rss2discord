@@ -8,15 +8,15 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.gjirafa50_background_monitor import (
+from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
-from rss2discord.transports.gjirafa50_catalog import Gjirafa50CatalogClient
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
-from rss2discord.transports.gjirafa50_price_monitor import (
+from rss2discord.providers.gjirafa50.catalog import Gjirafa50CatalogClient
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy
 from tests.app_helpers import FakeSender
 from tests.test_gjirafa50_wiring import make_feed
 

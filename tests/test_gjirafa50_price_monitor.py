@@ -9,15 +9,15 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.prices import (
+    Gjirafa50PriceMonitor,
+    Gjirafa50PriceMonitorDependencies,
+)
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
-)
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
-from rss2discord.transports.gjirafa50_price_monitor import (
-    Gjirafa50PriceMonitor,
-    Gjirafa50PriceMonitorDependencies,
 )
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.setec_price_monitor_helpers import RecordingSender

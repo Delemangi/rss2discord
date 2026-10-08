@@ -7,16 +7,22 @@ import pytest
 from curl_cffi import CurlOpt, requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import FeedFetchError, gjirafa50_http, gjirafa50_session
-from rss2discord.transports.gjirafa50_catalog import _OperationBudget
-from rss2discord.transports.gjirafa50_http import (
+from rss2discord.providers.gjirafa50 import (
+    http as gjirafa50_http,
+)
+from rss2discord.providers.gjirafa50 import (
+    session as gjirafa50_session,
+)
+from rss2discord.providers.gjirafa50.catalog import _OperationBudget
+from rss2discord.providers.gjirafa50.http import (
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
     _BoundedContent,
     _same_origin_redirect,
 )
-from rss2discord.transports.gjirafa50_models import Gjirafa50CatalogPage
+from rss2discord.providers.gjirafa50.models import Gjirafa50CatalogPage
+from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import FeedFetchError
 from tests.gjirafa50_helpers import RecordingGet, StubResponse, catalog_payload
 
 type CurlOptionValue = int | str | Callable[[bytes], int]

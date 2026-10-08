@@ -4,25 +4,26 @@ from math import ceil
 
 import pytest
 
-from rss2discord.transports import FeedFetchError, gjirafa50_catalog
-from rss2discord.transports.gjirafa50_catalog import (
+from rss2discord.providers.gjirafa50 import catalog as gjirafa50_catalog
+from rss2discord.providers.gjirafa50.catalog import (
     Gjirafa50CatalogClient,
     _CatalogScan,
     _OperationBudget,
 )
-from rss2discord.transports.gjirafa50_http import (
+from rss2discord.providers.gjirafa50.http import (
     FetchedGjirafa50Page,
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
 )
-from rss2discord.transports.gjirafa50_models import (
+from rss2discord.providers.gjirafa50.models import (
     Gjirafa50CatalogPage,
     Gjirafa50PriceRange,
     Gjirafa50Product,
 )
-from rss2discord.transports.gjirafa50_price_monitor import (
+from rss2discord.providers.gjirafa50.prices import (
     MAX_GJIRAFA50_RETAINED_SNAPSHOTS,
 )
+from rss2discord.transports import FeedFetchError
 from tests.gjirafa50_helpers import (
     ROOT_URL,
     RecordingGet,

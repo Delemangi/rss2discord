@@ -14,11 +14,11 @@ from rss2discord.price_amount import (
     MAX_PRICE_AMOUNT_WHOLE_DIGITS,
     canonicalize_price_amount,
 )
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.gjirafa50_models import (
+from rss2discord.providers.gjirafa50.models import (
     Gjirafa50CatalogPage,
     Gjirafa50Product,
 )
+from rss2discord.transports.base import FeedFetchError
 
 GJIRAFA50_LABEL: Final = "Gjirafa50"
 GJIRAFA50_IMAGE_HOST: Final = "50cdn.gjirafamall.tech"

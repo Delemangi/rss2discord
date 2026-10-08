@@ -6,13 +6,13 @@ from typing import Final, final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.transports.base import ScraperStrategy
-from rss2discord.transports.gjirafa50_catalog import (
+from rss2discord.providers.gjirafa50.catalog import (
     GJIRAFA50_WINDOW_SIZE,
     Gjirafa50CatalogClient,
 )
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
-from rss2discord.transports.gjirafa50_parser import GJIRAFA50_LABEL
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.parser import GJIRAFA50_LABEL
+from rss2discord.transports.base import ScraperStrategy
 
 MAX_GJIRAFA50_DELIVERY_HISTORY: Final = 100_000
 
