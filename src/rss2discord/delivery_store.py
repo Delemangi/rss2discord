@@ -11,7 +11,7 @@ from decimal import Decimal
 from itertools import chain
 from pathlib import Path
 from types import TracebackType
-from typing import Self
+from typing import Literal, Self
 
 from rss2discord.database_ownership import DatabaseOwnership
 from rss2discord.price_amount import canonicalize_price_amount
@@ -24,7 +24,11 @@ from rss2discord.price_safety import (
 from rss2discord.reconciliation_models import (
     MAX_OPERATION_SECONDS,
     MAX_PLAN_AGE_SECONDS,
+    MAX_RECOVERY_PRICE_IDS,
+    MAX_RECOVERY_REVIEW_ITEMS,
     ReconciliationPlan,
+    RecoveryHold,
+    RecoveryPreflightState,
     digest,
     require_sanitized_context,
     validate_dispositions,
@@ -54,6 +58,7 @@ class DeliveryStore:
         initialize: bool = True,
     ) -> None:
         self._database_path = database_path
+        self._read_only = read_only
         if read_only:
             self._connection = sqlite3.connect(
                 database_path.resolve().as_uri() + "?mode=ro",
@@ -250,6 +255,330 @@ class DeliveryStore:
                 ),
             ),
         )
+
+    def read_recovery_preflight_state(
+        self,
+        feed_id: str,
+    ) -> RecoveryPreflightState:
+        """Read bounded diagnostics; digests and counts are not an application fence or seal."""
+        if not self._read_only:
+            raise ValueError("recovery preflight requires a read-only store")
+        if self._connection.in_transaction:
+            raise ValueError("recovery preflight cannot join an active transaction")
+
+        self._connection.execute("BEGIN")
+        try:
+            self._require_recovery_preflight_schema()
+
+            delivered_count = self._count_feed_rows("delivered_entries", feed_id)
+            if delivered_count > MAX_RECOVERY_PRICE_IDS:
+                raise ValueError("recovery preflight delivered history exceeds limit")
+            delivered_rows = tuple(
+                self._connection.execute(
+                    "SELECT entry_id, delivered_at FROM delivered_entries "
+                    "WHERE feed_id = ? ORDER BY entry_id LIMIT ?",
+                    (feed_id, MAX_RECOVERY_PRICE_IDS + 1),
+                ),
+            )
+            if len(delivered_rows) != delivered_count:
+                raise ValueError("unsupported recovery preflight schema or state")
+            delivered_ids = tuple(self._required_text(row[0]) for row in delivered_rows)
+            delivered_history = tuple(
+                (self._required_text(row[0]), self._required_integer(row[1]))
+                for row in delivered_rows
+            )
+            initialized_row = self._connection.execute(
+                "SELECT initialized_at FROM initialized_feeds WHERE feed_id = ?",
+                (feed_id,),
+            ).fetchone()
+            initialized_at = (
+                None
+                if initialized_row is None
+                else self._required_integer(initialized_row[0])
+            )
+
+            snapshot_count = self._count_feed_rows("price_snapshots", feed_id)
+            if snapshot_count > MAX_RECOVERY_PRICE_IDS:
+                raise ValueError("recovery preflight snapshots exceed limit")
+            snapshots = self.load_price_snapshots(feed_id)
+            if len(snapshots) != snapshot_count:
+                raise ValueError("unsupported recovery preflight schema or state")
+
+            candidate_count = self._count_feed_rows(
+                "baseline_candidate_entries",
+                feed_id,
+            )
+            if candidate_count > MAX_RECOVERY_REVIEW_ITEMS:
+                raise ValueError("recovery preflight baseline candidate exceeds limit")
+            baseline_candidate = self.load_baseline_candidate(feed_id)
+            if (
+                0 if baseline_candidate is None else len(baseline_candidate.entry_ids)
+            ) != candidate_count:
+                raise ValueError("unsupported recovery preflight schema or state")
+
+            baselined_count = self._count_feed_rows("baselined_entries", feed_id)
+            if baselined_count > MAX_RECOVERY_REVIEW_ITEMS:
+                raise ValueError("recovery preflight approved baseline exceeds limit")
+            baselined_ids = tuple(
+                self._required_text(row[0])
+                for row in self._connection.execute(
+                    "SELECT entry_id FROM baselined_entries WHERE feed_id = ? "
+                    "ORDER BY entry_id LIMIT ?",
+                    (feed_id, MAX_RECOVERY_REVIEW_ITEMS + 1),
+                )
+            )
+            if len(baselined_ids) != baselined_count:
+                raise ValueError("unsupported recovery preflight schema or state")
+            baseline_row = self._connection.execute(
+                "SELECT fingerprint, complete, approved_at FROM baseline_states "
+                "WHERE feed_id = ?",
+                (feed_id,),
+            ).fetchone()
+            baseline_state = (
+                None
+                if baseline_row is None
+                else (
+                    self._required_text(baseline_row[0]),
+                    self._required_integer(baseline_row[1]) == 1,
+                    self._required_integer(baseline_row[2]),
+                )
+            )
+            if baseline_row is not None and baseline_row[1] not in (0, 1):
+                raise ValueError("unsupported recovery preflight baseline state")
+
+            cursor_row = self._connection.execute(
+                "SELECT last_product_id, updated_at FROM price_normal_delivery_cursors "
+                "WHERE feed_id = ?",
+                (feed_id,),
+            ).fetchone()
+            normal_cursor = (
+                None
+                if cursor_row is None
+                else (
+                    self._required_text(cursor_row[0]),
+                    self._required_integer(cursor_row[1]),
+                )
+            )
+
+            hold_count = self._count_feed_rows("price_product_holds", feed_id)
+            if hold_count > MAX_RECOVERY_PRICE_IDS:
+                raise ValueError("recovery preflight holds exceed limit")
+            hold_rows = self.list_price_product_holds(feed_id)
+            if len(hold_rows) != hold_count:
+                raise ValueError("unsupported recovery preflight schema or state")
+            holds = tuple(
+                RecoveryHold(
+                    product_id=self._required_text(row["product_id"]),
+                    reconciliation_fingerprint=self._required_text(
+                        row["reconciliation_fingerprint"],
+                    ),
+                    reason=self._required_text(row["reason"]),
+                    created_at=self._required_integer(row["created_at"]),
+                    kind=self._required_hold_kind(row["kind"]),
+                )
+                for row in hold_rows
+            )
+
+            batch_counts_by_status = {
+                self._required_text(row[0]): self._required_integer(row[1])
+                for row in self._connection.execute(
+                    "SELECT status, COUNT(*) FROM price_change_batches "
+                    "WHERE feed_id = ? GROUP BY status",
+                    (feed_id,),
+                )
+            }
+            batch_statuses = ("candidate", "approved", "paused", "completed", "revoked")
+            if set(batch_counts_by_status) - set(batch_statuses):
+                raise ValueError("unsupported recovery preflight batch status")
+            batch_counts = tuple(
+                batch_counts_by_status.get(status, 0) for status in batch_statuses
+            )
+            foreign_provider_batch_count = self._count_rows(
+                "SELECT COUNT(*) FROM price_change_batches "
+                "WHERE feed_id = ? AND provider <> 'neksio'",
+                feed_id,
+            )
+            open_claim_count = self._count_rows(
+                "SELECT COUNT(*) FROM price_change_batch_items i "
+                "JOIN price_change_batches b ON b.batch_id = i.batch_id "
+                "WHERE b.feed_id = ? AND i.claim_open = 1",
+                feed_id,
+            )
+            reconciliation_count = self._count_rows(
+                "SELECT COUNT(*) FROM price_reconciliations WHERE feed_id = ?",
+                feed_id,
+            )
+            hold_release_count = self._count_rows(
+                "SELECT COUNT(*) FROM price_hold_releases WHERE feed_id = ?",
+                feed_id,
+            )
+
+            snapshots_digest = self.price_snapshots_digest(feed_id)
+            history_digest = digest(
+                {"initialized_at": initialized_at, "delivered": delivered_history},
+            )
+            baseline_digest = digest(
+                {
+                    "candidate": (
+                        None
+                        if baseline_candidate is None
+                        else {
+                            "feed_id": baseline_candidate.feed_id,
+                            "fingerprint": baseline_candidate.fingerprint,
+                            "entry_ids": baseline_candidate.entry_ids,
+                            "status": baseline_candidate.status,
+                            "reason": baseline_candidate.reason,
+                            "created_at": baseline_candidate.created_at,
+                            "approved_at": baseline_candidate.approved_at,
+                        }
+                    ),
+                    "state": baseline_state,
+                    "baselined_ids": baselined_ids,
+                },
+            )
+            holds_digest = self.price_holds_digest(feed_id, version=2)
+            diagnostics = {
+                "batch_counts": batch_counts,
+                "foreign_provider_batch_count": foreign_provider_batch_count,
+                "open_claim_count": open_claim_count,
+                "reconciliation_count": reconciliation_count,
+                "hold_release_count": hold_release_count,
+            }
+            state_digest = digest(
+                {
+                    "feed_id": feed_id,
+                    "initialized_at": initialized_at,
+                    "normal_cursor": normal_cursor,
+                    "snapshots_digest": snapshots_digest,
+                    "history_digest": history_digest,
+                    "baseline_digest": baseline_digest,
+                    "holds_digest": holds_digest,
+                    "diagnostics": diagnostics,
+                },
+            )
+            return RecoveryPreflightState(
+                feed_id=feed_id,
+                snapshots=snapshots,
+                delivered_ids=delivered_ids,
+                baselined_ids=baselined_ids,
+                initialized_at=initialized_at,
+                baseline_candidate=baseline_candidate,
+                baseline_state=baseline_state,
+                normal_cursor=normal_cursor,
+                holds=holds,
+                batch_counts=batch_counts,  # type: ignore[arg-type]
+                foreign_provider_batch_count=foreign_provider_batch_count,
+                open_claim_count=open_claim_count,
+                reconciliation_count=reconciliation_count,
+                hold_release_count=hold_release_count,
+                snapshots_digest=snapshots_digest,
+                history_digest=history_digest,
+                baseline_digest=baseline_digest,
+                holds_digest=holds_digest,
+                state_digest=state_digest,
+            )
+        except sqlite3.Error as error:
+            raise ValueError("unsupported recovery preflight schema") from error
+        finally:
+            if self._connection.in_transaction:
+                self._connection.rollback()
+
+    def _require_recovery_preflight_schema(self) -> None:
+        required_columns = {
+            "delivered_entries": {"feed_id", "entry_id", "delivered_at"},
+            "initialized_feeds": {"feed_id", "initialized_at"},
+            "price_snapshots": {
+                "feed_id",
+                "product_id",
+                "amount",
+                "formatted",
+                "currency",
+                "updated_at",
+            },
+            "baseline_candidates": {
+                "feed_id",
+                "fingerprint",
+                "status",
+                "reason",
+                "created_at",
+                "approved_at",
+            },
+            "baseline_candidate_entries": {"feed_id", "entry_id"},
+            "baseline_states": {"feed_id", "fingerprint", "complete", "approved_at"},
+            "baselined_entries": {"feed_id", "entry_id"},
+            "price_normal_delivery_cursors": {
+                "feed_id",
+                "last_product_id",
+                "updated_at",
+            },
+            "price_product_holds": {
+                "feed_id",
+                "product_id",
+                "reconciliation_fingerprint",
+                "reason",
+                "created_at",
+                "kind",
+            },
+            "price_change_batches": {"batch_id", "feed_id", "provider", "status"},
+            "price_change_batch_items": {"batch_id", "product_id", "claim_open"},
+            "price_reconciliations": {"feed_id", "reconciliation_fingerprint"},
+            "price_hold_releases": {"feed_id", "product_id"},
+        }
+        existing_tables = {
+            self._required_text(row[0])
+            for row in self._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            )
+        }
+        for table, required in required_columns.items():
+            if table not in existing_tables:
+                raise ValueError("unsupported recovery preflight schema")
+            columns = {
+                self._required_text(row[1])
+                for row in self._connection.execute(f'PRAGMA table_info("{table}")')
+            }
+            if not required <= columns:
+                raise ValueError("unsupported recovery preflight schema")
+
+    def _count_feed_rows(self, table: str, feed_id: str) -> int:
+        query = {
+            "delivered_entries": "SELECT COUNT(*) FROM delivered_entries WHERE feed_id = ?",
+            "price_snapshots": "SELECT COUNT(*) FROM price_snapshots WHERE feed_id = ?",
+            "baseline_candidate_entries": "SELECT COUNT(*) FROM baseline_candidate_entries WHERE feed_id = ?",
+            "baselined_entries": "SELECT COUNT(*) FROM baselined_entries WHERE feed_id = ?",
+            "price_product_holds": "SELECT COUNT(*) FROM price_product_holds WHERE feed_id = ?",
+        }.get(table)
+        if query is None:
+            raise ValueError("unsupported recovery preflight count")
+        return self._count_rows(query, feed_id)
+
+    def _count_rows(self, query: str, feed_id: str) -> int:
+        row = self._connection.execute(query, (feed_id,)).fetchone()
+        if row is None:
+            raise ValueError("unsupported recovery preflight schema")
+        return self._required_integer(row[0])
+
+    @staticmethod
+    def _required_text(value: object) -> str:
+        if type(value) is not str:
+            raise ValueError("unsupported recovery preflight state value")
+        return value
+
+    @staticmethod
+    def _required_integer(value: object) -> int:
+        if type(value) is not int:
+            raise ValueError("unsupported recovery preflight state value")
+        return value
+
+    @classmethod
+    def _required_hold_kind(
+        cls,
+        value: object,
+    ) -> Literal["review", "availability"]:
+        kind = cls._required_text(value)
+        if kind not in {"review", "availability"}:
+            raise ValueError("unsupported recovery preflight hold kind")
+        return kind  # type: ignore[return-value]
 
     def price_holds_digest(self, feed_id: str, *, version: int = 1) -> str:
         holds = self.list_price_product_holds(feed_id)
