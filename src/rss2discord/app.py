@@ -24,6 +24,7 @@ from .providers.cccenter.strategy import CCCenterStrategy
 from .providers.ddstore.strategy import DDStoreStrategy
 from .providers.gjirafa50.strategy import Gjirafa50Strategy
 from .providers.hivetec.strategy import HivetecStrategy
+from .providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
 from .providers.setec.strategy import SetecStrategy
@@ -45,7 +46,6 @@ from .scheduler import (
 )
 from .transports import (
     FeedFetchError,
-    ITMkOglasnikStrategy,
     Pazar3Strategy,
     Reklama5Strategy,
     RSSStrategy,

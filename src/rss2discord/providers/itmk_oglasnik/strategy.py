@@ -9,11 +9,11 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup, Tag
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.transports.base import FeedFetchError, ScraperStrategy
-from rss2discord.transports.itmk_oglasnik_http import (
+from rss2discord.providers.itmk_oglasnik.http import (
     ITMK_OGLASNIK_LABEL,
     fetch_itmk_oglasnik_page,
 )
+from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 LISTING_PATH_PATTERN: Final = re.compile(
     r"/oglasnik/[^/?#]*\.(?P<listing_id>\d+)/?$",

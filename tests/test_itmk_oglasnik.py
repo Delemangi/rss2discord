@@ -8,7 +8,8 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.components import build_components_v2_payload
 from rss2discord.models import SourceMetric
-from rss2discord.transports import FeedFetchError, ITMkOglasnikStrategy
+from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
+from rss2discord.transports import FeedFetchError
 from tests.app_helpers import FakeSender
 from tests.itmk_oglasnik_fixtures import (
     COMPLETE_CARD,
