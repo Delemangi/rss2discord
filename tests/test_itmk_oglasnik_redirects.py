@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import pytest
 import requests
 
+from rss2discord.providers.itmk_oglasnik.http import fetch_itmk_oglasnik_page
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.itmk_oglasnik_http import fetch_itmk_oglasnik_page
 
 START_URL = "https://forum.it.mk/redirect-start"
 FINAL_URL = "https://forum.it.mk/redirect-final"
