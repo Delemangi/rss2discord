@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, DecimalException
 from typing import ClassVar, Literal, Self
 from urllib.parse import urlsplit
@@ -11,12 +13,48 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.recovery_models import PriceSnapshot
+from rss2discord.recovery_models import BaselineCandidateSummary, PriceSnapshot
 
 MAX_RECONCILIATION_ITEMS = 70_000
 MAX_PLAN_BYTES = 100_000_000
 MAX_PLAN_AGE_SECONDS = 86_400
 MAX_OPERATION_SECONDS = 300.0
+MAX_RECOVERY_PRICE_IDS = 50_000
+MAX_RECOVERY_REVIEW_ITEMS = 70_000
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryHold:
+    product_id: str
+    reconciliation_fingerprint: str
+    reason: str
+    created_at: int
+    kind: Literal["review", "availability"]
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryPreflightState:
+    """Diagnostic projection, not an application seal, fence, or writer-ownership guarantee."""
+
+    feed_id: str
+    snapshots: tuple[PriceSnapshot, ...]
+    delivered_ids: tuple[str, ...]
+    baselined_ids: tuple[str, ...]
+    initialized_at: int | None
+    baseline_candidate: BaselineCandidateSummary | None
+    baseline_state: tuple[str, bool, int] | None
+    normal_cursor: tuple[str, int] | None
+    holds: tuple[RecoveryHold, ...]
+    batch_counts: tuple[int, int, int, int, int]
+    foreign_provider_batch_count: int
+    open_claim_count: int
+    reconciliation_count: int
+    hold_release_count: int
+    snapshots_digest: str
+    history_digest: str
+    baseline_digest: str
+    holds_digest: str
+    state_digest: str
 
 
 def canonical_json(value: object) -> str:
@@ -80,6 +118,45 @@ class ReconciliationItem(ArtifactModel):
     already_held: bool
     disposition: Literal["review", "accept", "hold", "noop", "defer"]
     reason: str = Field(default="", max_length=2048)
+
+
+class NeksioRecoveryProposalItem(ArtifactModel):
+    product_id: str = Field(min_length=1, max_length=19)
+    previous: ReconciliationSnapshot | None
+    target: ReconciliationSnapshot | None
+    context: str | None = Field(max_length=100_000)
+    price_status: Literal["unchanged", "review", "existing_hold", "history_only"]
+    discovery_status: Literal[
+        "already_handled",
+        "review_existing_unseen",
+        "not_observed",
+    ]
+
+
+class NeksioRecoveryProposal(ArtifactModel):
+    kind: Literal["neksio-recovery-proposal"] = "neksio-recovery-proposal"
+    version: Literal[1] = 1
+    applicable: Literal[False] = False
+    provider: Literal["neksio"] = "neksio"
+    feed_id: str = Field(min_length=1, max_length=256)
+    source_url: str = Field(min_length=1, max_length=2048)
+    parser_contract: Literal["neksio-main-ge-minus-one-v1"] = (
+        "neksio-main-ge-minus-one-v1"
+    )
+    parser_base_revision: Literal["c6ca98f834857dfcef413ad765d307328c457fae"] = (
+        "c6ca98f834857dfcef413ad765d307328c457fae"
+    )
+    started_at: datetime
+    finished_at: datetime
+    state_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    capture_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    catalog_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    catalog_count: int = Field(ge=0, le=10_000)
+    limitations: tuple[str, ...]
+    items: tuple[NeksioRecoveryProposalItem, ...] = Field(
+        max_length=MAX_RECOVERY_REVIEW_ITEMS,
+    )
+    proposal_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class ReconciliationPlan(ArtifactModel):
