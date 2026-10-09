@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from argparse import Namespace
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -10,22 +12,28 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from rss2discord import admin
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.providers.neksio import client as neksio_client
 from rss2discord.providers.neksio.catalog import NeksioCatalogClient
 from rss2discord.providers.neksio.client import NEKSIO_ORIGIN
+from rss2discord.providers.neksio.models import NeksioProductCard
 from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.reconciliation import (
     CapturedCatalogPage,
     NeksioCatalogCapture,
+    _capture_digest,
+    _offline_page_for_validation,
     build_recovery_proposal,
 )
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.reconciliation_models import (
+    NeksioRecoveryProposal,
     ReconciliationPlan,
     RecoveryHold,
     RecoveryPreflightState,
+    digest,
 )
 from rss2discord.recovery_models import BaselineCandidateSummary, PriceSnapshot
 from tests.neksio_helpers import (
@@ -61,6 +69,19 @@ def _seed_store(path: Path, *, delivered: tuple[str, ...] = ()) -> None:
 def _state(path: Path) -> RecoveryPreflightState:
     with DeliveryStore(path, read_only=True) as store:
         return store.read_recovery_preflight_state(FEED_ID)
+
+
+def _as_v1_proposal(proposal: NeksioRecoveryProposal) -> NeksioRecoveryProposal:
+    values = proposal.model_dump(mode="json")
+    values.update(
+        version=1,
+        parser_contract="neksio-main-ge-minus-one-v1",
+        parser_base_revision="c6ca98f834857dfcef413ad765d307328c457fae",
+    )
+    values["proposal_digest"] = digest(
+        {key: value for key, value in values.items() if key != "proposal_digest"},
+    )
+    return NeksioRecoveryProposal.model_validate(values)
 
 
 def _page(
@@ -527,15 +548,20 @@ def test_existing_hold_has_precedence_and_does_not_mark_discovery_handled(
         _state(database),
         holds=(RecoveryHold("1", "a" * 64, "review", 3, "availability"),),
     )
+    card = product_card(1)
+    card["quantity"] = -2
     proposal = build_recovery_proposal(
         state,
-        _single_capture((product_card(1),)),
+        _single_capture((card,)),
     )
     item = proposal.items[0]
 
     assert item.price_status == "existing_hold"
     assert item.discovery_status == "already_handled"
     assert "availability_holds" in proposal.limitations
+    context = json.loads(item.context or "{}")
+    assert context["stock_quantity"] == 0
+    assert context["raw_stock_quantity"] == -2
 
 
 def test_pending_price_snapshot_missing_from_catalog_is_reviewed(
@@ -558,24 +584,105 @@ def test_pending_price_snapshot_missing_from_catalog_is_reviewed(
     assert missing.discovery_status == "not_observed"
 
 
-def test_minus_one_stock_is_preserved_as_raw_evidence_and_minus_two_rejected(
+@pytest.mark.parametrize("raw_quantity", [-3, -2, -1, 0, 7])
+def test_offline_stock_projection_preserves_raw_quantity_and_classification(
+    tmp_path: Path,
+    raw_quantity: int,
+) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database, delivered=("1",))
+    card = product_card(1)
+    card["quantity"] = raw_quantity
+    proposal = build_recovery_proposal(_state(database), _single_capture((card,)))
+    item = proposal.items[0]
+    context = json.loads(item.context or "{}")
+    assert context["stock_quantity"] == max(raw_quantity, 0)
+    assert context["raw_stock_quantity"] == raw_quantity
+    assert item.price_status == "unchanged"
+    assert item.discovery_status == "already_handled"
+    assert item.target is not None
+    assert item.target.amount == "1200"
+
+    if raw_quantity < -1:
+        with pytest.raises(ValidationError):
+            NeksioProductCard.model_validate(card)
+
+
+def test_negative_stock_values_remain_distinct_in_context_and_catalog_digest(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database)
+    proposals = []
+    for quantity in (-2, -3):
+        card = product_card(1)
+        card["quantity"] = quantity
+        proposals.append(
+            build_recovery_proposal(_state(database), _single_capture((card,))),
+        )
+
+    first_context = json.loads(proposals[0].items[0].context or "{}")
+    second_context = json.loads(proposals[1].items[0].context or "{}")
+    assert first_context["stock_quantity"] == second_context["stock_quantity"] == 0
+    assert first_context["raw_stock_quantity"] == -2
+    assert second_context["raw_stock_quantity"] == -3
+    assert proposals[0].catalog_digest != proposals[1].catalog_digest
+    assert (
+        first_context["source_context_digest"]
+        != second_context["source_context_digest"]
+    )
+
+
+def test_cross_category_negative_quantities_do_not_collapse_after_normalization(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database)
+    first = product_card(1)
+    first["quantity"] = -2
+    second = product_card(1)
+    second["quantity"] = -3
+    capture = _capture(
+        (_page(1, (first,)), _page(2, (second,))),
+        categories=(1, 2),
+    )
+
+    with pytest.raises(ValueError, match="conflicting cross-category"):
+        build_recovery_proposal(_state(database), capture)
+
+
+def test_offline_stock_adapter_does_not_mutate_raw_json_or_capture_bytes(
     tmp_path: Path,
 ) -> None:
     database = tmp_path / "state.db"
     _seed_store(database)
     card = product_card(1)
-    card["quantity"] = -1
-    item = build_recovery_proposal(
-        _state(database),
-        _single_capture((card,)),
-    ).items[0]
-    context = json.loads(item.context or "{}")
-    assert context["stock_quantity"] == 0
-    assert context["raw_stock_quantity"] == -1
-
     card["quantity"] = -2
-    with pytest.raises(ValueError, match="below the source contract"):
-        build_recovery_proposal(_state(database), _single_capture((card,)))
+    response_body = page_payload(1, 1, 1, 1, (card,))
+    raw_page = json.loads(response_body)
+    before = deepcopy(raw_page)
+    adapted_page = _offline_page_for_validation(raw_page)
+
+    assert raw_page == before
+    assert adapted_page is not raw_page
+    raw_cards = raw_page["productCards"]
+    adapted_cards = adapted_page["productCards"]
+    assert isinstance(raw_cards, list)
+    assert isinstance(adapted_cards, list)
+    assert adapted_cards is not raw_cards
+    raw_card = raw_cards[0]
+    adapted_card = adapted_cards[0]
+    assert isinstance(raw_card, dict)
+    assert isinstance(adapted_card, dict)
+    assert adapted_card is not raw_card
+    assert raw_card["quantity"] == -2
+    assert adapted_card["quantity"] == 0
+
+    capture = _single_capture((card,), response_body=response_body)
+    capture_digest_before = _capture_digest(capture)
+    proposal = build_recovery_proposal(_state(database), capture)
+    assert capture.pages[0].response_body == response_body
+    assert proposal.capture_digest == capture_digest_before
 
 
 @pytest.mark.parametrize(
@@ -587,6 +694,7 @@ def test_minus_one_stock_is_preserved_as_raw_evidence_and_minus_two_rejected(
         ("quantity", True),
         ("quantity", "7"),
         ("quantity", 7.5),
+        ("quantity", None),
     ],
 )
 def test_capture_rejects_coerced_json_ids_and_quantities(
@@ -625,6 +733,22 @@ def test_capture_rejects_duplicate_keys_and_nonfinite_json_numbers(
             _single_capture(
                 (product_card(1),),
                 response_body=page_payload(1, 1, 1, 1, (json.loads(nonfinite_card),)),
+            ),
+        )
+
+
+def test_capture_rejects_missing_stock_quantity(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database)
+    page = json.loads(page_payload(1, 1, 1, 1, (product_card(1),)))
+    del page["productCards"][0]["quantity"]
+
+    with pytest.raises(ValueError, match="JSON integers"):
+        build_recovery_proposal(
+            _state(database),
+            _single_capture(
+                (product_card(1),),
+                response_body=json.dumps(page).encode(),
             ),
         )
 
@@ -799,7 +923,91 @@ def test_proposal_cannot_be_parsed_as_an_applicable_reconciliation_plan(
     monkeypatch.setattr(NeksioStrategy, "fetch_entries", no_provider_execution)
     monkeypatch.setattr(NeksioPriceMonitor, "scan", no_provider_execution)
     monkeypatch.setattr(DiscordWebhookClient, "send", no_provider_execution)
+    monkeypatch.setattr(sqlite3, "connect", no_provider_execution)
     proposal = build_recovery_proposal(state, _single_capture((product_card(1),)))
     assert not proposal.applicable
+    assert proposal.version == 2
+    assert proposal.parser_contract == "neksio-negative-integer-stock-v1"
+    assert proposal.parser_base_revision == "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515"
     with pytest.raises(ValidationError):
         ReconciliationPlan.model_validate_json(proposal.model_dump_json())
+
+
+def test_v1_artifacts_remain_parseable_and_parser_triples_are_exact(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database)
+    proposal = build_recovery_proposal(
+        _state(database),
+        _single_capture((product_card(1),)),
+    )
+    legacy = _as_v1_proposal(proposal)
+    restored = NeksioRecoveryProposal.model_validate_json(legacy.model_dump_json())
+    assert restored == legacy
+    assert restored.version == 1
+    assert restored.parser_contract == "neksio-main-ge-minus-one-v1"
+    assert restored.parser_base_revision == "c6ca98f834857dfcef413ad765d307328c457fae"
+
+    legacy_defaults = legacy.model_dump(mode="json")
+    for field in ("version", "parser_contract", "parser_base_revision"):
+        legacy_defaults.pop(field)
+    defaulted = NeksioRecoveryProposal.model_validate(legacy_defaults)
+    assert defaulted.version == 1
+    assert defaulted.parser_contract == "neksio-main-ge-minus-one-v1"
+    assert defaulted.parser_base_revision == "c6ca98f834857dfcef413ad765d307328c457fae"
+
+    v1_contract = "neksio-main-ge-minus-one-v1"
+    v1_revision = "c6ca98f834857dfcef413ad765d307328c457fae"
+    v2_contract = "neksio-negative-integer-stock-v1"
+    v2_revision = "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515"
+    valid_triples = {(1, v1_contract, v1_revision), (2, v2_contract, v2_revision)}
+    for version in (1, 2):
+        for parser_contract in (v1_contract, v2_contract):
+            for parser_revision in (v1_revision, v2_revision):
+                candidate = proposal.model_dump(mode="json")
+                candidate.update(
+                    version=version,
+                    parser_contract=parser_contract,
+                    parser_base_revision=parser_revision,
+                )
+                triple = (version, parser_contract, parser_revision)
+                if triple in valid_triples:
+                    NeksioRecoveryProposal.model_validate(candidate)
+                else:
+                    with pytest.raises(ValidationError):
+                        NeksioRecoveryProposal.model_validate(candidate)
+
+
+def test_v1_and_v2_proposals_are_rejected_by_admin_parser_before_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "state.db"
+    _seed_store(database)
+    proposal = build_recovery_proposal(
+        _state(database),
+        _single_capture((product_card(1),)),
+    )
+    proposals = (proposal, _as_v1_proposal(proposal))
+
+    def unexpected_write(_path: Path, _plan: ReconciliationPlan) -> None:
+        raise AssertionError("admin wrote an inapplicable offline proposal")
+
+    monkeypatch.setattr(admin, "_write_plan", unexpected_write)
+    for index, candidate in enumerate(proposals):
+        plan_path = tmp_path / f"proposal-v{candidate.version}-{index}.json"
+        output_path = tmp_path / f"reviewed-{candidate.version}-{index}.json"
+        plan_path.write_text(candidate.model_dump_json(), encoding="utf-8")
+        assert candidate.applicable is False
+        with pytest.raises(ValidationError):
+            ReconciliationPlan.model_validate_json(plan_path.read_bytes())
+        result = admin._reconciliation_command(
+            Namespace(
+                reconciliation_command="review",
+                plan=plan_path,
+                output=output_path,
+            ),
+        )
+        assert result == 2
+        assert not output_path.exists()

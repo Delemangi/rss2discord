@@ -135,17 +135,19 @@ class NeksioRecoveryProposalItem(ArtifactModel):
 
 class NeksioRecoveryProposal(ArtifactModel):
     kind: Literal["neksio-recovery-proposal"] = "neksio-recovery-proposal"
-    version: Literal[1] = 1
+    version: Literal[1, 2] = 1
     applicable: Literal[False] = False
     provider: Literal["neksio"] = "neksio"
     feed_id: str = Field(min_length=1, max_length=256)
     source_url: str = Field(min_length=1, max_length=2048)
-    parser_contract: Literal["neksio-main-ge-minus-one-v1"] = (
-        "neksio-main-ge-minus-one-v1"
-    )
-    parser_base_revision: Literal["c6ca98f834857dfcef413ad765d307328c457fae"] = (
-        "c6ca98f834857dfcef413ad765d307328c457fae"
-    )
+    parser_contract: Literal[
+        "neksio-main-ge-minus-one-v1",
+        "neksio-negative-integer-stock-v1",
+    ] = "neksio-main-ge-minus-one-v1"
+    parser_base_revision: Literal[
+        "c6ca98f834857dfcef413ad765d307328c457fae",
+        "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515",
+    ] = "c6ca98f834857dfcef413ad765d307328c457fae"
     started_at: datetime
     finished_at: datetime
     state_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -157,6 +159,25 @@ class NeksioRecoveryProposal(ArtifactModel):
         max_length=MAX_RECOVERY_REVIEW_ITEMS,
     )
     proposal_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def require_matching_parser_contract(self) -> Self:
+        parser_contracts = {
+            1: (
+                "neksio-main-ge-minus-one-v1",
+                "c6ca98f834857dfcef413ad765d307328c457fae",
+            ),
+            2: (
+                "neksio-negative-integer-stock-v1",
+                "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515",
+            ),
+        }
+        if parser_contracts[self.version] != (
+            self.parser_contract,
+            self.parser_base_revision,
+        ):
+            raise ValueError("proposal version and parser contract do not match")
+        return self
 
 
 class ReconciliationPlan(ArtifactModel):

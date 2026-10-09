@@ -49,8 +49,12 @@ from rss2discord.reconciliation_models import (
 from rss2discord.recovery_models import PriceSnapshot
 
 _PRODUCT_ID_PATTERN = re.compile(r"[1-9][0-9]{0,18}\Z", re.ASCII)
-_PARSER_CONTRACT = "neksio-main-ge-minus-one-v1"
-_PARSER_BASE_REVISION = "c6ca98f834857dfcef413ad765d307328c457fae"
+_PARSER_CONTRACT: Literal["neksio-negative-integer-stock-v1"] = (
+    "neksio-negative-integer-stock-v1"
+)
+_PARSER_BASE_REVISION: Literal["ca5b85e9a3aeaf11ecd8d896eeba95c57e181515"] = (
+    "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515"
+)
 _BATCH_STATUSES = ("candidate", "approved", "paused", "completed", "revoked")
 type JsonValue = (
     bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
@@ -150,6 +154,9 @@ def build_recovery_proposal(
     capture_digest = _capture_digest(capture)
     catalog_digest = _catalog_digest(products, raw_quantities, memberships)
     proposal = NeksioRecoveryProposal(
+        version=2,
+        parser_contract=_PARSER_CONTRACT,
+        parser_base_revision=_PARSER_BASE_REVISION,
         feed_id=capture.feed_id,
         source_url=capture.source_url,
         started_at=capture.started_at,
@@ -303,11 +310,35 @@ def _captured_page(
     raw = raw_value
     _require_raw_page_types(raw)
     try:
-        page = NeksioCatalogPage.model_validate(raw)
+        page = NeksioCatalogPage.model_validate(
+            _offline_page_for_validation(raw),
+        )
         _validate_page(page, category_id, page_number)
     except (ValidationError, FeedFetchError) as error:
         raise ValueError("invalid captured Neksio catalog page") from error
     return page, raw
+
+
+def _offline_page_for_validation(
+    raw_page: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """Copy a captured page and clamp only stock for the current offline model."""
+    page = raw_page.copy()
+    raw_cards = raw_page.get("productCards")
+    if not isinstance(raw_cards, list):
+        raise TypeError("captured Neksio products must be a JSON array")
+    normalized_cards: list[JsonValue] = []
+    for raw_card in raw_cards:
+        if not isinstance(raw_card, dict):
+            raise TypeError("captured Neksio product must be a JSON object")
+        card = raw_card.copy()
+        quantity = card.get("quantity")
+        if type(quantity) is not int:
+            raise ValueError("captured Neksio quantity must be a JSON integer")
+        card["quantity"] = max(quantity, 0)
+        normalized_cards.append(card)
+    page["productCards"] = normalized_cards
+    return page
 
 
 def _strict_json(body: bytes) -> JsonValue:
@@ -392,8 +423,6 @@ def _require_raw_page_types(raw: JsonValue) -> None:
             raise ValueError("captured Neksio IDs and quantities must be JSON integers")
         if not 1 <= product_id <= MAX_SQLITE_SIGNED_INTEGER:
             raise ValueError("captured Neksio product ID is out of range")
-        if quantity < -1:
-            raise ValueError("captured Neksio quantity is below the source contract")
         amount = card.get("priceWTax")
         if type(amount) not in (int, float) or (
             isinstance(amount, float) and not math.isfinite(amount)
