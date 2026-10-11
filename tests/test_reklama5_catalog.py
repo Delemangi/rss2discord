@@ -4,9 +4,11 @@ from datetime import datetime
 
 import pytest
 
+from rss2discord.providers.reklama5 import catalog as reklama5_catalog
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.catalog import Reklama5CatalogClient
 from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports import FeedFetchError, reklama5_catalog, reklama5_http
-from rss2discord.transports.reklama5_catalog import Reklama5CatalogClient
+from rss2discord.transports import FeedFetchError
 from tests.reklama5_helpers import (
     FIXED_NOW,
     SEARCH_URL,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urljoin
@@ -10,36 +10,28 @@ from urllib.parse import urljoin
 from curl_cffi import CurlECode, requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
+from rss2discord.discord.client import SleepCallback
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3PageRequest
+from rss2discord.providers.pazar3.session import (
+    Pazar3HttpResponse,
+    Pazar3HttpSession,
+    create_pazar3_session,
+)
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.reklama5_scope import (
-    REKLAMA5_LABEL,
-    Reklama5PageRequest,
-)
-from rss2discord.transports.reklama5_scope import (
-    Reklama5SearchScope as _Reklama5SearchScope,
-)
-from rss2discord.transports.reklama5_session import (
-    Reklama5HttpResponse,
-    Reklama5HttpSession,
-    create_reklama5_session,
-)
 
-Reklama5SearchScope = _Reklama5SearchScope
-
-REKLAMA5_USER_AGENT: Final = (
-    "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
-)
-MAX_REKLAMA5_RESPONSE_BYTES: Final = 2_097_152
-MAX_REKLAMA5_ATTEMPT_BYTES: Final = 6_291_456
-MAX_REKLAMA5_REDIRECTS: Final = 10
-MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
-MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES: Final = 500 * 1024 * 1024
-MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS: Final = 300.0
+MAX_PAZAR3_RESPONSE_BYTES: Final = 2_097_152
+MAX_PAZAR3_ATTEMPT_BYTES: Final = 6_291_456
+MAX_PAZAR3_REDIRECTS: Final = 10
+MAX_PAZAR3_ATTEMPT_SECONDS: Final = 120.0
+MAX_PAZAR3_CATALOG_ATTEMPT_BYTES: Final = 20 * 1024 * 1024
+MAX_PAZAR3_CATALOG_ATTEMPT_SECONDS: Final = 300.0
+PAZAR3_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
 
 
 @dataclass(slots=True)  # noqa: RUF100  # noqa: MUTABLE_OK
-class Reklama5ScanBudget:
+class Pazar3ScanBudget:
     """Track mutable byte, redirect, and deadline limits for one fetch attempt."""
 
     bytes_remaining: int
@@ -47,52 +39,52 @@ class Reklama5ScanBudget:
     expires_at: float
 
     @classmethod
-    def for_attempt(cls) -> Reklama5ScanBudget:
+    def for_attempt(cls) -> Pazar3ScanBudget:
         return cls(
-            bytes_remaining=MAX_REKLAMA5_ATTEMPT_BYTES,
-            redirects_remaining=MAX_REKLAMA5_REDIRECTS,
-            expires_at=time.monotonic() + MAX_REKLAMA5_ATTEMPT_SECONDS,
+            MAX_PAZAR3_ATTEMPT_BYTES,
+            MAX_PAZAR3_REDIRECTS,
+            time.monotonic() + MAX_PAZAR3_ATTEMPT_SECONDS,
         )
 
     @classmethod
-    def for_catalog(cls) -> Reklama5ScanBudget:
+    def for_catalog(cls) -> Pazar3ScanBudget:
         return cls(
-            bytes_remaining=MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES,
-            redirects_remaining=MAX_REKLAMA5_REDIRECTS,
-            expires_at=time.monotonic() + MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS,
+            MAX_PAZAR3_CATALOG_ATTEMPT_BYTES,
+            MAX_PAZAR3_REDIRECTS,
+            time.monotonic() + MAX_PAZAR3_CATALOG_ATTEMPT_SECONDS,
         )
 
     def request_timeout(self) -> float:
         remaining_seconds = self.expires_at - time.monotonic()
         if remaining_seconds <= 0:
-            raise FeedFetchError(REKLAMA5_LABEL, "ScanTimeLimitExceeded")
+            raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded")
         return min(30.0, remaining_seconds)
 
     def consume_redirect(self) -> None:
         if self.redirects_remaining <= 0:
-            raise FeedFetchError(REKLAMA5_LABEL, "TooManyRedirects")
+            raise FeedFetchError(PAZAR3_LABEL, "TooManyRedirects")
         self.redirects_remaining -= 1
 
     def consume_bytes(self, size: int) -> None:
         if time.monotonic() >= self.expires_at:
-            raise FeedFetchError(REKLAMA5_LABEL, "ScanTimeLimitExceeded")
+            raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded")
         if size > self.bytes_remaining:
-            raise FeedFetchError(REKLAMA5_LABEL, "ScanByteLimitExceeded")
+            raise FeedFetchError(PAZAR3_LABEL, "ScanByteLimitExceeded")
         self.bytes_remaining -= size
 
 
 class _BoundedContent:
-    """Accumulate one response while recording the exact local abort cause."""
+    """Accumulate one response while retaining its exact local abort cause."""
 
-    def __init__(self, budget: Reklama5ScanBudget) -> None:
+    def __init__(self, budget: Pazar3ScanBudget) -> None:
         self.content = bytearray()
         self.budget = budget
         self.abort_error: FeedFetchError | None = None
 
     def write(self, chunk: bytes) -> int:
         try:
-            if len(self.content) + len(chunk) > MAX_REKLAMA5_RESPONSE_BYTES:
-                self.abort_error = FeedFetchError(REKLAMA5_LABEL, "ResponseTooLarge")
+            if len(self.content) + len(chunk) > MAX_PAZAR3_RESPONSE_BYTES:
+                self.abort_error = FeedFetchError(PAZAR3_LABEL, "ResponseTooLarge")
                 return CURL_WRITEFUNC_ERROR
             self.budget.consume_bytes(len(chunk))
         except FeedFetchError as error:
@@ -102,33 +94,36 @@ class _BoundedContent:
         return len(chunk)
 
 
-def _create_session() -> Reklama5HttpSession:
-    return create_reklama5_session()
+def _create_session() -> Pazar3HttpSession:
+    return create_pazar3_session()
 
 
-def fetch_reklama5_page(
-    request: Reklama5PageRequest,
-    budget: Reklama5ScanBudget,
+def fetch_pazar3_page(
+    request: Pazar3PageRequest,
+    budget: Pazar3ScanBudget,
+    pacer: Pazar3RequestPacer,
+    sleep: SleepCallback,
+    is_shutdown_requested: Callable[[], bool],
 ) -> bytes:
-    """Fetch one trusted search page within a caller-owned attempt budget."""
     session = _create_session()
     try:
         current_url = request.url
         while True:
+            pacer.wait(sleep, is_shutdown_requested, budget.expires_at)
             response, content = _get_response(session, current_url, budget)
             if _is_cf_challenge(response):
                 raise FeedFetchError(
-                    REKLAMA5_LABEL,
-                    "BotChallenge",
+                    PAZAR3_LABEL,
+                    "AccessChallenge",
                     status_code=response.status_code,
                 )
             if 300 <= response.status_code < 400:
                 location = _header(response.headers, "location")
                 if location is None or "#" in location:
-                    raise _invalid_redirect()
+                    raise FeedFetchError(PAZAR3_LABEL, "InvalidRedirect")
                 target_url = urljoin(response.url, location)
                 if not request.scope.accepts_redirect(request, target_url):
-                    raise _invalid_redirect()
+                    raise FeedFetchError(PAZAR3_LABEL, "InvalidRedirect")
                 budget.consume_redirect()
                 current_url = target_url
                 continue
@@ -140,18 +135,15 @@ def fetch_reklama5_page(
 
 
 def _get_response(
-    session: Reklama5HttpSession,
+    session: Pazar3HttpSession,
     url: str,
-    budget: Reklama5ScanBudget,
-) -> tuple[Reklama5HttpResponse, bytes]:
+    budget: Pazar3ScanBudget,
+) -> tuple[Pazar3HttpResponse, bytes]:
     content = _BoundedContent(budget)
     try:
         response = session.get(
             url,
-            headers={
-                "Accept": "text/html",
-                "User-Agent": REKLAMA5_USER_AGENT,
-            },
+            headers={"Accept": "text/html", "User-Agent": PAZAR3_USER_AGENT},
             allow_redirects=False,
             content_callback=content.write,
             timeout_ms=max(1, math.ceil(budget.request_timeout() * 1000)),
@@ -167,18 +159,16 @@ def _get_response(
         if content.abort_error is not None:
             raise content.abort_error from None
         if time.monotonic() >= budget.expires_at:
-            raise FeedFetchError(REKLAMA5_LABEL, "ScanTimeLimitExceeded") from None
+            raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded") from None
         raise _transport_error(error) from None
 
 
-def _transport_error(
-    error: requests.RequestsError,
-) -> FeedFetchError:
+def _transport_error(error: requests.RequestsError) -> FeedFetchError:
     cause_type = (
         "InvalidURL" if error.code == CurlECode.URL_MALFORMAT else type(error).__name__
     )
     return FeedFetchError(
-        REKLAMA5_LABEL,
+        PAZAR3_LABEL,
         cause_type,
         retryable=error.code
         in {
@@ -198,25 +188,22 @@ def _transport_error(
     )
 
 
-def _validate_declared_content_length(response: Reklama5HttpResponse) -> None:
+def _validate_declared_content_length(response: Pazar3HttpResponse) -> None:
     content_length = _header(response.headers, "content-length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > MAX_REKLAMA5_RESPONSE_BYTES:
-            raise FeedFetchError(REKLAMA5_LABEL, "ResponseTooLarge")
+    if content_length is None:
+        return
+    try:
+        declared_bytes = int(content_length)
+    except ValueError:
+        declared_bytes = 0
+    if declared_bytes > MAX_PAZAR3_RESPONSE_BYTES:
+        raise FeedFetchError(PAZAR3_LABEL, "ResponseTooLarge")
 
 
-def _invalid_redirect() -> FeedFetchError:
-    return FeedFetchError(REKLAMA5_LABEL, "InvalidRedirect")
-
-
-def _http_error(response: Reklama5HttpResponse) -> FeedFetchError:
+def _http_error(response: Pazar3HttpResponse) -> FeedFetchError:
     status_code = response.status_code
     return FeedFetchError(
-        REKLAMA5_LABEL,
+        PAZAR3_LABEL,
         "HTTPError",
         status_code=status_code,
         retryable=status_code in {408, 429} or 500 <= status_code < 600,
@@ -224,7 +211,7 @@ def _http_error(response: Reklama5HttpResponse) -> FeedFetchError:
     )
 
 
-def _is_cf_challenge(response: Reklama5HttpResponse) -> bool:
+def _is_cf_challenge(response: Pazar3HttpResponse) -> bool:
     value = _header(response.headers, "cf-mitigated")
     return value is not None and value.strip().casefold() == "challenge"
 

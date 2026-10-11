@@ -3,9 +3,9 @@ from datetime import datetime
 import pytest
 
 from rss2discord.models import EntryId
+from rss2discord.providers.pazar3.models import Pazar3Listing
+from rss2discord.providers.pazar3.parser import parse_pazar3_page
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.pazar3_models import Pazar3Listing
-from rss2discord.transports.pazar3_parser import parse_pazar3_page
 from tests.pazar3_helpers import (
     FIXED_NOW,
     SEARCH_URL,

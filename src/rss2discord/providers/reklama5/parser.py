@@ -10,12 +10,12 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup, Tag
 
 from rss2discord.models import EntryId
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.reklama5_page_validation import (
+from rss2discord.providers.reklama5.page_validation import (
     normalized_text,
     validate_reklama5_page,
 )
-from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL, Reklama5PageRequest
+from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL, Reklama5PageRequest
+from rss2discord.transports.base import FeedFetchError
 
 SKOPJE: Final = ZoneInfo("Europe/Skopje")
 

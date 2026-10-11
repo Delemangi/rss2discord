@@ -5,7 +5,7 @@ import certifi
 import pytest
 from curl_cffi import CurlOpt
 
-from rss2discord.transports import pazar3_session
+from rss2discord.providers.pazar3 import session as pazar3_session
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,7 +1,8 @@
 import pytest
 
-from rss2discord.transports import FeedFetchError, pazar3_http
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3 import http as pazar3_http
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.transports import FeedFetchError
 from tests.pazar3_helpers import RecordingGet, StubResponse, page_request, scan_budget
 
 

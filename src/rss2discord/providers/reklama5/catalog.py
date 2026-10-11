@@ -5,21 +5,21 @@ from datetime import UTC, datetime
 from typing import Final
 
 from rss2discord.models import EntryId
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
     fetch_reklama5_page,
 )
-from rss2discord.transports.reklama5_parser import (
+from rss2discord.providers.reklama5.parser import (
     Reklama5Listing,
     parse_reklama5_page,
 )
-from rss2discord.transports.reklama5_scope import (
+from rss2discord.providers.reklama5.scope import (
     MAX_REKLAMA5_CATALOG_PAGES,
     REKLAMA5_LABEL,
     Reklama5SearchScope,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 MAX_REKLAMA5_CATALOG_LISTINGS: Final = 10_000
 type Reklama5CatalogClock = Callable[[], datetime]

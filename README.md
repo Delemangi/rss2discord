@@ -46,7 +46,7 @@ feeds:
 
 ## Code boundaries
 
-Price-monitor builders compose provider-specific monitors and their dependencies; provider modules own source behavior and transports own source-specific request mechanics. The price runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
+Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics. Price-monitor builders compose provider monitors and dependencies, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
 
 ## Inspecting and recovering state
 

@@ -27,6 +27,9 @@ from .providers.hivetec.strategy import HivetecStrategy
 from .providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from .providers.neksio.strategy import NeksioStrategy
 from .providers.neptun.strategy import NeptunStrategy
+from .providers.pazar3.pacing import Pazar3RequestPacer
+from .providers.pazar3.strategy import Pazar3Strategy
+from .providers.reklama5.strategy import Reklama5Strategy
 from .providers.setec.strategy import SetecStrategy
 from .providers.technomarket.strategy import TechnomarketStrategy
 from .recovery_models import HealthUpdate
@@ -46,13 +49,10 @@ from .scheduler import (
 )
 from .transports import (
     FeedFetchError,
-    Pazar3Strategy,
-    Reklama5Strategy,
     RSSStrategy,
     ScraperStrategy,
     XenForoStrategy,
 )
-from .transports.pazar3_pacing import Pazar3RequestPacer
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5

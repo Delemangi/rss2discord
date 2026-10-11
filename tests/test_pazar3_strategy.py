@@ -3,10 +3,11 @@ from datetime import timedelta
 import pytest
 
 from rss2discord.models import EntryId
-from rss2discord.transports import FeedFetchError, pazar3
-from rss2discord.transports.pazar3_models import Pazar3Listing, Pazar3Page
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_scope import Pazar3PageRequest
+from rss2discord.providers.pazar3 import strategy as pazar3
+from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.scope import Pazar3PageRequest
+from rss2discord.transports import FeedFetchError
 from tests.pazar3_helpers import FIXED_NOW, SEARCH_URL
 
 
