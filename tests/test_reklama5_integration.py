@@ -170,7 +170,7 @@ def test_reklama5_malformed_listing_id_is_seeded_before_later_valid_parse(
             ),
         ],
     )
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = _app(store, sender, Reklama5Strategy(clock=lambda: FIXED_NOW))
@@ -201,7 +201,7 @@ def test_reklama5_shutdown_during_final_page_does_not_initialize_feed(
         ],
     )
     shutdown_checks = iter((False, True))
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
     strategy = Reklama5Strategy(
         clock=lambda: FIXED_NOW,
         is_shutdown_requested=lambda: next(shutdown_checks),

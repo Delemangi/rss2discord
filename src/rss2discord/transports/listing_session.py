@@ -1,4 +1,4 @@
-"""Isolated curl-cffi session boundary for Pazar3 transfers."""
+"""Isolated curl-cffi session boundary for bounded listing transfers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import certifi
 from curl_cffi import CurlOpt, requests
 
 
-class Pazar3HttpResponse(Protocol):
+class ListingHttpResponse(Protocol):
     @property
     def status_code(self) -> int: ...
 
@@ -20,7 +20,7 @@ class Pazar3HttpResponse(Protocol):
     def url(self) -> str: ...
 
 
-class Pazar3HttpSession(Protocol):
+class ListingHttpSession(Protocol):
     def get(
         self,
         url: str,
@@ -29,12 +29,12 @@ class Pazar3HttpSession(Protocol):
         allow_redirects: bool,
         content_callback: Callable[[bytes], int],
         timeout_ms: int,
-    ) -> Pazar3HttpResponse: ...
+    ) -> ListingHttpResponse: ...
 
     def close(self) -> None: ...
 
 
-class CurlCffiPazar3Response:
+class CurlCffiListingResponse:
     def __init__(self, response: requests.Response) -> None:
         self._response = response
 
@@ -55,7 +55,7 @@ class CurlCffiPazar3Response:
         return self._response.url
 
 
-class CurlCffiPazar3Session:
+class CurlCffiListingSession:
     def get(
         self,
         url: str,
@@ -64,7 +64,7 @@ class CurlCffiPazar3Session:
         allow_redirects: bool,
         content_callback: Callable[[bytes], int],
         timeout_ms: int,
-    ) -> Pazar3HttpResponse:
+    ) -> ListingHttpResponse:
         session: requests.Session[requests.Response] = requests.Session(
             trust_env=False,
             discard_cookies=True,
@@ -77,7 +77,7 @@ class CurlCffiPazar3Session:
             },
         )
         try:
-            return CurlCffiPazar3Response(
+            return CurlCffiListingResponse(
                 session.get(
                     url,
                     headers=headers,
@@ -93,5 +93,5 @@ class CurlCffiPazar3Session:
         """No persistent transfer session is retained."""
 
 
-def create_pazar3_session() -> Pazar3HttpSession:
-    return CurlCffiPazar3Session()
+def create_listing_session() -> ListingHttpSession:
+    return CurlCffiListingSession()

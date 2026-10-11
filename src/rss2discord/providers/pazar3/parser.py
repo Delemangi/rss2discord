@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Final
 from urllib.parse import urljoin, urlsplit, urlunsplit
-from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup, Tag
 
@@ -20,27 +19,17 @@ from rss2discord.providers.pazar3.scope import (
     is_canonical_pazar3_path,
 )
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_activity import (
+    ACTIVITY_TIME_PATTERN,
+    MACEDONIAN_MONTHS,
+    SKOPJE,
+    TODAY_PATTERN,
+    YESTERDAY_PATTERN,
+    localize_wall_time,
+)
 
-SKOPJE: Final = ZoneInfo("Europe/Skopje")
-_MONTHS: Final = {
-    "јан": 1,
-    "фев": 2,
-    "мар": 3,
-    "апр": 4,
-    "мај": 5,
-    "јун": 6,
-    "јул": 7,
-    "авг": 8,
-    "сеп": 9,
-    "окт": 10,
-    "ное": 11,
-    "дек": 12,
-}
-_TIME_PATTERN: Final = r"(?P<hour>\d{2}):(?P<minute>\d{2})"
-_TODAY_PATTERN: Final = re.compile(rf"Денес {_TIME_PATTERN}", re.ASCII)
-_YESTERDAY_PATTERN: Final = re.compile(rf"Вчера {_TIME_PATTERN}", re.ASCII)
 _MONTH_PATTERN: Final = re.compile(
-    rf"(?P<day>\d{{1,2}}) (?P<month>{'|'.join(_MONTHS)})\. {_TIME_PATTERN}",
+    rf"(?P<day>\d{{1,2}}) (?P<month>{'|'.join(MACEDONIAN_MONTHS)})\. {ACTIVITY_TIME_PATTERN}",
 )
 _MAX_ID_DIGITS: Final = 12
 _MAX_YEAR_LOOKBACK: Final = 8
@@ -157,21 +146,21 @@ def _listing_identity(
 
 def _parse_activity(value: str, local_now: datetime) -> datetime | None:
     try:
-        if match := _TODAY_PATTERN.fullmatch(value):
-            return _localize(local_now.date(), match)
-        if match := _YESTERDAY_PATTERN.fullmatch(value):
-            return _localize(local_now.date() - timedelta(days=1), match)
+        if match := TODAY_PATTERN.fullmatch(value):
+            return localize_wall_time(local_now.date(), match)
+        if match := YESTERDAY_PATTERN.fullmatch(value):
+            return localize_wall_time(local_now.date() - timedelta(days=1), match)
         match = _MONTH_PATTERN.fullmatch(value)
         if match is None:
             return None
-        month = _MONTHS[match.group("month")]
+        month = MACEDONIAN_MONTHS[match.group("month")]
         day = int(match.group("day"))
         for year in range(local_now.year, local_now.year - _MAX_YEAR_LOOKBACK - 1, -1):
             try:
                 wall_date = date(year, month, day)
             except ValueError:
                 continue
-            candidate = _localize(wall_date, match)
+            candidate = localize_wall_time(wall_date, match)
             if candidate is not None and candidate.astimezone(
                 UTC,
             ) <= local_now.astimezone(UTC):
@@ -179,18 +168,6 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
     except ValueError:
         return None
     return None
-
-
-def _localize(wall_date: date, match: re.Match[str]) -> datetime | None:
-    wall = datetime.combine(
-        wall_date,
-        time(int(match.group("hour")), int(match.group("minute"))),
-    )
-    localized = wall.replace(tzinfo=SKOPJE, fold=0)
-    round_trip = localized.astimezone(UTC).astimezone(SKOPJE)
-    if round_trip.replace(tzinfo=None) != wall or round_trip.fold != localized.fold:
-        return None
-    return localized
 
 
 def _image_url(row: Tag) -> str | None:

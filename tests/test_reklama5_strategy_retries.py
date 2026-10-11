@@ -72,7 +72,7 @@ def test_reklama5_retry_restarts_with_page_one_and_a_fresh_attempt_budget(
         budget_starts.append((budget.bytes_remaining, budget.expires_at))
         return budget
 
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
     monkeypatch.setattr(Reklama5ScanBudget, "for_attempt", record_budget)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: 10.0)
     feed = FeedConfig(

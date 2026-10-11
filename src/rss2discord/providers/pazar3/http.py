@@ -13,13 +13,13 @@ from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from rss2discord.discord.client import SleepCallback
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3PageRequest
-from rss2discord.providers.pazar3.session import (
-    Pazar3HttpResponse,
-    Pazar3HttpSession,
-    create_pazar3_session,
-)
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_session import (
+    ListingHttpResponse,
+    ListingHttpSession,
+    create_listing_session,
+)
 
 MAX_PAZAR3_RESPONSE_BYTES: Final = 2_097_152
 MAX_PAZAR3_ATTEMPT_BYTES: Final = 6_291_456
@@ -94,10 +94,6 @@ class _BoundedContent:
         return len(chunk)
 
 
-def _create_session() -> Pazar3HttpSession:
-    return create_pazar3_session()
-
-
 def fetch_pazar3_page(
     request: Pazar3PageRequest,
     budget: Pazar3ScanBudget,
@@ -105,7 +101,7 @@ def fetch_pazar3_page(
     sleep: SleepCallback,
     is_shutdown_requested: Callable[[], bool],
 ) -> bytes:
-    session = _create_session()
+    session = create_listing_session()
     try:
         current_url = request.url
         while True:
@@ -135,10 +131,10 @@ def fetch_pazar3_page(
 
 
 def _get_response(
-    session: Pazar3HttpSession,
+    session: ListingHttpSession,
     url: str,
     budget: Pazar3ScanBudget,
-) -> tuple[Pazar3HttpResponse, bytes]:
+) -> tuple[ListingHttpResponse, bytes]:
     content = _BoundedContent(budget)
     try:
         response = session.get(
@@ -188,7 +184,7 @@ def _transport_error(error: requests.RequestsError) -> FeedFetchError:
     )
 
 
-def _validate_declared_content_length(response: Pazar3HttpResponse) -> None:
+def _validate_declared_content_length(response: ListingHttpResponse) -> None:
     content_length = _header(response.headers, "content-length")
     if content_length is None:
         return
@@ -200,7 +196,7 @@ def _validate_declared_content_length(response: Pazar3HttpResponse) -> None:
         raise FeedFetchError(PAZAR3_LABEL, "ResponseTooLarge")
 
 
-def _http_error(response: Pazar3HttpResponse) -> FeedFetchError:
+def _http_error(response: ListingHttpResponse) -> FeedFetchError:
     status_code = response.status_code
     return FeedFetchError(
         PAZAR3_LABEL,
@@ -211,7 +207,7 @@ def _http_error(response: Pazar3HttpResponse) -> FeedFetchError:
     )
 
 
-def _is_cf_challenge(response: Pazar3HttpResponse) -> bool:
+def _is_cf_challenge(response: ListingHttpResponse) -> bool:
     value = _header(response.headers, "cf-mitigated")
     return value is not None and value.strip().casefold() == "challenge"
 

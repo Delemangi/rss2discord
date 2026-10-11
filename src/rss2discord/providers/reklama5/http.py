@@ -17,13 +17,13 @@ from rss2discord.providers.reklama5.scope import (
 from rss2discord.providers.reklama5.scope import (
     Reklama5SearchScope as _Reklama5SearchScope,
 )
-from rss2discord.providers.reklama5.session import (
-    Reklama5HttpResponse,
-    Reklama5HttpSession,
-    create_reklama5_session,
-)
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_session import (
+    ListingHttpResponse,
+    ListingHttpSession,
+    create_listing_session,
+)
 
 Reklama5SearchScope = _Reklama5SearchScope
 
@@ -102,16 +102,12 @@ class _BoundedContent:
         return len(chunk)
 
 
-def _create_session() -> Reklama5HttpSession:
-    return create_reklama5_session()
-
-
 def fetch_reklama5_page(
     request: Reklama5PageRequest,
     budget: Reklama5ScanBudget,
 ) -> bytes:
     """Fetch one trusted search page within a caller-owned attempt budget."""
-    session = _create_session()
+    session = create_listing_session()
     try:
         current_url = request.url
         while True:
@@ -140,10 +136,10 @@ def fetch_reklama5_page(
 
 
 def _get_response(
-    session: Reklama5HttpSession,
+    session: ListingHttpSession,
     url: str,
     budget: Reklama5ScanBudget,
-) -> tuple[Reklama5HttpResponse, bytes]:
+) -> tuple[ListingHttpResponse, bytes]:
     content = _BoundedContent(budget)
     try:
         response = session.get(
@@ -198,7 +194,7 @@ def _transport_error(
     )
 
 
-def _validate_declared_content_length(response: Reklama5HttpResponse) -> None:
+def _validate_declared_content_length(response: ListingHttpResponse) -> None:
     content_length = _header(response.headers, "content-length")
     if content_length is not None:
         try:
@@ -213,7 +209,7 @@ def _invalid_redirect() -> FeedFetchError:
     return FeedFetchError(REKLAMA5_LABEL, "InvalidRedirect")
 
 
-def _http_error(response: Reklama5HttpResponse) -> FeedFetchError:
+def _http_error(response: ListingHttpResponse) -> FeedFetchError:
     status_code = response.status_code
     return FeedFetchError(
         REKLAMA5_LABEL,
@@ -224,7 +220,7 @@ def _http_error(response: Reklama5HttpResponse) -> FeedFetchError:
     )
 
 
-def _is_cf_challenge(response: Reklama5HttpResponse) -> bool:
+def _is_cf_challenge(response: ListingHttpResponse) -> bool:
     value = _header(response.headers, "cf-mitigated")
     return value is not None and value.strip().casefold() == "challenge"
 

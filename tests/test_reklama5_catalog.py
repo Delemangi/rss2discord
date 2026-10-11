@@ -67,7 +67,7 @@ def test_reklama5_catalog_fetches_beyond_the_discovery_window(
             _response(4, "1", terminal=True, result_count=4),
         ],
     )
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: session)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: session)
     client = Reklama5CatalogClient(clock=_clock)
 
     listings = client.fetch_catalog(
@@ -97,7 +97,7 @@ def test_reklama5_catalog_rejects_listing_capacity_before_returning_partial_data
     )
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(html)]),
     )
     monkeypatch.setattr(reklama5_catalog, "MAX_REKLAMA5_CATALOG_LISTINGS", 1)
@@ -123,7 +123,7 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
     )
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [StubResponse(html), StubResponse(html), StubResponse(html)],
         ),
@@ -169,7 +169,7 @@ def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
     )
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(html) for _attempt in range(3)]),
     )
 
@@ -210,7 +210,7 @@ def test_reklama5_catalog_rejects_changed_advertised_result_count(
     ]
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(responses),
     )
 
@@ -236,7 +236,7 @@ def test_reklama5_catalog_counts_duplicate_organic_rows_toward_completeness(
     )
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(html)]),
     )
 
@@ -254,7 +254,7 @@ def test_reklama5_catalog_fails_when_page_bound_has_no_terminal_evidence(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([_response(1, "1", terminal=False)]),
     )
     monkeypatch.setattr(reklama5_catalog, "MAX_REKLAMA5_CATALOG_PAGES", 1)

@@ -12,7 +12,7 @@ def fetch_with(
     *,
     budget_bytes: int = 6_291_456,
 ) -> tuple[bytes, list[float]]:
-    monkeypatch.setattr(pazar3_http, "_create_session", lambda: get)
+    monkeypatch.setattr(pazar3_http, "create_listing_session", lambda: get)
     waits: list[float] = []
     pacer = Pazar3RequestPacer(lambda: 100.0)
 
@@ -145,7 +145,7 @@ def test_pazar3_http_paces_every_redirect_request(
         now[0] += seconds
         return True
 
-    monkeypatch.setattr(pazar3_http, "_create_session", lambda: get)
+    monkeypatch.setattr(pazar3_http, "create_listing_session", lambda: get)
 
     content = pazar3_http.fetch_pazar3_page(
         page_request(),
@@ -170,7 +170,7 @@ def test_pazar3_http_rejects_pacing_wait_beyond_attempt_deadline(
     now = [100.0]
     pacer = Pazar3RequestPacer(lambda: now[0])
     waits: list[float] = []
-    monkeypatch.setattr(pazar3_http, "_create_session", lambda: get)
+    monkeypatch.setattr(pazar3_http, "create_listing_session", lambda: get)
     monkeypatch.setattr(pazar3_http.time, "monotonic", lambda: now[0])
 
     def record_sleep(seconds: float) -> bool:
