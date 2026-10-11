@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.price_monitor_builders import (
-    DEFAULT_PRICE_MONITOR_FACTORIES,
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
@@ -25,6 +26,7 @@ from tests.test_gjirafa50_wiring import make_feed
 
 def test_runtime_builds_enabled_gjirafa50_monitor(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -40,6 +42,10 @@ def test_runtime_builds_enabled_gjirafa50_monitor(
 
     # When
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+            monitor_factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(make_feed(interval=21_600),)),
             PriceJobDependencies(
@@ -49,7 +55,6 @@ def test_runtime_builds_enabled_gjirafa50_monitor(
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            gjirafa50_monitor_factory=monitor_factory,
         )
 
     # Then
@@ -57,7 +62,10 @@ def test_runtime_builds_enabled_gjirafa50_monitor(
     assert isinstance(constructed[0].catalog, Gjirafa50CatalogClient)
 
 
-def test_runtime_wires_gjirafa50_monitor_shutdown(tmp_path: Path) -> None:
+def test_runtime_wires_gjirafa50_monitor_shutdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     clock = FakeClock(maximum_sleeps=1)
     events: list[str] = []
 
@@ -76,6 +84,10 @@ def test_runtime_wires_gjirafa50_monitor_shutdown(tmp_path: Path) -> None:
         return ClosableMonitor()
 
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+            monitor_factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(make_feed(interval=21_600),)),
             PriceJobDependencies(
@@ -85,7 +97,6 @@ def test_runtime_wires_gjirafa50_monitor_shutdown(tmp_path: Path) -> None:
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            gjirafa50_monitor_factory=monitor_factory,
         )
 
         jobs[0].run()
@@ -115,7 +126,6 @@ def test_default_factory_uses_background_gjirafa50_monitor(tmp_path: Path) -> No
                 delivery=PriceAlertDelivery(clock.sleep, 0, lambda: False),
                 pazar3_pacer=Pazar3RequestPacer(clock.monotonic),
             ),
-            DEFAULT_PRICE_MONITOR_FACTORIES,
         )
 
     assert isinstance(monitor, Gjirafa50BackgroundPriceMonitor)

@@ -1,6 +1,8 @@
 from functools import partial
 from pathlib import Path
 
+import pytest
+
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
@@ -47,7 +49,10 @@ def test_source_label_returns_pazar3() -> None:
     assert source_label(make_feed()) == "Pazar3"
 
 
-def test_price_runtime_injects_shared_pazar3_pacer(tmp_path: Path) -> None:
+def test_price_runtime_injects_shared_pazar3_pacer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = AppConfig(feeds=(make_feed(interval=3600),))
     constructed: list[Pazar3PriceMonitorDependencies] = []
 
@@ -60,6 +65,10 @@ def test_price_runtime_injects_shared_pazar3_pacer(tmp_path: Path) -> None:
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config, store, FakeSender([]))
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.Pazar3PriceMonitor",
+            factory,
+        )
         jobs = build_price_jobs(
             config,
             PriceJobDependencies(
@@ -70,7 +79,6 @@ def test_price_runtime_injects_shared_pazar3_pacer(tmp_path: Path) -> None:
                 is_shutdown_requested=lambda: False,
                 pazar3_pacer=app._pazar3_pacer,
             ),
-            pazar3_monitor_factory=factory,
         )
 
     job = jobs[0].run

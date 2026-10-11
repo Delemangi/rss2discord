@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
@@ -30,7 +32,10 @@ def test_hivetec_strategy_is_registered_and_labeled(tmp_path: Path) -> None:
     assert source_label(hivetec_feed()) == "Hivetec"
 
 
-def test_hivetec_price_monitor_builds_an_independent_job(tmp_path: Path) -> None:
+def test_hivetec_price_monitor_builds_an_independent_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     constructed_dependencies: list[HivetecPriceMonitorDependencies] = []
     clock = FakeClock(maximum_sleeps=1)
 
@@ -42,6 +47,10 @@ def test_hivetec_price_monitor_builds_an_independent_job(tmp_path: Path) -> None
         return RecordingMonitor(feed.id, [], clock)
 
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.HivetecPriceMonitor",
+            monitor_factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(hivetec_feed(3600),)),
             PriceJobDependencies(
@@ -51,7 +60,6 @@ def test_hivetec_price_monitor_builds_an_independent_job(tmp_path: Path) -> None
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            hivetec_monitor_factory=monitor_factory,
         )
 
     assert [job.interval for job in jobs] == [3600]

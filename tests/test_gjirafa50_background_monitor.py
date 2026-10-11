@@ -7,7 +7,6 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.price_monitor_builders import (
-    DEFAULT_PRICE_MONITOR_FACTORIES,
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
@@ -243,7 +242,6 @@ def _build_background_monitor(
                 delivery=PriceAlertDelivery(clock.sleep, 0, lambda: False),
                 pazar3_pacer=Pazar3RequestPacer(clock.monotonic),
             ),
-            DEFAULT_PRICE_MONITOR_FACTORIES,
         )
     assert isinstance(monitor, Gjirafa50BackgroundPriceMonitor)
     return monitor

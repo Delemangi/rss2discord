@@ -44,6 +44,7 @@ def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
 
 def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -91,11 +92,17 @@ def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            anhoch_monitor_factory,
+        )
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.NeksioPriceMonitor",
+            neksio_monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            anhoch_monitor_factory=anhoch_monitor_factory,
-            neksio_monitor_factory=neksio_monitor_factory,
         )
 
     # Then

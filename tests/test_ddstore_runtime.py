@@ -48,6 +48,7 @@ def test_app_injects_shutdown_callback_into_ddstore_strategy(tmp_path: Path) -> 
 
 def test_build_price_jobs_dispatches_only_enabled_ddstore_feeds(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -78,10 +79,13 @@ def test_build_price_jobs_dispatches_only_enabled_ddstore_feeds(
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.DDStorePriceMonitor",
+            ddstore_monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            ddstore_monitor_factory=ddstore_monitor_factory,
         )
 
     # Then

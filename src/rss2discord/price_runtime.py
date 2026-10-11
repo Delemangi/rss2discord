@@ -17,21 +17,8 @@ from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, SleepCallback
 from .fetch_errors import FeedFetchError
 from .price_monitor_builders import (
-    DEFAULT_PRICE_MONITOR_FACTORIES,
-    AnhochPriceMonitorFactory,
-    CCCenterPriceMonitorFactory,
-    DDStorePriceMonitorFactory,
-    Gjirafa50PriceMonitorFactory,
-    HivetecPriceMonitorFactory,
-    NeksioPriceMonitorFactory,
-    NeptunPriceMonitorFactory,
-    Pazar3PriceMonitorFactory,
     PriceMonitor,
-    PriceMonitorFactories,
-    Reklama5PriceMonitorFactory,
-    SetecPriceMonitorFactory,
     SharedPriceMonitorDependencies,
-    TechnomarketPriceMonitorFactory,
     build_provider_price_monitor,
 )
 from .recovery_models import HealthUpdate
@@ -76,36 +63,11 @@ class _RetrySleepAdapter:
 def build_price_jobs(
     config: AppConfig,
     dependencies: PriceJobDependencies,
-    *,
-    anhoch_monitor_factory: AnhochPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.anhoch,
-    neksio_monitor_factory: NeksioPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neksio,
-    neptun_monitor_factory: NeptunPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.neptun,
-    pazar3_monitor_factory: Pazar3PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.pazar3,
-    reklama5_monitor_factory: Reklama5PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.reklama5,
-    setec_monitor_factory: SetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.setec,
-    ddstore_monitor_factory: DDStorePriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.ddstore,
-    hivetec_monitor_factory: HivetecPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.hivetec,
-    gjirafa50_monitor_factory: Gjirafa50PriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.gjirafa50,
-    cccenter_monitor_factory: CCCenterPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.cccenter,
-    technomarket_monitor_factory: TechnomarketPriceMonitorFactory = DEFAULT_PRICE_MONITOR_FACTORIES.technomarket,
 ) -> tuple[ScheduledJob, ...]:
     """Create one independent callable job for every enabled price-monitor feed."""
     jobs: list[ScheduledJob] = []
     retry_sleep = _RetrySleepAdapter(dependencies.sleep)
     pazar3_pacer = dependencies.pazar3_pacer or Pazar3RequestPacer(time.monotonic)
-    factories = PriceMonitorFactories(
-        anhoch=anhoch_monitor_factory,
-        cccenter=cccenter_monitor_factory,
-        ddstore=ddstore_monitor_factory,
-        hivetec=hivetec_monitor_factory,
-        gjirafa50=gjirafa50_monitor_factory,
-        neksio=neksio_monitor_factory,
-        neptun=neptun_monitor_factory,
-        pazar3=pazar3_monitor_factory,
-        reklama5=reklama5_monitor_factory,
-        setec=setec_monitor_factory,
-        technomarket=technomarket_monitor_factory,
-    )
     for feed in config.feeds:
         interval = feed.price_check_interval
         if interval is None:
@@ -117,7 +79,7 @@ def build_price_jobs(
             pazar3_pacer,
             _cooldown_peer_ids(feed, config.feeds),
         )
-        monitor = build_provider_price_monitor(feed, shared_dependencies, factories)
+        monitor = build_provider_price_monitor(feed, shared_dependencies)
         if monitor is None:
             continue
         close = monitor.close if isinstance(monitor, _ClosablePriceMonitor) else None

@@ -183,6 +183,7 @@ def test_failed_catalog_does_not_create_baseline_candidate(tmp_path: Path) -> No
 
 def test_blocked_origin_skips_peer_ordinary_and_price_jobs_across_restart(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     blocked = make_feed("blocked")
     peer = FeedConfig(
@@ -224,6 +225,10 @@ def test_blocked_origin_skips_peer_ordinary_and_price_jobs_across_restart(
             del dependencies
             return RecordingMonitor(feed.id, events, FakeClock(1))
 
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=feeds),
             PriceJobDependencies(
@@ -233,7 +238,6 @@ def test_blocked_origin_skips_peer_ordinary_and_price_jobs_across_restart(
                 0,
                 lambda: False,
             ),
-            anhoch_monitor_factory=factory,
         )
         jobs[0].run()
         assert events == []
@@ -290,6 +294,7 @@ def test_health_error_payload_and_logs_do_not_expose_exception_secret(
 
 def test_successful_price_return_and_timing_do_not_erase_quarantine(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     feed = FeedConfig(
         id="prices",
@@ -319,6 +324,10 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
             del dependencies
             return RecordingMonitor(configured.id, [], FakeClock(1))
 
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(feed,)),
             PriceJobDependencies(
@@ -328,7 +337,6 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
                 0,
                 lambda: False,
             ),
-            anhoch_monitor_factory=factory,
         )
         jobs[0].run()
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, FakeSender([]))
@@ -341,7 +349,10 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
         assert record.scheduler_lag_ms == 3000
 
 
-def test_price_challenge_blocks_ordinary_before_fetch(tmp_path: Path) -> None:
+def test_price_challenge_blocks_ordinary_before_fetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     feed = FeedConfig(
         id="prices",
         strategy="anhoch",
@@ -362,6 +373,10 @@ def test_price_challenge_blocks_ordinary_before_fetch(tmp_path: Path) -> None:
         return BlockedMonitor()
 
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(feed,)),
             PriceJobDependencies(
@@ -371,7 +386,6 @@ def test_price_challenge_blocks_ordinary_before_fetch(tmp_path: Path) -> None:
                 0,
                 lambda: False,
             ),
-            anhoch_monitor_factory=factory,
         )
         jobs[0].run()
         deadline = store.get_blocked_until(feed.id)
