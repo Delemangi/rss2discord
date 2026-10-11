@@ -66,6 +66,10 @@ def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
         return worker
 
     monkeypatch.setattr(Gjirafa50CatalogClient, "fetch_catalog", fetch)
+    monkeypatch.setattr(
+        "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+        factory,
+    )
     with DeliveryStore(tmp_path / "state.db") as store:
         jobs = build_price_jobs(
             AppConfig(feeds=(first, second, ordinary_peer, other_origin)),
@@ -76,7 +80,6 @@ def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            gjirafa50_monitor_factory=factory,
         )
         assert len(jobs) == 2
         assert all(set(ids) == {"first", "second", "ordinary-peer"} for ids in captured)
