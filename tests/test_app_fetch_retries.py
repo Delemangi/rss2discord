@@ -5,6 +5,7 @@ from typing import Any, assert_never
 import pytest
 
 from rss2discord.app import RSSToDiscord
+from rss2discord.application_runtime import _process_feed_safely
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
@@ -105,8 +106,8 @@ def test_ordinary_fetch_retry_characterizes_existing_successful_retry(
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, strategy, feed)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             lambda seconds: record_sleep(delays, seconds),
         )
 
@@ -177,8 +178,8 @@ def test_retry_after_is_capped_before_retry(
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, strategy, feed)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             lambda seconds: record_sleep(delays, seconds),
         )
 
@@ -208,8 +209,8 @@ def test_missing_retry_after_uses_jittered_exponential_backoff(
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, strategy, feed)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             lambda seconds: record_sleep(delays, seconds),
         )
 
@@ -243,13 +244,13 @@ def test_retryable_fetch_failure_is_exhausted_after_three_attempts(
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, strategy, feed)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             lambda seconds: record_sleep(delays, seconds),
         )
 
         # When
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
 
     # Then
     assert strategy.attempts == 3
@@ -272,13 +273,13 @@ def test_permanent_fetch_failure_is_not_retried(
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, strategy, feed)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             lambda seconds: record_sleep(delays, seconds),
         )
 
         # When
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
 
     # Then
     assert strategy.attempts == 1
@@ -304,12 +305,12 @@ def test_shutdown_during_fetch_retry_is_not_logged_as_error(
             app.request_shutdown()
             return False
 
-        monkeypatch.setattr(app, "_interruptible_sleep", request_shutdown)
+        monkeypatch.setattr(app._runtime, "sleep", request_shutdown)
 
         # When
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
 
     # Then
     assert strategy.attempts == 1
-    assert app._shutdown_requested
+    assert app.is_shutdown_requested()
     assert not caplog.records

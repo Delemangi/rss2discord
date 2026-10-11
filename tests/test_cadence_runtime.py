@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from rss2discord.app import RSSToDiscord
+from rss2discord.application_runtime import _process_feed_safely
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.recovery_models import HealthUpdate
@@ -44,7 +45,7 @@ def test_startup_warns_for_gap_budget_but_still_runs(
             app.request_shutdown()
             return False
 
-        monkeypatch.setattr(app, "_interruptible_sleep", stop)
+        monkeypatch.setattr(app._runtime, "sleep", stop)
         app.run()
         assert store.list_health("a")[0].total_attempts == 1
 
@@ -81,7 +82,10 @@ def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
         def run(self) -> None:
             return
 
-    monkeypatch.setattr("rss2discord.app.RuntimeScheduler", CaptureScheduler)
+    monkeypatch.setattr(
+        "rss2discord.application_runtime.RuntimeScheduler",
+        CaptureScheduler,
+    )
     caplog.set_level(logging.WARNING)
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(
@@ -120,7 +124,10 @@ def test_per_feed_gap_capacity_warns_at_one_or_more(
         def run(self) -> None:
             return
 
-    monkeypatch.setattr("rss2discord.app.RuntimeScheduler", CaptureScheduler)
+    monkeypatch.setattr(
+        "rss2discord.application_runtime.RuntimeScheduler",
+        CaptureScheduler,
+    )
     caplog.set_level(logging.WARNING)
     with DeliveryStore(tmp_path / "state.db") as store:
         RSSToDiscord(
@@ -153,7 +160,7 @@ def test_tiny_ordinary_interval_runs_peer_after_nonzero_callback(
     )
     now = 0.0
     events: list[str] = []
-    monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: now)
+    monkeypatch.setattr("rss2discord.application_runtime.time.monotonic", lambda: now)
     caplog.set_level(logging.WARNING)
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config, store, FakeSender([]))
@@ -171,8 +178,8 @@ def test_tiny_ordinary_interval_runs_peer_after_nonzero_callback(
             now += seconds
             return True
 
-        monkeypatch.setattr(app, "_process_feed_safely", process)
-        monkeypatch.setattr(app, "_interruptible_sleep", sleep)
+        monkeypatch.setattr(app, "process_feed", process)
+        monkeypatch.setattr(app._runtime, "sleep", sleep)
         app.run()
 
     assert events == ["tiny", "peer"]
@@ -210,16 +217,25 @@ def test_cooldown_skip_does_not_delay_peer_or_change_health(
             FakeSender([]),
         )
         app._strategies["rss"] = FakeStrategy([])
-        monkeypatch.setattr("rss2discord.app.time.time", lambda: wall_now + 1)
-        monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: now)
+        monkeypatch.setattr(
+            "rss2discord.application_runtime.time.time",
+            lambda: wall_now + 1,
+        )
+        monkeypatch.setattr(
+            "rss2discord.application_runtime.time.monotonic",
+            lambda: now,
+        )
 
         def sleep(seconds: float) -> bool:
             sleeps.append(seconds)
             app.request_shutdown()
             return False
 
-        monkeypatch.setattr(app, "_interruptible_sleep", sleep)
-        assert app._process_feed_safely(blocked) == JobOutcome.SKIPPED
+        monkeypatch.setattr(app._runtime, "sleep", sleep)
+        assert (
+            _process_feed_safely(blocked, app.process_feed, app._store)
+            == JobOutcome.SKIPPED
+        )
         app.run()
         assert store.list_health(blocked.id) == before
         assert store.list_health(peer.id)[0].total_attempts == 1
