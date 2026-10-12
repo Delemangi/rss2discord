@@ -46,7 +46,7 @@ feeds:
 
 ## Code boundaries
 
-Price-monitor builders compose provider-specific monitors and their dependencies; provider modules own source behavior and transports own source-specific request mechanics. The price runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
+Discovery builders eagerly compose native feed strategies. The application runtime owns shutdown, the shared Pazar3 pacer, and sequential job scheduling; the price runtime and scheduler handle price-job composition, cadence, and health reporting. Provider modules own source behavior and transports own source-specific request mechanics. Persistence and administrative workflows remain separate from that composition path.
 
 ## Inspecting and recovering state
 

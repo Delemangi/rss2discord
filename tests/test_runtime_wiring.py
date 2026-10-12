@@ -222,12 +222,18 @@ def test_run_alternates_due_classes_on_independent_cadences(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=FakeSender([]))
-        monkeypatch.setattr("rss2discord.app.build_price_jobs", fake_price_jobs)
-        monkeypatch.setattr("rss2discord.app.time.monotonic", clock.monotonic)
-        monkeypatch.setattr(app, "_interruptible_sleep", clock.sleep)
+        monkeypatch.setattr(
+            "rss2discord.application_runtime.build_price_jobs",
+            fake_price_jobs,
+        )
+        monkeypatch.setattr(
+            "rss2discord.application_runtime.time.monotonic",
+            clock.monotonic,
+        )
+        monkeypatch.setattr(app._runtime, "sleep", clock.sleep)
         monkeypatch.setattr(
             app,
-            "_process_feed_safely",
+            "process_feed",
             lambda feed: events.append((feed.id, clock.now)),
         )
 
@@ -279,10 +285,13 @@ def test_run_stops_after_scheduler_sleep_is_interrupted(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=FakeSender([]))
-        monkeypatch.setattr("rss2discord.app.build_price_jobs", fake_price_jobs)
+        monkeypatch.setattr(
+            "rss2discord.application_runtime.build_price_jobs",
+            fake_price_jobs,
+        )
         monkeypatch.setattr(
             app,
-            "_process_feed_safely",
+            "process_feed",
             lambda feed: events.append("ordinary"),
         )
 
@@ -290,7 +299,7 @@ def test_run_stops_after_scheduler_sleep_is_interrupted(
             app.request_shutdown()
             return False
 
-        monkeypatch.setattr(app, "_interruptible_sleep", interrupt_scheduler_sleep)
+        monkeypatch.setattr(app._runtime, "sleep", interrupt_scheduler_sleep)
 
         # When
         app.run()
