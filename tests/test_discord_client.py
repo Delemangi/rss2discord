@@ -6,7 +6,12 @@ import pytest
 import requests
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.discord.client import DiscordWebhookClient, JSONValue, WebhookMessage
+from rss2discord.discord.client import (
+    DiscordDeliveryResult,
+    DiscordWebhookClient,
+    JSONValue,
+    WebhookMessage,
+)
 from rss2discord.discord.images import DownloadedImage
 from rss2discord.models import EntryData
 
@@ -241,6 +246,82 @@ def test_thumbnail_fallback_remains_selected_after_connection_error(
     assert delivered
     assert ["files" in attempt for attempt in attempts] == [True, False, False]
     assert delays == [0, 2.0]
+
+
+def test_thumbnail_fallback_remains_selected_after_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = requests.Session()
+    post_modes: list[str] = []
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        post_modes.append("image" if "files" in kwargs else "fallback")
+        if len(post_modes) == 1:
+            return make_response(415)
+        if len(post_modes) == 2:
+            raise requests.Timeout("fallback timed out")
+        return make_response(200)
+
+    def sleep(seconds: float) -> bool:
+        delays.append(seconds)
+        return True
+
+    monkeypatch.setattr(session, "post", post)
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+
+    result = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(image),
+    ).send(make_anhoch_message(), sleep)
+
+    assert result is DiscordDeliveryResult.DELIVERED
+    assert post_modes == ["image", "fallback", "fallback"]
+    assert delays == [0, 2.0]
+
+
+def test_media_rejection_on_final_attempt_posts_fallback_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = requests.Session()
+    post_modes: list[str] = []
+    delays: list[float] = []
+    responses = [
+        make_response(503),
+        make_response(503),
+        make_response(415),
+        make_response(200),
+    ]
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        post_modes.append("image" if "files" in kwargs else "fallback")
+        return responses.pop(0)
+
+    def sleep(seconds: float) -> bool:
+        delays.append(seconds)
+        return True
+
+    monkeypatch.setattr(session, "post", post)
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+
+    result = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(image),
+    ).send(make_anhoch_message(), sleep)
+
+    assert result is DiscordDeliveryResult.DELIVERED
+    assert post_modes == ["image", "image", "image", "fallback"]
+    assert delays == [0, 2.0, 4.0]
 
 
 def test_delivery_requests_components_and_server_confirmation(
