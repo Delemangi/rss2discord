@@ -5,7 +5,6 @@ from typing import Any, assert_never
 import pytest
 
 from rss2discord.app import RSSToDiscord
-from rss2discord.application_runtime import _process_feed_safely
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
@@ -15,6 +14,7 @@ from rss2discord.discord.client import (
 )
 from rss2discord.models import EntryData, EntryId
 from rss2discord.retries import FetchRetryPolicy
+from rss2discord.runtime.application import _process_feed_safely
 from rss2discord.transports import FeedFetchError, ScraperStrategy
 
 type FetchResult = tuple[list[Any], str]

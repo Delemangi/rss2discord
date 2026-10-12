@@ -4,7 +4,7 @@ import pytest
 
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.transports.reklama5_catalog import Reklama5CatalogClient
 from rss2discord.transports.reklama5_price_monitor import (
     Reklama5PriceMonitorDependencies,

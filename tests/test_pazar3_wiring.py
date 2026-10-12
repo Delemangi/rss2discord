@@ -7,7 +7,7 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.transports.pazar3 import Pazar3Strategy
 from rss2discord.transports.pazar3_catalog import Pazar3CatalogClient
 from rss2discord.transports.pazar3_price_monitor import (

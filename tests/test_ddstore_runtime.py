@@ -5,12 +5,12 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.ddstore.prices import (
     DDStorePriceMonitorDependencies,
 )
 from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 

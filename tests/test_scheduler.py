@@ -5,7 +5,7 @@ from typing import Literal
 
 import pytest
 
-from rss2discord.scheduler import (
+from rss2discord.runtime.scheduler import (
     JobOutcome,
     JobTiming,
     RuntimeScheduler,

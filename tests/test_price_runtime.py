@@ -7,11 +7,11 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
 from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
 from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
-from rss2discord.scheduler import (
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.scheduler import (
     RuntimeScheduler,
     ScheduledJob,
     SchedulerControl,
