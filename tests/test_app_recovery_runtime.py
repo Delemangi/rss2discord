@@ -7,14 +7,14 @@ from typing import Any
 import pytest
 
 from rss2discord.app import RSSToDiscord
-from rss2discord.application_runtime import _process_feed_safely, _record_job_timing
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
 from rss2discord.recovery_models import HealthUpdate
-from rss2discord.scheduler import JobTiming
+from rss2discord.runtime.application import _process_feed_safely, _record_job_timing
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.scheduler import JobTiming
 from tests.app_helpers import (
     FakeEntry,
     FakeSender,
@@ -268,7 +268,7 @@ def test_expired_block_allows_real_probe_and_healthy_recovery(
             ),
         )
         monkeypatch.setattr(
-            "rss2discord.application_runtime.time.time",
+            "rss2discord.runtime.application.time.time",
             lambda: now + 21601,
         )
         strategy = CountingStrategy()
@@ -450,7 +450,7 @@ def test_expired_blocked_probe_restarts_cooldown(
             ),
         )
         monkeypatch.setattr(
-            "rss2discord.application_runtime.time.time",
+            "rss2discord.runtime.application.time.time",
             lambda: now + 21601,
         )
         strategy = CountingStrategy(FeedFetchError("RSS", "BotChallenge"))

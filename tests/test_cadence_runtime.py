@@ -6,11 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from rss2discord.app import RSSToDiscord
-from rss2discord.application_runtime import _process_feed_safely
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.recovery_models import HealthUpdate
-from rss2discord.scheduler import JobOutcome, SchedulerJobs
+from rss2discord.runtime.application import _process_feed_safely
+from rss2discord.runtime.scheduler import JobOutcome, SchedulerJobs
 from tests.app_helpers import FakeSender, FakeStrategy, make_feed
 
 
@@ -83,7 +83,7 @@ def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
             return
 
     monkeypatch.setattr(
-        "rss2discord.application_runtime.RuntimeScheduler",
+        "rss2discord.runtime.application.RuntimeScheduler",
         CaptureScheduler,
     )
     caplog.set_level(logging.WARNING)
@@ -125,7 +125,7 @@ def test_per_feed_gap_capacity_warns_at_one_or_more(
             return
 
     monkeypatch.setattr(
-        "rss2discord.application_runtime.RuntimeScheduler",
+        "rss2discord.runtime.application.RuntimeScheduler",
         CaptureScheduler,
     )
     caplog.set_level(logging.WARNING)
@@ -160,7 +160,7 @@ def test_tiny_ordinary_interval_runs_peer_after_nonzero_callback(
     )
     now = 0.0
     events: list[str] = []
-    monkeypatch.setattr("rss2discord.application_runtime.time.monotonic", lambda: now)
+    monkeypatch.setattr("rss2discord.runtime.application.time.monotonic", lambda: now)
     caplog.set_level(logging.WARNING)
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config, store, FakeSender([]))
@@ -218,11 +218,11 @@ def test_cooldown_skip_does_not_delay_peer_or_change_health(
         )
         app._strategies["rss"] = FakeStrategy([])
         monkeypatch.setattr(
-            "rss2discord.application_runtime.time.time",
+            "rss2discord.runtime.application.time.time",
             lambda: wall_now + 1,
         )
         monkeypatch.setattr(
-            "rss2discord.application_runtime.time.monotonic",
+            "rss2discord.runtime.application.time.monotonic",
             lambda: now,
         )
 
