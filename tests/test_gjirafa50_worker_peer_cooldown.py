@@ -7,16 +7,16 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports.gjirafa50_background_monitor import (
+from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
-from rss2discord.transports.gjirafa50_catalog import Gjirafa50CatalogClient
-from rss2discord.transports.gjirafa50_models import Gjirafa50Product
-from rss2discord.transports.gjirafa50_price_monitor import (
+from rss2discord.providers.gjirafa50.catalog import Gjirafa50CatalogClient
+from rss2discord.providers.gjirafa50.models import Gjirafa50Product
+from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 from tests.test_gjirafa50_wiring import make_feed
 
@@ -66,6 +66,10 @@ def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
         return worker
 
     monkeypatch.setattr(Gjirafa50CatalogClient, "fetch_catalog", fetch)
+    monkeypatch.setattr(
+        "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+        factory,
+    )
     with DeliveryStore(tmp_path / "state.db") as store:
         jobs = build_price_jobs(
             AppConfig(feeds=(first, second, ordinary_peer, other_origin)),
@@ -76,7 +80,6 @@ def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            gjirafa50_monitor_factory=factory,
         )
         assert len(jobs) == 2
         assert all(set(ids) == {"first", "second", "ordinary-peer"} for ids in captured)

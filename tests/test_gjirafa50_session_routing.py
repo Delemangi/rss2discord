@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import pytest
 from curl_cffi import CurlOpt, requests
 
-from rss2discord.transports import gjirafa50_session
+from rss2discord.providers.gjirafa50 import session as gjirafa50_session
 
 type CurlOptionValue = int | str | Callable[[bytes], int]
 

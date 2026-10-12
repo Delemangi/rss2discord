@@ -9,8 +9,8 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
 from rss2discord.providers.anhoch.strategy import AnhochStrategy
+from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from rss2discord.providers.setec.strategy import SetecStrategy
-from rss2discord.transports import ITMkOglasnikStrategy
 from tests.app_helpers import (
     FakeAdapter,
     FakeEntry,
@@ -93,8 +93,11 @@ def test_run_waits_between_feeds(
                 return False
             return True
 
-        monkeypatch.setattr("rss2discord.app.time.monotonic", lambda: now)
-        monkeypatch.setattr(app, "_interruptible_sleep", record_sleep)
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.time.monotonic",
+            lambda: now,
+        )
+        monkeypatch.setattr(app._runtime, "sleep", record_sleep)
 
         # When
         app.run()

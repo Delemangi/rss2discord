@@ -6,7 +6,6 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.providers.anhoch.prices import (
     AnhochPriceMonitor,
@@ -17,7 +16,8 @@ from rss2discord.providers.neksio.prices import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
-from rss2discord.scheduler import ScheduledJob
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.scheduler import ScheduledJob
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 
@@ -44,6 +44,7 @@ def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
 
 def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -91,11 +92,17 @@ def test_build_price_jobs_includes_enabled_provider_feeds_in_configured_order(
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            anhoch_monitor_factory,
+        )
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.NeksioPriceMonitor",
+            neksio_monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            anhoch_monitor_factory=anhoch_monitor_factory,
-            neksio_monitor_factory=neksio_monitor_factory,
         )
 
     # Then
@@ -215,12 +222,18 @@ def test_run_alternates_due_classes_on_independent_cadences(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=FakeSender([]))
-        monkeypatch.setattr("rss2discord.app.build_price_jobs", fake_price_jobs)
-        monkeypatch.setattr("rss2discord.app.time.monotonic", clock.monotonic)
-        monkeypatch.setattr(app, "_interruptible_sleep", clock.sleep)
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.build_price_jobs",
+            fake_price_jobs,
+        )
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.time.monotonic",
+            clock.monotonic,
+        )
+        monkeypatch.setattr(app._runtime, "sleep", clock.sleep)
         monkeypatch.setattr(
             app,
-            "_process_feed_safely",
+            "process_feed",
             lambda feed: events.append((feed.id, clock.now)),
         )
 
@@ -272,10 +285,13 @@ def test_run_stops_after_scheduler_sleep_is_interrupted(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(config=config, store=store, sender=FakeSender([]))
-        monkeypatch.setattr("rss2discord.app.build_price_jobs", fake_price_jobs)
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.build_price_jobs",
+            fake_price_jobs,
+        )
         monkeypatch.setattr(
             app,
-            "_process_feed_safely",
+            "process_feed",
             lambda feed: events.append("ordinary"),
         )
 
@@ -283,7 +299,7 @@ def test_run_stops_after_scheduler_sleep_is_interrupted(
             app.request_shutdown()
             return False
 
-        monkeypatch.setattr(app, "_interruptible_sleep", interrupt_scheduler_sleep)
+        monkeypatch.setattr(app._runtime, "sleep", interrupt_scheduler_sleep)
 
         # When
         app.run()

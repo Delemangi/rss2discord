@@ -1,8 +1,8 @@
 import pytest
 import requests
 
+from rss2discord.providers.neptun.http import NeptunHttpClient, NeptunPageRequest
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.neptun_http import NeptunHttpClient, NeptunPageRequest
 from tests.neptun_helpers import (
     CATEGORY_URL,
     RecordingRequests,

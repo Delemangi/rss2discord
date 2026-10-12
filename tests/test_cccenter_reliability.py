@@ -4,15 +4,15 @@ import pytest
 from bs4 import BeautifulSoup
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import cccenter_catalog
-from rss2discord.transports.cccenter_bounds import MAX_CCCENTER_PAGES
-from rss2discord.transports.cccenter_catalog import (
+from rss2discord.providers.cccenter import catalog as cccenter_catalog
+from rss2discord.providers.cccenter.bounds import MAX_CCCENTER_PAGES
+from rss2discord.providers.cccenter.catalog import (
     CCCENTER_FEED_URL,
     CCCenterCatalogClient,
     parse_product_detail,
     parse_product_listing,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 
 
 def _card(number: int, *, price: str = "1.250,00 ден", classes: str = "") -> str:

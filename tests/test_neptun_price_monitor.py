@@ -1,4 +1,5 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -8,13 +9,14 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection, SourceMetric
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import FeedFetchError, neptun_price_monitor
-from rss2discord.transports.neptun_models import NeptunProduct
-from rss2discord.transports.neptun_price_monitor import (
+from rss2discord.providers.neptun import prices as neptun_price_monitor
+from rss2discord.providers.neptun.models import NeptunProduct
+from rss2discord.providers.neptun.prices import (
     NeptunPriceMonitor,
     NeptunPriceMonitorDependencies,
 )
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
+from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.neptun_helpers import product_payload
 from tests.setec_price_monitor_helpers import RecordingSender
@@ -197,6 +199,54 @@ def test_price_monitor_persists_silent_additions_but_not_interrupted_changes(
         }
         assert snapshots["1"].amount == Decimal(100)
         assert snapshots["2"].amount == Decimal(200)
+
+
+def test_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sender = RecordingSender([])
+    catalog = CatalogStub(
+        [(make_product(1, 100),), (make_product(1, 90), make_product(2, 200))],
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(catalog, store, sender)
+        monitor.scan()
+        shutdown_requested = False
+        monitor._dependencies = replace(
+            monitor._dependencies,
+            delivery=replace(
+                monitor._dependencies.delivery,
+                is_shutdown_requested=lambda: shutdown_requested,
+            ),
+        )
+        select = store.select_normal_price_deliveries
+
+        def select_then_shutdown(
+            *,
+            feed_id: str,
+            product_ids: Iterable[str],
+            limit: int = 10,
+        ) -> tuple[str, ...] | None:
+            nonlocal shutdown_requested
+            selected = select(feed_id=feed_id, product_ids=product_ids, limit=limit)
+            shutdown_requested = True
+            return selected
+
+        monkeypatch.setattr(
+            store,
+            "select_normal_price_deliveries",
+            select_then_shutdown,
+        )
+        monitor.scan()
+
+        snapshots = {
+            snapshot.product_id: snapshot
+            for snapshot in store.load_price_snapshots("neptun")
+        }
+        assert snapshots["1"].amount == Decimal(100)
+        assert snapshots["2"].amount == Decimal(200)
+        assert sender.messages == []
 
 
 def test_price_monitor_retries_failed_alert_against_unchanged_snapshot(

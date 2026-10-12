@@ -7,11 +7,11 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
 from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
 from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
-from rss2discord.scheduler import (
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.scheduler import (
     RuntimeScheduler,
     ScheduledJob,
     SchedulerControl,
@@ -88,6 +88,7 @@ def make_setec_feed(feed_id: str, interval: float | None) -> FeedConfig:
 
 def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_intervals(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -124,10 +125,13 @@ def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_interval
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            anhoch_monitor_factory=monitor_factory,
         )
 
     # Then
@@ -141,6 +145,7 @@ def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_interval
 
 def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -195,12 +200,21 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            anhoch_monitor_factory,
+        )
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.NeksioPriceMonitor",
+            neksio_monitor_factory,
+        )
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.SetecPriceMonitor",
+            setec_monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            anhoch_monitor_factory=anhoch_monitor_factory,
-            neksio_monitor_factory=neksio_monitor_factory,
-            setec_monitor_factory=setec_monitor_factory,
         )
 
     # Then
@@ -225,6 +239,7 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
 def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     feed_id: str,
     failure: Exception,
 ) -> None:
@@ -250,6 +265,10 @@ def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
 
     caplog.set_level(logging.ERROR)
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            monitor_factory,
+        )
         price_jobs = build_price_jobs(
             config,
             PriceJobDependencies(
@@ -259,7 +278,6 @@ def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            anhoch_monitor_factory=monitor_factory,
         )
         scheduler = RuntimeScheduler(
             SchedulerJobs(

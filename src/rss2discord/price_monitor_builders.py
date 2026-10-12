@@ -1,6 +1,5 @@
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol, assert_never
+from typing import Protocol, assert_never
 
 from .configuration import FeedConfig
 from .delivery_store import DeliveryStore
@@ -10,11 +9,19 @@ from .providers.anhoch.prices import (
     AnhochPriceMonitor,
     AnhochPriceMonitorDependencies,
 )
+from .providers.cccenter.catalog import CCCenterCatalogClient
+from .providers.cccenter.prices import (
+    CCCenterPriceMonitor,
+    CCCenterPriceMonitorDependencies,
+)
 from .providers.ddstore.catalog import DDStoreCatalogClient
 from .providers.ddstore.prices import (
     DDStorePriceMonitor,
     DDStorePriceMonitorDependencies,
 )
+from .providers.gjirafa50.background_monitor import Gjirafa50BackgroundPriceMonitor
+from .providers.gjirafa50.catalog import Gjirafa50CatalogClient
+from .providers.gjirafa50.prices import Gjirafa50PriceMonitorDependencies
 from .providers.hivetec.catalog import HivetecCatalogClient
 from .providers.hivetec.prices import (
     HivetecPriceMonitor,
@@ -25,110 +32,38 @@ from .providers.neksio.prices import (
     NeksioPriceMonitor,
     NeksioPriceMonitorDependencies,
 )
+from .providers.neptun.catalog import NeptunCatalogClient
+from .providers.neptun.prices import (
+    NeptunPriceMonitor,
+    NeptunPriceMonitorDependencies,
+)
+from .providers.pazar3.catalog import Pazar3CatalogClient
+from .providers.pazar3.pacing import Pazar3RequestPacer
+from .providers.pazar3.prices import (
+    Pazar3PriceMonitor,
+    Pazar3PriceMonitorDependencies,
+)
+from .providers.reklama5.catalog import Reklama5CatalogClient
+from .providers.reklama5.prices import (
+    Reklama5PriceMonitor,
+    Reklama5PriceMonitorDependencies,
+)
 from .providers.setec.catalog import SetecCatalogClient
 from .providers.setec.prices import (
     SetecPriceMonitor,
     SetecPriceMonitorDependencies,
 )
-from .retries import FetchRetryPolicy, SQLiteRetryPolicy
-from .transports.cccenter_catalog import CCCenterCatalogClient
-from .transports.cccenter_price_monitor import (
-    CCCenterPriceMonitor,
-    CCCenterPriceMonitorDependencies,
-)
-from .transports.gjirafa50_background_monitor import Gjirafa50BackgroundPriceMonitor
-from .transports.gjirafa50_catalog import Gjirafa50CatalogClient
-from .transports.gjirafa50_price_monitor import Gjirafa50PriceMonitorDependencies
-from .transports.neptun_catalog import NeptunCatalogClient
-from .transports.neptun_price_monitor import (
-    NeptunPriceMonitor,
-    NeptunPriceMonitorDependencies,
-)
-from .transports.pazar3_catalog import Pazar3CatalogClient
-from .transports.pazar3_pacing import Pazar3RequestPacer
-from .transports.pazar3_price_monitor import (
-    Pazar3PriceMonitor,
-    Pazar3PriceMonitorDependencies,
-)
-from .transports.price_monitor import PriceAlertDelivery
-from .transports.reklama5_catalog import Reklama5CatalogClient
-from .transports.reklama5_price_monitor import (
-    Reklama5PriceMonitor,
-    Reklama5PriceMonitorDependencies,
-)
-from .transports.technomarket_catalog import TechnomarketCatalogClient
-from .transports.technomarket_price_monitor import (
+from .providers.technomarket.catalog import TechnomarketCatalogClient
+from .providers.technomarket.prices import (
     TechnomarketPriceMonitor,
     TechnomarketPriceMonitorDependencies,
 )
+from .retries import FetchRetryPolicy, SQLiteRetryPolicy
+from .transports.price_monitor import PriceAlertDelivery
 
 
 class PriceMonitor(Protocol):
     def scan(self) -> None: ...
-
-
-type AnhochPriceMonitorFactory = Callable[
-    [FeedConfig, AnhochPriceMonitorDependencies],
-    PriceMonitor,
-]
-type CCCenterPriceMonitorFactory = Callable[
-    [FeedConfig, CCCenterPriceMonitorDependencies],
-    PriceMonitor,
-]
-type DDStorePriceMonitorFactory = Callable[
-    [FeedConfig, DDStorePriceMonitorDependencies],
-    PriceMonitor,
-]
-type HivetecPriceMonitorFactory = Callable[
-    [FeedConfig, HivetecPriceMonitorDependencies],
-    PriceMonitor,
-]
-type Gjirafa50PriceMonitorFactory = Callable[
-    [FeedConfig, Gjirafa50PriceMonitorDependencies],
-    PriceMonitor,
-]
-type NeksioPriceMonitorFactory = Callable[
-    [FeedConfig, NeksioPriceMonitorDependencies],
-    PriceMonitor,
-]
-type NeptunPriceMonitorFactory = Callable[
-    [FeedConfig, NeptunPriceMonitorDependencies],
-    PriceMonitor,
-]
-type Pazar3PriceMonitorFactory = Callable[
-    [FeedConfig, Pazar3PriceMonitorDependencies],
-    PriceMonitor,
-]
-type Reklama5PriceMonitorFactory = Callable[
-    [FeedConfig, Reklama5PriceMonitorDependencies],
-    PriceMonitor,
-]
-type SetecPriceMonitorFactory = Callable[
-    [FeedConfig, SetecPriceMonitorDependencies],
-    PriceMonitor,
-]
-type TechnomarketPriceMonitorFactory = Callable[
-    [FeedConfig, TechnomarketPriceMonitorDependencies],
-    PriceMonitor,
-]
-
-
-@dataclass(frozen=True, slots=True)
-class PriceMonitorFactories:
-    anhoch: AnhochPriceMonitorFactory = AnhochPriceMonitor
-    cccenter: CCCenterPriceMonitorFactory = CCCenterPriceMonitor
-    ddstore: DDStorePriceMonitorFactory = DDStorePriceMonitor
-    hivetec: HivetecPriceMonitorFactory = HivetecPriceMonitor
-    gjirafa50: Gjirafa50PriceMonitorFactory = Gjirafa50BackgroundPriceMonitor
-    neksio: NeksioPriceMonitorFactory = NeksioPriceMonitor
-    neptun: NeptunPriceMonitorFactory = NeptunPriceMonitor
-    pazar3: Pazar3PriceMonitorFactory = Pazar3PriceMonitor
-    reklama5: Reklama5PriceMonitorFactory = Reklama5PriceMonitor
-    setec: SetecPriceMonitorFactory = SetecPriceMonitor
-    technomarket: TechnomarketPriceMonitorFactory = TechnomarketPriceMonitor
-
-
-DEFAULT_PRICE_MONITOR_FACTORIES: Final = PriceMonitorFactories()
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,11 +80,10 @@ class SharedPriceMonitorDependencies:
 def build_provider_price_monitor(
     feed: FeedConfig,
     dependencies: SharedPriceMonitorDependencies,
-    factories: PriceMonitorFactories,
 ) -> PriceMonitor | None:
     match feed.strategy:
         case "anhoch":
-            return factories.anhoch(
+            return AnhochPriceMonitor(
                 feed,
                 AnhochPriceMonitorDependencies(
                     catalog=AnhochCatalogClient(),
@@ -161,7 +95,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "cccenter":
-            return factories.cccenter(
+            return CCCenterPriceMonitor(
                 feed,
                 CCCenterPriceMonitorDependencies(
                     catalog=CCCenterCatalogClient(),
@@ -173,7 +107,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "ddstore":
-            return factories.ddstore(
+            return DDStorePriceMonitor(
                 feed,
                 DDStorePriceMonitorDependencies(
                     catalog=DDStoreCatalogClient(),
@@ -185,7 +119,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "hivetec":
-            return factories.hivetec(
+            return HivetecPriceMonitor(
                 feed,
                 HivetecPriceMonitorDependencies(
                     catalog=HivetecCatalogClient(),
@@ -197,7 +131,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "gjirafa50":
-            return factories.gjirafa50(
+            return Gjirafa50BackgroundPriceMonitor(
                 feed,
                 Gjirafa50PriceMonitorDependencies(
                     catalog=Gjirafa50CatalogClient(),
@@ -211,7 +145,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "neksio":
-            return factories.neksio(
+            return NeksioPriceMonitor(
                 feed,
                 NeksioPriceMonitorDependencies(
                     catalog=NeksioCatalogClient(),
@@ -223,7 +157,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "neptun":
-            return factories.neptun(
+            return NeptunPriceMonitor(
                 feed,
                 NeptunPriceMonitorDependencies(
                     catalog=NeptunCatalogClient(),
@@ -235,7 +169,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "pazar3":
-            return factories.pazar3(
+            return Pazar3PriceMonitor(
                 feed,
                 Pazar3PriceMonitorDependencies(
                     catalog=Pazar3CatalogClient(
@@ -250,7 +184,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "reklama5":
-            return factories.reklama5(
+            return Reklama5PriceMonitor(
                 feed,
                 Reklama5PriceMonitorDependencies(
                     catalog=Reklama5CatalogClient(),
@@ -262,7 +196,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "setec":
-            return factories.setec(
+            return SetecPriceMonitor(
                 feed,
                 SetecPriceMonitorDependencies(
                     catalog=SetecCatalogClient(),
@@ -274,7 +208,7 @@ def build_provider_price_monitor(
                 ),
             )
         case "technomarket":
-            return factories.technomarket(
+            return TechnomarketPriceMonitor(
                 feed,
                 TechnomarketPriceMonitorDependencies(
                     catalog=TechnomarketCatalogClient(),

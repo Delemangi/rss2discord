@@ -9,7 +9,7 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
+from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from tests import setec_price_monitor_helpers as setec
 from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
 from tests.test_cccenter_price_monitor import product

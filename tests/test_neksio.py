@@ -146,8 +146,35 @@ def test_neksio_card_normalizes_negative_stock_and_keeps_product_data(
     )
 
 
-@pytest.mark.parametrize("quantity", ["not-an-integer", 1.5])
-def test_neksio_card_still_rejects_non_integer_stock(quantity: object) -> None:
+@pytest.mark.parametrize(
+    ("quantity", "expected_raw", "expected_stock"),
+    [
+        (True, 1, 1),
+        (False, 0, 0),
+        (1.0, 1, 1),
+        ("7", 7, 7),
+        (-2.0, -2, 0),
+        ("-2", -2, 0),
+    ],
+)
+def test_neksio_card_preserves_integer_coercion_and_clamps_negative_stock(
+    quantity: object,
+    expected_raw: int,
+    expected_stock: int,
+) -> None:
+    payload: dict[str, object] = dict(product_card(19141))
+    payload["quantity"] = quantity
+
+    card = NeksioProductCard.model_validate(payload)
+
+    assert card.stock_quantity == expected_raw
+    assert card.observe(OBSERVED_AT).stock_quantity == expected_stock
+
+
+@pytest.mark.parametrize("quantity", [1.5, "not-an-integer"])
+def test_neksio_card_rejects_non_integral_or_unparseable_stock(
+    quantity: object,
+) -> None:
     payload: dict[str, object] = dict(product_card(19141))
     payload["quantity"] = quantity
 

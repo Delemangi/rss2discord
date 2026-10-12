@@ -44,6 +44,10 @@ feeds:
 
 `refresh_interval` is the ordinary discovery fallback; a feed's optional `ordinary_check_interval` overrides it without changing price scans. `price_check_interval` independently enables an immediate price scan and later periodic scans; its first scan silently establishes a baseline. `delay_between_feeds` spaces ordinary jobs, not individual provider requests; `delay_between_posts` spaces Discord posts. Pazar3 requests also share a 20-second host-wide pacer. Scheduling is best-effort, not a promise of exact scan times. Keep feed IDs stable. Treat webhook URLs as secrets.
 
+## Code boundaries
+
+Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics. Price-monitor builders compose provider monitors and dependencies, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
+
 ## Inspecting and recovering state
 
 The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Health and price/baseline inspection commands are read-only. Replace example batch `42`, feed IDs, and fingerprints with inspected values. Before a state-changing operation, stop every writer and back up the database safely, including any WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.

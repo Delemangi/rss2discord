@@ -4,8 +4,8 @@ import pytest
 from bs4 import BeautifulSoup
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.transports import technomarket_catalog
-from rss2discord.transports.technomarket_catalog import (
+from rss2discord.providers.technomarket import catalog as technomarket_catalog
+from rss2discord.providers.technomarket.catalog import (
     TECHNOMARKET_FEED_URL,
     TechnomarketCatalogClient,
     parse_mkd_price,

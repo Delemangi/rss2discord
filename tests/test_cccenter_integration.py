@@ -7,11 +7,11 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import SOURCE_LABEL_CCCENTER, source_label
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
-from rss2discord.transports.cccenter import CCCenterStrategy
-from rss2discord.transports.cccenter_price_monitor import (
+from rss2discord.providers.cccenter.prices import (
     CCCenterPriceMonitorDependencies,
 )
+from rss2discord.providers.cccenter.strategy import CCCenterStrategy
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 
@@ -71,7 +71,10 @@ def test_cccenter_strategy_passes_app_shutdown_callback_to_discovery(
     assert observed == [shutdown]
 
 
-def test_cccenter_price_monitor_is_wired_into_runtime_factory(tmp_path: Path) -> None:
+def test_cccenter_price_monitor_is_wired_into_runtime_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     feed = FeedConfig(
         id="cccenter",
         url="https://cccenter.mk/shop/?orderby=date",
@@ -90,6 +93,10 @@ def test_cccenter_price_monitor_is_wired_into_runtime_factory(tmp_path: Path) ->
         return RecordingMonitor(feed.id, [], clock)
 
     with DeliveryStore(tmp_path / "state.db") as store:
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.CCCenterPriceMonitor",
+            factory,
+        )
         jobs = build_price_jobs(
             AppConfig(feeds=(feed,)),
             PriceJobDependencies(
@@ -99,7 +106,6 @@ def test_cccenter_price_monitor_is_wired_into_runtime_factory(tmp_path: Path) ->
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
             ),
-            cccenter_monitor_factory=factory,
         )
 
     assert [job.interval for job in jobs] == [3600]

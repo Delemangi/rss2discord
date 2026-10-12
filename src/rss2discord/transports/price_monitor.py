@@ -217,6 +217,19 @@ def pause_price_fetch_failure(
     return True
 
 
+def run_price_scan(
+    scan: Callable[[], None],
+    store: PriceRecoveryStore,
+    feed_id: str,
+) -> None:
+    """Pause an active recovery batch when the monitor fetch fails."""
+    try:
+        scan()
+    except FeedFetchError as error:
+        if not pause_price_fetch_failure(store, feed_id, error):
+            raise
+
+
 def prepare_price_delivery(
     *,
     store: PriceRecoveryStore,
@@ -458,18 +471,15 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
                         operation_started_at=operation_started_at,
                     ),
                 )
-    if silent and plan.allow_silent_updates:
-        dependencies.sqlite_retry_policy.execute(
-            lambda: store.upsert_price_snapshots(silent),
-        )
-    changes_by_id = {change.current.product_id: change for change in changes}
-    deliver_price_changes(
-        (changes_by_id[product_id] for product_id in plan.selected_ids),
+    deliver_planned_price_changes(
         dependencies,
         message_for,
+        feed_id=feed_id,
         plan=plan,
+        silent_updates=silent,
+        changes=changes,
+        item_count=len(current),
     )
-    finish_price_delivery(store, feed_id, plan, len(current))
 
 
 def prepare_price_scan[ProductT](
@@ -563,3 +573,35 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
                 return
             case unreachable:
                 assert_never(unreachable)
+
+
+def deliver_planned_price_changes[PriceChangeT: DeliverablePriceChange](
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[PriceChangeT], WebhookMessage],
+    *,
+    feed_id: str,
+    plan: PriceDeliveryPlan,
+    silent_updates: Sequence[PriceSnapshot],
+    changes: Sequence[PriceChangeT],
+    item_count: int,
+) -> None:
+    """Apply permitted silent updates, deliver selected changes, and record health."""
+    if plan.blocked:
+        return
+    if silent_updates and plan.allow_silent_updates:
+        dependencies.sqlite_retry_policy.execute(
+            lambda: dependencies.snapshots.upsert_price_snapshots(silent_updates),
+        )
+    changes_by_id = {change.current.product_id: change for change in changes}
+    deliver_price_changes(
+        (changes_by_id[product_id] for product_id in plan.selected_ids),
+        dependencies,
+        message_for,
+        plan=plan,
+    )
+    finish_price_delivery(
+        dependencies.snapshots,
+        feed_id,
+        plan,
+        item_count,
+    )

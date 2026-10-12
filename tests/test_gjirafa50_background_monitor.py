@@ -7,19 +7,20 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.price_monitor_builders import (
-    DEFAULT_PRICE_MONITOR_FACTORIES,
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports import gjirafa50_background_monitor
-from rss2discord.transports.gjirafa50_background_monitor import (
+from rss2discord.providers.gjirafa50 import (
+    background_monitor as gjirafa50_background_monitor,
+)
+from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
-from rss2discord.transports.gjirafa50_price_monitor import (
+from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitorDependencies,
 )
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock
@@ -241,7 +242,6 @@ def _build_background_monitor(
                 delivery=PriceAlertDelivery(clock.sleep, 0, lambda: False),
                 pazar3_pacer=Pazar3RequestPacer(clock.monotonic),
             ),
-            DEFAULT_PRICE_MONITOR_FACTORIES,
         )
     assert isinstance(monitor, Gjirafa50BackgroundPriceMonitor)
     return monitor

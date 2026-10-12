@@ -5,12 +5,12 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.ddstore.prices import (
     DDStorePriceMonitorDependencies,
 )
 from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 
@@ -48,6 +48,7 @@ def test_app_injects_shutdown_callback_into_ddstore_strategy(tmp_path: Path) -> 
 
 def test_build_price_jobs_dispatches_only_enabled_ddstore_feeds(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
     clock = FakeClock(maximum_sleeps=1)
@@ -78,10 +79,13 @@ def test_build_price_jobs_dispatches_only_enabled_ddstore_feeds(
         )
 
         # When
+        monkeypatch.setattr(
+            "rss2discord.price_monitor_builders.DDStorePriceMonitor",
+            ddstore_monitor_factory,
+        )
         jobs = build_price_jobs(
             config,
             dependencies,
-            ddstore_monitor_factory=ddstore_monitor_factory,
         )
 
     # Then

@@ -8,7 +8,8 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
-from rss2discord.transports import Gjirafa50Strategy, gjirafa50
+from rss2discord.providers.gjirafa50 import catalog as gjirafa50
+from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from tests.app_helpers import FakeSender
 
 

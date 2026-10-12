@@ -2,13 +2,19 @@ from decimal import Decimal
 
 import pytest
 
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import FeedFetchError, gjirafa50_catalog, gjirafa50_http
-from rss2discord.transports.gjirafa50_catalog import (
+from rss2discord.providers.gjirafa50 import (
+    catalog as gjirafa50_catalog,
+)
+from rss2discord.providers.gjirafa50 import (
+    http as gjirafa50_http,
+)
+from rss2discord.providers.gjirafa50.catalog import (
     Gjirafa50CatalogClient,
     _OperationBudget,
 )
-from rss2discord.transports.gjirafa50_models import Gjirafa50PriceRange
+from rss2discord.providers.gjirafa50.models import Gjirafa50PriceRange
+from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import FeedFetchError
 from tests.gjirafa50_helpers import (
     ROOT_URL,
     RecordingGet,

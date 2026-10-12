@@ -6,10 +6,10 @@ import pytest
 from bs4 import BeautifulSoup
 
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.providers.cccenter import catalog as cccenter_catalog
+from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
+from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports import cccenter_catalog
-from rss2discord.transports.cccenter_catalog import CCCenterCatalogClient
-from rss2discord.transports.cccenter_models import CCCenterListing, CCCenterProduct
 
 DETAIL = (
     '<div class="product"><h1 class="product_title">Selected product</h1>'
