@@ -4,11 +4,11 @@ import pytest
 
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.reklama5.catalog import Reklama5CatalogClient
 from rss2discord.providers.reklama5.prices import (
     Reklama5PriceMonitorDependencies,
 )
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 from tests.reklama5_helpers import SEARCH_URL
 from tests.runtime_helpers import FakeClock, RecordingMonitor

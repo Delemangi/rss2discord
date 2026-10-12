@@ -280,6 +280,13 @@ def test_reklama5_parser_parses_all_site_month_tokens(
     assert parsed == datetime(year, month, 1, 9, 15, tzinfo=SKOPJE)
 
 
+def test_reklama5_month_pattern_rejects_pazar3_trailing_period() -> None:
+    page = parse_cards(Reklama5Card(timestamp="27 јул. 14:09"))
+
+    assert page.listings == ()
+    assert page.organic_ids == {"9000001"}
+
+
 def test_reklama5_parser_rolls_a_future_month_only_timestamp_to_previous_year() -> None:
     parsed = parse_cards(Reklama5Card(timestamp="2 авг 13:00")).listings[0].activity_at
 

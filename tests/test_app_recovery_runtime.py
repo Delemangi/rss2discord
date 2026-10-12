@@ -10,10 +10,11 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
 from rss2discord.recovery_models import HealthUpdate
-from rss2discord.scheduler import JobTiming
+from rss2discord.runtime.application import _process_feed_safely, _record_job_timing
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.runtime.scheduler import JobTiming
 from tests.app_helpers import (
     FakeEntry,
     FakeSender,
@@ -176,7 +177,7 @@ def test_failed_catalog_does_not_create_baseline_candidate(tmp_path: Path) -> No
         app._strategies["cccenter"] = CountingStrategy(
             FeedFetchError("CCCenter", "IncompletePage"),
         )
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         assert store.load_baseline_candidate(feed.id) is None
         assert store.list_health(feed.id)[0].state == "failed"
 
@@ -205,7 +206,7 @@ def test_blocked_origin_skips_peer_ordinary_and_price_jobs_across_restart(
         app = RSSToDiscord(AppConfig(feeds=feeds), store, FakeSender([]))
         blocked_strategy = CountingStrategy(FeedFetchError("RSS", "BotChallenge"))
         app._strategies["rss"] = blocked_strategy
-        app._process_feed_safely(blocked)
+        _process_feed_safely(blocked, app.process_feed, app._store)
         deadline = store.get_blocked_until(blocked.id)
         assert deadline is not None
         assert deadline >= now + 21600
@@ -266,7 +267,10 @@ def test_expired_block_allows_real_probe_and_healthy_recovery(
                 0,
             ),
         )
-        monkeypatch.setattr("rss2discord.app.time.time", lambda: now + 21601)
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.time.time",
+            lambda: now + 21601,
+        )
         strategy = CountingStrategy()
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, FakeSender([]))
         app._strategies["rss"] = strategy
@@ -287,7 +291,7 @@ def test_health_error_payload_and_logs_do_not_expose_exception_secret(
         app._strategies["rss"] = CountingStrategy(
             FeedFetchError("RSS", "https://secret.example/token"),
         )
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         assert store.list_health(feed.id)[0].cause == "FetchError"
         assert "secret.example" not in caplog.text
 
@@ -339,8 +343,7 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
             ),
         )
         jobs[0].run()
-        app = RSSToDiscord(AppConfig(feeds=(feed,)), store, FakeSender([]))
-        app._record_job_timing(JobTiming(feed.id, "price", 1, 4, 6))
+        _record_job_timing(store, JobTiming(feed.id, "price", 1, 4, 6))
         record = store.list_health(feed.id)[0]
         assert record.state == "quarantined"
         assert record.cause == "ApprovalRequired"
@@ -446,14 +449,17 @@ def test_expired_blocked_probe_restarts_cooldown(
                 0,
             ),
         )
-        monkeypatch.setattr("rss2discord.app.time.time", lambda: now + 21601)
+        monkeypatch.setattr(
+            "rss2discord.runtime.application.time.time",
+            lambda: now + 21601,
+        )
         strategy = CountingStrategy(FeedFetchError("RSS", "BotChallenge"))
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, FakeSender([]))
         app._strategies["rss"] = strategy
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         assert strategy.calls == 1
         assert store.get_blocked_until(feed.id) == now + 43201
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         assert strategy.calls == 1
 
 
@@ -471,7 +477,7 @@ def test_repeated_delivery_limit_failures_record_one_outcome_without_false_recov
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, strategy, (feed,))
         for attempt in range(1, 4):
-            app._process_feed_safely(feed)
+            _process_feed_safely(feed, app.process_feed, app._store)
             health = store.list_health(feed.id)[0]
             assert health.state == "failed"
             assert health.total_attempts == attempt
@@ -482,7 +488,7 @@ def test_repeated_delivery_limit_failures_record_one_outcome_without_false_recov
         assert caplog.text.count("health=failed") == 1
 
         strategy.entries.clear()
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert health.state == "empty"
         assert health.total_attempts == 4
@@ -498,7 +504,7 @@ def test_ordinary_delivery_exception_records_only_failure_then_real_recovery(
     sender = FakeSender([RuntimeError("delivery failed"), True])
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, FakeStrategy([make_entry("a")]), (feed,))
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.total_attempts, health.total_successes) == (
             "failed",
@@ -506,7 +512,7 @@ def test_ordinary_delivery_exception_records_only_failure_then_real_recovery(
             0,
         )
         assert not store.has_delivered(feed.id, "a")
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.total_attempts, health.total_successes) == (
             "healthy",
@@ -525,7 +531,7 @@ def test_unsuccessful_send_is_not_a_fetch_failure(tmp_path: Path) -> None:
             FakeStrategy([make_entry("a")]),
             (feed,),
         )
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.total_attempts, health.total_successes) == (
             "healthy",
@@ -561,7 +567,7 @@ def test_quiet_ordinary_processing_records_one_success(
             sender,
         )
         app._strategies["rss"] = FakeStrategy(entries)
-        app._process_feed_safely(feed)
+        _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert health.state == ("empty" if quiet_case == "empty_seed" else "healthy")
         assert health.total_attempts == health.total_successes == 1
@@ -603,6 +609,6 @@ def test_interrupted_ordinary_processing_does_not_publish_health(
                 app.request_shutdown()
                 return False
 
-            monkeypatch.setattr(app, "_interruptible_sleep", stop)
-        app._process_feed_safely(feed)
+            monkeypatch.setattr(app._runtime, "sleep", stop)
+        _process_feed_safely(feed, app.process_feed, app._store)
         assert store.list_health(feed.id) == ()

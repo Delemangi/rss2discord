@@ -1,8 +1,6 @@
 import logging
-import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from typing import Any, Final, Literal
 
 from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
@@ -10,49 +8,22 @@ from .configuration import AppConfig, FeedConfig
 from .delivery_limits import enforce_delivery_limits
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordSender, WebhookMessage
+from .discovery_builders import build_discovery_strategies
 from .models import EntryData, EntryId
-from .price_runtime import (
-    PriceJobDependencies,
-    build_price_jobs,
-    feed_is_blocked,
-    record_fetch_failure,
-    record_runtime_health,
-    safe_error_cause,
-)
-from .providers.anhoch.strategy import AnhochStrategy
-from .providers.cccenter.strategy import CCCenterStrategy
-from .providers.ddstore.strategy import DDStoreStrategy
-from .providers.gjirafa50.strategy import Gjirafa50Strategy
-from .providers.hivetec.strategy import HivetecStrategy
-from .providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
-from .providers.neksio.strategy import NeksioStrategy
-from .providers.neptun.strategy import NeptunStrategy
-from .providers.pazar3.pacing import Pazar3RequestPacer
-from .providers.pazar3.strategy import Pazar3Strategy
-from .providers.reklama5.strategy import Reklama5Strategy
-from .providers.setec.strategy import SetecStrategy
-from .providers.technomarket.strategy import TechnomarketStrategy
 from .recovery_models import HealthUpdate
 from .retries import (
-    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
 )
-from .scheduler import (
-    JobOutcome,
-    JobTiming,
-    RuntimeScheduler,
-    ScheduledJob,
-    SchedulerControl,
-    SchedulerJobs,
+from .runtime.application import ApplicationRuntime
+from .runtime.health import (
+    feed_is_blocked,
+    record_runtime_health,
+    safe_error_cause,
 )
-from .transports import (
-    FeedFetchError,
-    RSSStrategy,
-    ScraperStrategy,
-    XenForoStrategy,
-)
+from .runtime.scheduler import JobOutcome
+from .transports import FeedFetchError, ScraperStrategy
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
@@ -68,44 +39,25 @@ class RSSToDiscord:
         self._config = config
         self._store = store
         self._sender = sender
-        self._shutdown_requested = False
-        self._pazar3_pacer = Pazar3RequestPacer(time.monotonic)
-        self._strategies: dict[str, ScraperStrategy] = {
-            "anhoch": AnhochStrategy(),
-            "cccenter": CCCenterStrategy(self.is_shutdown_requested),
-            "ddstore": DDStoreStrategy(self.is_shutdown_requested),
-            "gjirafa50": Gjirafa50Strategy(self.is_shutdown_requested),
-            "hivetec": HivetecStrategy(self.is_shutdown_requested),
-            "itmk_oglasnik": ITMkOglasnikStrategy(),
-            "neksio": NeksioStrategy(self.is_shutdown_requested),
-            "neptun": NeptunStrategy(),
-            "pazar3": Pazar3Strategy(
-                pacer=self._pazar3_pacer,
-                sleep=self._interruptible_sleep,
-                is_shutdown_requested=self.is_shutdown_requested,
-            ),
-            "reklama5": Reklama5Strategy(
-                is_shutdown_requested=self.is_shutdown_requested,
-            ),
-            "rss": RSSStrategy(),
-            "setec": SetecStrategy(),
-            "technomarket": TechnomarketStrategy(self.is_shutdown_requested),
-            "xenforo": XenForoStrategy(),
-        }
+        self._runtime = ApplicationRuntime()
+        self._strategies = build_discovery_strategies(
+            is_shutdown_requested=self.is_shutdown_requested,
+            sleep=self._runtime.sleep,
+            pazar3_pacer=self._runtime.pazar3_pacer,
+        )
         self._adapters: dict[str, SourceAdapter] = {
             "hackernews": HackerNewsAdapter(),
             "reddit": RedditAdapter(),
         }
 
     def request_shutdown(self) -> None:
-        logger.info("Shutdown requested")
-        self._shutdown_requested = True
+        self._runtime.request_shutdown()
 
     def is_shutdown_requested(self) -> bool:
-        return self._shutdown_requested
+        return self._runtime.is_shutdown_requested()
 
     def process_feed(self, feed: FeedConfig) -> JobOutcome:
-        if self._shutdown_requested:
+        if self.is_shutdown_requested():
             return JobOutcome.SKIPPED
         attempted_at = int(time.time())
         if feed_is_blocked(feed, self._config.feeds, self._store, attempted_at):
@@ -114,7 +66,7 @@ class RSSToDiscord:
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
-        if self._shutdown_requested:
+        if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
         if baseline_state == "ready" and not self._process_entries(
@@ -124,7 +76,7 @@ class RSSToDiscord:
             fetched_source_title,
         ):
             return JobOutcome.ATTEMPTED
-        if self._shutdown_requested:
+        if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         record_runtime_health(
             self._store,
@@ -182,7 +134,7 @@ class RSSToDiscord:
         enrichment_limit_logged = False
 
         for entry in entries:
-            if self._shutdown_requested:
+            if self.is_shutdown_requested():
                 return False
 
             entry_id = strategy.get_entry_id(entry)
@@ -228,76 +180,17 @@ class RSSToDiscord:
                 entry=entry_data,
                 source_title=source_title,
             )
-            if not self._sender.send(message, self._interruptible_sleep):
+            if not self._sender.send(message, self._runtime.sleep):
                 continue
 
             if not self._persist_delivery(feed.id, entry_id):
                 return False
-            if not self._interruptible_sleep(self._config.delay_between_posts):
+            if not self._runtime.sleep(self._config.delay_between_posts):
                 return False
         return True
 
     def run(self) -> None:
-        if not self._config.feeds:
-            logger.warning("No feeds configured")
-            return
-
-        logger.info(
-            "Starting RSS to Discord with %d feeds; refresh interval %.1f seconds",
-            len(self._config.feeds),
-            self._config.refresh_interval,
-        )
-        ordinary_intervals = tuple(
-            feed.ordinary_check_interval
-            if feed.ordinary_check_interval is not None
-            else self._config.refresh_interval
-            for feed in self._config.feeds
-        )
-        gap_utilization = self._config.delay_between_feeds * sum(
-            1 / interval for interval in ordinary_intervals
-        )
-        if gap_utilization >= 1:
-            logger.warning(
-                "Ordinary-feed gap budget utilization %.3f meets or exceeds "
-                "available cadence capacity; cadence is best-effort and fetch "
-                "durations and price jobs can add further delay",
-                gap_utilization,
-            )
-        RuntimeScheduler(
-            SchedulerJobs(
-                tuple(
-                    ScheduledJob(
-                        feed.id,
-                        "ordinary",
-                        feed.ordinary_check_interval
-                        if feed.ordinary_check_interval is not None
-                        else self._config.refresh_interval,
-                        partial(self._process_feed_safely, feed),
-                    )
-                    for feed in self._config.feeds
-                ),
-                build_price_jobs(
-                    self._config,
-                    PriceJobDependencies(
-                        store=self._store,
-                        sender=self._sender,
-                        sleep=self._interruptible_sleep,
-                        delay_between_posts=self._config.delay_between_posts,
-                        is_shutdown_requested=self.is_shutdown_requested,
-                        pazar3_pacer=self._pazar3_pacer,
-                    ),
-                ),
-                ordinary_gap=self._config.delay_between_feeds,
-            ),
-            SchedulerControl(
-                time.monotonic,
-                self._interruptible_sleep,
-                self.is_shutdown_requested,
-            ),
-            observer=self._record_job_timing,
-        ).run()
-
-        logger.info("Shutdown complete")
+        self._runtime.run(self._config, self._store, self._sender, self.process_feed)
 
     def _prepare_complete_baseline(
         self,
@@ -328,53 +221,13 @@ class RSSToDiscord:
         )
         return "initialized"
 
-    def _record_job_timing(self, timing: JobTiming) -> None:
-        try:
-            self._store.record_job_timing(
-                feed_id=timing.name,
-                job_kind=timing.kind,
-                duration_ms=max(
-                    0,
-                    int((timing.finished_at - timing.started_at) * 1000),
-                ),
-                scheduler_lag_ms=max(
-                    0,
-                    int((timing.started_at - timing.scheduled_at) * 1000),
-                ),
-            )
-        except sqlite3.Error as error:
-            logger.log(
-                logging.ERROR,
-                "Job timing persistence failed for feed %s (%s)",
-                timing.name,
-                type(error).__name__,
-            )
-
-    def _process_feed_safely(self, feed: FeedConfig) -> JobOutcome | None:
-        attempted_at = int(time.time())
-        started_at = time.monotonic()
-        try:
-            return self.process_feed(feed)
-        except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
-            return JobOutcome.ATTEMPTED
-        except Exception as error:
-            record_fetch_failure(
-                self._store,
-                feed.id,
-                "ordinary",
-                error,
-                attempted_at,
-                duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
-            )
-            return JobOutcome.ATTEMPTED
-
     def _fetch_entries(
         self,
         feed: FeedConfig,
         strategy: ScraperStrategy,
     ) -> tuple[list[Any], str]:
         retry_policy = FetchRetryPolicy(
-            sleep=self._interruptible_sleep,
+            sleep=self._runtime.sleep,
             on_retry=lambda error, delay: logger.warning(
                 "Error processing feed %s: %s; retrying in %.1f seconds",
                 feed.id,
@@ -424,7 +277,7 @@ class RSSToDiscord:
 
     def _persist_delivery(self, feed_id: str, entry_id: EntryId) -> bool:
         retry_policy = SQLiteRetryPolicy(
-            sleep=self._interruptible_sleep,
+            sleep=self._runtime.sleep,
             on_retry=lambda error, delay: logger.warning(
                 "Could not persist delivery for feed %s; retrying in %.1f seconds (%s)",
                 feed_id,
@@ -437,9 +290,3 @@ class RSSToDiscord:
         except SQLiteRetryInterruptedError:
             return False
         return True
-
-    def _interruptible_sleep(self, seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
-        while not self._shutdown_requested and time.monotonic() < deadline:
-            time.sleep(min(0.5, deadline - time.monotonic()))
-        return not self._shutdown_requested

@@ -84,7 +84,7 @@ def test_reklama5_retry_restarts_with_page_one_and_a_fresh_attempt_budget(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = RSSToDiscord(AppConfig(feeds=(feed,)), store, UnusedSender())
-        monkeypatch.setattr(app, "_interruptible_sleep", lambda _seconds: True)
+        monkeypatch.setattr(app._runtime, "sleep", lambda _seconds: True)
 
         entries, title = app._fetch_entries(
             feed,

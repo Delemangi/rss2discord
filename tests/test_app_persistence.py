@@ -104,8 +104,8 @@ def test_successful_send_is_not_repeated_when_persistence_temporarily_fails(
 
         monkeypatch.setattr(store, "mark_delivered", temporarily_locked)
         monkeypatch.setattr(
-            app,
-            "_interruptible_sleep",
+            app._runtime,
+            "sleep",
             record_persistence_sleep,
         )
 
@@ -145,7 +145,7 @@ def test_shutdown_interrupts_persistence_retry_after_immediate_attempt(
             return False
 
         monkeypatch.setattr(store, "mark_delivered", temporarily_locked)
-        monkeypatch.setattr(app, "_interruptible_sleep", request_shutdown)
+        monkeypatch.setattr(app._runtime, "sleep", request_shutdown)
 
         # When
         app.process_feed(feed)
@@ -205,7 +205,7 @@ def test_permanent_persistence_error_is_not_retried(
             return True
 
         monkeypatch.setattr(store, "mark_delivered", corrupt_then_succeed)
-        monkeypatch.setattr(app, "_interruptible_sleep", record_sleep)
+        monkeypatch.setattr(app._runtime, "sleep", record_sleep)
 
         # When / Then
         with pytest.raises(sqlite3.DatabaseError, match="malformed"):

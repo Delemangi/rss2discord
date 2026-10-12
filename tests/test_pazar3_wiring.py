@@ -7,13 +7,13 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
-from rss2discord.price_runtime import PriceJobDependencies, build_price_jobs
 from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.prices import (
     Pazar3PriceMonitor,
     Pazar3PriceMonitorDependencies,
 )
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
+from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
 
 
@@ -42,7 +42,7 @@ def test_app_registers_pazar3_strategy(tmp_path: Path) -> None:
     assert "pazar3" in app._strategies
     strategy = app._strategies["pazar3"]
     assert isinstance(strategy, Pazar3Strategy)
-    assert strategy._pacer is app._pazar3_pacer
+    assert strategy._pacer is app._runtime.pazar3_pacer
 
 
 def test_source_label_returns_pazar3() -> None:
@@ -77,7 +77,7 @@ def test_price_runtime_injects_shared_pazar3_pacer(
                 sleep=lambda seconds: True,
                 delay_between_posts=0,
                 is_shutdown_requested=lambda: False,
-                pazar3_pacer=app._pazar3_pacer,
+                pazar3_pacer=app._runtime.pazar3_pacer,
             ),
         )
 
@@ -87,5 +87,5 @@ def test_price_runtime_injects_shared_pazar3_pacer(
     assert type(price_monitor) is Pazar3PriceMonitor
     assert type(price_monitor._dependencies) is Pazar3PriceMonitorDependencies
     assert type(price_monitor._dependencies.catalog) is Pazar3CatalogClient
-    assert price_monitor._dependencies.catalog._pacer is app._pazar3_pacer
+    assert price_monitor._dependencies.catalog._pacer is app._runtime.pazar3_pacer
     assert constructed == [price_monitor._dependencies]
