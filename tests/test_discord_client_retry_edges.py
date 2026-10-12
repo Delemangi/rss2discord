@@ -6,6 +6,7 @@ import requests
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import (
+    DiscordDeliveryResult,
     DiscordWebhookClient,
     JSONValue,
     SleepCallback,
@@ -119,6 +120,84 @@ def test_final_server_error_response_does_not_sleep(
     assert not delivered
     assert attempts == 3
     assert delays == [2.0, 4.0]
+
+
+@pytest.mark.parametrize("error_type", [requests.ConnectionError, requests.Timeout])
+def test_exhausted_connection_errors_do_not_sleep_after_final_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[requests.RequestException],
+) -> None:
+    session = requests.Session()
+    attempts = 0
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        nonlocal attempts
+        del url, kwargs
+        attempts += 1
+        raise error_type("request failed")
+
+    monkeypatch.setattr(session, "post", post)
+
+    result = DiscordWebhookClient(session).send(
+        make_message(),
+        record_delays(delays, continue_waiting=True),
+    )
+
+    assert result is DiscordDeliveryResult.FAILED
+    assert attempts == 3
+    assert delays == [2.0, 4.0]
+
+
+def test_final_rate_limit_zero_delay_is_not_slept_but_nonfinal_zero_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = requests.Session()
+    attempts = 0
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        nonlocal attempts
+        del url, kwargs
+        attempts += 1
+        return make_response(429, retry_after="0")
+
+    monkeypatch.setattr(session, "post", post)
+
+    result = DiscordWebhookClient(session).send(
+        make_message(),
+        record_delays(delays, continue_waiting=True),
+    )
+
+    assert result is DiscordDeliveryResult.FAILED
+    assert attempts == 3
+    assert delays == [0, 0]
+
+
+def test_positive_final_rate_limit_sleep_can_be_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = requests.Session()
+    attempts = 0
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        nonlocal attempts
+        del url, kwargs
+        attempts += 1
+        return make_response(429, retry_after="0.25")
+
+    monkeypatch.setattr(session, "post", post)
+
+    def interrupt_final_wait(seconds: float) -> bool:
+        delays.append(seconds)
+        return len(delays) < 3
+
+    result = DiscordWebhookClient(session).send(make_message(), interrupt_final_wait)
+
+    assert result is DiscordDeliveryResult.INTERRUPTED
+    assert attempts == 3
+    assert delays == [0.25, 0.25, 0.25]
 
 
 @pytest.mark.parametrize(
