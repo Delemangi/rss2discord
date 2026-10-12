@@ -2,8 +2,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from rss2discord.providers.pazar3.scope import Pazar3SearchScope
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.pazar3_scope import Pazar3SearchScope
 
 SEARCH_URL = (
     "https://www.pazar3.mk/oglasi/elektronika/"

@@ -6,17 +6,17 @@ from typing import Final
 
 from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryId
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.pazar3_http import Pazar3ScanBudget, fetch_pazar3_page
-from rss2discord.transports.pazar3_models import Pazar3Listing
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_parser import parse_pazar3_page
-from rss2discord.transports.pazar3_scope import (
+from rss2discord.providers.pazar3.http import Pazar3ScanBudget, fetch_pazar3_page
+from rss2discord.providers.pazar3.models import Pazar3Listing
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.parser import parse_pazar3_page
+from rss2discord.providers.pazar3.scope import (
     MAX_PAZAR3_CATALOG_PAGES,
     PAZAR3_LABEL,
     Pazar3SearchScope,
 )
+from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.base import FeedFetchError
 
 MAX_PAZAR3_CATALOG_LISTINGS: Final = 500
 PAZAR3_RESULTS_PER_PAGE: Final = 50

@@ -7,15 +7,15 @@ from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.strategy import NeptunStrategy
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.strategy import Pazar3Strategy
+from rss2discord.providers.reklama5.strategy import Reklama5Strategy
 from rss2discord.providers.setec.strategy import SetecStrategy
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from rss2discord.transports import (
-    Pazar3Strategy,
-    Reklama5Strategy,
     RSSStrategy,
     XenForoStrategy,
 )
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
 
 
 def test_build_discovery_strategies_eagerly_constructs_all_native_strategies() -> None:

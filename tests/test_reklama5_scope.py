@@ -2,8 +2,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from rss2discord.providers.reklama5.http import Reklama5SearchScope
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.reklama5_http import Reklama5SearchScope
 from tests.reklama5_helpers import SEARCH_URL
 
 

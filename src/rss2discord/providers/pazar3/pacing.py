@@ -2,9 +2,9 @@ from collections.abc import Callable
 from typing import Final
 
 from rss2discord.discord.client import SleepCallback
+from rss2discord.providers.pazar3.scope import PAZAR3_LABEL
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.pazar3_scope import PAZAR3_LABEL
 
 PAZAR3_REQUEST_INTERVAL_SECONDS: Final = 20.0
 

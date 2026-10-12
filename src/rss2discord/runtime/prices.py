@@ -19,13 +19,13 @@ from rss2discord.price_monitor_builders import (
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 
 from .health import (

@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from rss2discord.models import EntryId
-from rss2discord.transports import FeedFetchError
-from rss2discord.transports.reklama5 import (
-    SKOPJE,
+from rss2discord.providers.reklama5.parser import (
     Reklama5Listing,
     Reklama5Page,
     parse_reklama5_page,
 )
+from rss2discord.transports import FeedFetchError
+from rss2discord.transports.listing_activity import SKOPJE
 from tests.reklama5_helpers import (
     FIXED_NOW,
     Reklama5Card,
@@ -278,6 +278,13 @@ def test_reklama5_parser_parses_all_site_month_tokens(
     )
 
     assert parsed == datetime(year, month, 1, 9, 15, tzinfo=SKOPJE)
+
+
+def test_reklama5_month_pattern_rejects_pazar3_trailing_period() -> None:
+    page = parse_cards(Reklama5Card(timestamp="27 јул. 14:09"))
+
+    assert page.listings == ()
+    assert page.organic_ids == {"9000001"}
 
 
 def test_reklama5_parser_rolls_a_future_month_only_timestamp_to_previous_year() -> None:

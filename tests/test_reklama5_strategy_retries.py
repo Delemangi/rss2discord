@@ -12,9 +12,9 @@ from rss2discord.discord.client import (
     SleepCallback,
     WebhookMessage,
 )
-from rss2discord.transports import reklama5 as reklama5_transport
-from rss2discord.transports import reklama5_http
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5 import strategy as reklama5_transport
+from rss2discord.providers.reklama5.http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
     MAX_REKLAMA5_ATTEMPT_SECONDS,
     Reklama5ScanBudget,
@@ -72,7 +72,7 @@ def test_reklama5_retry_restarts_with_page_one_and_a_fresh_attempt_budget(
         budget_starts.append((budget.bytes_remaining, budget.expires_at))
         return budget
 
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
     monkeypatch.setattr(Reklama5ScanBudget, "for_attempt", record_budget)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: 10.0)
     feed = FeedConfig(

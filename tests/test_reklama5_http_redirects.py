@@ -4,8 +4,9 @@ import pytest
 from curl_cffi import CurlECode
 from curl_cffi import requests as curl_requests
 
-from rss2discord.transports import FeedFetchError, reklama5_http
-from rss2discord.transports.reklama5_http import fetch_reklama5_page
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.http import fetch_reklama5_page
+from rss2discord.transports import FeedFetchError
 from tests.reklama5_helpers import RecordingGet, StubResponse, scan_budget, search_scope
 
 
@@ -13,7 +14,7 @@ def test_reklama5_fetch_sends_required_headers_and_stream_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get = RecordingGet([StubResponse(b"page")])
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
     content = fetch_reklama5_page(search_scope().page_request(1), scan_budget())
 
@@ -51,7 +52,7 @@ def test_reklama5_fetch_resolves_each_relative_redirect_against_response_url(
             StubResponse(b"page", url=second_url),
         ],
     )
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
     content = fetch_reklama5_page(request, scan_budget())
 
@@ -78,7 +79,7 @@ def test_reklama5_fetch_shares_redirect_limit_across_page_calls(
         responses.append(StubResponse(b"page", url=request.url))
     get = RecordingGet(responses)
     budget = scan_budget()
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
     assert fetch_reklama5_page(scope.page_request(1), budget) == b"page"
     with pytest.raises(FeedFetchError, match="TooManyRedirects"):
@@ -105,7 +106,7 @@ def test_reklama5_fetch_rejects_missing_and_untrusted_redirects(
     headers = {} if location is None else {"Location": location}
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [StubResponse(b"redirect", status_code=302, headers=headers)],
         ),
@@ -125,7 +126,7 @@ def test_reklama5_fetch_rejects_filter_equivalent_empty_fragment_redirect(
     location = f"{request.url}#"
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [
                 StubResponse(
@@ -163,7 +164,7 @@ def test_reklama5_fetch_marks_request_transport_failures_retryable(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([], interruption=error),
     )
 
@@ -179,7 +180,7 @@ def test_reklama5_fetch_marks_pre_response_invalid_url_permanent(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [],
             interruption=curl_requests.RequestsError(
@@ -211,7 +212,7 @@ def test_reklama5_fetch_marks_streamed_request_failures_retryable(
     budget = scan_budget(bytes_remaining=100)
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [StubResponse(b"", chunks=(b"partial",), interruption=interruption)],
         ),
@@ -239,7 +240,7 @@ def test_reklama5_fetch_propagates_exact_retry_after_result(
     monkeypatch.setattr(reklama5_http, "parse_retry_after", parse_retry_after)
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [
                 StubResponse(

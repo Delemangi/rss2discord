@@ -15,18 +15,18 @@ from rss2discord.providers.gjirafa50.prices import Gjirafa50PriceMonitorDependen
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitorDependencies
 from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
 from rss2discord.providers.neptun.prices import NeptunPriceMonitorDependencies
+from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.prices import Pazar3PriceMonitorDependencies
+from rss2discord.providers.reklama5.prices import (
+    Reklama5PriceMonitorDependencies,
+)
 from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
 from rss2discord.providers.technomarket.prices import (
     TechnomarketPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.pazar3_catalog import Pazar3CatalogClient
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_price_monitor import Pazar3PriceMonitorDependencies
 from rss2discord.transports.price_monitor import PriceAlertDelivery
-from rss2discord.transports.reklama5_price_monitor import (
-    Reklama5PriceMonitorDependencies,
-)
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock
 

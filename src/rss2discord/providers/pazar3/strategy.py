@@ -4,16 +4,16 @@ from datetime import UTC, datetime
 
 from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.base import FeedFetchError, ScraperStrategy
-from rss2discord.transports.pazar3_http import (
+from rss2discord.providers.pazar3.http import (
     Pazar3ScanBudget,
     fetch_pazar3_page,
 )
-from rss2discord.transports.pazar3_models import Pazar3Listing, Pazar3Page
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_parser import parse_pazar3_page
-from rss2discord.transports.pazar3_scope import PAZAR3_LABEL, Pazar3SearchScope
+from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.parser import parse_pazar3_page
+from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3SearchScope
+from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 type Pazar3Clock = Callable[[], datetime]
 

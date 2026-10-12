@@ -46,7 +46,7 @@ feeds:
 
 ## Code boundaries
 
-Discovery builders eagerly compose native feed strategies. The application runtime owns shutdown, the shared Pazar3 pacer, and sequential job scheduling; the price runtime and scheduler handle price-job composition, cadence, and health reporting. Provider modules own source behavior and transports own source-specific request mechanics. Persistence and administrative workflows remain separate from that composition path.
+Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics. Price-monitor builders compose provider monitors and dependencies, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
 
 ## Inspecting and recovering state
 

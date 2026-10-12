@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.transports import reklama5 as reklama5_transport
-from rss2discord.transports.reklama5 import Reklama5Listing
+from rss2discord.providers.reklama5 import strategy as reklama5_transport
+from rss2discord.providers.reklama5.parser import Reklama5Listing
 from tests.reklama5_helpers import FIXED_NOW
 
 

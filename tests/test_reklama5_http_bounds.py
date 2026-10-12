@@ -4,13 +4,14 @@ import pytest
 from curl_cffi import CurlECode
 from curl_cffi import requests as curl_requests
 
-from rss2discord.transports import FeedFetchError, reklama5_http
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5 import http as reklama5_http
+from rss2discord.providers.reklama5.http import (
     MAX_REKLAMA5_ATTEMPT_BYTES,
     MAX_REKLAMA5_RESPONSE_BYTES,
     Reklama5ScanBudget,
     fetch_reklama5_page,
 )
+from rss2discord.transports import FeedFetchError
 from tests.reklama5_helpers import RecordingGet, StubResponse, scan_budget, search_scope
 
 
@@ -50,7 +51,7 @@ def test_reklama5_fetch_uses_curl_total_timeout_in_milliseconds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = CallbackSession(StubResponse(b"page"))
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: session)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: session)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: 10.0)
 
     content = fetch_reklama5_page(
@@ -72,7 +73,7 @@ def test_reklama5_fetch_classifies_curl_timeout_at_deadline_as_scan_limit(
         ),
     )
     monotonic_values = iter((0.0, 1.0))
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: session)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: session)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: next(monotonic_values))
 
     with pytest.raises(FeedFetchError) as fetch_error:
@@ -89,7 +90,7 @@ def test_reklama5_fetch_uses_remaining_deadline_as_request_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     get = RecordingGet([StubResponse(b"page")])
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: 10)
 
     fetch_reklama5_page(
@@ -123,7 +124,7 @@ def test_reklama5_fetch_rejects_declared_and_streamed_oversized_bodies(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([response]),
     )
 
@@ -141,7 +142,7 @@ def test_reklama5_fetch_charges_redirect_and_final_bodies_to_attempt_budget(
     budget = scan_budget(bytes_remaining=13)
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [
                 StubResponse(
@@ -182,7 +183,7 @@ def test_reklama5_fetch_rejects_redirect_or_final_body_past_attempt_byte_limit(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(responses),
     )
 
@@ -202,7 +203,7 @@ def test_reklama5_fetch_reads_and_charges_http_error_before_classification(
     budget = scan_budget(bytes_remaining=100)
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(b"unavailable", status_code=503)]),
     )
 
@@ -219,7 +220,7 @@ def test_reklama5_fetch_prioritizes_oversized_http_error_body(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [
                 StubResponse(
@@ -245,7 +246,7 @@ def test_reklama5_fetch_classifies_http_statuses(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(b"error", status_code=status_code)]),
     )
 
@@ -265,7 +266,7 @@ def test_reklama5_fetch_classifies_cf_challenge_before_status_handling(
 ) -> None:
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet(
             [
                 StubResponse(
@@ -292,7 +293,7 @@ def test_reklama5_fetch_keeps_challenge_platform_body_as_ordinary_html(
     content = b"<html><div id='challenge-platform'></div></html>"
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(content)]),
     )
 
@@ -305,7 +306,7 @@ def test_reklama5_fetch_rejects_empty_response_completed_after_deadline(
     monotonic_values = iter((0.0, 2.0))
     monkeypatch.setattr(
         reklama5_http,
-        "_create_session",
+        "create_listing_session",
         lambda: RecordingGet([StubResponse(b"", chunks=())]),
     )
     monkeypatch.setattr(
@@ -330,7 +331,7 @@ def test_reklama5_fetch_uses_positive_capped_request_timeouts(
     remaining_seconds: float,
 ) -> None:
     get = RecordingGet([StubResponse(b"page")])
-    monkeypatch.setattr(reklama5_http, "_create_session", lambda: get)
+    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: 10.0)
 
     fetch_reklama5_page(

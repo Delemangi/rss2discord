@@ -11,8 +11,8 @@ from functools import partial
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordSender
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
 
 from .health import record_fetch_failure
 from .prices import PriceJobDependencies, build_price_jobs

@@ -5,18 +5,18 @@ from datetime import UTC, datetime
 from typing import Any
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.retries import FeedFetchInterruptedError
-from rss2discord.transports.base import FeedFetchError, ScraperStrategy
-from rss2discord.transports.reklama5_http import (
+from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
     Reklama5SearchScope,
     fetch_reklama5_page,
 )
-from rss2discord.transports.reklama5_parser import (
+from rss2discord.providers.reklama5.parser import (
     Reklama5Listing,
     parse_reklama5_page,
 )
-from rss2discord.transports.reklama5_scope import REKLAMA5_LABEL
+from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
+from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 type Reklama5Clock = Callable[[], datetime]
 

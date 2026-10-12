@@ -3,11 +3,12 @@ from datetime import datetime
 import pytest
 
 from rss2discord.models import EntryId
+from rss2discord.providers.pazar3 import catalog as pazar3_catalog
+from rss2discord.providers.pazar3.models import Pazar3Page
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.pazar3.scope import Pazar3PageRequest
 from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports import FeedFetchError, pazar3_catalog
-from rss2discord.transports.pazar3_models import Pazar3Page
-from rss2discord.transports.pazar3_pacing import Pazar3RequestPacer
-from rss2discord.transports.pazar3_scope import Pazar3PageRequest
+from rss2discord.transports import FeedFetchError
 from tests.pazar3_helpers import FIXED_NOW, SEARCH_URL
 from tests.test_pazar3_strategy import listing
 
