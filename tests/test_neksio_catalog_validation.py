@@ -112,26 +112,45 @@ def test_fetch_catalog_normalizes_negative_stock_to_zero(
     assert products[0].stock_quantity == 0
 
 
-def test_fetch_catalog_rejects_stock_below_negative_sentinel(
+def test_fetch_catalog_keeps_negative_stock_product_on_later_category_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    product = product_card(1)
+    pages = [
+        [
+            product_card(product_id)
+            for product_id in range((page_number - 1) * 100 + 1, page_number * 100 + 1)
+        ]
+        for page_number in range(1, 4)
+    ]
+    product = product_card(19141)
     product["quantity"] = -2
+    pages.append([product])
+    post = RecordingPost(
+        [
+            StubResponse(page_payload(7, page_number, 4, 301, page_products))
+            for page_number, page_products in enumerate(pages, start=1)
+        ],
+    )
     monkeypatch.setattr(
         requests,
         "get",
-        RecordingGet([StubResponse(homepage_payload([1]))]),
+        RecordingGet([StubResponse(homepage_payload([7]))]),
     )
-    monkeypatch.setattr(
-        requests,
-        "post",
-        RecordingPost([StubResponse(page_payload(1, 1, 1, 1, [product]))]),
-    )
+    monkeypatch.setattr(requests, "post", post)
 
-    # When / Then
-    with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+    # When
+    products = NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+
+    # Then: the out-of-stock card remains in the complete catalog with its identity
+    # and current price; only its normalized stock value is clamped to zero.
+    assert len(products) == 301
+    assert post.bodies[-1]["categoryId"] == 7
+    assert post.bodies[-1]["page"] == 4
+    assert products[-1].product_id == 19141
+    assert products[-1].product_code == "CODE-19141"
+    assert products[-1].price_with_tax == 1_200
+    assert products[-1].stock_quantity == 0
 
 
 def test_fetch_catalog_rejects_oversized_formatted_price(

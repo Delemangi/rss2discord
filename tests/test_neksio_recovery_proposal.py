@@ -603,9 +603,9 @@ def test_offline_stock_projection_preserves_raw_quantity_and_classification(
     assert item.target is not None
     assert item.target.amount == "1200"
 
-    if raw_quantity < -1:
-        with pytest.raises(ValidationError):
-            NeksioProductCard.model_validate(card)
+    assert NeksioProductCard.model_validate(card).observe(
+        STARTED,
+    ).stock_quantity == max(raw_quantity, 0)
 
 
 def test_negative_stock_values_remain_distinct_in_context_and_catalog_digest(
