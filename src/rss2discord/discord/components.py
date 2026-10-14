@@ -93,7 +93,12 @@ def build_components_v2_payload(
     rendered at body size; every transport already orders its metrics that way.
     """
     link = _safe_markdown_url(entry.link)
-    heading = _build_heading(entry.title, link)
+    title = (
+        f"Price change: {entry.title}"
+        if entry.price_direction is not None
+        else entry.title
+    )
+    heading = _build_heading(title, link)
     metrics = _build_metrics(entry.source_metrics)
     footer = _build_footer(entry, feed, source_title, link)
     description = _truncate_rendered_text(
@@ -339,7 +344,7 @@ def _build_footer(
             _format_timestamp(entry.timestamp),
             MAX_FOOTER_TIMESTAMP_CHARACTERS,
         )
-        if entry.timestamp is not None
+        if entry.timestamp is not None and entry.price_direction is None
         else None
     )
 

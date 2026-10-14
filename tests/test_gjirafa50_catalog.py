@@ -62,6 +62,58 @@ def test_latest_products_stops_before_request_when_shutdown_is_requested(
     assert get.params == []
 
 
+def test_latest_products_logs_duplicate_id_with_discovery_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    duplicate_id = 8123
+    get = RecordingGet(
+        [StubResponse(catalog_payload(2, [(duplicate_id, 1), (duplicate_id, 1)]))],
+    )
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
+
+    with pytest.raises(FeedFetchError) as error:
+        Gjirafa50CatalogClient().fetch_latest_products(ROOT_URL)
+
+    assert error.value.cause_type == "DuplicateProductId"
+    assert error.value.retryable is True
+    assert len(get.params) == 1
+    assert "phase=discovery page=1 product_id=8123 price_range=None" in caplog.text
+    assert "Product 8123" not in caplog.text
+    assert "/product-8123" not in caplog.text
+
+
+def test_catalog_logs_duplicate_id_with_shard_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    duplicate_id = 8123
+    duplicate_products = [(duplicate_id, Decimal("0.01"))] * 2
+    get = RecordingGet(
+        [
+            StubResponse(catalog_payload(2, [(duplicate_id, Decimal("0.01"))])),
+            StubResponse(catalog_payload(2, [(duplicate_id, Decimal("0.01"))])),
+            StubResponse(catalog_payload(2, duplicate_products)),
+        ]
+        * 3,
+    )
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
+
+    with pytest.raises(FeedFetchError) as error:
+        Gjirafa50CatalogClient().fetch_catalog(
+            ROOT_URL,
+            retry_policy=no_wait_retry_policy(),
+            is_shutdown_requested=lambda: False,
+        )
+
+    assert error.value.cause_type == "DuplicateProductId"
+    assert error.value.retryable is True
+    assert len(get.params) == 9
+    assert "phase=enumeration page=1 product_id=8123 price_range=" in caplog.text
+    assert "Product 8123" not in caplog.text
+    assert "/product-8123" not in caplog.text
+
+
 def test_price_range_renders_exact_cent_boundaries_for_storefront_filter() -> None:
     price_range = Gjirafa50PriceRange(1_296_850, 1_296_900)
 
