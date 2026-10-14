@@ -153,7 +153,13 @@ class Gjirafa50CatalogClient:
                 )
                 if len(page.products) != expected_count:
                     raise FeedFetchError(GJIRAFA50_LABEL, "InvalidCardinality")
-                self._append_unique(products, seen, page.products)
+                self._append_unique(
+                    products,
+                    seen,
+                    page.products,
+                    phase="discovery",
+                    page_number=page_number,
+                )
                 if len(products) >= min(page.total_hits, GJIRAFA50_WINDOW_SIZE):
                     break
         return tuple(reversed(products[:GJIRAFA50_WINDOW_SIZE]))
@@ -316,7 +322,14 @@ class Gjirafa50CatalogClient:
                         price_cents,
                     )
                     raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
-            self._append_unique(products, seen, page.products)
+            self._append_unique(
+                products,
+                seen,
+                page.products,
+                phase="enumeration",
+                page_number=page_number,
+                price_range=price_range,
+            )
         sentinel = scan.fetch(pages + 1, price_range)
         if (
             sentinel.total_hits != total
@@ -330,9 +343,21 @@ class Gjirafa50CatalogClient:
         products: list[Gjirafa50Product],
         seen: set[int],
         page_products: tuple[Gjirafa50Product, ...],
+        *,
+        phase: str,
+        page_number: int,
+        price_range: Gjirafa50PriceRange | None = None,
     ) -> None:
         for product in page_products:
             if product.id in seen:
+                logger.warning(
+                    "Gjirafa50 duplicate product ID: phase=%s page=%d "
+                    "product_id=%d price_range=%s; catalog completeness is unverified",
+                    phase,
+                    page_number,
+                    product.id,
+                    price_range,
+                )
                 raise FeedFetchError(
                     GJIRAFA50_LABEL,
                     "DuplicateProductId",

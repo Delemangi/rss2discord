@@ -6,7 +6,7 @@ import pytest
 from rss2discord.configuration import FeedStrategyName
 from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.discord.components import METRICS_GAP
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.models import EntryData, PriceDirection, SourceMetric
 from tests.discord_components_helpers import (
     get_metadata_content,
     get_metrics_content,
@@ -165,6 +165,57 @@ def test_components_v2_payload_omits_duplicate_source_title() -> None:
 
     # Then
     assert metadata == "-# Hacker News"
+
+
+@pytest.mark.parametrize(
+    "direction",
+    [PriceDirection.DECREASE, PriceDirection.INCREASE],
+)
+@pytest.mark.parametrize("timestamp", ["2026-07-20T12:00:00+00:00", None])
+def test_price_change_is_labeled_without_product_age(
+    direction: PriceDirection,
+    timestamp: str | None,
+) -> None:
+    message = make_message(
+        entry=EntryData(
+            title="Headphones",
+            link="https://example.test/product",
+            description="",
+            author="",
+            timestamp=timestamp,
+            source_metrics=(
+                SourceMetric(label="Price", value="1999", prior=False),
+                SourceMetric(label="Previous", value="2499", prior=True),
+            ),
+            price_direction=direction,
+        ),
+    )
+
+    payload = DiscordWebhookClient._build_payload(message)
+    contents = json.dumps(payload)
+
+    assert "## [Price change: Headphones]" in contents
+    assert "1999" in contents
+    assert "~~2499~~" in contents
+    assert "<t:1784548800:R>" not in contents
+
+
+def test_ordinary_entry_keeps_relative_timestamp_and_unprefixed_title() -> None:
+    message = make_message(
+        entry=EntryData(
+            title="Headphones",
+            link="https://example.test/product",
+            description="",
+            author="",
+            timestamp="2026-07-20T12:00:00+00:00",
+        ),
+    )
+
+    payload = DiscordWebhookClient._build_payload(message)
+    contents = json.dumps(payload)
+
+    assert "## [Headphones]" in contents
+    assert "<t:1784548800:R>" in contents
 
 
 @pytest.mark.parametrize(
