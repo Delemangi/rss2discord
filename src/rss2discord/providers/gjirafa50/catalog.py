@@ -195,19 +195,21 @@ class Gjirafa50CatalogClient:
             )
             raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
         shards = self._build_shards(scan, root_total)
-        products: list[Gjirafa50Product] = []
-        seen: set[int] = set()
+        products: dict[int, Gjirafa50Product] = {}
         for price_range, shard_total in shards:
-            self._scan_shard(scan, price_range, shard_total, products, seen)
+            self._scan_shard(scan, price_range, shard_total, root_total, products)
         if scan.fetch(1).total_hits != root_total:
             raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
         post_counts = tuple(
             scan.fetch(1, price_range).total_hits for price_range, _ in shards
         )
         expected_counts = tuple(total for _, total in shards)
+        # This proves coverage only if root_total counts unique IDs and filter
+        # results belong to the same stable root catalog; recounts catch some
+        # drift but cannot establish an atomic snapshot.
         if post_counts != expected_counts or len(products) != root_total:
             raise FeedFetchError(GJIRAFA50_LABEL, "IncompleteCatalog", retryable=True)
-        return tuple(products)
+        return tuple(products.values())
 
     def _build_shards(
         self,
@@ -238,34 +240,17 @@ class Gjirafa50CatalogClient:
                 scan.budget.consume_shard()
                 shards.append((price_range, total))
                 continue
-            if price_range.maximum_exclusive_cents - price_range.minimum_cents <= 1:
+            if price_range.maximum_exclusive_cents - price_range.minimum_cents <= 2:
                 raise FeedFetchError(GJIRAFA50_LABEL, "PriceBucketLimitExceeded")
-            midpoint = (
-                price_range.minimum_cents + price_range.maximum_exclusive_cents
-            ) // 2
-            lower = Gjirafa50PriceRange(price_range.minimum_cents, midpoint)
+            highest = price_range.maximum_exclusive_cents - 1
+            midpoint = (price_range.minimum_cents + highest) // 2
+            lower = Gjirafa50PriceRange(price_range.minimum_cents, midpoint + 1)
             upper = Gjirafa50PriceRange(
                 midpoint,
                 price_range.maximum_exclusive_cents,
             )
             lower_total = scan.fetch(1, lower).total_hits
             upper_total = scan.fetch(1, upper).total_hits
-            if lower_total + upper_total != total:
-                logger.warning(
-                    "Gjirafa50 catalog child counts differ from parent: "
-                    "phase=split parent_range=%s parent_count=%d "
-                    "lower_range=%s lower_count=%d upper_range=%s "
-                    "upper_count=%d child_sum=%d; storefront filters may overlap "
-                    "or catalog counts may have changed; completeness is unverified",
-                    price_range,
-                    total,
-                    lower,
-                    lower_total,
-                    upper,
-                    upper_total,
-                    lower_total + upper_total,
-                )
-                raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             queue.extend(((lower, lower_total), (upper, upper_total)))
             if len(queue) + len(shards) > MAX_GJIRAFA50_SHARDS:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ShardLimitExceeded")
@@ -276,8 +261,8 @@ class Gjirafa50CatalogClient:
         scan: _CatalogScan,
         price_range: Gjirafa50PriceRange,
         total: int,
-        products: list[Gjirafa50Product],
-        seen: set[int],
+        root_total: int,
+        products: dict[int, Gjirafa50Product],
     ) -> None:
         pages = ceil(total / GJIRAFA50_PAGE_SIZE)
         for page_number in range(1, pages + 1):
@@ -303,33 +288,32 @@ class Gjirafa50CatalogClient:
                     retryable=True,
                 )
             for product in page.products:
-                price_cents = int(product.price * 100)
-                if not (
-                    price_range.minimum_cents
-                    <= price_cents
-                    < price_range.maximum_exclusive_cents
-                ):
+                previous = products.get(product.id)
+                if previous is not None:
+                    if previous == product:
+                        continue
                     logger.warning(
-                        "Gjirafa50 displayed price outside filter shard: "
-                        "phase=enumeration page=%d product_id=%d "
-                        "expected_range=%s displayed_amount=%s currency=%s "
-                        "price_cents=%d; filter contract is unverified",
+                        "Gjirafa50 conflicting duplicate product ID: "
+                        "phase=enumeration page=%d product_id=%d price_range=%s; "
+                        "catalog completeness is unverified",
                         page_number,
                         product.id,
                         price_range,
-                        product.formatted_price,
-                        product.currency,
-                        price_cents,
                     )
-                    raise FeedFetchError(GJIRAFA50_LABEL, "PriceOutsideShard")
-            self._append_unique(
-                products,
-                seen,
-                page.products,
-                phase="enumeration",
-                page_number=page_number,
-                price_range=price_range,
-            )
+                    raise FeedFetchError(
+                        GJIRAFA50_LABEL,
+                        "DuplicateProductId",
+                        retryable=True,
+                    )
+                if len(products) >= root_total:
+                    raise FeedFetchError(
+                        GJIRAFA50_LABEL,
+                        "CatalogChanged",
+                        retryable=True,
+                    )
+                if len(products) >= MAX_GJIRAFA50_PRODUCTS:
+                    raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+                products[product.id] = product
         sentinel = scan.fetch(pages + 1, price_range)
         if (
             sentinel.total_hits != total

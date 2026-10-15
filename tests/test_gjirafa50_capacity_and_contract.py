@@ -114,29 +114,28 @@ def test_root_over_unique_capacity_fails_before_enumeration(
 
 
 @pytest.mark.parametrize(
-    ("card_count", "outlier", "error", "diagnostic"),
-    [
-        (23, False, "IncompleteCatalog", "expected=24 rendered=23"),
-        (24, True, "PriceOutsideShard", "price_cents=2079000"),
-    ],
+    ("card_count", "error", "diagnostic"),
+    [(23, "IncompleteCatalog", "expected=24 rendered=23")],
 )
 def test_observed_mk_anomalies_remain_fail_closed(
     caplog: pytest.LogCaptureFixture,
     card_count: int,
     *,
-    outlier: bool,
     error: str,
     diagnostic: str,
 ) -> None:
-    products = [
-        (i + 1, Decimal(20_790 if outlier and i == 0 else 12_000))
-        for i in range(card_count)
-    ]
     get = RecordingGet(
-        [StubResponse(catalog_payload(5_873, products, total_pages=245))],
+        [
+            StubResponse(
+                catalog_payload(
+                    5_873,
+                    [(i + 1, Decimal(12_000)) for i in range(card_count)],
+                    total_pages=245,
+                ),
+            ),
+        ],
     )
-    collected: list[Gjirafa50Product] = []
-    seen: set[int] = set()
+    collected: dict[int, Gjirafa50Product] = {}
     with Gjirafa50HttpClient(get) as http:
         scan = _CatalogScan(
             "https://gjirafa50.mk/",
@@ -148,58 +147,51 @@ def test_observed_mk_anomalies_remain_fail_closed(
                 scan,
                 Gjirafa50PriceRange(1_000_000, 1_999_901),
                 5_873,
+                5_873,
                 collected,
-                seen,
             )
-    assert collected == []
-    assert seen == set()
+    assert collected == {}
     assert diagnostic in caplog.text
     assert "unverified" in caplog.text
     assert "https://" not in caplog.text
 
 
-def test_price_outlier_diagnostic_identifies_product_and_displayed_mk_amount(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_displayed_price_outside_filter_does_not_invalidate_complete_shard() -> None:
+    products = [
+        (489_034, Decimal(20_790)),
+        *((product_id, Decimal(12_000)) for product_id in range(1, 24)),
+    ]
     get = RecordingGet(
         [
             StubResponse(
                 catalog_payload(
-                    5_873,
-                    [
-                        (489_034, Decimal(20_790)),
-                        *((product_id, Decimal(12_000)) for product_id in range(1, 24)),
-                    ],
-                    total_pages=245,
+                    24,
+                    products,
                 ),
             ),
+            StubResponse(catalog_payload(24, [], total_pages=1)),
         ],
     )
+    collected: dict[int, Gjirafa50Product] = {}
     with Gjirafa50HttpClient(get) as http:
         scan = _CatalogScan(
             "https://gjirafa50.mk/",
             _OperationBudget(lambda: False),
             http,
         )
-        with pytest.raises(FeedFetchError, match="PriceOutsideShard"):
-            Gjirafa50CatalogClient()._scan_shard(
-                scan,
-                Gjirafa50PriceRange(1_000_000, 1_999_901),
-                5_873,
-                [],
-                set(),
-            )
+        Gjirafa50CatalogClient()._scan_shard(
+            scan,
+            Gjirafa50PriceRange(1_000_000, 1_999_901),
+            24,
+            24,
+            collected,
+        )
 
-    assert (
-        "phase=enumeration page=1 product_id=489034 "
-        "expected_range=10000-19999 displayed_amount=20.790,00 MKD. "
-        "currency=MKD price_cents=2079000"
-    ) in caplog.text
-    assert "https://" not in caplog.text
+    assert len(collected) == 24
+    assert collected[489_034].price == Decimal(20_790)
 
 
-def test_overlapping_price_filter_counts_log_parent_and_child_ranges(
-    caplog: pytest.LogCaptureFixture,
+def test_overlapping_price_filter_counts_are_not_required_to_add_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -207,6 +199,7 @@ def test_overlapping_price_filter_counts_log_parent_and_child_ranges(
         "MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS",
         3_199,
     )
+    monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 40_000)
     responses = [
         catalog_payload(65_616, []),
         catalog_payload(38_790, []),
@@ -219,16 +212,12 @@ def test_overlapping_price_filter_counts_log_parent_and_child_ranges(
             _OperationBudget(lambda: False),
             http,
         )
-        with pytest.raises(FeedFetchError, match="CatalogChanged"):
-            Gjirafa50CatalogClient()._build_shards(scan, 65_616)
+        shards = Gjirafa50CatalogClient()._build_shards(scan, 65_616)
 
-    assert (
-        "phase=split parent_range=0-31,98 parent_count=65616 "
-        "lower_range=0-15,98 lower_count=38790 "
-        "upper_range=15,99-31,98 upper_count=26828 child_sum=65618"
-    ) in caplog.text
-    assert "may overlap" in caplog.text
-    assert "https://" not in caplog.text
+    assert [(str(price_range), total) for price_range, total in shards] == [
+        ("0-15,99", 38_790),
+        ("15,99-31,98", 26_828),
+    ]
 
 
 def test_distinct_cent_filters_can_return_identical_boundary_products() -> None:
@@ -276,39 +265,45 @@ def test_distinct_cent_filters_can_return_identical_boundary_products() -> None:
     )
 
 
-def test_overlapping_out_of_shard_results_fail_without_partial_inventory() -> None:
+def test_overlapping_filter_results_are_deduplicated_by_id() -> None:
     payload = catalog_payload(
         2,
         [(489_034, Decimal(16)), (488_476, Decimal(16))],
     )
-    get = RecordingGet([StubResponse(payload), StubResponse(payload)])
+    get = RecordingGet(
+        [
+            StubResponse(payload),
+            StubResponse(catalog_payload(2, [], total_pages=1)),
+            StubResponse(payload),
+            StubResponse(catalog_payload(2, [], total_pages=1)),
+        ],
+    )
     price_ranges = (
         Gjirafa50PriceRange(1_598, 1_599),
         Gjirafa50PriceRange(1_599, 1_600),
     )
 
+    collected: dict[int, Gjirafa50Product] = {}
     with Gjirafa50HttpClient(get) as http:
+        scan = _CatalogScan(
+            "https://gjirafa50.com/",
+            _OperationBudget(lambda: False),
+            http,
+        )
         for price_range in price_ranges:
-            collected: list[Gjirafa50Product] = []
-            seen: set[int] = set()
-            scan = _CatalogScan(
-                "https://gjirafa50.com/",
-                _OperationBudget(lambda: False),
-                http,
+            Gjirafa50CatalogClient()._scan_shard(
+                scan,
+                price_range,
+                2,
+                2,
+                collected,
             )
-            with pytest.raises(FeedFetchError, match="PriceOutsideShard"):
-                Gjirafa50CatalogClient()._scan_shard(
-                    scan,
-                    price_range,
-                    2,
-                    collected,
-                    seen,
-                )
-            assert collected == []
-            assert seen == set()
+            assert set(collected) == {489_034, 488_476}
 
     assert [params["price"] for params in get.params] == [
         "15,98-15,98",
+        "15,98-15,98",
+        "15,99-15,99",
         "15,99-15,99",
     ]
 
