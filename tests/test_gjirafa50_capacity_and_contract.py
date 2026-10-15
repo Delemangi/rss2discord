@@ -113,24 +113,16 @@ def test_root_over_unique_capacity_fails_before_enumeration(
     assert "reported=150001 limit=150000" in caplog.text
 
 
-@pytest.mark.parametrize(
-    ("card_count", "error", "diagnostic"),
-    [(23, "IncompleteCatalog", "expected=24 rendered=23")],
-)
-def test_observed_mk_anomalies_remain_fail_closed(
+def test_overfull_shard_page_fails_closed(
     caplog: pytest.LogCaptureFixture,
-    card_count: int,
-    *,
-    error: str,
-    diagnostic: str,
 ) -> None:
     get = RecordingGet(
         [
             StubResponse(
                 catalog_payload(
-                    5_873,
-                    [(i + 1, Decimal(12_000)) for i in range(card_count)],
-                    total_pages=245,
+                    1,
+                    [(1, Decimal(12_000)), (2, Decimal(12_000))],
+                    total_pages=1,
                 ),
             ),
         ],
@@ -142,17 +134,17 @@ def test_observed_mk_anomalies_remain_fail_closed(
             _OperationBudget(lambda: False),
             http,
         )
-        with pytest.raises(FeedFetchError, match=error):
+        with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
             Gjirafa50CatalogClient()._scan_shard(
                 scan,
                 Gjirafa50PriceRange(1_000_000, 1_999_901),
-                5_873,
-                5_873,
+                1,
+                1,
                 collected,
             )
+
     assert collected == {}
-    assert diagnostic in caplog.text
-    assert "unverified" in caplog.text
+    assert "expected=1 rendered=2" in caplog.text
     assert "https://" not in caplog.text
 
 
