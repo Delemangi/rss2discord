@@ -241,7 +241,6 @@ def test_inconsistent_repeated_product_fails_retryably(
         "excess",
         "root_changed",
         "leaf_changed",
-        "short_page",
         "wrong_pages",
         "page_count_changed",
         "nonempty_terminal",
@@ -263,6 +262,35 @@ def test_overlap_does_not_weaken_completeness_and_stability_guards(
     assert store.visits[target] >= (3 if defect == "leaf_changed" else 2)
     if defect == "nonempty_terminal":
         assert ((0, 2), 2) in store.calls
+
+
+def test_short_page_recovered_by_overlapping_shard_completes_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = OverlappingStore(defect="short_page")
+    store.install(monkeypatch)
+
+    products = fetch_catalog()
+
+    assert {product.id for product in products} == set(range(1, 6))
+    assert len(products) == 5
+    assert "underfilled shard page" in caplog.text
+    assert "global unique-ID reconciliation is still required" in caplog.text
+
+
+def test_short_page_unrecovered_hole_fails_final_unique_reconciliation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = OverlappingStore(defect="short_page")
+    store.lower_cards = [1, 3, 2]
+    store.install(monkeypatch)
+
+    with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
+        fetch_catalog()
+
+    assert ((0, 2), 1) in store.calls
+    assert ((2, 4), 1) in store.calls
 
 
 def test_reaching_root_unique_count_does_not_skip_later_conflicting_page(

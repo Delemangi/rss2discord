@@ -273,19 +273,29 @@ class Gjirafa50CatalogClient:
             )
             if page.total_hits != total or page.total_pages != pages:
                 raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
-            if len(page.products) != expected:
+            if len(page.products) > expected:
                 logger.warning(
-                    "Gjirafa50 incomplete shard page: page=%d expected=%d rendered=%d "
-                    "shard_total=%d; catalog completeness is unverified",
+                    "Gjirafa50 overfull shard page: page=%d price_range=%s "
+                    "expected=%d rendered=%d; catalog completeness is unverified",
                     page_number,
+                    price_range,
                     expected,
                     len(page.products),
-                    total,
                 )
                 raise FeedFetchError(
                     GJIRAFA50_LABEL,
                     "IncompleteCatalog",
                     retryable=True,
+                )
+            if len(page.products) < expected:
+                logger.warning(
+                    "Gjirafa50 underfilled shard page: page=%d price_range=%s "
+                    "expected=%d rendered=%d; global unique-ID reconciliation "
+                    "is still required to verify completeness",
+                    page_number,
+                    price_range,
+                    expected,
+                    len(page.products),
                 )
             for product in page.products:
                 previous = products.get(product.id)
@@ -315,10 +325,10 @@ class Gjirafa50CatalogClient:
                     raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
                 products[product.id] = product
         sentinel = scan.fetch(pages + 1, price_range)
-        if (
-            sentinel.total_hits != total
-            or sentinel.total_pages != pages
-            or sentinel.products
+        sentinel_count_reset = sentinel.total_hits == 0 and sentinel.total_pages == 0
+        if sentinel.products or (
+            not sentinel_count_reset
+            and (sentinel.total_hits != total or sentinel.total_pages != pages)
         ):
             raise FeedFetchError(GJIRAFA50_LABEL, "InvalidTerminalPage", retryable=True)
 
