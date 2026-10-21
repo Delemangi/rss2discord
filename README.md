@@ -48,6 +48,8 @@ feeds:
 
 Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics. Price-monitor builders compose provider monitors and dependencies, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
 
+RSS/Atom responses are bounded to 1 MiB by default. A 2 MiB allowance applies only when both the requested URL and final response URL are exact public GitHub release Atom addresses (`https://github.com/<owner>/<repo>/releases.atom`); the same decoded-response size checks still apply.
+
 ## Inspecting and recovering state
 
 The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Health and price/baseline inspection commands are read-only. Replace example batch `42`, feed IDs, and fingerprints with inspected values. Before a state-changing operation, stop every writer and back up the database safely, including any WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.
