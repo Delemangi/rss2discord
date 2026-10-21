@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable, Mapping
 from html import unescape
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 import feedparser
 import requests
@@ -15,9 +16,34 @@ from rss2discord.transports.rss_timestamp import get_rss_timestamp
 from rss2discord.url_normalization import normalize_http_url
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
+GITHUB_RELEASE_ATOM_MAX_BYTES: Final = 2_097_152
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
 MAX_RSS_CATEGORIES: Final = 3
 MAX_RSS_CATEGORY_LENGTH: Final = 64
+
+
+def _is_github_release_atom_url(url: str) -> bool:
+    """Match only plain public GitHub owner/repository release Atom URLs."""
+    try:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == "github.com"
+            and parsed.netloc == "github.com"
+            and parsed.port is None
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and re.fullmatch(
+                r"/[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}/releases\.atom",
+                parsed.path,
+            )
+            is not None
+            and ".." not in parsed.path.split("/")
+        )
+    except ValueError:
+        return False
 
 
 class RSSStrategy(ScraperStrategy):
@@ -45,7 +71,15 @@ class RSSStrategy(ScraperStrategy):
                             response.headers.get("Retry-After"),
                         ),
                     ) from None
-                content = self._read_content(response)
+                max_bytes = MAX_RSS_FEED_BYTES
+                final_url = getattr(response, "url", None)
+                if (
+                    _is_github_release_atom_url(url)
+                    and isinstance(final_url, str)
+                    and _is_github_release_atom_url(final_url)
+                ):
+                    max_bytes = GITHUB_RELEASE_ATOM_MAX_BYTES
+                content = self._read_content(response, max_bytes=max_bytes)
         except FeedFetchError:
             raise
         except (requests.ConnectionError, requests.Timeout) as error:
@@ -65,14 +99,18 @@ class RSSStrategy(ScraperStrategy):
         return feed.entries[::-1], feed_title
 
     @staticmethod
-    def _read_content(response: requests.Response) -> bytes:
+    def _read_content(
+        response: requests.Response,
+        *,
+        max_bytes: int = MAX_RSS_FEED_BYTES,
+    ) -> bytes:
         content_length = response.headers.get("Content-Length")
         if content_length is not None:
             try:
                 declared_bytes = int(content_length)
             except ValueError:
                 declared_bytes = 0
-            if declared_bytes > MAX_RSS_FEED_BYTES:
+            if declared_bytes > max_bytes:
                 raise FeedFetchError(
                     "RSS",
                     "ResponseTooLarge",
@@ -80,7 +118,7 @@ class RSSStrategy(ScraperStrategy):
 
         content = bytearray()
         for chunk in response.iter_content(chunk_size=RSS_STREAM_CHUNK_BYTES):
-            if len(content) + len(chunk) > MAX_RSS_FEED_BYTES:
+            if len(content) + len(chunk) > max_bytes:
                 raise FeedFetchError(
                     "RSS",
                     "ResponseTooLarge",
