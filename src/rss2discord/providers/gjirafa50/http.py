@@ -45,6 +45,10 @@ class Gjirafa50HttpBudget(Protocol):
 
     def consume_bytes(self, response_bytes: int) -> None: ...
 
+    def record_transfer_seconds(self, elapsed_seconds: float) -> None: ...
+
+    def record_parse_seconds(self, elapsed_seconds: float) -> None: ...
+
 
 class _HostPacer:
     def __init__(self) -> None:
@@ -168,12 +172,24 @@ class Gjirafa50HttpClient:
         if request.price_range is not None:
             params["price"] = str(request.price_range)
         normalized_root_url = self.normalize_root_url(root_url)
-        content, response_bytes = self._request(
-            params,
-            root_url=normalized_root_url,
-            budget=request.budget,
-        )
-        page = parse_gjirafa50_page(content, observed_at, normalized_root_url)
+        transfer_started = time.monotonic()
+        try:
+            content, response_bytes = self._request(
+                params,
+                root_url=normalized_root_url,
+                budget=request.budget,
+            )
+        finally:
+            request.budget.record_transfer_seconds(
+                max(time.monotonic() - transfer_started, 0.0),
+            )
+        parse_started = time.monotonic()
+        try:
+            page = parse_gjirafa50_page(content, observed_at, normalized_root_url)
+        finally:
+            request.budget.record_parse_seconds(
+                max(time.monotonic() - parse_started, 0.0),
+            )
         request.budget.check_active()
         return FetchedGjirafa50Page(page, response_bytes)
 
