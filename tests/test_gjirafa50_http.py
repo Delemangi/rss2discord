@@ -305,3 +305,65 @@ def test_response_stream_stops_when_shutdown_is_requested() -> None:
 
     assert content.write(b"chunk") == CURL_WRITEFUNC_ERROR
     assert isinstance(content.abort_error, FeedFetchInterruptedError)
+
+
+def test_http_records_transfer_and_parse_elapsed_once_when_each_phase_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transfer_budget = _OperationBudget(lambda: False)
+    parse_budget = _OperationBudget(lambda: False)
+    client = Gjirafa50HttpClient(RecordingGet([]))
+
+    def fail_transfer(
+        _client: Gjirafa50HttpClient,
+        _params: dict[str, str | int],
+        *,
+        root_url: str,
+        budget: _OperationBudget,
+    ) -> tuple[bytes, int]:
+        del root_url, budget
+        raise FeedFetchError("Gjirafa50", "TransferFailure")
+
+    monkeypatch.setattr(Gjirafa50HttpClient, "_request", fail_transfer)
+    clock = iter((10.0, 13.0))
+    monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: next(clock))
+    with pytest.raises(FeedFetchError, match="TransferFailure"):
+        client.fetch_page(
+            "https://gjirafa50.mk/",
+            Gjirafa50PageRequest(1, transfer_budget),
+            datetime.now(UTC),
+        )
+
+    assert transfer_budget.transfer_seconds == 3
+    assert transfer_budget.parse_seconds == 0
+
+    def return_payload(
+        _client: Gjirafa50HttpClient,
+        _params: dict[str, str | int],
+        *,
+        root_url: str,
+        budget: _OperationBudget,
+    ) -> tuple[bytes, int]:
+        del root_url, budget
+        return b"payload", 7
+
+    def fail_parse(
+        _content: bytes,
+        _observed_at: datetime,
+        _root_url: str,
+    ) -> Gjirafa50CatalogPage:
+        raise FeedFetchError("Gjirafa50", "ParseFailure")
+
+    monkeypatch.setattr(Gjirafa50HttpClient, "_request", return_payload)
+    monkeypatch.setattr(gjirafa50_http, "parse_gjirafa50_page", fail_parse)
+    clock = iter((20.0, 22.0, 22.0, 27.0))
+    monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: next(clock))
+    with pytest.raises(FeedFetchError, match="ParseFailure"):
+        client.fetch_page(
+            "https://gjirafa50.mk/",
+            Gjirafa50PageRequest(1, parse_budget),
+            datetime.now(UTC),
+        )
+
+    assert parse_budget.transfer_seconds == 2
+    assert parse_budget.parse_seconds == 5
