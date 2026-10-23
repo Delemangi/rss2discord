@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,6 @@ from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.providers.cccenter import catalog as cccenter_catalog
 from rss2discord.providers.cccenter.catalog import (
-    CCCENTER_FEED_URL,
     CCCenterCatalogClient,
     parse_mkd_price,
     parse_product_detail,
@@ -133,94 +133,6 @@ def test_cccenter_rejects_noncanonical_feed_urls(url: str) -> None:
         validate_cccenter_url(url)
 
 
-def test_cccenter_catalog_traverses_bounded_pages_and_rejects_duplicate_results(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    listing = (FIXTURES / "listing.html").read_text(encoding="utf-8")
-    extra_cards = "".join(
-        f'<li class="product"><a href="/product/extra-{number}/">'
-        '<img src="/extra.jpg"><h2 class="woocommerce-loop-product__title">Extra</h2>'
-        '<span class="price">100 ден</span></a></li>'
-        for number in range(22)
-    )
-    listing = listing.replace("</ul>", f"{extra_cards}</ul>")
-    detail = (FIXTURES / "product-alpha.html").read_text(encoding="utf-8")
-    responses = {
-        CCCENTER_FEED_URL: listing + '<span class="page-numbers current">1</span>',
-    }
-    responses.update(
-        {
-            f"https://cccenter.mk/shop/page/{page}/?orderby=date": listing
-            + f'<span class="page-numbers current">{page}</span>'
-            for page in range(2, 7)
-        },
-    )
-    responses.update(
-        {
-            "https://cccenter.mk/product/alpha-laptop/": detail,
-            "https://cccenter.mk/product/beta-monitor/": detail,
-        },
-    )
-    monkeypatch.setattr(
-        CCCenterCatalogClient,
-        "_fetch_html",
-        staticmethod(lambda url, **kwargs: responses[url]),
-    )
-    client = CCCenterCatalogClient()
-
-    with pytest.raises(FeedFetchError, match="DuplicateProduct"):
-        client.fetch_catalog(CCCENTER_FEED_URL)
-
-
-def test_cccenter_catalog_rejects_malformed_or_empty_listing_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        CCCenterCatalogClient,
-        "_fetch_html",
-        staticmethod(lambda url, **kwargs: "<html><body>not a shop</body></html>"),
-    )
-    client = CCCenterCatalogClient()
-
-    with pytest.raises(FeedFetchError, match="EmptyPage"):
-        client.fetch_catalog(CCCENTER_FEED_URL)
-
-
-def test_cccenter_catalog_parses_etheme_product_grid_cards(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    listing = """
-    <div class="etheme-product-grid-item">
-      <a href="https://cccenter.mk/product/alpha-laptop/">
-        <img src="https://cccenter.mk/wp-content/uploads/2026/09/alpha.jpg">
-        <h2 class="woocommerce-loop-product__title">Alpha Laptop</h2>
-      </a>
-    </div>
-    <div class="etheme-category-grid-item">
-      <a href="https://cccenter.mk/product/category/">
-        <img src="https://cccenter.mk/wp-content/uploads/2026/09/category.jpg">
-        <h2 class="woocommerce-loop-product__title">Category</h2>
-      </a>
-    </div>
-    """
-    detail = '<h1 class="product_title">Alpha Laptop</h1>'
-    responses = {
-        CCCENTER_FEED_URL: listing,
-        "https://cccenter.mk/product/alpha-laptop/": detail,
-    }
-    monkeypatch.setattr(
-        CCCenterCatalogClient,
-        "_fetch_html",
-        staticmethod(lambda url, **kwargs: responses[url]),
-    )
-
-    products = CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
-
-    assert [product.product_id for product in products] == [
-        "https://cccenter.mk/product/alpha-laptop/",
-    ]
-
-
 def test_cccenter_rejects_listing_cards_without_an_image() -> None:
     card = BeautifulSoup(
         '<li class="product"><a href="/product/alpha/"><h2 class="woocommerce-loop-product__title">Alpha</h2></a></li>',
@@ -276,56 +188,106 @@ def test_cccenter_preserves_realistic_percent_encoded_product_identity() -> None
     assert product.url == product_url
 
 
-def test_cccenter_complete_multipage_catalog_keeps_encoded_product_card(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    encoded_url = "https://cccenter.mk/product/ssd-2-5%E2%80%B3-500gb/"
-
-    def card(url: str, title: str) -> str:
-        return (
-            f'<li class="product"><a href="{url}">'
-            f'<img src="/images/{title}.jpg">'
-            f'<h2 class="woocommerce-loop-product__title">{title}</h2>'
-            '<span class="price">5.000 ден</span></a></li>'
-        )
-
-    first_cards = card(encoded_url, "SSD") + "".join(
-        card(f"/product/item-{number}/", f"Item {number}") for number in range(2, 25)
-    )
-    page_one = (
-        '<p class="woocommerce-result-count">Showing 1–24 of 25 results</p>'
-        f'<ul class="products">{first_cards}</ul>'
-        '<nav class="woocommerce-pagination">'
-        '<span class="page-numbers current">1</span>'
-        '<a class="page-numbers" href="/shop/page/2/?orderby=date">2</a>'
-        "</nav>"
-    )
-    page_two = (
-        '<p class="woocommerce-result-count">Showing 25–25 of 25 results</p>'
-        '<ul class="products">'
-        f"{card('/product/item-25/', 'Item 25')}"
-        "</ul>"
-        '<nav class="woocommerce-pagination">'
-        '<a class="page-numbers" href="/shop/page/2/?orderby=date">2</a>'
-        '<span class="page-numbers current">2</span>'
-        "</nav>"
-    )
-    responses = {
-        CCCENTER_FEED_URL: page_one,
-        CCCenterCatalogClient._page_url(2): page_two,
+def _store_item(
+    *,
+    url: str = "https://cccenter.mk/product/alpha/",
+    price: str = "740000",
+    price_range: object = None,
+) -> dict[str, object]:
+    return {
+        "id": 81,
+        "slug": "alpha",
+        "permalink": url,
+        "name": "Alpha &amp; Beta",
+        "sku": "A-1",
+        "images": [],
+        "categories": [],
+        "is_in_stock": True,
+        "type": "simple",
+        "has_options": False,
+        "prices": {
+            "currency_code": "MKD",
+            "currency_minor_unit": 2,
+            "price": price,
+            "regular_price": "800000",
+            "price_range": price_range,
+        },
     }
-    monkeypatch.setattr(
-        CCCenterCatalogClient,
-        "_fetch_html",
-        staticmethod(lambda url, **kwargs: responses[url]),
+
+
+def test_store_api_preserves_permalink_identity_and_minor_units() -> None:
+    seen: set[tuple[str, str | int]] = set()
+    product = CCCenterCatalogClient._store_product(_store_item(), seen)
+    assert product.product_id == "https://cccenter.mk/product/alpha/"
+    assert product.current_price == 7400
+    assert product.original_price == 8000
+    assert product.name == "Alpha & Beta"
+
+
+def test_store_api_encoded_permalink_identity_is_not_reconstructed() -> None:
+    url = "https://cccenter.mk/product/ssd-2-5%e2%80%b3-500gb/"
+    item = _store_item(url=url)
+    item["slug"] = "ssd-2-5″-500gb"
+    product = CCCenterCatalogClient._store_product(item, set())
+    assert product.product_id == url
+
+
+@pytest.mark.parametrize("price", ["-1", "1.2", "1e3", 1, True])
+def test_store_api_rejects_noncanonical_minor_price(price: object) -> None:
+    with pytest.raises(FeedFetchError, match="MalformedPrice"):
+        cccenter_catalog._minor_amount(price)
+
+
+def test_store_api_rejects_huge_minor_amount_as_typed_error() -> None:
+    with pytest.raises(FeedFetchError, match="MalformedPrice"):
+        cccenter_catalog._minor_amount("9" * 5000)
+
+
+def test_store_api_preserves_range_and_zero_amount_status() -> None:
+    assert (
+        cccenter_catalog._store_price(_store_item(price_range={"min_price": "1"}))[2]
+        == "range"
     )
+    assert cccenter_catalog._minor_amount("0") == 0
+    assert cccenter_catalog._minor_amount("1") == Decimal("0.01")
 
-    products = CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
 
-    assert len(products) == 25
-    encoded = products[0]
-    assert encoded.product_id == encoded_url
-    assert encoded.url == encoded_url
+def test_store_api_rejects_bad_currency_even_when_product_is_variable() -> None:
+    item = _store_item()
+    item["type"] = "variable"
+    prices = item["prices"]
+    assert isinstance(prices, dict)
+    prices["currency_code"] = "USD"
+    with pytest.raises(FeedFetchError, match="InvalidCurrency"):
+        cccenter_catalog._store_price(item)
+
+
+def test_store_api_defers_observed_woosb_bundle_price_without_losing_identity() -> None:
+    item = _store_item()
+    item["type"] = "woosb"
+    product = CCCenterCatalogClient._store_product(item, set())
+    assert product.product_id == "https://cccenter.mk/product/alpha/"
+    assert product.current_price is None
+    assert product.original_price is None
+    assert product.price_status == "variable"
+
+
+def test_store_api_rejects_unrecognized_custom_product_type() -> None:
+    item = _store_item()
+    item["type"] = "unknown-custom-type"
+    with pytest.raises(FeedFetchError, match="MalformedProduct"):
+        CCCenterCatalogClient._store_product(item, set())
+
+
+def test_store_api_rejects_non_boolean_stock_and_permalink_slug_conflict() -> None:
+    malformed = _store_item()
+    malformed["is_in_stock"] = "false"
+    with pytest.raises(FeedFetchError, match="MalformedProduct"):
+        CCCenterCatalogClient._store_product(malformed, set())
+    conflict = _store_item()
+    conflict["slug"] = "different"
+    with pytest.raises(FeedFetchError, match="InvalidProductIdentity"):
+        CCCenterCatalogClient._store_product(conflict, set())
 
 
 @pytest.mark.parametrize(
@@ -424,7 +386,7 @@ class _StreamResponse:
     def __init__(self, chunks: list[bytes], status_code: int = 200) -> None:
         self._chunks = chunks
         self.status_code = status_code
-        self.headers: dict[str, str] = {}
+        self.headers: dict[str, str] = {"Content-Type": "application/json"}
         if status_code in {301, 302}:
             self.headers = {"Location": "https://evil.example/"}
 
@@ -455,7 +417,10 @@ def test_cccenter_rejects_redirects_without_following_them(
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
 
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        CCCenterCatalogClient._fetch_html(CCCENTER_FEED_URL)
+        CCCenterCatalogClient._fetch_json(
+            "https://cccenter.mk/?rest_route=/wc/store/v1/products",
+            cccenter_catalog._ScanBudget.start(lambda: False),
+        )
     assert calls[0]["allow_redirects"] is False
 
 
@@ -479,7 +444,10 @@ def test_cccenter_reads_responses_as_bounded_streams(
     )
 
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        CCCenterCatalogClient._fetch_html(CCCENTER_FEED_URL)
+        CCCenterCatalogClient._fetch_json(
+            "https://cccenter.mk/?rest_route=/wc/store/v1/products",
+            cccenter_catalog._ScanBudget.start(lambda: False),
+        )
 
 
 @pytest.mark.parametrize(
@@ -520,9 +488,9 @@ def test_cccenter_propagates_typed_callback_abort(
     budget = cccenter_catalog._ScanBudget.start(lambda: False)
 
     with pytest.raises(FeedFetchError) as error:
-        CCCenterCatalogClient._fetch_html(
-            CCCENTER_FEED_URL,
-            budget=budget,
+        CCCenterCatalogClient._fetch_json(
+            "https://cccenter.mk/?rest_route=/wc/store/v1/products",
+            budget,
         )
 
     assert error.value.cause_type == expected_cause
@@ -549,9 +517,9 @@ def test_cccenter_propagates_shutdown_from_callback_abort(
     budget = cccenter_catalog._ScanBudget.start(is_shutdown_requested)
 
     with pytest.raises(FeedFetchInterruptedError):
-        CCCenterCatalogClient._fetch_html(
-            CCCENTER_FEED_URL,
-            budget=budget,
+        CCCenterCatalogClient._fetch_json(
+            "https://cccenter.mk/?rest_route=/wc/store/v1/products",
+            budget,
         )
 
 
@@ -584,9 +552,9 @@ def test_cccenter_checks_deadline_before_each_stream_read(
     budget = cccenter_catalog._ScanBudget.start(lambda: False)
 
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
-        CCCenterCatalogClient._fetch_html(
-            CCCENTER_FEED_URL,
-            budget=budget,
+        CCCenterCatalogClient._fetch_json(
+            "https://cccenter.mk/?rest_route=/wc/store/v1/products",
+            budget,
         )
     assert chunks == 1
     assert calls[0]["allow_redirects"] is False

@@ -1,7 +1,8 @@
-"""Bounded, server-rendered CCCenter WooCommerce catalog scraping."""
+"""Bounded CCCenter WooCommerce Store API catalog scraping."""
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from html import unescape
 from time import monotonic
 from typing import Any, Final, Protocol
-from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
@@ -62,6 +63,7 @@ _PRODUCT_SLUG_PART: Final = rf"(?:[a-z0-9]|{_ENCODED_DOUBLE_PRIME})+"
 _PRODUCT_PATH_RE: Final = re.compile(
     rf"/product/{_PRODUCT_SLUG_PART}(?:-{_PRODUCT_SLUG_PART})*/",
 )
+_STORE_API: Final = f"{CCCENTER_ORIGIN}/?rest_route=/wc/store/v1/products"
 
 
 @dataclass(slots=True)
@@ -476,98 +478,6 @@ def _is_in_stock(stock: Tag | None) -> bool:
     return "out-of-stock" not in str(stock_classes or "")
 
 
-def _pagination_page(value: str) -> int:
-    """Accept only same-scope canonical path or legacy query pagination."""
-    try:
-        raw = urlsplit(value)
-        parsed = urlsplit(urljoin(CCCENTER_FEED_URL, value))
-        port = parsed.port
-    except ValueError:
-        raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination") from None
-    if (
-        not value
-        or not value.startswith(("https://", "/", "?"))
-        or parsed.scheme != "https"
-        or parsed.hostname != _CCCENTER_HOST
-        or parsed.username is not None
-        or parsed.password is not None
-        or port is not None
-        or parsed.fragment
-        or (raw.path and raw.path != parsed.path)
-    ):
-        raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-    query = parse_qsl(parsed.query, keep_blank_values=True)
-    params = dict(query)
-    if len(query) != len(params) or params.get("orderby") != "date":
-        raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-    if parsed.path == CCCENTER_SHOP_PATH:
-        if set(params) - {"orderby", "product-page"}:
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-        number = params.get("product-page", "1")
-    else:
-        match = re.fullmatch(r"/shop/page/([1-9][0-9]*)/", parsed.path)
-        if match is None or set(params) != {"orderby"}:
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-        number = match[1]
-    if not re.fullmatch(r"[1-9][0-9]{0,5}", number):
-        raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-    return int(number)
-
-
-@dataclass(frozen=True, slots=True)
-class _ResultRange:
-    first: int
-    last: int
-    total: int
-
-
-def _reported_range(document: BeautifulSoup) -> _ResultRange | None:
-    """Read optional WooCommerce counts; unknown or conflicting markers fail."""
-    ranges: set[_ResultRange] = set()
-    for node in document.select(".woocommerce-result-count"):
-        text = _text(node)
-        match = re.fullmatch(
-            r"\D*([0-9]{1,6})\s*[-–—]\s*([0-9]{1,6})\D+([0-9]{1,6})\D*",
-            text,
-        )
-        if match is not None:
-            first, last, total = (int(value) for value in match.groups())
-        elif (single := re.fullmatch(r"\D*([0-9]{1,6})\D*", text)) is not None:
-            first, last, total = 1, int(single[1]), int(single[1])
-        elif text.casefold() == "showing the single result":
-            first, last, total = 1, 1, 1
-        else:
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedResultCount")
-        if not 1 <= first <= last <= total:
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedResultCount")
-        ranges.add(_ResultRange(first, last, total))
-    if len(ranges) > 1:
-        raise FeedFetchError(CCCENTER_LABEL, "ConflictingResultCount")
-    return next(iter(ranges), None)
-
-
-def _validate_cardinality(
-    count: int,
-    page: int,
-    page_count: int,
-    reported: _ResultRange | None,
-) -> None:
-    # Without trustworthy result counts, the observed 24-card contract is the
-    # minimum completeness proof. Only the terminal page may be shorter.
-    size = CCCENTER_PRODUCTS_PER_PAGE
-    if not 1 <= count <= size or (page < page_count and count != size):
-        raise FeedFetchError(CCCENTER_LABEL, "IncompletePage")
-    if page_count == 1 and reported is None and count == size:
-        raise FeedFetchError(CCCENTER_LABEL, "AmbiguousCatalogEnd")
-    if reported is not None and (
-        reported.first != (page - 1) * size + 1
-        or reported.last != min(page * size, reported.total)
-        or reported.last - reported.first + 1 != count
-        or (reported.total + size - 1) // size != page_count
-    ):
-        raise FeedFetchError(CCCENTER_LABEL, "ResultCountMismatch")
-
-
 class CCCenterCatalogClient:
     """Enumerate the complete bounded listing index without N+1 detail fetches."""
 
@@ -602,19 +512,29 @@ class CCCenterCatalogClient:
             raise FeedFetchError(CCCENTER_LABEL, "DetailProductLimitExceeded")
         selected = tuple(listings)
         urls: list[str] = []
+        api_ids: set[int] = set()
         for listing in selected:
             budget.before_chunk()
             url = _safe_product_url(listing.url)
             if listing.product_id != url:
                 raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+            locator = listing.store_api_id
+            if (
+                isinstance(locator, bool)
+                or not isinstance(locator, int)
+                or locator <= 0
+            ):
+                raise FeedFetchError(CCCENTER_LABEL, "InvalidProductLocator")
             if url in urls:
                 raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
+            if locator in api_ids:
+                raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
             urls.append(url)
+            api_ids.add(locator)
         products: list[CCCenterProduct] = []
         for listing, url in zip(selected, urls, strict=True):
             budget.before_chunk()
-            html = self._fetch_html(url, budget=budget)
-            product = parse_product_detail(BeautifulSoup(html, _HTML_PARSER), listing)
+            product = self._fetch_store_product(url, listing, budget)
             budget.after_request()
             products.append(product)
         budget.after_request()
@@ -649,122 +569,195 @@ class CCCenterCatalogClient:
         is_shutdown_requested: Callable[[], bool],
         budget: _ScanBudget,
     ) -> tuple[CCCenterProduct, ...]:
-        first_url = validate_cccenter_url(url)
-        first_html = self._fetch_html(first_url, budget=budget)
-        first_soup = BeautifulSoup(first_html, _HTML_PARSER)
-        page_count = self._page_count(first_soup)
-        initial_range = _reported_range(first_soup)
+        validate_cccenter_url(url)
+        first, total, page_count = self._fetch_store_page(1, budget)
+        if total > MAX_CCCENTER_PRODUCTS:
+            raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
+        if page_count > MAX_CCCENTER_PAGES:
+            raise FeedFetchError(CCCENTER_LABEL, "PageLimitExceeded")
         products: list[CCCenterProduct] = []
-        seen_ids: set[str] = set()
+        seen_ids: set[tuple[str, str | int]] = set()
         for page in range(1, page_count + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
-            soup = self._page_document(page, first_soup, budget)
-            if self._page_count(soup) != page_count:
-                raise FeedFetchError(CCCENTER_LABEL, "PaginationDrift")
-            current_pages = soup.select(".page-numbers.current")
-            if (page_count > 1 and len(current_pages) != 1) or any(
-                _text(node) != str(page) for node in current_pages
-            ):
-                raise FeedFetchError(CCCENTER_LABEL, "PaginationDrift")
-            reported = _reported_range(soup)
-            if (reported is None) != (initial_range is None) or (
-                reported is not None
-                and initial_range is not None
-                and reported.total != initial_range.total
-            ):
-                raise FeedFetchError(CCCENTER_LABEL, "CatalogMetadataDrift")
-            self._append_page_products(
-                soup,
-                products,
-                seen_ids,
-                budget,
-                page=page,
-                page_count=page_count,
-                reported=reported,
+            if page == 1:
+                cards = first
+            else:
+                # Fetch metadata alongside cards and require a stable collection.
+                cards, page_total, page_pages = self._fetch_store_page(page, budget)
+                if page_total != total or page_pages != page_count:
+                    raise FeedFetchError(CCCENTER_LABEL, "CatalogMetadataDrift")
+            expected = min(
+                CCCENTER_PRODUCTS_PER_PAGE,
+                total - (page - 1) * CCCENTER_PRODUCTS_PER_PAGE,
             )
+            if len(cards) != expected:
+                raise FeedFetchError(CCCENTER_LABEL, "IncompletePage")
+            for item in cards:
+                budget.before_chunk()
+                products.append(self._store_product(item, seen_ids))
+        # Recheck first-page metadata after enumeration to detect collection drift.
+        final_cards, final_total, final_pages = self._fetch_store_page(1, budget)
+        if final_total != total or final_pages != page_count:
+            raise FeedFetchError(CCCENTER_LABEL, "CatalogMetadataDrift")
+        if len(final_cards) != min(total, CCCENTER_PRODUCTS_PER_PAGE):
+            raise FeedFetchError(CCCENTER_LABEL, "IncompletePage")
+        final_seen: set[tuple[str, str | int]] = set()
+        for item in final_cards:
+            self._store_product(item, final_seen)
         budget.after_request()
         return tuple(products)
 
-    def _page_document(
-        self,
-        page: int,
-        first_soup: BeautifulSoup,
-        budget: _ScanBudget,
-    ) -> BeautifulSoup:
-        if page == 1:
-            return first_soup
-        html = self._fetch_html(self._page_url(page), budget=budget)
-        return BeautifulSoup(html, _HTML_PARSER)
-
-    def _append_page_products(
-        self,
-        soup: BeautifulSoup,
-        products: list[CCCenterProduct],
-        seen_ids: set[str],
-        budget: _ScanBudget,
-        *,
-        page: int,
-        page_count: int,
-        reported: _ResultRange | None,
-    ) -> None:
-        cards = soup.select("li.product, div.etheme-product-grid-item")
-        if not cards:
-            raise FeedFetchError(CCCENTER_LABEL, "EmptyPage")
-        _validate_cardinality(len(cards), page, page_count, reported)
-        for card in cards:
-            budget.before_chunk()
-            products.append(self._index_product(card, seen_ids))
-
     @staticmethod
-    def _index_product(
-        card: Tag,
-        seen_ids: set[str],
+    def _store_product(
+        item: Any,  # noqa: ANN401
+        seen_ids: set[tuple[str, str | int]],
     ) -> CCCenterProduct:
-        listing = parse_product_listing(card)
-        if listing.product_id in seen_ids:
+        if not isinstance(item, dict):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        raw_id = item.get("id")
+        if isinstance(raw_id, bool) or not isinstance(raw_id, int) or raw_id <= 0:
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        slug = item.get("slug")
+        permalink = item.get("permalink")
+        if not isinstance(slug, str) or not slug or not isinstance(permalink, str):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        url = _safe_product_url(permalink)
+        path_slug = urlsplit(url).path.removeprefix("/product/").removesuffix("/")
+        if unquote(path_slug) != unquote(slug):
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+        id_key: tuple[str, str | int] = ("id", raw_id)
+        url_key: tuple[str, str | int] = ("url", url)
+        if id_key in seen_ids or url_key in seen_ids:
             raise FeedFetchError(CCCENTER_LABEL, "DuplicateProduct")
-        seen_ids.add(listing.product_id)
-        if len(seen_ids) > MAX_CCCENTER_PRODUCTS:
-            raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
+        seen_ids.update((id_key, url_key))
+        name = item.get("name")
+        if not isinstance(name, str) or not unescape(name).strip():
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        current, original, status = _store_price(item)
+        images = item.get("images", [])
+        if not isinstance(images, list):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        image = images[0].get("src") if images and isinstance(images[0], dict) else None
+        sku = item.get("sku", "")
+        cats = item.get("categories", [])
+        if not isinstance(sku, str) or not isinstance(cats, list):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        if not all(
+            isinstance(c, dict) and isinstance(c.get("name"), str) and c["name"].strip()
+            for c in cats
+        ):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+        categories = tuple(unescape(c["name"]).strip() for c in cats)
+        stock = item.get("is_in_stock")
+        if not isinstance(stock, bool):
+            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
         return CCCenterProduct(
-            product_id=listing.product_id,
-            name=listing.name,
-            url=listing.url,
-            sku=_text(card.select_one(".sku")),
-            current_price=listing.current_price,
-            original_price=listing.original_price,
-            image_url=listing.image_url,
-            categories=tuple(_text(node) for node in card.select(".posted_in a")),
-            is_in_stock="outofstock" not in (card.get("class") or [])
-            and _is_in_stock(card.select_one(".stock")),
-            price_status=listing.price_status,
+            url,
+            unescape(name).strip(),
+            url,
+            sku,
+            current,
+            original,
+            _safe_image_url(image if isinstance(image, str) else None),
+            categories,
+            stock,
+            price_status=status,
+            store_api_id=raw_id,
         )
 
     @staticmethod
-    def _page_count(document: BeautifulSoup) -> int:
-        links = document.select("a.page-numbers, .woocommerce-pagination a")
-        current = document.select(".page-numbers.current")
-        if document.select(".woocommerce-pagination") and not links and not current:
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-        pages = [_pagination_page(str(link.get("href", ""))) for link in links]
-        for node in current:
-            value = _text(node)
-            if not re.fullmatch(r"[1-9][0-9]{0,5}", value):
-                raise FeedFetchError(CCCENTER_LABEL, "MalformedPagination")
-            pages.append(int(value))
-        page_count = max(pages, default=1)
-        if page_count > MAX_CCCENTER_PAGES:
+    def _fetch_store_page(page: int, budget: _ScanBudget) -> tuple[list[Any], int, int]:
+        query = urlencode(
+            {
+                "per_page": CCCENTER_PRODUCTS_PER_PAGE,
+                "page": page,
+                "orderby": "date",
+                "order": "desc",
+            },
+        )
+        response, content = CCCenterCatalogClient._fetch_json(
+            f"{_STORE_API}&{query}",
+            budget,
+        )
+        try:
+            items = json.loads(content)
+            total, pages = (
+                int(response.headers["X-WP-Total"]),
+                int(response.headers["X-WP-TotalPages"]),
+            )
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None
+        if not isinstance(items, list) or total <= 0 or pages <= 0:
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse")
+        if total > MAX_CCCENTER_PRODUCTS:
+            raise FeedFetchError(CCCENTER_LABEL, "ProductLimitExceeded")
+        if pages > MAX_CCCENTER_PAGES:
             raise FeedFetchError(CCCENTER_LABEL, "PageLimitExceeded")
-        return page_count
+        if (
+            pages
+            != (total + CCCENTER_PRODUCTS_PER_PAGE - 1) // CCCENTER_PRODUCTS_PER_PAGE
+            or page > pages
+        ):
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse")
+        return items, total, pages
 
     @staticmethod
-    def _page_url(page: int) -> str:
-        if not 1 <= page <= MAX_CCCENTER_PAGES:
-            raise FeedFetchError(CCCENTER_LABEL, "PageLimitExceeded")
-        if page == 1:
-            return CCCENTER_FEED_URL
-        return f"{CCCENTER_ORIGIN}{CCCENTER_SHOP_PATH}page/{page}/?orderby=date"
+    def _fetch_store_product(
+        url: str,
+        listing: CCCenterListing | CCCenterProduct,
+        budget: _ScanBudget,
+    ) -> CCCenterProduct:
+        query = urlencode({"include": listing.store_api_id, "per_page": 1, "page": 1})
+        response, content = CCCenterCatalogClient._fetch_json(
+            f"{_STORE_API}&{query}",
+            budget,
+        )
+        try:
+            items = json.loads(content)
+            total = int(response.headers["X-WP-Total"])
+            pages = int(response.headers["X-WP-TotalPages"])
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidDetail") from None
+        if total != 1 or pages != 1:
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidDetail")
+        if not isinstance(items, list) or len(items) != 1:
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidDetail")
+        detail = CCCenterCatalogClient._store_product(items[0], set())
+        if detail.store_api_id != listing.store_api_id or detail.url != url:
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
+        return CCCenterProduct(
+            listing.product_id,
+            detail.name,
+            listing.url,
+            detail.sku,
+            detail.current_price,
+            detail.original_price,
+            detail.image_url or listing.image_url,
+            detail.categories,
+            detail.is_in_stock,
+            price_status=_merge_price_status(listing.price_status, detail.price_status),
+            store_api_id=detail.store_api_id,
+        )
+
+    @staticmethod
+    def _fetch_json(url: str, budget: _ScanBudget) -> tuple[Any, str]:
+        budget.before_request()
+        callback = BoundedContentCallback.start(
+            budget,
+            max_bytes=MAX_CCCENTER_RESPONSE_BYTES,
+            label=CCCENTER_LABEL,
+        )
+        response = CCCenterCatalogClient._request_json(url, budget, callback)
+        _raise_callback_abort(callback)
+        budget.after_request()
+        _validate_response(response)
+        content_type = (
+            response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        )
+        if content_type != "application/json":
+            raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse")
+        return response, _decode_html(response, callback.content)
 
     @staticmethod
     def _fetch_html(
@@ -813,6 +806,35 @@ class CCCenterCatalogClient:
                 retryable=True,
             ) from None
 
+    @staticmethod
+    def _request_json(
+        url: str,
+        budget: _ScanBudget,
+        callback_state: BoundedContentCallback,
+    ) -> Any:  # noqa: ANN401
+        try:
+            return _perform_request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": CCCENTER_USER_AGENT,
+                },
+                timeout=budget.request_timeout(),
+                stream=False,
+                allow_redirects=False,
+                content_callback=callback_state.write,
+            )
+        except FeedFetchError:
+            raise
+        except (curl_requests.exceptions.RequestException, ValueError) as error:
+            if callback_state.abort_error is not None:
+                raise callback_state.abort_error from None
+            raise FeedFetchError(
+                CCCENTER_LABEL,
+                type(error).__name__,
+                retryable=True,
+            ) from None
+
 
 def _raise_callback_abort(callback_state: BoundedContentCallback) -> None:
     if callback_state.abort_error is not None:
@@ -824,3 +846,54 @@ def _decode_html(response: _HttpResponse, content: bytearray) -> str:
         return bytes(content).decode(response.encoding or "utf-8", errors="strict")
     except UnicodeDecodeError:
         raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None
+
+
+def _store_price(
+    item: dict[str, Any],
+) -> tuple[Decimal | None, Decimal | None, CCCenterPriceStatus]:
+    product_type = item.get("type")
+    has_options = item.get("has_options")
+    if not isinstance(product_type, str) or product_type not in {
+        "simple",
+        "variable",
+        "grouped",
+        "external",
+        "woosb",
+    }:
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+    if not isinstance(has_options, bool):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+    prices = item.get("prices")
+    if not isinstance(prices, dict):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedPrice")
+    if (
+        prices.get("currency_code") != "MKD"
+        or type(prices.get("currency_minor_unit")) is not int
+        or prices["currency_minor_unit"] != 2
+    ):
+        raise FeedFetchError(CCCENTER_LABEL, "InvalidCurrency")
+    if product_type in {"variable", "woosb"} or has_options:
+        return None, None, "variable"
+    if prices.get("price_range") is not None:
+        return None, None, "range"
+    raw = prices.get("price")
+    if raw in (None, ""):
+        return None, None, "unpriced"
+    current = _minor_amount(raw)
+    original_raw = prices.get("regular_price")
+    original = (
+        _minor_amount(original_raw) if original_raw not in (None, "", raw) else None
+    )
+    return current, original, "scalar"
+
+
+def _minor_amount(raw: Any) -> Decimal:  # noqa: ANN401
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9]+", raw):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedPrice")
+    try:
+        whole = raw[:-2] or "0"
+        amount = Decimal(f"{whole}.{raw[-2:].zfill(2)}")
+        canonicalize_price_amount(amount)
+    except (InvalidOperation, PriceAmountValidationError):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedPrice") from None
+    return amount
