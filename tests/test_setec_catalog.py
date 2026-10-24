@@ -20,6 +20,8 @@ from rss2discord.providers.setec.catalog_bounds import (
     SETEC_SEARCH_PAGE_SIZE,
     SETEC_SEARCH_URL,
 )
+from rss2discord.providers.setec.client import SETEC_PUBLIC_FILTER, SetecSearchClient
+from rss2discord.providers.setec.public_config import PublicSearchConfig
 from rss2discord.retries import (
     FETCH_MAX_ATTEMPTS,
     FeedFetchInterruptedError,
@@ -40,6 +42,16 @@ from tests.setec_helpers import (
     product_payload,
     search_payload,
 )
+
+
+@pytest.fixture(autouse=True)
+def synthetic_public_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        SetecSearchClient,
+        "resolve_config",
+        lambda self: PublicSearchConfig("synthetic-public-search-key"),
+    )
+
 
 SMALL_PAGE_SIZE = 2
 BOUNDARY_PAGE_SIZE = 4
@@ -101,8 +113,12 @@ SCAN_ENTRIES_SHORT_OF_THE_DECLARED_TOTAL = [
 def band_filter(low: float, high: float | None = None) -> list[str]:
     """Rebuild the filter clauses the scan sends for one half-open band."""
     if high is None:
-        return [f"{SETEC_PRICE_FIELD} >= {low}"]
-    return [f"{SETEC_PRICE_FIELD} >= {low}", f"{SETEC_PRICE_FIELD} < {high}"]
+        return [SETEC_PUBLIC_FILTER, f"{SETEC_PRICE_FIELD} >= {low}"]
+    return [
+        SETEC_PUBLIC_FILTER,
+        f"{SETEC_PRICE_FIELD} >= {low}",
+        f"{SETEC_PRICE_FIELD} < {high}",
+    ]
 
 
 def use_page_size(monkeypatch: pytest.MonkeyPatch, page_size: int) -> None:
@@ -210,7 +226,8 @@ def requested_identifiers(body: Mapping[str, JsonValue]) -> list[str]:
     """Return the identifiers one display-lookup body selects, in request order."""
     search_filter = body["filter"]
     assert isinstance(search_filter, list)
-    clause = search_filter[0]
+    assert search_filter[0] == SETEC_PUBLIC_FILTER
+    clause = search_filter[1]
     assert isinstance(clause, str)
     assert clause.startswith("id IN [")
     identifiers = json.loads(clause.removeprefix("id IN "))
@@ -307,6 +324,7 @@ def test_setec_catalog_client_enumerates_every_priced_product_in_ascending_band_
                     ],
                 ),
             ),
+            StubResponse(count_payload([1_499, 2_999])),
         ],
     )
     monkeypatch.setattr(requests, "post", post)
@@ -324,7 +342,7 @@ def test_setec_catalog_client_enumerates_every_priced_product_in_ascending_band_
         Decimal(1_499),
         Decimal(2_999),
     ]
-    assert post.urls == [SETEC_SEARCH_URL] * 3
+    assert post.urls == [SETEC_SEARCH_URL] * 4
     assert post.bodies[0] == {
         "q": "",
         "limit": 0,
@@ -355,6 +373,7 @@ def test_setec_catalog_client_collapses_identical_product_ids(
             StubResponse(count_payload([1_499])),
             StubResponse(count_payload([1_499, 1_499])),
             StubResponse(search_payload([duplicate, duplicate])),
+            StubResponse(count_payload([1_499])),
         ],
     )
     monkeypatch.setattr(requests, "post", post)
@@ -451,6 +470,7 @@ def test_setec_catalog_client_restarts_the_complete_scan_after_a_retryable_band_
             StubResponse(count_payload([1_499, 2_999])),
             StubResponse(count_payload([1_499, 2_999])),
             StubResponse(hits),
+            StubResponse(count_payload([1_499, 2_999])),
         ],
     )
     monkeypatch.setattr(requests, "post", post)
@@ -481,6 +501,7 @@ def test_setec_catalog_client_restarts_the_complete_scan_after_a_retryable_band_
         band_filter(0.0),
         band_filter(0.0, 3_000.0),
         band_filter(0.0, 3_000.0),
+        band_filter(0.0),
     ]
     assert len(retry_delays) == 1
 
@@ -516,6 +537,7 @@ def test_bisection_splits_a_partition_that_exceeds_the_per_search_limit(
         band_filter(0.0, 15.5),
         band_filter(15.5, 31.0),
         band_filter(15.5, 31.0),
+        band_filter(0.0),
     ]
     assert index.hit_request_total == 2
 
@@ -554,6 +576,7 @@ def test_bisection_partitions_are_half_open_so_boundary_products_are_neither_dro
         band_filter(0.0, 50.0),
         band_filter(50.0, 100.0),
         band_filter(50.0, 100.0),
+        band_filter(0.0),
     ]
     assert index.hit_request_total == 2
 
@@ -627,7 +650,8 @@ def test_products_with_missing_or_non_numeric_price_are_omitted_from_the_price_i
     assert [entry.id for entry in entries] == list(index.priced_ids)
     assert set(index.unpriced_ids).isdisjoint(entry.id for entry in entries)
     assert all(
-        isinstance(clause, str) and clause.startswith(SETEC_PRICE_FIELD)
+        isinstance(clause, str)
+        and (clause == SETEC_PUBLIC_FILTER or clause.startswith(SETEC_PRICE_FIELD))
         for search_filter in index.filters
         if isinstance(search_filter, list)
         for clause in search_filter
@@ -670,11 +694,13 @@ def test_facet_total_mismatch_between_parent_and_children_is_retryable(
     )
 
 
-def test_setec_catalog_client_reports_an_empty_catalog_from_the_summary_alone(
+def test_setec_catalog_client_rechecks_an_empty_catalog_summary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    post = RecordingPost([StubResponse(count_payload([]))])
+    post = RecordingPost(
+        [StubResponse(count_payload([])), StubResponse(count_payload([]))],
+    )
     monkeypatch.setattr(requests, "post", post)
 
     # When
@@ -686,14 +712,18 @@ def test_setec_catalog_client_reports_an_empty_catalog_from_the_summary_alone(
 
     # Then
     assert entries == ()
-    assert post.bodies == [
-        {
-            "q": "",
-            "limit": 0,
-            "filter": band_filter(0.0),
-            "facets": [SETEC_COUNT_FIELD, SETEC_PRICE_FIELD],
-        },
-    ]
+    assert (
+        post.bodies
+        == [
+            {
+                "q": "",
+                "limit": 0,
+                "filter": band_filter(0.0),
+                "facets": [SETEC_COUNT_FIELD, SETEC_PRICE_FIELD],
+            },
+        ]
+        * 2
+    )
 
 
 @pytest.mark.parametrize(
@@ -850,6 +880,7 @@ def test_setec_catalog_client_requests_display_products_in_bounded_id_chunks(
         len(batch) for batch in requested_batches
     ]
     assert post.bodies[0]["filter"] == [
+        SETEC_PUBLIC_FILTER,
         "id IN [" + ",".join(f'"{product_id}"' for product_id in batches[0]) + "]",
     ]
 
@@ -889,7 +920,7 @@ def test_setec_catalog_client_asks_for_the_display_projection_of_one_looked_up_i
         {
             "q": "",
             "limit": 1,
-            "filter": ['id IN ["prod-1"]'],
+            "filter": [SETEC_PUBLIC_FILTER, 'id IN ["prod-1"]'],
             "attributesToRetrieve": DISPLAY_PROJECTION_FIELDS,
         },
     ]

@@ -10,6 +10,8 @@ from rss2discord.providers.setec.catalog_bounds import (
     SETEC_SEARCH_PAGE_SIZE,
     SETEC_WINDOW_SIZE,
 )
+from rss2discord.providers.setec.client import SetecSearchClient
+from rss2discord.providers.setec.public_config import PublicSearchConfig
 from rss2discord.transports import FeedFetchError
 from tests.setec_helpers import (
     CATALOG_URL,
@@ -24,6 +26,16 @@ from tests.setec_helpers import (
     product_payload,
     search_payload,
 )
+
+
+@pytest.fixture(autouse=True)
+def synthetic_public_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        SetecSearchClient,
+        "resolve_config",
+        lambda self: PublicSearchConfig("synthetic-public-search-key"),
+    )
+
 
 SEARCH_REQUEST_BUDGET = 6
 BAND_CORPUS_SIZE = 2_048
