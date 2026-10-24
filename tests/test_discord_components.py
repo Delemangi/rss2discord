@@ -138,6 +138,44 @@ def test_components_v2_payload_safely_renders_entry_links(
 
 
 @pytest.mark.parametrize(
+    "title",
+    [
+        "[high] Swell freezes swETH and rswETH after suspected admin key compromise inflates their NAV",
+    ],
+)
+def test_components_v2_payload_preserves_literal_title_characters(title: str) -> None:
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, title=title))
+
+    heading = get_container_children(message)[0]
+
+    assert heading["content"] == f"## [{title}](https://example.test/entry)"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "unbalanced ] close",
+        "unbalanced [ open",
+        "x](https://evil.test) [forged",
+        r"title\](https://evil.test)",
+        r"C:\News\Update [1]",
+        "title\\",
+        "nested [masked](https://evil.test) link",
+        "autolink <https://evil.test>",
+    ],
+)
+def test_components_v2_payload_escapes_unsafe_link_labels(title: str) -> None:
+    message = make_message()
+    message = replace(message, entry=replace(message.entry, title=title))
+
+    heading = get_container_children(message)[0]
+
+    escaped = title.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    assert heading["content"] == (f"## [{escaped}](https://example.test/entry)")
+
+
+@pytest.mark.parametrize(
     "image_url",
     [
         "http://example.test/image.jpg",

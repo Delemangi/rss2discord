@@ -215,8 +215,23 @@ def _build_heading(title: str, safe_link: str | None) -> str:
     # Bound the visible title on its own. A URL costs budget but no width, so
     # measuring the whole linked construct would strip the link off entries
     # whose address merely carries a long query string.
-    escaped = _escape_markdown_link_text(title)
+    # Discord's exact Markdown parser/escape behavior is not specified by the
+    # API docs. The upstream simple-markdown source supports balanced nested
+    # label brackets, but is not proof of Discord's deployed parser. Use literal
+    # brackets only for a narrow, balanced label without escapes or nested-link
+    # syntax; retain the conservative old escaping for everything else.
+    literal_label = safe_link is not None and _is_safe_literal_link_label(title)
+    escape = (lambda value: value) if literal_label else _escape_markdown_link_text
+    escaped = escape(title)
     if len(escaped) > MAX_HEADING_TITLE_CHARACTERS:
+        escaped = _truncate_escaped_text(
+            title,
+            MAX_HEADING_TITLE_CHARACTERS,
+            escape,
+        )
+    if literal_label and not _is_safe_literal_link_label(
+        escaped.removesuffix(ELLIPSIS),
+    ):
         escaped = _truncate_escaped_text(
             title,
             MAX_HEADING_TITLE_CHARACTERS,
@@ -380,6 +395,25 @@ def _bounded_join(parts: Sequence[str], budget: int) -> str | None:
 
 def _escape_markdown_link_text(text: str) -> str:
     return text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _is_safe_literal_link_label(text: str) -> bool:
+    """Allow visible brackets only in conservative, balanced link labels."""
+    if (
+        "\\" in text
+        or re.search(r"\]\s*\(", text)
+        or re.search(r"<(?:https?://|www\.)", text, re.IGNORECASE)
+    ):
+        return False
+    depth = 0
+    for character in text:
+        if character == "[":
+            depth += 1
+        elif character == "]":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
 
 
 def _escape_markdown_text(text: str) -> str:
