@@ -153,16 +153,14 @@ def test_components_v2_payload_keeps_thumbnail_description_plain() -> None:
     # When
     children = get_container_children(message)
 
-    # Then - thumbnail alt text is plain, heading stays Markdown-escaped
+    # Then - thumbnail alt text is plain and balanced heading brackets stay literal
     section = children[0]
     assert section["type"] == 9
     section_children = section["components"]
     assert isinstance(section_children, list)
     heading = section_children[0]
     assert isinstance(heading, dict)
-    assert heading["content"] == (
-        "## [\\[Release\\] **v2**](https://example.test/entry)"
-    )
+    assert heading["content"] == ("## [[Release] **v2**](https://example.test/entry)")
     accessory = section["accessory"]
     assert isinstance(accessory, dict)
     assert accessory["type"] == 11

@@ -134,8 +134,8 @@ def test_components_v2_payload_caps_heading_without_starving_footer() -> None:
     assert contents[-1] == "-# RSS • News"
 
 
-def test_components_v2_payload_truncates_escaped_heading_between_escapes() -> None:
-    # Given - a title that doubles in length once escaped
+def test_components_v2_payload_truncates_unbalanced_heading_between_escapes() -> None:
+    # Given - a title with more literal brackets than the heading budget
     message = make_message()
     message = replace(
         message,
@@ -152,10 +152,30 @@ def test_components_v2_payload_truncates_escaped_heading_between_escapes() -> No
     # When
     contents = get_text_display_contents(message)
 
-    # Then - the cut never splits a backslash from the character it escapes
+    # Then - unbalanced input keeps the conservative escaping and remains bounded
     body = contents[0].removeprefix("## ").removesuffix("…")
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
     assert body == "\\[" * (len(body) // 2)
+
+
+def test_components_v2_payload_falls_back_when_truncation_unbalances_label() -> None:
+    message = make_message()
+    message = replace(
+        message,
+        entry=replace(
+            message.entry,
+            title="[aa]" * 1000,
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+    )
+
+    heading = get_text_display_contents(message)[0]
+
+    assert "\\[" in heading
+    assert len(heading) <= MAX_HEADING_CHARACTERS
 
 
 def test_components_v2_payload_drops_footer_parts_that_do_not_fit() -> None:
