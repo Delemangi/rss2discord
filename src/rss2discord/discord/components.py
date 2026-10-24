@@ -5,6 +5,11 @@ from typing import Final
 from urllib.parse import quote
 
 from rss2discord.configuration import FeedConfig
+from rss2discord.discord.pwn_watch import (
+    is_pwn_watch_feed,
+    present_pwn_watch,
+    severity_color,
+)
 from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
 from rss2discord.url_normalization import (
@@ -93,17 +98,35 @@ def build_components_v2_payload(
     rendered at body size; every transport already orders its metrics that way.
     """
     link = _safe_markdown_url(entry.link)
+    pwn_watch = is_pwn_watch_feed(feed.strategy, feed.url)
+    presentation = (
+        present_pwn_watch(entry.title, entry.description) if pwn_watch else None
+    )
     title = (
-        f"Price change: {entry.title}"
-        if entry.price_direction is not None
-        else entry.title
+        presentation.title
+        if presentation is not None
+        else (
+            f"Price change: {entry.title}"
+            if entry.price_direction is not None
+            else entry.title
+        )
     )
     heading = _build_heading(title, link)
+    severity = presentation.severity if presentation is not None else None
+    badge = f"**{severity.upper()} SEVERITY**" if severity else None
     metrics = _build_metrics(entry.source_metrics)
-    footer = _build_footer(entry, feed, source_title, link)
+    footer = (
+        _build_pwn_watch_footer(entry, severity, link)
+        if pwn_watch
+        else _build_footer(entry, feed, source_title, link)
+    )
     description = _truncate_rendered_text(
-        entry.description,
-        _description_budget(heading, metrics, footer),
+        presentation.description if presentation is not None else entry.description,
+        max(
+            0,
+            _description_budget(heading, metrics, footer)
+            - (len(badge) if badge else 0),
+        ),
     )
 
     safe_image_url = _resolve_image_url(entry, attachment_filename)
@@ -112,6 +135,7 @@ def build_components_v2_payload(
     heading_component = _text_display(heading)
     metrics_component = _text_display(metrics) if metrics is not None else None
     description_component = _text_display(description) if description else None
+    badge_component = _text_display(badge) if badge else None
 
     if safe_image_url is not None:
         # A Section pairs its children with the thumbnail. Keep it to the title
@@ -135,8 +159,12 @@ def build_components_v2_payload(
                 "type": SECTION_COMPONENT,
             },
         )
+        if badge_component is not None:
+            container_components.insert(0, badge_component)
         container_components.extend(trailing)
     else:
+        if badge_component is not None:
+            container_components.append(badge_component)
         container_components.append(heading_component)
         if metrics_component is not None:
             container_components.append(metrics_component)
@@ -156,7 +184,7 @@ def build_components_v2_payload(
         "allowed_mentions": {"parse": []},
         "components": [
             {
-                "accent_color": _accent_color(feed, entry),
+                "accent_color": severity_color(severity) or _accent_color(feed, entry),
                 "components": container_components,
                 "type": CONTAINER_COMPONENT,
             },
@@ -373,6 +401,41 @@ def _build_footer(
         line = _truncate_rendered_text(label, max(0, line_budget))
     if timestamp is not None:
         line = f"{line}{METADATA_SEPARATOR}{timestamp}" if line else timestamp
+    return f"{SUBTEXT_PREFIX}{line}"
+
+
+def _build_pwn_watch_footer(
+    entry: EntryData,
+    severity: str | None,
+    safe_primary_link: str | None,
+) -> str:
+    timestamp = (
+        _truncate_rendered_text(
+            _format_timestamp(entry.timestamp),
+            MAX_FOOTER_TIMESTAMP_CHARACTERS,
+        )
+        if entry.timestamp is not None
+        else None
+    )
+    parts = ["pwn.watch"]
+    if entry.author:
+        parts.append(f"By {_escape_metadata_text(entry.author)}")
+    safe_discussion_url = (
+        _safe_markdown_url(entry.discussion_url) if entry.discussion_url else None
+    )
+    if safe_discussion_url is not None and safe_discussion_url != safe_primary_link:
+        parts.append(f"[Discussion]({safe_discussion_url})")
+    parts.extend(
+        _escape_metadata_text(category)
+        for category in entry.categories
+        if severity is None or category.casefold() != severity
+    )
+    line_budget = MAX_FOOTER_LINE_CHARACTERS - len(SUBTEXT_PREFIX)
+    if timestamp:
+        line_budget -= len(METADATA_SEPARATOR) + len(timestamp)
+    line = _bounded_join(parts, line_budget) or "pwn.watch"
+    if timestamp:
+        line = f"{line}{METADATA_SEPARATOR}{timestamp}"
     return f"{SUBTEXT_PREFIX}{line}"
 
 
