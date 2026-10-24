@@ -12,6 +12,8 @@ from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_SEARCH_REQUESTS,
     SETEC_PRICE_FIELD,
 )
+from rss2discord.providers.setec.client import SetecSearchClient
+from rss2discord.providers.setec.public_config import PublicSearchConfig
 from tests.setec_helpers import (
     CATALOG_URL,
     FakeMeilisearchIndex,
@@ -19,6 +21,16 @@ from tests.setec_helpers import (
     catalog_scan_should_stop,
     no_wait_fetch_retry_policy,
 )
+
+
+@pytest.fixture(autouse=True)
+def synthetic_public_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        SetecSearchClient,
+        "resolve_config",
+        lambda self: PublicSearchConfig("synthetic-public-search-key"),
+    )
+
 
 HEAVY_TIE_COUNTS = {49: 900, 499: 850, 999: 800, 1_999: 950, 4_999: 700}
 PRODUCTION_SCALE_PRODUCT_FLOOR = 12_750

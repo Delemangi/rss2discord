@@ -9,13 +9,13 @@ from rss2discord.price_amount import PriceAmountValidationError
 from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_LATEST_RESPONSE_BYTES,
     MAX_SETEC_REDIRECTS,
-    SETEC_SEARCH_KEY,
     SETEC_SEARCH_URL,
     SETEC_STREAM_CHUNK_BYTES,
     SETEC_WINDOW_SIZE,
     SetecSearchRequest,
 )
 from rss2discord.providers.setec.client import SetecSearchClient
+from rss2discord.providers.setec.public_config import PublicSearchConfig
 from rss2discord.providers.setec.strategy import SetecStrategy, format_setec_mkd
 from rss2discord.transports import FeedFetchError
 from tests.setec_helpers import (
@@ -26,6 +26,18 @@ from tests.setec_helpers import (
     product_payload,
     search_payload,
 )
+
+SETEC_SEARCH_KEY = "synthetic-public-search-key"
+
+
+@pytest.fixture(autouse=True)
+def synthetic_public_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        SetecSearchClient,
+        "resolve_config",
+        lambda self: PublicSearchConfig(SETEC_SEARCH_KEY),
+    )
+
 
 OLDEST_CREATED_AT = "2026-07-23T02:24:28.424Z"
 NEWEST_CREATED_AT = "2026-07-24T09:11:03.001Z"

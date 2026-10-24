@@ -11,6 +11,14 @@ Monitor feeds, forums, marketplaces, and product catalogs; send new-item and opt
 
 See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Complete Gjirafa50 price enumeration remains unresolved on both storefronts; Reklama5 access can be blocked by upstream challenges.
 
+## Setec public-webstore scope
+
+Setec searches now consistently select `status = 'published' AND is_web_active = 'true'` for latest discovery, full price-index counts/bands, and product-ID confirmation lookups. This is an explicitly reviewed source-scope change, separate from repairing public search-configuration discovery. Product IDs, variant handling, currency rules, price caps, scheduling, and approval requirements are unchanged.
+
+Historical identities and price snapshots remain preserved, including products no longer visible in the public webstore; absence is not permission to reset, delete, waive, or release their history. Existing stale price candidates must not be approved: normal scans rebuild candidates, and more than 100 changed prices still require fresh exact-target review. This repair grants no approvals or forced price releases.
+
+Search configuration is discovered afresh per operation from explicitly advertised same-origin public JavaScript, without a legacy-key fallback. Discovery is limited to 40 unique assets, 48 physical requests, 2 MiB per response, 16 MiB total decoded bytes, and 120 seconds. These are sublimits within full-catalog operations' existing 1,000-request/500-MiB caps and new 300-second deadline. Latest operations have a 150-second deadline and an enclosing discovery-plus-search byte allowance; their existing 1-MiB single-search-response and redirect-chain byte limits are unchanged. Full indexes are accepted only after a final root count/bounds recheck agrees with the initial summary; incomplete or drifting evidence fails closed.
+
 ## Docker quick start
 
 ```sh

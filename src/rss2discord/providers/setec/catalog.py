@@ -36,16 +36,12 @@ from rss2discord.providers.setec.models import (
     SetecProductResponse,
     SetecRawHitsResponse,
 )
+from rss2discord.providers.setec.public_config import (
+    MAX_DISCOVERY_BYTES,
+    OperationBudget,
+)
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports.base import FeedFetchError
-
-
-@dataclass(slots=True)
-class _SearchBudget:
-    """Mutable request and response-byte budget for one scan attempt."""
-
-    consumed_bytes: int = 0
-    request_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +50,7 @@ class _SearchSession:
 
     search_url: str
     client: SetecSearchClient
-    budget: _SearchBudget
+    budget: OperationBudget
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +93,16 @@ class SetecCatalogClient:
 
     def fetch_latest_products(self, url: str) -> tuple[SetecProduct, ...]:
         """Fetch the newest window of products in ascending creation order."""
-        client = SetecSearchClient()
+        # The existing latest search-chain cap remains separate from discovery;
+        # their sum is an enclosing operation cap, not a larger search allowance.
+        client = SetecSearchClient(
+            OperationBudget(
+                MAX_DISCOVERY_BYTES
+                + MAX_SETEC_LATEST_RESPONSE_BYTES * (MAX_SETEC_REDIRECTS + 1),
+                MAX_SETEC_SEARCH_REQUESTS,
+                150.0,
+            ),
+        )
         search_url = client.build_search_url(url)
         fetched = client.search(
             search_url,
@@ -127,7 +132,13 @@ class SetecCatalogClient:
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[SetecPriceEntry, ...]:
         """Fetch every priced product's id and amount in ascending price-band order."""
-        client = SetecSearchClient()
+        budget = OperationBudget(
+            bounds.MAX_SETEC_CATALOG_SCAN_BYTES,
+            MAX_SETEC_SEARCH_REQUESTS,
+            300.0,
+            is_shutdown_requested,
+        )
+        client = SetecSearchClient(budget)
         search_url = client.build_search_url(url)
         return retry_policy.execute(
             lambda: self._scan_price_index(
@@ -135,6 +146,7 @@ class SetecCatalogClient:
                 client,
                 is_shutdown_requested,
             ),
+            retry_guard=client.guard_retry,
         )
 
     def fetch_products_by_ids(
@@ -148,7 +160,13 @@ class SetecCatalogClient:
         """Fetch the display projection for the given product identifiers only."""
         if not product_ids:
             return ()
-        client = SetecSearchClient()
+        budget = OperationBudget(
+            bounds.MAX_SETEC_CATALOG_SCAN_BYTES,
+            MAX_SETEC_SEARCH_REQUESTS,
+            300.0,
+            is_shutdown_requested,
+        )
+        client = SetecSearchClient(budget)
         search_url = client.build_search_url(url)
         return retry_policy.execute(
             lambda: self._scan_products_by_ids(
@@ -157,6 +175,7 @@ class SetecCatalogClient:
                 product_ids,
                 is_shutdown_requested,
             ),
+            retry_guard=client.guard_retry,
         )
 
     def _scan_price_index(
@@ -165,7 +184,7 @@ class SetecCatalogClient:
         client: SetecSearchClient,
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[SetecPriceEntry, ...]:
-        session = _SearchSession(search_url, client, _SearchBudget())
+        session = _SearchSession(search_url, client, client.budget)
         if is_shutdown_requested():
             raise FeedFetchInterruptedError
         summary = self._summarize(session)
@@ -180,6 +199,7 @@ class SetecCatalogClient:
             # an empty catalog is only believed when neither facet saw anything.
             if price_bounds is not None:
                 raise FeedFetchError(SETEC_LABEL, "InvalidResponse")
+            self._check_root_unchanged(session, summary)
             return ()
         if price_bounds is None:
             raise FeedFetchError(SETEC_LABEL, "InvalidResponse")
@@ -187,7 +207,26 @@ class SetecCatalogClient:
         self._collect_band(scan, _PriceBand(0.0, price_bounds.maximum + 1.0), 0)
         if len(scan.entries) != declared_count:
             raise FeedFetchError(SETEC_LABEL, "IncompleteCatalog", retryable=True)
+        self._check_root_unchanged(session, summary)
         return tuple(scan.entries.values())
+
+    def _check_root_unchanged(
+        self,
+        session: _SearchSession,
+        original: SetecCountResponse,
+    ) -> None:
+        """Do not accept a full index whose root count/bounds changed mid-scan."""
+        final = self._summarize(session)
+        if final.count_for(SETEC_COUNT_FIELD) != original.count_for(
+            SETEC_COUNT_FIELD,
+        ) or final.bounds_for(SETEC_PRICE_FIELD) != original.bounds_for(
+            SETEC_PRICE_FIELD,
+        ):
+            raise FeedFetchError(
+                SETEC_LABEL,
+                "CatalogChangedDuringScan",
+                retryable=True,
+            )
 
     def _collect_band(
         self,
@@ -253,7 +292,7 @@ class SetecCatalogClient:
         product_ids: Sequence[str],
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[SetecProduct, ...]:
-        session = _SearchSession(search_url, client, _SearchBudget())
+        session = _SearchSession(search_url, client, client.budget)
         products: list[SetecProduct] = []
         seen_products: dict[str, SetecProduct] = {}
         for batch in _batched(product_ids, SETEC_PRODUCT_LOOKUP_BATCH_SIZE):
@@ -295,7 +334,7 @@ class SetecCatalogClient:
                 "facets": [SETEC_COUNT_FIELD, SETEC_PRICE_FIELD],
             },
         )
-        return _validate(SetecCountResponse, fetched)
+        return _validate_count(fetched)
 
     def _count_band(self, session: _SearchSession, band: _PriceBand) -> int:
         """Return the exact document count for one band without fetching it."""
@@ -308,7 +347,7 @@ class SetecCatalogClient:
                 "facets": [SETEC_COUNT_FIELD],
             },
         )
-        band_count = _validate(SetecCountResponse, fetched).count_for(SETEC_COUNT_FIELD)
+        band_count = _validate_count(fetched).count_for(SETEC_COUNT_FIELD)
         if band_count is None:
             raise FeedFetchError(SETEC_LABEL, "InvalidResponse")
         return band_count
@@ -318,7 +357,6 @@ class SetecCatalogClient:
             raise FeedFetchError(SETEC_LABEL, "ScanResponseTooLarge")
         if session.budget.request_count >= MAX_SETEC_SEARCH_REQUESTS:
             raise FeedFetchError(SETEC_LABEL, "SearchRequestLimitExceeded")
-        session.budget.request_count += 1
         fetched = session.client.search(
             session.search_url,
             SetecSearchRequest(
@@ -329,13 +367,55 @@ class SetecCatalogClient:
                 ),
             ),
         )
-        session.budget.consumed_bytes += fetched.response_bytes
         return fetched.content
 
 
 def _identifier_filter(product_ids: Sequence[str]) -> str:
     quoted_ids = ",".join(json.dumps(product_id) for product_id in product_ids)
     return f"id IN [{quoted_ids}]"
+
+
+def _validate_count(content: bytes) -> SetecCountResponse:
+    """Reject coercible/non-native or contradictory facet counts and bounds."""
+    try:
+        raw = json.loads(content)
+    except ValueError:
+        raise FeedFetchError(SETEC_LABEL, "InvalidResponse") from None
+    if not _native_facets_valid(raw):
+        raise FeedFetchError(SETEC_LABEL, "InvalidResponse")
+    return _validate(SetecCountResponse, content)
+
+
+def _native_facets_valid(raw: object) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    distribution = raw.get("facetDistribution", raw.get("facet_distribution"))
+    if not isinstance(distribution, dict) or SETEC_COUNT_FIELD not in distribution:
+        return False
+    for bucket in distribution.values():
+        if not isinstance(bucket, dict) or any(
+            type(value) is not int or value < 0 for value in bucket.values()
+        ):
+            return False
+    if any(key != "published" for key in distribution[SETEC_COUNT_FIELD]):
+        return False
+    stats = raw.get("facetStats", raw.get("facet_stats", {}))
+    if not isinstance(stats, dict):
+        return False
+    if SETEC_PRICE_FIELD not in stats:
+        return True
+    price_stats = stats[SETEC_PRICE_FIELD]
+    if not isinstance(price_stats, dict):
+        return False
+    low = price_stats.get("min", price_stats.get("minimum"))
+    high = price_stats.get("max", price_stats.get("maximum"))
+    return (
+        isinstance(low, int | float)
+        and not isinstance(low, bool)
+        and isinstance(high, int | float)
+        and not isinstance(high, bool)
+        and 0 <= low <= high
+    )
 
 
 def _batched(items: Sequence[str], batch_size: int) -> Iterable[Sequence[str]]:

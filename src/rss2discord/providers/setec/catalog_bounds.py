@@ -6,9 +6,6 @@ from typing import Final
 
 SETEC_LABEL: Final = "Setec"
 SETEC_SEARCH_URL: Final = "https://search.sp.solslab.dev/indexes/products/search"
-SETEC_SEARCH_KEY: Final = (
-    "c0424dab588b8cbbbe0a4809fc10b5f1c0c7d183b5b28ebe799f3fbf583ab358"
-)
 SETEC_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
 
 SETEC_PRICE_FIELD: Final = "variants.calculated_price.calculated_amount"
