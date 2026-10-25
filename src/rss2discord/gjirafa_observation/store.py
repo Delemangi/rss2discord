@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import tempfile
 from contextlib import closing
 from pathlib import Path
 
@@ -53,12 +54,33 @@ def initialize(path: Path, items: list[ObservationItem], fingerprint: str) -> No
             if existing != fingerprint:
                 raise ValueError("manifest replacement is forbidden")
             return
-        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(descriptor)
-        with closing(sqlite3.connect(path)) as db, db:
-            db.execute(f"PRAGMA application_id={APPLICATION_ID}")
-            db.execute("PRAGMA user_version=1")
-            db.executescript("""
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+        )
+        temporary = Path(temporary_name)
+        try:
+            os.close(descriptor)
+            _build_store(temporary, items, fingerprint)
+            inspect(temporary)
+            with temporary.open("r+b") as stream:
+                os.fsync(stream.fileno())
+            # Atomic create, never replace: even an uncooperative writer's file
+            # appearing after the initial existence check must remain untouched.
+            os.link(temporary, path)
+        finally:
+            # Only this invocation's private paths; never remove the writer lock
+            # or sweep orphaned files left by a different/terminated invocation.
+            for suffix in ("-journal", "-wal", "-shm", ""):
+                temporary.with_name(temporary.name + suffix).unlink(missing_ok=True)
+
+
+def _build_store(path: Path, items: list[ObservationItem], fingerprint: str) -> None:
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute(f"PRAGMA application_id={APPLICATION_ID}")
+        db.execute("PRAGMA user_version=1")
+        db.executescript("""
                 CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE items(ordinal INTEGER PRIMARY KEY, feed_id TEXT NOT NULL,
                     host TEXT NOT NULL, product_id TEXT NOT NULL, url TEXT,
@@ -70,20 +92,17 @@ def initialize(path: Path, items: list[ObservationItem], fingerprint: str) -> No
                     currency TEXT, canonical_url TEXT, reason TEXT,
                     PRIMARY KEY(epoch,item));
             """)
-            db.executemany(
-                "INSERT INTO metadata VALUES (?,?)",
-                [
-                    ("marker", MARKER),
-                    ("fingerprint", fingerprint),
-                ],
-            )
-            db.executemany(
-                "INSERT INTO items VALUES (?,?,?,?,?)",
-                [
-                    (n, i.feed_id, i.host, i.product_id, i.url)
-                    for n, i in enumerate(items)
-                ],
-            )
+        db.executemany(
+            "INSERT INTO metadata VALUES (?,?)",
+            [
+                ("marker", MARKER),
+                ("fingerprint", fingerprint),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO items VALUES (?,?,?,?,?)",
+            [(n, i.feed_id, i.host, i.product_id, i.url) for n, i in enumerate(items)],
+        )
 
 
 def open_writer(path: Path) -> sqlite3.Connection:

@@ -54,6 +54,13 @@ copy a foreign database over observation state. Reimporting a different manifest
 is refused: adding, removing or replacing identities is an explicit scope change,
 not an incidental consequence of running the tool.
 
+A new journal is published only after its schema and manifest have committed.
+An interrupted first import can be retried in the same state directory without
+leaving a partially initialized final database. An existing foreign database is
+still refused, including one that appears while initialization is in progress.
+State storage must support same-directory hard links for this atomic,
+no-clobber publication.
+
 ## Bounded runs
 
 Only `run` accesses the storefront. It requires a readable **live source-state

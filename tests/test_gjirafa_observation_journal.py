@@ -5,12 +5,17 @@ import os
 import sqlite3
 import stat
 import time
+from collections.abc import Iterable
+from contextlib import closing
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from rss2discord.database_ownership import DatabaseOwnership, DatabaseOwnershipError
+from rss2discord.gjirafa_observation import store
 from rss2discord.gjirafa_observation.manifest import MAX_BYTES, load_manifest
 from rss2discord.gjirafa_observation.report import report
 from rss2discord.gjirafa_observation.runner import run
@@ -441,6 +446,148 @@ def test_manifest_path_escape_never_opens(
     path = Path(candidate)
     with pytest.raises(ValueError, match="manifest"):
         load_manifest(path, input_root=tmp_path)
+
+
+@pytest.mark.parametrize("stage", ["schema", "metadata", "items", "publish", "fsync"])
+@pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt, SystemExit])
+def test_initialize_interruption_leaves_final_absent_and_retryable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    error: type[BaseException],
+) -> None:
+    path = tmp_path / store.FILENAME
+    items = [
+        ObservationItem("synthetic", "example.invalid", str(i), None) for i in (1, 2, 3)
+    ]
+
+    class InterruptedConnection(sqlite3.Connection):
+        def executescript(self, sql_script: str, /) -> sqlite3.Cursor:
+            cursor = super().executescript(sql_script)
+            if stage == "schema":
+                raise error("injected initialization interruption")
+            return cursor
+
+        def executemany(
+            self,
+            sql: str,
+            parameters: Iterable[Any],
+            /,
+        ) -> sqlite3.Cursor:
+            if stage == "items" and "INSERT INTO items" in sql:
+                super().executemany(sql, list(parameters)[:1])
+                raise error("injected initialization interruption")
+            cursor = super().executemany(sql, parameters)
+            if stage == "metadata" and "INSERT INTO metadata" in sql:
+                raise error("injected initialization interruption")
+            return cursor
+
+    def interrupt(*args: object, **kwargs: object) -> None:
+        raise error("injected initialization interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            store.sqlite3,
+            "connect",
+            partial(sqlite3.connect, factory=InterruptedConnection),
+        )
+        if stage == "publish":
+            patch.setattr(store.os, "link", interrupt)
+        if stage == "fsync":
+            patch.setattr(store.os, "fsync", interrupt)
+        with pytest.raises(error, match="injected initialization"):
+            initialize(path, items, "synthetic-fingerprint")
+    assert not path.exists()
+    assert {entry.name for entry in tmp_path.iterdir()} == {path.name + ".writer.lock"}
+    initialize(path, items, "synthetic-fingerprint")
+    store.inspect(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT count(*) FROM items").fetchone()[0] == 3
+        assert (
+            db.execute("SELECT value FROM metadata WHERE key='fingerprint'").fetchone()[
+                0
+            ]
+            == "synthetic-fingerprint"
+        )
+
+
+def test_initialize_publish_never_clobbers_foreign_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / store.FILENAME
+    link = os.link
+    private_paths: list[Path] = []
+
+    def competing_link(source: Path, destination: Path) -> None:
+        private_paths.append(source)
+        store.inspect(source)
+        with closing(sqlite3.connect(source)) as db:
+            assert db.execute("SELECT count(*) FROM items").fetchone()[0] == 1
+        destination.write_bytes(b"foreign synthetic state")
+        link(source, destination)
+
+    monkeypatch.setattr(store.os, "link", competing_link)
+    items = [ObservationItem("synthetic", "example.invalid", "1", None)]
+    with pytest.raises(FileExistsError):
+        initialize(
+            path,
+            items,
+            "synthetic",
+        )
+    assert path.read_bytes() == b"foreign synthetic state"
+    assert all(not temporary.exists() for temporary in private_paths)
+
+
+def test_initialize_ignores_orphan_private_temp(tmp_path: Path) -> None:
+    path = tmp_path / store.FILENAME
+    orphan = tmp_path / ("." + path.name + ".orphan.tmp")
+    orphan.write_bytes(b"interrupted synthetic initialization")
+    initialize(
+        path,
+        [ObservationItem("synthetic", "example.invalid", "1", None)],
+        "synthetic",
+    )
+    store.inspect(path)
+    assert orphan.read_bytes() == b"interrupted synthetic initialization"
+
+
+def test_initialize_closes_connections_before_atomic_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / store.FILENAME
+    original_connect = sqlite3.connect
+    original_link = os.link
+    opened: list[sqlite3.Connection] = []
+    closed: list[sqlite3.Connection] = []
+
+    class TrackedConnection(sqlite3.Connection):
+        def close(self) -> None:
+            super().close()
+            closed.append(self)
+
+    def connect(database: str | Path, *, uri: bool = False) -> sqlite3.Connection:
+        db = original_connect(database, uri=uri, factory=TrackedConnection)
+        opened.append(db)
+        return db
+
+    def publish(source: Path, destination: Path) -> None:
+        assert opened
+        assert opened == closed
+        assert not destination.exists()
+        with pytest.raises(DatabaseOwnershipError), DatabaseOwnership(destination):
+            pytest.fail("publication released final-path writer ownership")
+        original_link(source, destination)
+
+    monkeypatch.setattr(store.sqlite3, "connect", connect)
+    monkeypatch.setattr(store.os, "link", publish)
+    initialize(
+        path,
+        [ObservationItem("synthetic", "example.invalid", "1", None)],
+        "synthetic",
+    )
+    store.inspect(path)
 
 
 def test_manifest_absolute_outside_never_opens(
