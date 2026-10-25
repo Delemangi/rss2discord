@@ -19,6 +19,10 @@ Historical identities and price snapshots remain preserved, including products n
 
 Search configuration is discovered afresh per operation from explicitly advertised same-origin public JavaScript, without a legacy-key fallback. Discovery is limited to 40 unique assets, 48 physical requests, 2 MiB per response, 16 MiB total decoded bytes, and 120 seconds. These are sublimits within full-catalog operations' existing 1,000-request/500-MiB caps and new 300-second deadline. Latest operations have a 150-second deadline and an enclosing discovery-plus-search byte allowance; their existing 1-MiB single-search-response and redirect-chain byte limits are unchanged. Full indexes are accepted only after a final root count/bounds recheck agrees with the initial summary; incomplete or drifting evidence fails closed.
 
+## Gjirafa50 observation-only rolling mode
+
+An opt-in [rolling observation CLI](docs/gjirafa-observations.md) checks an explicitly supplied known-product manifest without requiring a stable full-catalog scan. It uses separate durable state, reports unknown coverage, and never creates production price baselines or sends alerts. Full-catalog Gjirafa50 pricing remains unchanged and disabled unless separately configured; observation results do not authorize enabling it.
+
 ## Docker quick start
 
 ```sh
