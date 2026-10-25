@@ -65,9 +65,11 @@ def fake_sessions(
     class Session:
         def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401
             self.options = kwargs
+            self.call: dict[str, Any] | None = None
 
         def get(self, url: str, **kwargs: Any) -> SimpleNamespace:  # noqa: ANN401
-            calls.append(dict(url=url, options=self.options, **kwargs))
+            self.call = dict(url=url, options=self.options, **kwargs)
+            calls.append(self.call)
             status, headers, body = responses.pop(0)
             callback: Callable[[bytes], int] = self.options["curl_options"][
                 CurlOpt.HEADERFUNCTION
@@ -79,7 +81,8 @@ def fake_sessions(
             return SimpleNamespace(status_code=status)
 
         def close(self) -> None:
-            pass
+            if self.call is not None:
+                self.call["closed"] = True
 
     monkeypatch.setattr(obs.requests, "Session", Session)
     return calls
@@ -99,8 +102,9 @@ def test_opaque_hyphen_slug_canonical_match(slug: str) -> None:
     obs.validate_observation_item(target)
     content = html().replace(b"/sample-product", f"/{slug}".encode())
     assert obs.parse_scalar_observation(content, target).canonical_url == url
+    original_content = html()
     with pytest.raises(ObservationFetchError, match="ScalarContractRejected"):
-        obs.parse_scalar_observation(html(), target)
+        obs.parse_scalar_observation(original_content, target)
 
 
 def test_dotted_feed_id_is_valid() -> None:
@@ -112,8 +116,9 @@ def test_dotted_feed_id_is_valid() -> None:
 @pytest.mark.parametrize("tag", ["textarea", "button", "div"])
 def test_any_attribute_element_blocks_scalar(tag: str) -> None:
     content = html(extra=f'<{tag} id="product_attribute_7"></{tag}>')
+    target = item()
     with pytest.raises(ObservationFetchError, match="ScalarContractRejected"):
-        obs.parse_scalar_observation(content, item())
+        obs.parse_scalar_observation(content, target)
 
 
 @pytest.mark.parametrize(
@@ -135,8 +140,9 @@ def test_any_attribute_element_blocks_scalar(tag: str) -> None:
     ],
 )
 def test_manifest_url_validation(url: str) -> None:
+    target = item(url=url)
     with pytest.raises(ValueError, match="InvalidDetailUrl"):
-        obs.validate_observation_item(item(url=url))
+        obs.validate_observation_item(target)
 
 
 @pytest.mark.parametrize(
@@ -166,8 +172,9 @@ def test_scalar_rejects_ambiguous(content: bytes) -> None:
 def test_unknown_url_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = fake_sessions(monkeypatch, [])
     client = obs.GjirafaObservationClient()
+    target = item(url=None)
     with pytest.raises(ObservationFetchError, match="ObservationUrlUnknown"):
-        client.fetch(item(url=None))
+        client.fetch(target)
     assert not calls
 
 
@@ -198,12 +205,14 @@ def test_host_cooldown_no_retry(
     headers = [] if retry is None else [b"Retry-After: " + retry + b"\r\n"]
     calls = fake_sessions(monkeypatch, [(status, headers, b"")])
     client = obs.GjirafaObservationClient(wall_clock=lambda: 1000)
+    target = item()
     for _ in range(2):
         with pytest.raises(ObservationFetchError) as error:
-            client.fetch(item())
+            client.fetch(target)
         assert error.value.stop_host
         assert error.value.blocked_until == expected
     assert len(calls) == 1
+    assert calls[0]["closed"]
 
 
 def test_routing_and_plain_tls_options(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,8 +238,9 @@ def test_failed_physical_request_count(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = fake_sessions(monkeypatch, [])
     client = obs.GjirafaObservationClient()
     # Fake failure occurs after dispatch; no automatic retry is possible.
+    target = item()
     with pytest.raises(ObservationFetchError, match="ObservationTransportError"):
-        client.fetch(item())
+        client.fetch(target)
     assert client.request_count == 1
     assert len(calls) == 1
 
@@ -238,14 +248,15 @@ def test_failed_physical_request_count(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_byte_and_request_caps_sticky(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_sessions(monkeypatch, [(200, [], html())])
     client = obs.GjirafaObservationClient(max_bytes=1)
+    target = item()
     with pytest.raises(ObservationFetchError) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.fatal
     fake_sessions(monkeypatch, [(200, [], html())])
     client = obs.GjirafaObservationClient(max_requests=1, sleep=lambda _: None)
     client.fetch(item())
     with pytest.raises(ObservationFetchError) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.fatal
 
 
@@ -261,8 +272,9 @@ def test_parse_post_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(obs, "parse_scalar_observation", parse)
     client = obs.GjirafaObservationClient(clock=clock.clock, sleep=clock.sleep)
+    target = item()
     with pytest.raises(ObservationFetchError) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.fatal
 
 
@@ -301,11 +313,12 @@ def test_routing_change_host_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = Clock()
     client = obs.GjirafaObservationClient(clock=clock.clock, sleep=clock.sleep)
     client.fetch(item())
+    target = item()
     with pytest.raises(
         ObservationFetchError,
         match="ObservationRoutingChanged",
     ) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.stop_host
     assert len(calls) == 2
 
@@ -344,8 +357,9 @@ def test_challenge_and_unsafe_redirect_host_stop(
     ]:
         calls = fake_sessions(monkeypatch, [response])
         client = obs.GjirafaObservationClient()
+        target = item()
         with pytest.raises(ObservationFetchError) as error:
-            client.fetch(item())
+            client.fetch(target)
         assert error.value.stop_host
         assert len(calls) == 1
 
@@ -353,26 +367,64 @@ def test_challenge_and_unsafe_redirect_host_stop(
 def test_response_limit_and_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_sessions(monkeypatch, [(200, [], b"x" * (4 * 1024 * 1024 + 1))])
     client = obs.GjirafaObservationClient()
+    target = item()
     with pytest.raises(
         ObservationFetchError,
         match="ObservationResponseLimitExceeded",
     ) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.fatal
     calls = fake_sessions(monkeypatch, [])
     client = obs.GjirafaObservationClient(is_shutdown_requested=lambda: True)
     with pytest.raises(ObservationFetchError) as error:
-        client.fetch(item())
+        client.fetch(target)
     assert error.value.fatal
     assert not calls
 
 
 def test_timestamp_and_multiple_product_rejected() -> None:
+    content = html()
+    target = item()
     for timestamp in (0, -1, True):
         with pytest.raises(ObservationFetchError):
-            obs.parse_scalar_observation(html(), item(), observed_at=timestamp)
+            obs.parse_scalar_observation(content, target, observed_at=timestamp)
+    multiple_products = (
+        content + b'<div itemscope itemtype="https://schema.org/Product"></div>'
+    )
     with pytest.raises(ObservationFetchError):
         obs.parse_scalar_observation(
-            html() + b'<div itemscope itemtype="https://schema.org/Product"></div>',
-            item(),
+            multiple_products,
+            target,
         )
+
+
+@pytest.mark.parametrize("identifier", ["١٢٣", "1٢3", "１２３"])
+def test_product_identifier_remains_ascii_only(identifier: str) -> None:
+    target = item(product_id=identifier)
+    with pytest.raises(ValueError, match="InvalidObservationItem"):
+        obs.validate_observation_item(target)
+
+
+@pytest.mark.parametrize("raw", ["١٢.٥٠", "1٢.50", "１２.５０"])
+def test_microdata_amount_remains_ascii_only(raw: str) -> None:
+    content = html(raw=raw)
+    target = item()
+    with pytest.raises(ObservationFetchError, match="ScalarContractRejected"):
+        obs.parse_scalar_observation(content, target)
+
+
+def test_callback_abort_cause_and_close_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = fake_sessions(monkeypatch, [(200, [], html())])
+    client = obs.GjirafaObservationClient(max_bytes=1)
+    target = item()
+    with pytest.raises(
+        ObservationFetchError,
+        match="ObservationByteLimitExceeded",
+    ) as error:
+        client.fetch(target)
+    assert error.value.fatal
+    assert calls[0]["closed"]
+    assert client.response_bytes > 1
+    assert client.request_count == 1

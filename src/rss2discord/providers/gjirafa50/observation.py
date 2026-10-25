@@ -97,7 +97,7 @@ def validate_observation_item(item: ObservationItem) -> None:
         not isinstance(item.feed_id, str)
         or re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,119}", item.feed_id) is None
         or not isinstance(item.product_id, str)
-        or re.fullmatch(r"[1-9][0-9]{0,19}", item.product_id) is None
+        or re.fullmatch(r"[1-9]\d{0,19}", item.product_id, flags=re.ASCII) is None
         or not isinstance(item.host, str)
         or item.host not in _HOSTS
     ):
@@ -174,7 +174,7 @@ def parse_scalar_observation(
         raw = str(numeric[0]["content"])
         _scalar_guard(
             len(raw) <= 20
-            and re.fullmatch(r"[0-9]+(?:\.[0-9]{1,4})?", raw) is not None,
+            and re.fullmatch(r"\d+(?:\.\d{1,4})?", raw, flags=re.ASCII) is not None,
         )
         _scalar_guard(currencies[0]["content"] == currency and Decimal(raw) == amount)
         timestamp = int(time.time()) if observed_at is None else observed_at
@@ -184,6 +184,35 @@ def parse_scalar_observation(
         raise
     except (ValueError, TypeError, KeyError, IndexError, InvalidOperation):
         raise ObservationFetchError("ScalarContractRejected") from None
+
+
+class _ResponseContent:
+    """Charge bytes before capture and retain the exact callback abort."""
+
+    def __init__(
+        self,
+        active: Callable[[], None],
+        charge: Callable[[int, int], None],
+    ) -> None:
+        self.body = bytearray()
+        self.headers: list[bytes] = []
+        self.abort: ObservationFetchError | None = None
+        self._bytes = 0
+        self._active, self._charge = active, charge
+
+    def receive(self, chunk: bytes, *, header: bool = False) -> int:
+        try:
+            self._active()
+            self._bytes += len(chunk)
+            self._charge(len(chunk), self._bytes)
+        except ObservationFetchError as error:
+            self.abort = error
+            return CURL_WRITEFUNC_ERROR
+        if header:
+            self.headers.append(chunk)
+        else:
+            self.body.extend(chunk)
+        return len(chunk)
 
 
 class GjirafaObservationClient:
@@ -265,7 +294,7 @@ class GjirafaObservationClient:
         self._blocked[host] = until
         raise ObservationFetchError(reason, blocked_until=until, stop_host=True)
 
-    def _transfer(self, url: str, host: str) -> tuple[int, dict[str, str], bytes]:
+    def _before_request(self, host: str) -> None:
         self._active()
         if host in self._last:
             delay = 1 - (self._clock() - self._last[host])
@@ -276,30 +305,15 @@ class GjirafaObservationClient:
             self._fail_fatal("ObservationRequestLimitExceeded")
         self.request_count += 1
         self._last[host] = self._clock()
-        body = bytearray()
-        raw_headers: list[bytes] = []
-        local_bytes = 0
-        abort: ObservationFetchError | None = None
 
-        def receive(chunk: bytes, *, header: bool = False) -> int:
-            nonlocal local_bytes, abort
-            try:
-                self._active()
-                local_bytes += len(chunk)
-                self.response_bytes += len(chunk)
-                if local_bytes > _RESPONSE_LIMIT:
-                    self._fail_fatal("ObservationResponseLimitExceeded")
-                if self.response_bytes > self._max_bytes:
-                    self._fail_fatal("ObservationByteLimitExceeded")
-            except ObservationFetchError as error:
-                abort = error
-                return CURL_WRITEFUNC_ERROR
-            if header:
-                raw_headers.append(chunk)
-            else:
-                body.extend(chunk)
-            return len(chunk)
+    def _charge_bytes(self, count: int, local_bytes: int) -> None:
+        self.response_bytes += count
+        if local_bytes > _RESPONSE_LIMIT:
+            self._fail_fatal("ObservationResponseLimitExceeded")
+        if self.response_bytes > self._max_bytes:
+            self._fail_fatal("ObservationByteLimitExceeded")
 
+    def _request_headers(self, host: str) -> dict[str, str]:
         headers = {"User-Agent": _USER_AGENT, "Accept": "text/html"}
         route = self._routing.get(host)
         if route is not None:
@@ -307,6 +321,12 @@ class GjirafaObservationClient:
                 self._routing.pop(host, None)
             else:
                 headers["Cookie"] = f"gjs={route.value}"
+        return headers
+
+    def _transfer(self, url: str, host: str) -> tuple[int, dict[str, str], bytes]:
+        self._before_request(host)
+        content = _ResponseContent(self._active, self._charge_bytes)
+        headers = self._request_headers(host)
         session: requests.Session[requests.Response] = requests.Session(
             trust_env=False,
             discard_cookies=True,
@@ -319,7 +339,7 @@ class GjirafaObservationClient:
                 CurlOpt.PROXY: "",
                 CurlOpt.NETRC: 0,
                 CurlOpt.CAINFO: certifi.where(),
-                CurlOpt.HEADERFUNCTION: lambda line: receive(line, header=True),
+                CurlOpt.HEADERFUNCTION: lambda line: content.receive(line, header=True),
             },
         )
         try:
@@ -328,20 +348,30 @@ class GjirafaObservationClient:
                     url,
                     headers=headers,
                     allow_redirects=False,
-                    content_callback=receive,
+                    content_callback=content.receive,
                 )
             except Exception:
-                if abort is not None:
-                    raise abort from None
+                if content.abort is not None:
+                    raise content.abort from None
                 self._active()
                 raise ObservationFetchError("ObservationTransportError") from None
-            if abort is not None:
-                raise abort
+            if content.abort is not None:
+                raise content.abort
             self._active()
-            response = CurlCffiGjirafa50Response(raw_response, raw_headers)
+            response = CurlCffiGjirafa50Response(raw_response, content.headers)
             status, response_headers = response.status_code, dict(response.headers)
         finally:
             session.close()
+        self._response_policy(host, status, response_headers, content)
+        return status, response_headers, bytes(content.body)
+
+    def _response_policy(
+        self,
+        host: str,
+        status: int,
+        response_headers: dict[str, str],
+        content: _ResponseContent,
+    ) -> None:
         if status in {403, 429}:
             self._cooldown(
                 host,
@@ -349,7 +379,7 @@ class GjirafaObservationClient:
                 response_headers.get("retry-after"),
             )
         if any(
-            token in bytes(body).lower()
+            token in bytes(content.body).lower()
             for token in (
                 b"cf-chl-",
                 b"challenge-platform",
@@ -358,7 +388,7 @@ class GjirafaObservationClient:
             )
         ):
             self._cooldown(host, "ObservationChallengeDetected")
-        directive = _routing_cookie(raw_headers, host)
+        directive = _routing_cookie(content.headers, host)
         if isinstance(directive, _SetRoutingCookie):
             current = self._routing.get(host)
             if current is not None and current.value != directive.value:
@@ -366,7 +396,6 @@ class GjirafaObservationClient:
             self._routing[host] = directive
         elif isinstance(directive, _DeleteRoutingCookie):
             self._routing.pop(host, None)
-        return status, response_headers, bytes(body)
 
     def fetch(self, item: ObservationItem) -> ScalarObservation:
         validate_observation_item(item)

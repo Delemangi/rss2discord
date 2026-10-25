@@ -20,6 +20,7 @@ from rss2discord.gjirafa_observation_models import ObservationItem
 
 
 def main(argv: list[str] | None = None) -> int:
+    input_root = Path.cwd().resolve()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", required=True, type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     path = args.state_dir / FILENAME
     try:
         if args.command == "init":
-            items, fingerprint = load_manifest(args.manifest)
+            items, fingerprint = load_manifest(args.manifest, input_root=input_root)
             initialize(path, items, fingerprint)
         elif args.command == "run":
             with DatabaseOwnership(path) as ownership:

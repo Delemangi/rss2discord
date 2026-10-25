@@ -32,6 +32,14 @@ are `gjirafa50.com` and `gjirafa50.mk`; currencies are EUR and MKD respectively.
 Credentials, queries, fragments, unsafe paths and cross-host URLs are rejected.
 Discovery history supplies identity, **not historical price evidence**.
 
+Manifest imports are confined to the directory from which the command is
+launched. The input must be a regular `.json` file within that directory tree;
+absolute paths inside the tree are allowed, but escaping paths and final symlinks
+are refused before reading contents. To import an external manifest, launch the
+command from its containing directory. There is no argument that widens the
+permitted input root. This is an argument-traversal boundary, not protection
+against someone concurrently replacing the launch directory's filesystem tree.
+
 Initialize a separate observation state directory:
 
 ```sh

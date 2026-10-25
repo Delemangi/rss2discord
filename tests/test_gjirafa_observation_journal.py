@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from rss2discord.database_ownership import DatabaseOwnership, DatabaseOwnershipError
-from rss2discord.gjirafa_observation.manifest import load_manifest
+from rss2discord.gjirafa_observation.manifest import MAX_BYTES, load_manifest
 from rss2discord.gjirafa_observation.report import report
 from rss2discord.gjirafa_observation.runner import run
 from rss2discord.gjirafa_observation.store import initialize
@@ -161,16 +161,16 @@ def test_manifest_fingerprint_and_version(
         for i in (2, 1)
     ]
     path.write_text(json.dumps({"version": 1, "items": entries}))
-    items, fingerprint = load_manifest(path)
+    items, fingerprint = load_manifest(path, input_root=tmp_path)
     assert all(i.url is None for i in items)
     path.write_text(json.dumps({"version": 1, "items": list(reversed(entries))}))
-    assert load_manifest(path)[1] == fingerprint
+    assert load_manifest(path, input_root=tmp_path)[1] == fingerprint
     path.write_text(json.dumps({"version": 2, "items": entries}))
     with pytest.raises(ValueError, match="version"):
-        load_manifest(path)
+        load_manifest(path, input_root=tmp_path)
     path.write_text(json.dumps({"version": 1, "items": [entries[0], entries[0]]}))
     with pytest.raises(ValueError, match="duplicate"):
-        load_manifest(path)
+        load_manifest(path, input_root=tmp_path)
 
 
 def test_unknown_and_incomparable(tmp_path: Path) -> None:
@@ -196,6 +196,19 @@ def test_scalar_rejection_blocks_item_without_stopping_host(tmp_path: Path) -> N
     assert report(path)["blocked"] == 3
     assert report(path)["failed"] == 0
     assert report(path)["cooldown"] == 0
+
+
+def test_fatal_outcome_commits_then_stops(tmp_path: Path) -> None:
+    path, source = setup(tmp_path)
+    fake = Fake()
+    fake.error = ObservationFetchError("physical budget exhausted", fatal=True)
+    assert run(path, source, fake) == 1
+    assert fake.calls == ["1"]
+    assert report(path)["failed"] == 1
+    assert report(path)["unchecked"] == 2
+    fake.error = None
+    run(path, source, fake, limit=1)
+    assert fake.calls == ["1", "2"]
 
 
 def test_atomic_observation_cursor_commit(tmp_path: Path) -> None:
@@ -372,3 +385,164 @@ def test_report_manifest_and_feed_coverage(tmp_path: Path) -> None:
     assert (first["unknown"], first["validated"], first["unchecked"]) == (2, 1, 0)
     assert (second["unknown"], second["validated"], second["unchecked"]) == (0, 1, 1)
     assert partial["unchecked"] == 1
+
+
+def test_manifest_local_relative_and_absolute(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rss2discord.providers.gjirafa50.observation as transport  # noqa: PLC0415
+
+    def validate(item: ObservationItem) -> None:
+        assert item.host == "example.invalid"
+
+    monkeypatch.setattr(transport, "validate_observation_item", validate)
+    path = tmp_path / "scope.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "items": [
+                    {
+                        "feed_id": "synthetic",
+                        "host": "example.invalid",
+                        "product_id": "1",
+                        "url": None,
+                    },
+                ],
+            },
+        ),
+    )
+    assert load_manifest(Path("scope.json"), input_root=tmp_path) == load_manifest(
+        path,
+        input_root=tmp_path,
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "../outside.json",
+        "Z:/outside.json",
+        "Z:relative.json",
+        r"\\server\share\scope.json",
+        "//server/share/scope.json",
+    ],
+)
+def test_manifest_path_escape_never_opens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: str,
+) -> None:
+    def forbidden_open(self: Path, *args: object, **kwargs: object) -> None:
+        pytest.fail("rejected manifest path opened")
+
+    monkeypatch.setattr(Path, "open", forbidden_open)
+    path = Path(candidate)
+    with pytest.raises(ValueError, match="manifest"):
+        load_manifest(path, input_root=tmp_path)
+
+
+def test_manifest_absolute_outside_never_opens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("private synthetic content")
+
+    def forbidden_open(self: Path, *args: object, **kwargs: object) -> None:
+        pytest.fail("outside manifest opened")
+
+    monkeypatch.setattr(Path, "open", forbidden_open)
+    with pytest.raises(ValueError, match="outside"):
+        load_manifest(outside, input_root=root)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["directory", "non-json", "oversized", "symlink", "parent-symlink"],
+)
+def test_manifest_invalid_file_never_opens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    candidate = root / "scope.json"
+    if kind == "directory":
+        candidate.mkdir()
+    elif kind == "non-json":
+        candidate = root / "scope.txt"
+        candidate.write_text("{}")
+    elif kind == "oversized":
+        with candidate.open("wb") as stream:
+            stream.truncate(MAX_BYTES + 1)
+    else:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "scope.json").write_text("private synthetic content")
+        try:
+            if kind == "symlink":
+                candidate.symlink_to(outside / "scope.json")
+            else:
+                (root / "linked").symlink_to(outside, target_is_directory=True)
+                candidate = root / "linked" / "scope.json"
+        except OSError:
+            pytest.skip("symlink creation unavailable")
+
+    def forbidden_open(self: Path, *args: object, **kwargs: object) -> None:
+        pytest.fail("invalid manifest opened")
+
+    monkeypatch.setattr(Path, "open", forbidden_open)
+    with pytest.raises(ValueError, match="manifest"):
+        load_manifest(candidate, input_root=root)
+
+
+def test_manifest_open_descriptor_size_rechecked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "scope.json"
+    path.write_text("{}")
+    original = os.fstat
+
+    def enlarged(descriptor: int) -> os.stat_result:
+        fields = list(original(descriptor))
+        fields[6] = MAX_BYTES + 1
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "fstat", enlarged)
+    with pytest.raises(ValueError, match="size limit"):
+        load_manifest(path, input_root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b'{"private synthetic content":', b"\xffprivate synthetic content"],
+)
+def test_manifest_parse_error_does_not_echo_content(tmp_path: Path, raw: bytes) -> None:
+    path = tmp_path / "scope.json"
+    path.write_bytes(raw)
+    with pytest.raises(ValueError, match=r"^invalid manifest JSON$"):
+        load_manifest(path, input_root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    ["Z:/scope.json", "Z:scope.json", r"\\server\share\scope.json"],
+)
+def test_manifest_remote_paths_rejected_before_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: str,
+) -> None:
+    def forbidden_resolve(self: Path, *, strict: bool = False) -> Path:
+        pytest.fail("remote or ambiguous path reached filesystem resolution")
+
+    monkeypatch.setattr(Path, "resolve", forbidden_resolve)
+    path = Path(candidate)
+    with pytest.raises(ValueError, match="manifest"):
+        load_manifest(path, input_root=tmp_path)
