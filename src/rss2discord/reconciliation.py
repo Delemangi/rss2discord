@@ -129,41 +129,7 @@ def _build_plan(
     current = {item.product_id: item for item in observations}
     pending_ids = {item.product_id for item in batch.items if item.status == "pending"}
     held = store.held_price_product_ids(feed.id)
-    items = []
-    for product_id in sorted(previous.keys() | current.keys() | pending_ids | held):
-        old = previous.get(product_id)
-        observed = current.get(product_id)
-        target = observed.snapshot if observed is not None else None
-        old_value = (
-            ReconciliationSnapshot.from_snapshot(old) if old is not None else None
-        )
-        target_value = (
-            ReconciliationSnapshot.from_snapshot(target) if target is not None else None
-        )
-        # No price-based acceptance heuristics: pending, changed, new and
-        # missing identities always require a human disposition.
-        disposition: Literal["hold", "noop", "review"] = (
-            "hold"
-            if product_id in held
-            else (
-                "noop"
-                if target_value is not None
-                and old_value == target_value
-                and product_id not in pending_ids
-                else "review"
-            )
-        )
-        items.append(
-            ReconciliationItem(
-                product_id=product_id,
-                previous=old_value,
-                target=target_value,
-                context=observed.context if observed is not None else None,
-                pending=product_id in pending_ids,
-                already_held=product_id in held,
-                disposition=disposition,
-            ),
-        )
+    items = _reconciliation_items(previous, current, pending_ids, held)
     # Observe DB state again after the network operation; an uncooperative
     # legacy writer is not made safe by this check, and must be stopped.
     if (
@@ -257,3 +223,45 @@ def apply_plan(
         ownership,
         operation_started_at=started,
     )
+
+
+def _reconciliation_items(
+    previous: dict[str, PriceSnapshot],
+    current: dict[str, CatalogObservation],
+    pending_ids: set[str],
+    held: frozenset[str],
+) -> list[ReconciliationItem]:
+    items = []
+    for product_id in sorted(previous.keys() | current.keys() | pending_ids | held):
+        old = previous.get(product_id)
+        observed = current.get(product_id)
+        target = observed.snapshot if observed is not None else None
+        old_value = (
+            ReconciliationSnapshot.from_snapshot(old) if old is not None else None
+        )
+        target_value = (
+            ReconciliationSnapshot.from_snapshot(target) if target is not None else None
+        )
+        # No price-based acceptance heuristics: pending, changed, new and
+        # missing identities always require a human disposition.
+        disposition: Literal["hold", "noop", "review"] = "review"
+        if product_id in held:
+            disposition = "hold"
+        elif (
+            target_value is not None
+            and old_value == target_value
+            and product_id not in pending_ids
+        ):
+            disposition = "noop"
+        items.append(
+            ReconciliationItem(
+                product_id=product_id,
+                previous=old_value,
+                target=target_value,
+                context=observed.context if observed is not None else None,
+                pending=product_id in pending_ids,
+                already_held=product_id in held,
+                disposition=disposition,
+            ),
+        )
+    return items

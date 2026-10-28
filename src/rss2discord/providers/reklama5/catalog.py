@@ -11,6 +11,7 @@ from rss2discord.providers.reklama5.http import (
 )
 from rss2discord.providers.reklama5.parser import (
     Reklama5Listing,
+    Reklama5Page,
     parse_reklama5_page,
 )
 from rss2discord.providers.reklama5.scope import (
@@ -71,32 +72,40 @@ class Reklama5CatalogClient:
                     "ChangedResultCount",
                     retryable=True,
                 )
-            if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
-                raise FeedFetchError(
-                    REKLAMA5_LABEL,
-                    "PaginationCycle",
-                    retryable=True,
-                )
-            if not page.organic_ids and not page.terminal:
-                raise FeedFetchError(
-                    REKLAMA5_LABEL,
-                    "EmptyNonTerminalPage",
-                    retryable=True,
-                )
-            if len(seen_ids | page.organic_ids) > MAX_REKLAMA5_CATALOG_LISTINGS:
-                raise FeedFetchError(REKLAMA5_LABEL, "ProductLimitExceeded")
+            _validate_catalog_page(page, page_number, seen_ids)
             for listing in page.listings:
                 listings.setdefault(listing.entry_id, listing)
             seen_ids.update(page.organic_ids)
             organic_row_count += page.organic_row_count
             if page.terminal:
-                if organic_row_count != expected_result_count:
-                    raise FeedFetchError(
-                        REKLAMA5_LABEL,
-                        "IncompleteCatalog",
-                        retryable=True,
-                    )
-                if is_shutdown_requested():
-                    raise FeedFetchInterruptedError
+                _require_complete_catalog(
+                    organic_row_count,
+                    expected_result_count,
+                    is_shutdown_requested,
+                )
                 return tuple(listings.values())
         raise FeedFetchError(REKLAMA5_LABEL, "PageLimitExceeded")
+
+
+def _validate_catalog_page(
+    page: Reklama5Page,
+    page_number: int,
+    seen_ids: set[EntryId],
+) -> None:
+    if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
+        raise FeedFetchError(REKLAMA5_LABEL, "PaginationCycle", retryable=True)
+    if not page.organic_ids and not page.terminal:
+        raise FeedFetchError(REKLAMA5_LABEL, "EmptyNonTerminalPage", retryable=True)
+    if len(seen_ids | page.organic_ids) > MAX_REKLAMA5_CATALOG_LISTINGS:
+        raise FeedFetchError(REKLAMA5_LABEL, "ProductLimitExceeded")
+
+
+def _require_complete_catalog(
+    row_count: int,
+    expected_count: int,
+    is_shutdown_requested: Callable[[], bool],
+) -> None:
+    if row_count != expected_count:
+        raise FeedFetchError(REKLAMA5_LABEL, "IncompleteCatalog", retryable=True)
+    if is_shutdown_requested():
+        raise FeedFetchInterruptedError

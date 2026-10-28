@@ -222,15 +222,16 @@ def test_store_guards_hold_silent_normal_manifest_approved_claim_and_ack(
         ) == ("1",)
         item = original.items[1]
         change = PriceChangeRecord("2", item.previous, item.current)
+        fingerprint = canonical_manifest_fingerprint(
+            feed_id="ddstore",
+            provider="DDStore",
+            items=(change,),
+        )
         with pytest.raises(ValueError, match="held"):
             store.record_price_change_candidate(
                 feed_id="ddstore",
                 provider="DDStore",
-                fingerprint=canonical_manifest_fingerprint(
-                    feed_id="ddstore",
-                    provider="DDStore",
-                    items=(change,),
-                ),
+                fingerprint=fingerprint,
                 catalog_count=2,
                 available_count=2,
                 items=(change,),
@@ -259,9 +260,10 @@ def test_store_guards_hold_silent_normal_manifest_approved_claim_and_ack(
             (plan.batch_id,),
         )
         store._connection.commit()
+        delivery_claim = PriceDeliveryClaim(plan.batch_id, "2", 1)
         with pytest.raises(ValueError, match="held"):
             store.record_approved_price_delivery(
-                PriceDeliveryClaim(plan.batch_id, "2", 1),
+                delivery_claim,
                 item.current,
             )
 

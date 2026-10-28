@@ -60,8 +60,9 @@ def test_anhoch_latest_scan_counts_redirect_body_bytes_and_stops_before_followin
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        AnhochCatalogClient().fetch_latest_products(CATALOG_URL)
+        client.fetch_latest_products(CATALOG_URL)
     assert len(get.urls) == 3
     assert len(get.responses) == 2
 
@@ -93,8 +94,9 @@ def test_anhoch_latest_scan_does_not_follow_a_redirect_after_its_body_exhausts_b
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        AnhochCatalogClient().fetch_latest_products(CATALOG_URL)
+        client.fetch_latest_products(CATALOG_URL)
     assert len(get.urls) == 3
     assert len(get.responses) == 1
 

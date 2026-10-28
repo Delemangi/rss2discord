@@ -208,8 +208,9 @@ def test_permanent_persistence_error_is_not_retried(
         monkeypatch.setattr(app._runtime, "sleep", record_sleep)
 
         # When / Then
+        entry_id_2 = EntryId("entry-1")
         with pytest.raises(sqlite3.DatabaseError, match="malformed"):
-            app._persist_delivery("news", EntryId("entry-1"))
+            app._persist_delivery("news", entry_id_2)
         assert mark_attempts == 1
         assert retry_delays == []
 

@@ -33,7 +33,7 @@ MAX_NEKSIO_CATEGORIES: Final = 100
 MAX_NEKSIO_PAGES_PER_CATEGORY: Final = 100
 MAX_NEKSIO_PRODUCTS: Final = 10_000
 MAX_NEKSIO_CATEGORY_ID: Final = 2**63 - 1
-_CATEGORY_TARGET: Final = re.compile(r"#subcat_([1-9][0-9]{0,18})\Z")
+_CATEGORY_TARGET: Final = re.compile(r"#subcat_([1-9]\d{0,18})\Z", re.ASCII)
 
 
 @dataclass(slots=True)
@@ -106,19 +106,23 @@ class NeksioCatalogClient:
                 )
             pagination = page_pagination
             _validate_page(page, category_id, page_number)
-            for product_card in page.product_cards:
-                product = product_card.observe(scan.observed_at)
-                existing_product = scan.seen_products.get(product.product_id)
-                if existing_product is None:
-                    if len(scan.products) >= MAX_NEKSIO_PRODUCTS:
-                        raise FeedFetchError(NEKSIO_LABEL, "ProductLimitExceeded")
-                    scan.seen_products[product.product_id] = product
-                    scan.products.append(product)
-                elif existing_product != product:
-                    raise FeedFetchError(NEKSIO_LABEL, "DuplicateProductId")
+            _append_page_products(scan, page)
             if page.no_of_products == 0 or page_number == page.no_of_pages:
                 return
         raise FeedFetchError(NEKSIO_LABEL, "PageLimitExceeded")
+
+
+def _append_page_products(scan: _CatalogScan, page: NeksioCatalogPage) -> None:
+    for product_card in page.product_cards:
+        product = product_card.observe(scan.observed_at)
+        existing_product = scan.seen_products.get(product.product_id)
+        if existing_product is None:
+            if len(scan.products) >= MAX_NEKSIO_PRODUCTS:
+                raise FeedFetchError(NEKSIO_LABEL, "ProductLimitExceeded")
+            scan.seen_products[product.product_id] = product
+            scan.products.append(product)
+        elif existing_product != product:
+            raise FeedFetchError(NEKSIO_LABEL, "DuplicateProductId")
 
 
 def _catalog_request(category_id: int, page: int) -> NeksioCatalogRequest:

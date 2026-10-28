@@ -94,10 +94,12 @@ def test_anhoch_catalog_client_stops_before_the_next_page_when_shutdown_is_reque
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchInterruptedError):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: len(get.urls) == 1,
         )
 

@@ -412,10 +412,12 @@ def test_setec_catalog_client_restarts_then_fails_on_conflicting_product_ids(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="DuplicateProductId") as raised:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -441,10 +443,12 @@ def test_setec_catalog_client_stops_before_a_later_band_when_shutdown_is_request
     requests_before_the_upper_band = 4
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchInterruptedError):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: (
                 len(index.bodies) >= requests_before_the_upper_band
             ),
@@ -597,10 +601,12 @@ def test_bisection_terminates_when_many_products_share_one_price(
     use_page_size(monkeypatch, SMALL_PAGE_SIZE)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PriceBandUnsplittable") as raised:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -677,8 +683,9 @@ def test_facet_total_mismatch_between_parent_and_children_is_retryable(
     )
 
     # When / Then
+    client = SetecCatalogClient()
     with pytest.raises(FeedFetchError, match="IncompleteCatalog") as raised:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
             retry_policy=retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
@@ -750,10 +757,12 @@ def test_setec_catalog_client_rejects_a_summary_whose_count_cannot_be_trusted(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="InvalidResponse") as raised:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -793,10 +802,12 @@ def test_setec_catalog_client_rejects_price_bounds_that_are_not_finite(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="InvalidResponse") as raised:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -823,10 +834,12 @@ def test_setec_catalog_client_refuses_a_request_once_the_scan_byte_budget_is_spe
     )
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -954,11 +967,13 @@ def test_setec_catalog_client_stops_before_a_later_lookup_batch_when_shutdown_is
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchInterruptedError):
-        SetecCatalogClient().fetch_products_by_ids(
+        client.fetch_products_by_ids(
             CATALOG_URL,
             ["prod-1", "prod-2", "prod-3", "prod-4"],
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: len(post.bodies) >= 1,
         )
 
@@ -987,11 +1002,13 @@ def test_setec_catalog_client_rejects_a_lookup_batch_returning_more_hits_than_it
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded") as raised:
-        SetecCatalogClient().fetch_products_by_ids(
+        client.fetch_products_by_ids(
             CATALOG_URL,
             ["prod-1", "prod-2"],
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -1028,11 +1045,13 @@ def test_setec_catalog_client_rejects_a_looked_up_product_returned_with_two_valu
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="DuplicateProductId") as raised:
-        SetecCatalogClient().fetch_products_by_ids(
+        client.fetch_products_by_ids(
             CATALOG_URL,
             ["prod-1", "prod-2", "prod-3", "prod-4"],
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 

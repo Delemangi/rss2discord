@@ -151,8 +151,9 @@ def test_listing_session_closes_underlying_session_when_transfer_fails(
         lambda **options: FailingSession(),
     )
 
+    session = listing_session.create_listing_session()
     with pytest.raises(OSError, match="transfer failed"):
-        listing_session.create_listing_session().get(
+        session.get(
             "https://listing.example.test/search",
             headers={},
             allow_redirects=False,

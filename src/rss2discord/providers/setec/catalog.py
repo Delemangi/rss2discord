@@ -310,17 +310,7 @@ class SetecCatalogClient:
             hits = _validate(SetecRawHitsResponse, fetched).hits
             if len(hits) > len(batch):
                 raise FeedFetchError(SETEC_LABEL, "PageCardinalityExceeded")
-            for hit in hits:
-                product = _validate_product(hit)
-                if product is None:
-                    continue
-                existing_product = seen_products.get(product.id)
-                if existing_product is None:
-                    seen_products[product.id] = product
-                    products.append(product)
-                    continue
-                if existing_product != product:
-                    raise FeedFetchError(SETEC_LABEL, "DuplicateProductId")
+            _append_unique_products(hits, seen_products, products)
         return tuple(products)
 
     def _summarize(self, session: _SearchSession) -> SetecCountResponse:
@@ -368,6 +358,23 @@ class SetecCatalogClient:
             ),
         )
         return fetched.content
+
+
+def _append_unique_products(
+    hits: Sequence[JsonValue],
+    seen_products: dict[str, SetecProduct],
+    products: list[SetecProduct],
+) -> None:
+    for hit in hits:
+        product = _validate_product(hit)
+        if product is None:
+            continue
+        existing_product = seen_products.get(product.id)
+        if existing_product is None:
+            seen_products[product.id] = product
+            products.append(product)
+        elif existing_product != product:
+            raise FeedFetchError(SETEC_LABEL, "DuplicateProductId")
 
 
 def _identifier_filter(product_ids: Sequence[str]) -> str:

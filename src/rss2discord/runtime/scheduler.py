@@ -105,34 +105,14 @@ class RuntimeScheduler:
                     else deadline
                     for job, deadline in zip(jobs, deadlines, strict=True)
                 ]
-                index = min(
-                    range(len(jobs)),
-                    # The global gap can collapse distinct overdue ordinary
-                    # deadlines. Preserve their age before rotating exact ties.
-                    key=lambda index: (
-                        eligible[index],
-                        deadlines[index],
-                        (index - cursor) % len(jobs),
-                    ),
+                index = self._select_job(
+                    jobs,
+                    deadlines,
+                    eligible,
+                    cursor,
+                    now=now,
+                    last_kind=last_kind,
                 )
-                # Once both classes are ready, give each one service in turn.
-                # This is equal-weight class fairness, not unconditional
-                # ordinary priority (which would starve prices at gap zero).
-                # Keep oldest-deadline ordering within a class, but do not let
-                # a convoy of overdue prices delay an eligible ordinary job.
-                due_other = [
-                    candidate
-                    for candidate, job in enumerate(jobs)
-                    if eligible[candidate] <= now and job.kind != last_kind
-                ]
-                if due_other:
-                    index = min(
-                        due_other,
-                        key=lambda candidate: (
-                            deadlines[candidate],
-                            (candidate - cursor) % len(jobs),
-                        ),
-                    )
                 if eligible[index] > now:
                     if not self._control.sleep(eligible[index] - now):
                         return
@@ -154,20 +134,65 @@ class RuntimeScheduler:
             primary_error = error
             raise
         finally:
-            cleanup_errors: list[Exception] = []
-            for job in jobs:
-                if job.close is not None:
-                    try:
-                        job.close()
-                    except Exception as error:
-                        cleanup_errors.append(error)
-            if primary_error is not None:
-                for cleanup_error in cleanup_errors:
-                    primary_error.add_note(
-                        f"Job cleanup failed: {cleanup_error}",
-                    )
-            elif cleanup_errors:
-                raise ExceptionGroup("Job cleanup failed", cleanup_errors)
+            self._close_jobs(jobs, primary_error)
+
+    @staticmethod
+    def _select_job(
+        jobs: tuple[ScheduledJob, ...],
+        deadlines: list[float],
+        eligible: list[float],
+        cursor: int,
+        *,
+        now: float,
+        last_kind: str,
+    ) -> int:
+        index = min(
+            range(len(jobs)),
+            # The global gap can collapse distinct overdue ordinary
+            # deadlines. Preserve their age before rotating exact ties.
+            key=lambda index: (
+                eligible[index],
+                deadlines[index],
+                (index - cursor) % len(jobs),
+            ),
+        )
+        # Once both classes are ready, give each one service in turn.
+        # This is equal-weight class fairness, not unconditional
+        # ordinary priority (which would starve prices at gap zero).
+        # Keep oldest-deadline ordering within a class, but do not let
+        # a convoy of overdue prices delay an eligible ordinary job.
+        due_other = [
+            candidate
+            for candidate, job in enumerate(jobs)
+            if eligible[candidate] <= now and job.kind != last_kind
+        ]
+        if due_other:
+            index = min(
+                due_other,
+                key=lambda candidate: (
+                    deadlines[candidate],
+                    (candidate - cursor) % len(jobs),
+                ),
+            )
+        return index
+
+    @staticmethod
+    def _close_jobs(
+        jobs: tuple[ScheduledJob, ...],
+        primary_error: BaseException | None,
+    ) -> None:
+        cleanup_errors: list[Exception] = []
+        for job in jobs:
+            if job.close is not None:
+                try:
+                    job.close()
+                except Exception as error:
+                    cleanup_errors.append(error)
+        if primary_error is not None:
+            for cleanup_error in cleanup_errors:
+                primary_error.add_note(f"Job cleanup failed: {cleanup_error}")
+        elif cleanup_errors:
+            raise ExceptionGroup("Job cleanup failed", cleanup_errors)
 
     def _execute(
         self,

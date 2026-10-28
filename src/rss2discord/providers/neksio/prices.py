@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final, Protocol
@@ -114,25 +114,10 @@ class NeksioPriceMonitor:
         retained_product_ids.update(str(product.product_id) for product in products)
         if len(retained_product_ids) > MAX_NEKSIO_RETAINED_SNAPSHOTS:
             raise FeedFetchError(NEKSIO_LABEL, "SnapshotLimitExceeded")
-        silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-
-        for product in products:
-            current = self._snapshot(product)
-            current_snapshots[current.product_id] = current
-            previous = snapshots_by_product.get(str(product.product_id))
-            if previous is None:
-                silent_updates.append(current)
-                continue
-            if (
-                previous.amount == current.amount
-                and previous.currency == current.currency
-            ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-                continue
-            changes.append(_PriceChange(product, previous, current))
+        silent_updates, changes, current_snapshots = self._compare_prices(
+            products,
+            snapshots_by_product,
+        )
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -168,6 +153,31 @@ class NeksioPriceMonitor:
             plan=plan,
         )
         finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
+
+    def _compare_prices(
+        self,
+        products: Sequence[NeksioProduct],
+        snapshots_by_product: dict[str, PriceSnapshot],
+    ) -> tuple[list[PriceSnapshot], list[_PriceChange], dict[str, PriceSnapshot]]:
+        silent_updates: list[PriceSnapshot] = []
+        changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
+        for product in products:
+            current = self._snapshot(product)
+            current_snapshots[current.product_id] = current
+            previous = snapshots_by_product.get(str(product.product_id))
+            if previous is None:
+                silent_updates.append(current)
+                continue
+            if (
+                previous.amount == current.amount
+                and previous.currency == current.currency
+            ):
+                if previous.formatted != current.formatted:
+                    silent_updates.append(current)
+                continue
+            changes.append(_PriceChange(product, previous, current))
+        return silent_updates, changes, current_snapshots
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:
         return PriceSnapshot(

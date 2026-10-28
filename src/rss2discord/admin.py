@@ -185,16 +185,7 @@ def _reconciliation_command(args: argparse.Namespace) -> int:
             _print_json({"reconciliation_fingerprint": plan.reconciliation_fingerprint})
             return 0
         if action in {"holds", "receipt"}:
-            with DeliveryStore(args.database, read_only=True) as store:
-                if action == "holds":
-                    records = store.list_price_product_holds(args.feed_id)
-                    _print_json({"count": len(records), "holds": records})
-                else:
-                    receipt = store.load_price_reconciliation(args.fingerprint)
-                    if receipt is None:
-                        return _error("reconciliation receipt not found")
-                    _print_json(_public_reconciliation_receipt(receipt))
-            return 0
+            return _inspect_reconciliation(args, action)
         config = load_config(args.config)
         feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
         if feed is None:
@@ -297,40 +288,7 @@ def _baseline_command(store: DeliveryStore, args: argparse.Namespace) -> int:
         _print_json(_bounded_baseline(candidate, args.sample_limit, args.offset))
         return 0
     if args.baseline_command == "prepare":
-        config = load_config(args.config)
-        feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
-        if feed is None:
-            return _error("feed not found in configuration")
-        receipt = store.load_price_reconciliation(
-            args.reconciliation_fingerprint,
-        )
-        if receipt is None:
-            return _error("reconciliation receipt not found; baseline not prepared")
-        if (
-            receipt.get("reconciliation_fingerprint") != args.reconciliation_fingerprint
-            or receipt.get("feed_id") != feed.id
-        ):
-            return _error("reconciliation receipt identity mismatch")
-        plan_json = receipt.get("plan_json")
-        if not isinstance(plan_json, str):
-            return _error("immutable reconciliation artifact unavailable in receipt")
-        plan = ReconciliationPlan.model_validate_json(plan_json)
-        validate_dispositions(plan)
-        if (
-            plan.reconciliation_fingerprint != args.reconciliation_fingerprint
-            or plan.fingerprint() != args.reconciliation_fingerprint
-            or plan.feed_id != feed.id
-            or plan.source_strategy != feed.strategy
-            or plan.source_url != feed.url
-        ):
-            return _error("reconciliation receipt identity mismatch")
-        candidate = store.record_feed_baseline_candidate(
-            feed_id=feed.id,
-            entry_ids=(item.product_id for item in plan.items),
-            reason=args.reason,
-        )
-        _print_json(_bounded_baseline(candidate, 5))
-        return 0
+        return _prepare_baseline(store, args)
     candidate = store.approve_feed_baseline_candidate(
         feed_id=args.feed_id,
         fingerprint=args.fingerprint,
@@ -421,6 +379,56 @@ def _public_reconciliation_receipt(
 def _error(message: str) -> int:
     print(message)
     return 2
+
+
+def _inspect_reconciliation(args: argparse.Namespace, action: str) -> int:
+    with DeliveryStore(args.database, read_only=True) as store:
+        if action == "holds":
+            records = store.list_price_product_holds(args.feed_id)
+            _print_json({"count": len(records), "holds": records})
+        else:
+            receipt = store.load_price_reconciliation(args.fingerprint)
+            if receipt is None:
+                return _error("reconciliation receipt not found")
+            _print_json(_public_reconciliation_receipt(receipt))
+    return 0
+
+
+def _prepare_baseline(store: DeliveryStore, args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    feed = next((feed for feed in config.feeds if feed.id == args.feed_id), None)
+    if feed is None:
+        return _error("feed not found in configuration")
+    receipt = store.load_price_reconciliation(
+        args.reconciliation_fingerprint,
+    )
+    if receipt is None:
+        return _error("reconciliation receipt not found; baseline not prepared")
+    if (
+        receipt.get("reconciliation_fingerprint") != args.reconciliation_fingerprint
+        or receipt.get("feed_id") != feed.id
+    ):
+        return _error("reconciliation receipt identity mismatch")
+    plan_json = receipt.get("plan_json")
+    if not isinstance(plan_json, str):
+        return _error("immutable reconciliation artifact unavailable in receipt")
+    plan = ReconciliationPlan.model_validate_json(plan_json)
+    validate_dispositions(plan)
+    if (
+        plan.reconciliation_fingerprint != args.reconciliation_fingerprint
+        or plan.fingerprint() != args.reconciliation_fingerprint
+        or plan.feed_id != feed.id
+        or plan.source_strategy != feed.strategy
+        or plan.source_url != feed.url
+    ):
+        return _error("reconciliation receipt identity mismatch")
+    candidate = store.record_feed_baseline_candidate(
+        feed_id=feed.id,
+        entry_ids=(item.product_id for item in plan.items),
+        reason=args.reason,
+    )
+    _print_json(_bounded_baseline(candidate, 5))
+    return 0
 
 
 if __name__ == "__main__":

@@ -178,8 +178,9 @@ def test_reklama5_strategy_rejects_empty_non_terminal_page_before_page_three(
     )
     monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
+    strategy = _strategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _strategy().fetch_entries(SEARCH_URL)
+        strategy.fetch_entries(SEARCH_URL)
 
     assert fetch_error.value.cause_type == "EmptyNonTerminalPage"
     assert not fetch_error.value.retryable
@@ -200,8 +201,9 @@ def test_reklama5_strategy_rejects_pagination_cycle(
     )
     monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
+    strategy = _strategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _strategy().fetch_entries(SEARCH_URL)
+        strategy.fetch_entries(SEARCH_URL)
 
     assert fetch_error.value.cause_type == "PaginationCycle"
     assert not fetch_error.value.retryable
@@ -218,8 +220,9 @@ def test_reklama5_strategy_rejects_duplicate_only_terminal_later_page_before_bre
     )
     monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
+    strategy = _strategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _strategy().fetch_entries(SEARCH_URL)
+        strategy.fetch_entries(SEARCH_URL)
 
     assert fetch_error.value.cause_type == "PaginationCycle"
     assert not fetch_error.value.retryable

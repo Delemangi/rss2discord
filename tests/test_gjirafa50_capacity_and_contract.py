@@ -100,13 +100,15 @@ def test_root_over_unique_capacity_fails_before_enumeration(
     get = RecordingGet(
         [StubResponse(catalog_payload(150_001, [(1, Decimal(10))]))],
     )
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with (
         Gjirafa50HttpClient(get) as http,
         pytest.raises(FeedFetchError, match="ProductLimitExceeded"),
     ):
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
     assert len(get.params) == 1
@@ -134,10 +136,12 @@ def test_overfull_shard_page_fails_closed(
             _OperationBudget(lambda: False),
             http,
         )
+        client = Gjirafa50CatalogClient()
+        price_range = Gjirafa50PriceRange(1_000_000, 1_999_901)
         with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
-            Gjirafa50CatalogClient()._scan_shard(
+            client._scan_shard(
                 scan,
-                Gjirafa50PriceRange(1_000_000, 1_999_901),
+                price_range,
                 1,
                 1,
                 collected,

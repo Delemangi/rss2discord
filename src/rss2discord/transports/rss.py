@@ -278,12 +278,19 @@ class RSSStrategy(ScraperStrategy):
     def _clean_rss_description(self, text: str) -> str:
         """Clean HTML and Reddit-specific markup from RSS description."""
         text = self._clean_html(text)
-        text = re.sub(
-            r"\s*submitted by\s*/u/\S+.*$",
-            "",
+        parts: list[str] = []
+        end = 0
+        for match in re.finditer(
+            r"submitted by\s*/u/\S[^\n]*",
             text,
             flags=re.IGNORECASE | re.MULTILINE,
-        )
+        ):
+            # Trim the preceding whitespace without retrying a regex at every
+            # position in a potentially very long whitespace-only prefix.
+            parts.append(text[end : match.start()].rstrip())
+            end = match.end()
+        parts.append(text[end:])
+        text = "".join(parts)
         text = re.sub(r"\[link\]|\[comments\]", "", text, flags=re.IGNORECASE)
         return text.strip()
 

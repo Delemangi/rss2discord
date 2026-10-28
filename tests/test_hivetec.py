@@ -88,8 +88,9 @@ def test_hivetec_strategy_rejects_discovery_endpoint_drift(
     )
 
     # When / Then
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="DiscoveryDrift"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)
 
 
 @pytest.mark.parametrize(
@@ -105,8 +106,9 @@ def test_hivetec_strategy_rejects_discovery_endpoint_drift(
     ],
 )
 def test_hivetec_strategy_rejects_urls_outside_the_exact_https_shop(url: str) -> None:
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="InvalidUrl"):
-        HivetecStrategy().fetch_entries(url)
+        strategy.fetch_entries(url)
 
 
 def test_hivetec_strategy_rejects_more_than_the_latest_window(
@@ -129,8 +131,9 @@ def test_hivetec_strategy_rejects_more_than_the_latest_window(
         ),
     )
 
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="LatestWindowExceeded"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)
 
 
 def test_hivetec_strategy_stops_a_slow_stream_at_the_absolute_deadline(
@@ -159,8 +162,9 @@ def test_hivetec_strategy_stops_a_slow_stream_at_the_absolute_deadline(
         ),
     )
 
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="ScanTimeout"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)
 
 
 def test_hivetec_recording_get_invokes_hook_for_each_content_chunk() -> None:
@@ -199,8 +203,9 @@ def test_hivetec_strategy_rejects_cross_origin_redirect(
     )
     monkeypatch.setattr(hivetec_transport, "_perform_request", get)
 
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)
     assert len(get.urls) == 1
 
 
@@ -224,8 +229,9 @@ def test_hivetec_strategy_rejects_oversized_response(
         ),
     )
 
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)
 
 
 def test_hivetec_strategy_rejects_malformed_pagination_headers(
@@ -244,5 +250,6 @@ def test_hivetec_strategy_rejects_malformed_pagination_headers(
         ),
     )
 
+    strategy = HivetecStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        HivetecStrategy().fetch_entries(SHOP_URL)
+        strategy.fetch_entries(SHOP_URL)

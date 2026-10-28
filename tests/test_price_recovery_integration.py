@@ -384,6 +384,7 @@ def test_oversized_manifest_is_rejected_before_database_write(tmp_path: Path) ->
             )
 
     with DeliveryStore(tmp_path / "state.db") as store:
+        items = records()
         with pytest.raises(ValueError, match="manifest item limit"):
             store.record_price_change_candidate(
                 feed_id="feed",
@@ -391,7 +392,7 @@ def test_oversized_manifest_is_rejected_before_database_write(tmp_path: Path) ->
                 fingerprint="not-computed",
                 catalog_count=MAX_PRICE_MANIFEST_ITEMS + 1,
                 available_count=MAX_PRICE_MANIFEST_ITEMS + 1,
-                items=records(),
+                items=items,
             )
         assert store.list_price_change_batches("feed", include_terminal=True) == ()
 

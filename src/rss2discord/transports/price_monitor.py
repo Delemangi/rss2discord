@@ -264,36 +264,14 @@ def prepare_price_delivery(
             return PriceDeliveryPlan(blocked=True)
         raise FeedFetchError(provider, "CurrencyChanged")
     if batch is not None:
-        pending = tuple(
-            item
-            for item in batch.items
-            if item.status == "pending" and item.product_id not in held
-        )
-        decision = assess_price_safety(
-            expected=pending,
+        return _prepare_active_batch(
+            store,
+            feed_id,
+            provider,
+            batch,
+            held,
             current=current,
             persisted=persisted,
-        )
-        if batch.provider != provider or not decision.allowed:
-            pause_price_recovery(store, feed_id, decision.reason or "ProviderChanged")
-            return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
-        if not pending:
-            store.complete_price_change_batch_if_drained(batch.batch_id)
-            return PriceDeliveryPlan(batch_id=batch.batch_id)
-        ordered = sorted(
-            pending,
-            key=lambda item: (
-                item.attempt_count,
-                item.last_attempt_at if item.last_attempt_at is not None else -1,
-                item.ordinal,
-            ),
-        )
-        return PriceDeliveryPlan(
-            tuple(
-                item.product_id
-                for item in ordered[:MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN]
-            ),
-            batch.batch_id,
         )
     if len(changes) > MAX_UNAPPROVED_PRICE_CHANGES:
         store.record_price_change_candidate(
@@ -438,39 +416,19 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
     )
     if plan.blocked:
         return
-    if availability_returns and plan.allow_silent_updates:
-        origins_query = getattr(
-            dependencies.snapshots,
-            "availability_hold_origins",
-            None,
+    if (
+        availability_returns
+        and plan.allow_silent_updates
+        and not _restore_availability_returns(
+            dependencies,
+            feed_id,
+            provider,
+            availability_returns,
+            restoration_baseline,
+            operation_started_at=operation_started_at,
         )
-        restore = getattr(dependencies.snapshots, "restore_availability_hold", None)
-        if origins_query is not None and restore is not None:
-            origins = {
-                str(row["product_id"]): str(row["reconciliation_fingerprint"])
-                for row in origins_query(feed_id)
-            }
-            for product_id, (observed, context) in availability_returns.items():
-                origin = origins.get(product_id)
-                previous = restoration_baseline.get(product_id)
-                if origin is None:
-                    continue
-                if dependencies.delivery.is_shutdown_requested():
-                    return
-                dependencies.sqlite_retry_policy.execute(
-                    partial(
-                        restore,
-                        feed_id=feed_id,
-                        provider=provider,
-                        product_id=product_id,
-                        origin_fingerprint=origin,
-                        previous=previous,
-                        observed=observed,
-                        context=context,
-                        source="validated_full_catalog",
-                        operation_started_at=operation_started_at,
-                    ),
-                )
+    ):
+        return
     deliver_planned_price_changes(
         dependencies,
         message_for,
@@ -515,13 +473,7 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
     for change in islice(changes, MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN):
         if dependencies.delivery.is_shutdown_requested():
             return
-        if (
-            delay_before_next
-            and dependencies.delivery.delay_between_posts > 0
-            and not dependencies.delivery.sleep(
-                dependencies.delivery.delay_between_posts,
-            )
-        ):
+        if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
             return
         delay_before_next = False
         if dependencies.delivery.is_shutdown_requested():
@@ -529,32 +481,10 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         message = message_for(change)
         if dependencies.delivery.is_shutdown_requested():
             return
-        claim = None
-        if plan.batch_id is not None:
-            claim = dependencies.sqlite_retry_policy.execute(
-                partial(
-                    dependencies.snapshots.claim_price_delivery_attempt,
-                    plan.batch_id,
-                    change.current.product_id,
-                ),
-            )
-            if claim is None:
-                return
-        try:
-            result = dependencies.sender.send(message, dependencies.delivery.sleep)
-        except BaseException:
-            if claim is not None:
-                dependencies.sqlite_retry_policy.execute(
-                    partial(
-                        dependencies.snapshots.release_price_delivery_attempt,
-                        claim,
-                    ),
-                )
-            raise
-        if result is not DiscordDeliveryResult.DELIVERED and claim is not None:
-            dependencies.sqlite_retry_policy.execute(
-                partial(dependencies.snapshots.release_price_delivery_attempt, claim),
-            )
+        claim = _claim_price_change(dependencies, plan, change.current.product_id)
+        if plan.batch_id is not None and claim is None:
+            return
+        result = _send_claimed_price_change(dependencies, message, claim)
         match result:
             case DiscordDeliveryResult.DELIVERED:
                 dependencies.sqlite_retry_policy.execute(
@@ -605,3 +535,140 @@ def deliver_planned_price_changes[PriceChangeT: DeliverablePriceChange](
         plan,
         item_count,
     )
+
+
+def _prepare_active_batch(
+    store: PriceRecoveryStore,
+    feed_id: str,
+    provider: str,
+    batch: PriceBatch,
+    held: frozenset[str],
+    *,
+    current: Mapping[str, PriceSnapshot],
+    persisted: Mapping[str, PriceSnapshot],
+) -> PriceDeliveryPlan:
+    pending = tuple(
+        item
+        for item in batch.items
+        if item.status == "pending" and item.product_id not in held
+    )
+    decision = assess_price_safety(
+        expected=pending,
+        current=current,
+        persisted=persisted,
+    )
+    if batch.provider != provider or not decision.allowed:
+        pause_price_recovery(store, feed_id, decision.reason or "ProviderChanged")
+        return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
+    if not pending:
+        store.complete_price_change_batch_if_drained(batch.batch_id)
+        return PriceDeliveryPlan(batch_id=batch.batch_id)
+    ordered = sorted(
+        pending,
+        key=lambda item: (
+            item.attempt_count,
+            item.last_attempt_at if item.last_attempt_at is not None else -1,
+            item.ordinal,
+        ),
+    )
+    return PriceDeliveryPlan(
+        tuple(
+            item.product_id for item in ordered[:MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN]
+        ),
+        batch.batch_id,
+    )
+
+
+def _restore_availability_returns(
+    dependencies: PriceChangeDeliveryDependencies,
+    feed_id: str,
+    provider: str,
+    availability_returns: Mapping[str, tuple[PriceSnapshot, str]],
+    restoration_baseline: Mapping[str, PriceSnapshot],
+    *,
+    operation_started_at: float,
+) -> bool:
+    origins_query = getattr(
+        dependencies.snapshots,
+        "availability_hold_origins",
+        None,
+    )
+    restore = getattr(dependencies.snapshots, "restore_availability_hold", None)
+    if origins_query is not None and restore is not None:
+        origins = {
+            str(row["product_id"]): str(row["reconciliation_fingerprint"])
+            for row in origins_query(feed_id)
+        }
+        for product_id, (observed, context) in availability_returns.items():
+            origin = origins.get(product_id)
+            previous = restoration_baseline.get(product_id)
+            if origin is None:
+                continue
+            if dependencies.delivery.is_shutdown_requested():
+                return False
+            dependencies.sqlite_retry_policy.execute(
+                partial(
+                    restore,
+                    feed_id=feed_id,
+                    provider=provider,
+                    product_id=product_id,
+                    origin_fingerprint=origin,
+                    previous=previous,
+                    observed=observed,
+                    context=context,
+                    source="validated_full_catalog",
+                    operation_started_at=operation_started_at,
+                ),
+            )
+    return True
+
+
+def _send_claimed_price_change(
+    dependencies: PriceChangeDeliveryDependencies,
+    message: WebhookMessage,
+    claim: PriceDeliveryClaim | None,
+) -> DiscordDeliveryResult:
+    try:
+        result = dependencies.sender.send(message, dependencies.delivery.sleep)
+    except BaseException:
+        if claim is not None:
+            dependencies.sqlite_retry_policy.execute(
+                partial(
+                    dependencies.snapshots.release_price_delivery_attempt,
+                    claim,
+                ),
+            )
+        raise
+    if result is not DiscordDeliveryResult.DELIVERED and claim is not None:
+        dependencies.sqlite_retry_policy.execute(
+            partial(dependencies.snapshots.release_price_delivery_attempt, claim),
+        )
+    return result
+
+
+def _wait_between_price_deliveries(
+    delivery: PriceAlertDelivery,
+    delay_before_next: bool,
+) -> bool:
+    if delay_before_next and delivery.delay_between_posts > 0:
+        return delivery.sleep(delivery.delay_between_posts)
+    return True
+
+
+def _claim_price_change(
+    dependencies: PriceChangeDeliveryDependencies,
+    plan: PriceDeliveryPlan,
+    product_id: str,
+) -> PriceDeliveryClaim | None:
+    claim = None
+    if plan.batch_id is not None:
+        claim = dependencies.sqlite_retry_policy.execute(
+            partial(
+                dependencies.snapshots.claim_price_delivery_attempt,
+                plan.batch_id,
+                product_id,
+            ),
+        )
+        if claim is None:
+            return None
+    return claim

@@ -57,10 +57,12 @@ def test_hivetec_catalog_rejects_aggregate_product_metadata_amplification(
         RecordingGet(responses),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="MetadataLimitExceeded"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -82,10 +84,12 @@ def test_hivetec_catalog_rejects_aggregate_category_limit(
         ),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="MetadataLimitExceeded"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -112,10 +116,12 @@ def test_hivetec_catalog_rejects_scan_response_budget_overrun(
         ),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -144,10 +150,12 @@ def test_hivetec_catalog_shares_response_bytes_across_retries(
         ),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -178,10 +186,12 @@ def test_hivetec_catalog_counts_response_headers_against_scan_budget(
         ),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 

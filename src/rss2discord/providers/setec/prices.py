@@ -29,6 +29,7 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceDeliveryPlan,
     PriceRecoveryStore,
     deliver_price_changes,
     finish_price_delivery,
@@ -130,29 +131,10 @@ class SetecPriceMonitor:
         snapshots_by_product = {
             snapshot.product_id: snapshot for snapshot in persisted_snapshots
         }
-        silent_updates: list[PriceSnapshot] = []
-        pending_changes: list[_PendingChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-
-        for entry in price_entries:
-            current = self._snapshot(entry)
-            if current is None:
-                continue
-            current_snapshots[entry.id] = current
-            previous = snapshots_by_product.get(entry.id)
-            if previous is None:
-                silent_updates.append(current)
-                continue
-            if (
-                previous.amount == current.amount
-                and previous.currency == current.currency
-            ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-                continue
-            pending_changes.append(
-                _PendingChange(entry.id, previous, current, entry.variants[0].id),
-            )
+        silent_updates, pending_changes, current_snapshots = self._compare_prices(
+            price_entries,
+            snapshots_by_product,
+        )
 
         ambiguous_count = sum(len(entry.variants) > 1 for entry in price_entries)
         if ambiguous_count:
@@ -186,20 +168,10 @@ class SetecPriceMonitor:
             )
 
         if not plan.selected_ids:
-            if ambiguous_count:
-                record_price_health(
-                    snapshot_store,
-                    self._feed.id,
-                    "failed",
-                    "PriceConfirmationDeferred",
-                    len(current_snapshots),
-                )
-                return
-            finish_price_delivery(
-                snapshot_store,
-                self._feed.id,
+            self._finish_scan(
                 plan,
                 len(current_snapshots),
+                deferred=bool(ambiguous_count),
             )
             return
         if self._dependencies.delivery.is_shutdown_requested():
@@ -217,21 +189,64 @@ class SetecPriceMonitor:
             )
             return
         deliver_price_changes(changes, self._dependencies, self._message_for, plan=plan)
-        if unconfirmed or ambiguous_count:
+        self._finish_scan(
+            plan,
+            len(current_snapshots),
+            deferred=bool(unconfirmed or ambiguous_count),
+        )
+
+    def _finish_scan(
+        self,
+        plan: PriceDeliveryPlan,
+        count: int,
+        *,
+        deferred: bool,
+    ) -> None:
+        snapshot_store = self._dependencies.snapshots
+        if deferred:
             record_price_health(
                 snapshot_store,
                 self._feed.id,
                 "failed",
                 "PriceConfirmationDeferred",
-                len(current_snapshots),
+                count,
             )
         else:
             finish_price_delivery(
                 snapshot_store,
                 self._feed.id,
                 plan,
-                len(current_snapshots),
+                count,
             )
+
+    def _compare_prices(
+        self,
+        price_entries: Sequence[SetecPriceEntry],
+        snapshots_by_product: dict[str, PriceSnapshot],
+    ) -> tuple[list[PriceSnapshot], list[_PendingChange], dict[str, PriceSnapshot]]:
+        silent_updates: list[PriceSnapshot] = []
+        pending_changes: list[_PendingChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
+        for entry in price_entries:
+            current = self._snapshot(entry)
+            if current is None:
+                continue
+            current_snapshots[entry.id] = current
+            previous = snapshots_by_product.get(entry.id)
+            if previous is None:
+                silent_updates.append(current)
+                continue
+            if (
+                previous.amount == current.amount
+                and previous.currency == current.currency
+            ):
+                if previous.formatted != current.formatted:
+                    silent_updates.append(current)
+                continue
+            pending_changes.append(
+                _PendingChange(entry.id, previous, current, entry.variants[0].id),
+            )
+        return silent_updates, pending_changes, current_snapshots
 
     def _resolve_changes(
         self,

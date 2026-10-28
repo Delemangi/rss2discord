@@ -249,8 +249,9 @@ def test_xenforo_fetch_error_does_not_expose_feed_url_secret(
 
     monkeypatch.setattr(xenforo_module, "xenforo", lambda **kwargs: FailingScraper())
     # When
+    strategy = XenForoStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        XenForoStrategy().fetch_entries(feed_url)
+        strategy.fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(

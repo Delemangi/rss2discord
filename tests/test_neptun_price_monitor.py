@@ -166,12 +166,13 @@ def test_price_monitor_rejects_snapshot_capacity_before_mutation(
             PriceSnapshot("neptun", "old", Decimal(100), "100 ден.", "MKD"),
         )
 
+        monitor = make_monitor(
+            CatalogStub([(make_product(2, 200),)]),
+            store,
+            RecordingSender([]),
+        )
         with pytest.raises(FeedFetchError, match="SnapshotLimitExceeded"):
-            make_monitor(
-                CatalogStub([(make_product(2, 200),)]),
-                store,
-                RecordingSender([]),
-            ).scan()
+            monitor.scan()
 
         assert [
             snapshot.product_id for snapshot in store.load_price_snapshots("neptun")

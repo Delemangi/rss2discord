@@ -66,10 +66,7 @@ class Pazar3Strategy(ScraperStrategy):
                 request,
                 now,
             )
-            if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
-                raise FeedFetchError(PAZAR3_LABEL, "PaginationCycle")
-            if page_number < 3 and not page.organic_ids and not page.terminal:
-                raise FeedFetchError(PAZAR3_LABEL, "EmptyNonTerminalPage")
+            _validate_discovery_page(page, page_number, seen_ids)
             for listing in page.listings:
                 retained.setdefault(listing.entry_id, (listing, scan_position))
                 scan_position += 1
@@ -121,6 +118,17 @@ class Pazar3Strategy(ScraperStrategy):
             categories=(entry.category,) if entry.category else (),
             source_metrics=metrics,
         )
+
+
+def _validate_discovery_page(
+    page: Pazar3Page,
+    page_number: int,
+    seen_ids: set[EntryId],
+) -> None:
+    if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
+        raise FeedFetchError(PAZAR3_LABEL, "PaginationCycle")
+    if page_number < 3 and not page.organic_ids and not page.terminal:
+        raise FeedFetchError(PAZAR3_LABEL, "EmptyNonTerminalPage")
 
 
 __all__ = (

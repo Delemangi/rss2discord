@@ -82,8 +82,9 @@ def test_reklama5_fetch_shares_redirect_limit_across_page_calls(
     monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
 
     assert fetch_reklama5_page(scope.page_request(1), budget) == b"page"
+    selected_request = scope.page_request(2)
     with pytest.raises(FeedFetchError, match="TooManyRedirects"):
-        fetch_reklama5_page(scope.page_request(2), budget)
+        fetch_reklama5_page(selected_request, budget)
 
     assert len(get.urls) == 12
 
@@ -112,8 +113,10 @@ def test_reklama5_fetch_rejects_missing_and_untrusted_redirects(
         ),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "InvalidRedirect"
     assert not fetch_error.value.retryable
@@ -140,8 +143,9 @@ def test_reklama5_fetch_rejects_filter_equivalent_empty_fragment_redirect(
         ),
     )
 
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(request, scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "InvalidRedirect"
     assert not fetch_error.value.retryable
@@ -168,8 +172,10 @@ def test_reklama5_fetch_marks_request_transport_failures_retryable(
         lambda: RecordingGet([], interruption=error),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == type(error).__name__
     assert fetch_error.value.retryable
@@ -190,8 +196,10 @@ def test_reklama5_fetch_marks_pre_response_invalid_url_permanent(
         ),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "InvalidURL"
     assert not fetch_error.value.retryable
@@ -218,8 +226,9 @@ def test_reklama5_fetch_marks_streamed_request_failures_retryable(
         ),
     )
 
+    request = search_scope().page_request(1)
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), budget)
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == type(interruption).__name__
     assert fetch_error.value.retryable
@@ -252,8 +261,10 @@ def test_reklama5_fetch_propagates_exact_retry_after_result(
         ),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert parsed_values == [retry_after]
     assert fetch_error.value.retry_after == 73.25

@@ -29,10 +29,12 @@ def test_anhoch_catalog_client_rejects_response_too_large_by_declared_bytes(
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -52,10 +54,12 @@ def test_anhoch_catalog_client_rejects_response_too_large_by_streamed_bytes(
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -71,10 +75,12 @@ def test_anhoch_catalog_client_rejects_page_100_ceiling_when_more_pages_are_clai
     monkeypatch.setattr(requests, "get", RecordingGet(responses))
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -93,10 +99,12 @@ def test_anhoch_catalog_client_rejects_a_page_with_more_products_than_requested(
     )
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -113,10 +121,12 @@ def test_anhoch_catalog_client_rejects_product_id_above_sqlite_signed_integer_ra
     )
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -152,10 +162,12 @@ def test_anhoch_catalog_client_rejects_a_near_limit_oversized_page_before_retain
     monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(payload)]))
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert not retained
@@ -172,10 +184,12 @@ def test_anhoch_catalog_client_rejects_a_page_number_that_does_not_match_the_req
     )
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageNumberMismatch"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -190,10 +204,12 @@ def test_anhoch_catalog_client_rejects_an_impossible_last_page_on_the_first_requ
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = AnhochCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        AnhochCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert len(get.urls) == 1
@@ -219,9 +235,10 @@ def test_anhoch_catalog_scan_bounds_reject_product_count_past_capacity() -> None
     )
 
     # When / Then
+    fetched_page = FetchedCatalogPage(page=page, response_bytes=0)
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
         bounds.validate_page(
-            FetchedCatalogPage(page=page, response_bytes=0),
+            fetched_page,
             requested_page_number=1,
             totals=totals,
         )
@@ -253,9 +270,10 @@ def test_anhoch_catalog_scan_bounds_reject_cumulative_bytes_past_the_scan_limit(
     )
 
     # When / Then
+    fetched_page = FetchedCatalogPage(page=page, response_bytes=2)
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
         bounds.validate_page(
-            FetchedCatalogPage(page=page, response_bytes=2),
+            fetched_page,
             requested_page_number=1,
             totals=totals,
         )

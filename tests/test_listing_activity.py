@@ -42,8 +42,9 @@ def test_localize_wall_time_leaves_invalid_components_for_callers(
     match = re.fullmatch(ACTIVITY_TIME_PATTERN, value)
     assert match is not None
 
+    selected_date = date(2026, 8, 1)
     with pytest.raises(
         ValueError,
         match=r"hour must be in 0\.\.23|minute must be in 0\.\.59",
     ):
-        localize_wall_time(date(2026, 8, 1), match)
+        localize_wall_time(selected_date, match)

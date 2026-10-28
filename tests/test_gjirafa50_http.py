@@ -29,8 +29,9 @@ type CurlOptionValue = int | str | Callable[[bytes], int]
 
 
 def test_http_rejects_unsafe_root_url() -> None:
+    client = Gjirafa50HttpClient()
     with pytest.raises(FeedFetchError, match="InvalidUrl"):
-        Gjirafa50HttpClient().normalize_root_url("https://user@gjirafa50.mk:444/")
+        client.normalize_root_url("https://user@gjirafa50.mk:444/")
 
 
 @pytest.mark.parametrize("host", ["gjirafa50.mk", "gjirafa50.com"])
@@ -117,11 +118,13 @@ def test_http_rejects_redirect_with_query_string(
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
 
     # When / Then
+    page_request = Gjirafa50PageRequest(page=1, budget=budget)
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
         client.fetch_page(
             "https://gjirafa50.mk/",
-            Gjirafa50PageRequest(page=1, budget=budget),
-            datetime.now(UTC),
+            page_request,
+            observed_at,
         )
 
     assert len(get.params) == 1
@@ -135,11 +138,13 @@ def test_http_budget_keeps_failed_response_bytes(
     client = Gjirafa50HttpClient(get)
     monkeypatch.setattr(gjirafa50_http, "GJIRAFA50_REQUEST_INTERVAL_SECONDS", 0)
 
+    page_request = Gjirafa50PageRequest(page=1, budget=budget)
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="HTTP 500"):
         client.fetch_page(
             "https://gjirafa50.mk/",
-            Gjirafa50PageRequest(page=1, budget=budget),
-            datetime.now(UTC),
+            page_request,
+            observed_at,
         )
 
     assert budget.requests == 1
@@ -166,11 +171,13 @@ def test_http_enforces_deadline_after_parsing(
 
     monkeypatch.setattr(gjirafa50_http, "parse_gjirafa50_page", parse_after_deadline)
 
+    page_request = Gjirafa50PageRequest(page=1, budget=budget)
+    observation_time = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
         client.fetch_page(
             "https://gjirafa50.mk/",
-            Gjirafa50PageRequest(page=1, budget=budget),
-            datetime.now(UTC),
+            page_request,
+            observation_time,
         )
 
 
@@ -327,11 +334,13 @@ def test_http_records_transfer_and_parse_elapsed_once_when_each_phase_fails(
     monkeypatch.setattr(Gjirafa50HttpClient, "_request", fail_transfer)
     clock = iter((10.0, 13.0))
     monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: next(clock))
+    page_request = Gjirafa50PageRequest(1, transfer_budget)
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="TransferFailure"):
         client.fetch_page(
             "https://gjirafa50.mk/",
-            Gjirafa50PageRequest(1, transfer_budget),
-            datetime.now(UTC),
+            page_request,
+            observed_at,
         )
 
     assert transfer_budget.transfer_seconds == 3
@@ -358,11 +367,13 @@ def test_http_records_transfer_and_parse_elapsed_once_when_each_phase_fails(
     monkeypatch.setattr(gjirafa50_http, "parse_gjirafa50_page", fail_parse)
     clock = iter((20.0, 22.0, 22.0, 27.0))
     monkeypatch.setattr(gjirafa50_http.time, "monotonic", lambda: next(clock))
+    parse_page_request = Gjirafa50PageRequest(1, parse_budget)
+    parse_observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="ParseFailure"):
         client.fetch_page(
             "https://gjirafa50.mk/",
-            Gjirafa50PageRequest(1, parse_budget),
-            datetime.now(UTC),
+            parse_page_request,
+            parse_observed_at,
         )
 
     assert parse_budget.transfer_seconds == 2

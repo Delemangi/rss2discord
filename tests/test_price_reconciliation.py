@@ -69,16 +69,21 @@ def test_invalid_identity_state_or_stale_plan_writes_nothing(
     with DatabaseOwnership(database) as ownership, DeliveryStore(database) as store:
         plan = reviewed(setup_plan(store)).model_copy(update={field: value})
         before = database_state(store)
+        feed = make_feed()
+        fingerprint = plan.fingerprint()
+        invalid_plan = plan.model_copy(
+            update={"reconciliation_fingerprint": fingerprint},
+        )
         with pytest.raises(
             ValueError,
             match=r"mismatch|drift|stale|invalid reconciliation source URL",
         ):
             apply_plan(
                 store,
-                make_feed(),
-                plan.sealed(),
+                feed,
+                invalid_plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before
@@ -89,22 +94,26 @@ def test_wrong_fingerprint_and_unowned_apply_write_nothing(tmp_path: Path) -> No
     with DeliveryStore(database) as store:
         plan = reviewed(setup_plan(store))
         before = database_state(store)
+        feed = make_feed()
+        unacquired_ownership = DatabaseOwnership(database)
+        fingerprint = plan.fingerprint()
         with pytest.raises(DatabaseOwnershipError):
             apply_plan(
                 store,
-                make_feed(),
+                feed,
                 plan,
-                DatabaseOwnership(database),
-                fingerprint=plan.fingerprint(),
+                unacquired_ownership,
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
+        apply_feed = make_feed()
         with (
             DatabaseOwnership(database) as ownership,
             pytest.raises(ValueError, match="fingerprint"),
         ):
             apply_plan(
                 store,
-                make_feed(),
+                apply_feed,
                 plan,
                 ownership,
                 fingerprint="0" * 64,
@@ -162,13 +171,15 @@ def test_fresh_catalog_drift_is_zero_writes(tmp_path: Path, variant: str) -> Non
                 products[1],
             )
         before = database_state(store)
+        feed = make_feed()
+        fingerprint = plan.fingerprint()
         with pytest.raises(ValueError, match=r"drift|unique|MKD"):
             apply_plan(
                 store,
-                make_feed(),
+                feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=lambda _feed, _old: products,
             )
         assert database_state(store) == before
@@ -272,13 +283,15 @@ def test_transaction_failure_rolls_back_everything(tmp_path: Path) -> None:
             "CREATE TRIGGER injected_failure BEFORE INSERT ON price_product_holds BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
         )
         before = database_state(store)
+        feed = make_feed()
+        fingerprint = plan.fingerprint()
         with pytest.raises(sqlite3.IntegrityError, match="injected"):
             apply_plan(
                 store,
-                make_feed(),
+                feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before
@@ -288,21 +301,23 @@ def test_transaction_rechecks_snapshots_batch_and_age(tmp_path: Path) -> None:
     database = tmp_path / "state.db"
     with DatabaseOwnership(database) as ownership, DeliveryStore(database) as store:
         plan = reviewed(setup_plan(store))
+        operation_started_at = time.monotonic() - 301
         with pytest.raises(ValueError, match="stale"):
             store.apply_price_reconciliation(
                 plan,
                 ownership,
-                operation_started_at=time.monotonic() - 301,
+                operation_started_at=operation_started_at,
             )
         store.upsert_price_snapshot(
             PriceSnapshot("ddstore", "1", Decimal(99), "99 ден.", "MKD"),
         )
         before = database_state(store)
+        current_operation_started_at = time.monotonic()
         with pytest.raises(ValueError, match="state drift"):
             store.apply_price_reconciliation(
                 plan,
                 ownership,
-                operation_started_at=time.monotonic(),
+                operation_started_at=current_operation_started_at,
             )
         assert database_state(store) == before
 
@@ -324,22 +339,26 @@ def test_revoked_historical_open_claim_prevents_reconciliation(tmp_path: Path) -
             reason="revoked with inflight claim",
         )
         before = database_state(store)
+        feed = make_feed()
         with pytest.raises(ValueError, match="open price delivery claims"):
             create_plan(
                 store,
-                make_feed(),
+                feed,
                 batch_id=batch.batch_id,
                 batch_fingerprint=batch.fingerprint,
                 reason="review",
                 catalog_fetch=fetch_current,
             )
+        apply_feed = make_feed()
+        reviewed_plan = reviewed(draft)
+        fingerprint = reviewed(draft).fingerprint()
         with pytest.raises(ValueError, match="open price delivery claims"):
             apply_plan(
                 store,
-                make_feed(),
-                reviewed(draft),
+                apply_feed,
+                reviewed_plan,
                 ownership,
-                fingerprint=reviewed(draft).fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before

@@ -128,6 +128,8 @@ def test_first_baseline_restore_rolls_back_receipt_snapshot_and_hold(
             "BEGIN SELECT RAISE(ABORT, 'first snapshot failed'); END",
         )
         store._connection.commit()
+        observed = PriceSnapshot("ddstore", "3", Decimal(50), "50 ден.", "MKD")
+        operation_started_at = time.monotonic()
         with pytest.raises(sqlite3.IntegrityError, match="first snapshot failed"):
             store.restore_availability_hold(
                 feed_id="ddstore",
@@ -135,10 +137,10 @@ def test_first_baseline_restore_rolls_back_receipt_snapshot_and_hold(
                 product_id="3",
                 origin_fingerprint=plan.reconciliation_fingerprint,
                 previous=None,
-                observed=PriceSnapshot("ddstore", "3", Decimal(50), "50 ден.", "MKD"),
+                observed=observed,
                 context=context,
                 source="validated_full_catalog",
-                operation_started_at=time.monotonic(),
+                operation_started_at=operation_started_at,
             )
         assert store.held_price_product_ids("ddstore") == frozenset({"2", "3"})
         assert (
@@ -584,6 +586,7 @@ def test_invalid_restoration_evidence_has_no_store_effects(
             (),
         )[0].context
         observed = PriceSnapshot("ddstore", "2", amount, "75 ден.", currency)
+        operation_started_at = time.monotonic()
         with pytest.raises(
             ValueError,
             match=r"availability restoration|invalid reconciliation context",
@@ -597,7 +600,7 @@ def test_invalid_restoration_evidence_has_no_store_effects(
                 observed=observed,
                 context=valid_context if context == "valid" else context,
                 source="validated_full_catalog",
-                operation_started_at=time.monotonic(),
+                operation_started_at=operation_started_at,
             )
         assert store.held_price_product_ids("ddstore") == frozenset({"2"})
         assert (
@@ -626,6 +629,7 @@ def test_restore_rechecks_revoked_historical_open_claim(tmp_path: Path) -> None:
             (make_product("2", amount=75),),
             (),
         )[0].context
+        operation_started_at = time.monotonic()
         with pytest.raises(ValueError, match="historical revoked batches"):
             store.restore_availability_hold(
                 feed_id="ddstore",
@@ -636,7 +640,7 @@ def test_restore_rechecks_revoked_historical_open_claim(tmp_path: Path) -> None:
                 observed=observed,
                 context=context,
                 source="validated_full_catalog",
-                operation_started_at=time.monotonic(),
+                operation_started_at=operation_started_at,
             )
         assert store.held_price_product_ids("ddstore") == frozenset({"2"})
         assert (

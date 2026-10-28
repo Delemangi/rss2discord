@@ -85,7 +85,7 @@ class SetecSearchClient:
             if len(keys) != 1:
                 raise FeedFetchError(SETEC_LABEL, "InvalidPublicSearchConfig")
             self._config = PublicSearchConfig(keys.pop())
-        except (UnicodeError, ValueError):
+        except ValueError:
             raise FeedFetchError(SETEC_LABEL, "InvalidPublicSearchConfig") from None
         else:
             return self._config
@@ -111,14 +111,7 @@ class SetecSearchClient:
     def _get_public(self, url: str, *, homepage: bool = False) -> bytes:
         try:
             for _ in range(MAX_SETEC_REDIRECTS + 1):
-                if self._discovery_requests >= MAX_DISCOVERY_REQUESTS:
-                    raise FeedFetchError(
-                        SETEC_LABEL,
-                        "PublicDiscoveryRequestLimitExceeded",
-                    )
-                remaining = self._discovery_remaining()
-                timeout = min(remaining, self.budget.before_request())
-                self._discovery_requests += 1
+                timeout = self._before_public_request()
                 with requests.get(
                     url,
                     headers={"User-Agent": SETEC_USER_AGENT},
@@ -126,32 +119,19 @@ class SetecSearchClient:
                     stream=True,
                     allow_redirects=False,
                 ) as response:
-                    content = bytearray()
-                    for chunk in response.iter_content(
-                        chunk_size=SETEC_STREAM_CHUNK_BYTES,
-                    ):
-                        self.budget.charge(len(chunk))
-                        self._discovery_bytes += len(chunk)
-                        self._discovery_remaining()
-                        if self._discovery_bytes > MAX_DISCOVERY_BYTES:
-                            raise FeedFetchError(SETEC_LABEL, "PublicDiscoveryTooLarge")
-                        if len(content) + len(chunk) > MAX_DISCOVERY_RESPONSE_BYTES:
-                            raise FeedFetchError(SETEC_LABEL, "ResponseTooLarge")
-                        content.extend(chunk)
-                    self._discovery_remaining()
+                    content = self._read_public_content(response)
                     if 300 <= response.status_code < 400:
                         location = response.headers.get("Location")
                         if location is None:
                             raise FeedFetchError(SETEC_LABEL, "InvalidRedirect")
                         url = _same_origin_redirect_url(url, location)
-                        if homepage:
-                            if url != HOMEPAGE:
-                                raise FeedFetchError(SETEC_LABEL, "InvalidRedirect")
-                        else:
+                        if homepage and url != HOMEPAGE:
+                            raise FeedFetchError(SETEC_LABEL, "InvalidRedirect")
+                        if not homepage:
                             url = static_url(url)
                         continue
                     _check_status(response)
-                    return bytes(content)
+                    return content
             raise FeedFetchError(SETEC_LABEL, "TooManyRedirects")
         except requests.RequestException as error:
             raise FeedFetchError(
@@ -166,6 +146,28 @@ class SetecSearchClient:
                     ),
                 ),
             ) from None
+
+    def _before_public_request(self) -> float:
+        if self._discovery_requests >= MAX_DISCOVERY_REQUESTS:
+            raise FeedFetchError(SETEC_LABEL, "PublicDiscoveryRequestLimitExceeded")
+        remaining = self._discovery_remaining()
+        timeout = min(remaining, self.budget.before_request())
+        self._discovery_requests += 1
+        return timeout
+
+    def _read_public_content(self, response: requests.Response) -> bytes:
+        content = bytearray()
+        for chunk in response.iter_content(chunk_size=SETEC_STREAM_CHUNK_BYTES):
+            self.budget.charge(len(chunk))
+            self._discovery_bytes += len(chunk)
+            self._discovery_remaining()
+            if self._discovery_bytes > MAX_DISCOVERY_BYTES:
+                raise FeedFetchError(SETEC_LABEL, "PublicDiscoveryTooLarge")
+            if len(content) + len(chunk) > MAX_DISCOVERY_RESPONSE_BYTES:
+                raise FeedFetchError(SETEC_LABEL, "ResponseTooLarge")
+            content.extend(chunk)
+        self._discovery_remaining()
+        return bytes(content)
 
     def build_search_url(self, url: str) -> str:
         """Validate a configured catalog URL and return the Setec search endpoint."""

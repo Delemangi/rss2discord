@@ -106,7 +106,7 @@ class FeedConfig(BaseModel):
                     | "cccenter"
                     | "technomarket"
                 ):
-                    pass
+                    return self
                 case "rss" | "xenforo" | "itmk_oglasnik":
                     msg = (
                         "price_check_interval requires anhoch, ddstore, gjirafa50, "

@@ -12,6 +12,7 @@ from rss2discord.providers.reklama5.http import (
 )
 from rss2discord.providers.reklama5.parser import (
     Reklama5Listing,
+    Reklama5Page,
     parse_reklama5_page,
 )
 from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
@@ -19,6 +20,17 @@ from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 type Reklama5Clock = Callable[[], datetime]
+
+
+def _validate_discovery_page(
+    page: Reklama5Page,
+    page_number: int,
+    seen_ids: set[EntryId],
+) -> None:
+    if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
+        raise FeedFetchError(REKLAMA5_LABEL, "PaginationCycle")
+    if page_number < 3 and not page.organic_ids and not page.terminal:
+        raise FeedFetchError(REKLAMA5_LABEL, "EmptyNonTerminalPage")
 
 
 class Reklama5Strategy(ScraperStrategy):
@@ -55,10 +67,7 @@ class Reklama5Strategy(ScraperStrategy):
                 request,
                 now,
             )
-            if page_number > 1 and page.organic_ids and page.organic_ids <= seen_ids:
-                raise FeedFetchError(REKLAMA5_LABEL, "PaginationCycle")
-            if page_number < 3 and not page.organic_ids and not page.terminal:
-                raise FeedFetchError(REKLAMA5_LABEL, "EmptyNonTerminalPage")
+            _validate_discovery_page(page, page_number, seen_ids)
 
             for listing in page.listings:
                 retained.setdefault(

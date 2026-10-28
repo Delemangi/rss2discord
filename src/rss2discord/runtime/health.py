@@ -120,7 +120,7 @@ def safe_error_cause(error: Exception) -> str:
     cause = (
         error.cause_type if isinstance(error, FeedFetchError) else type(error).__name__
     )
-    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", cause):
+    if not re.fullmatch(r"[A-Za-z]\w{0,63}", cause, flags=re.ASCII):
         return "FetchError"
     if (
         isinstance(error, FeedFetchError)

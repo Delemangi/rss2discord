@@ -17,7 +17,8 @@ from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
 
 NEPTUN_LABEL: Final = "Neptun"
-NEPTUN_ORIGIN: Final = "https://www.neptun.mk"
+NEPTUN_HOST: Final = "www.neptun.mk"
+NEPTUN_ORIGIN: Final = f"https://{NEPTUN_HOST}"
 NEPTUN_PRODUCTS_URL: Final = f"{NEPTUN_ORIGIN}/NeptunCategories/LoadProductsForCategory"
 NEPTUN_RESPONSE_BYTES: Final = 5 * 1024 * 1024
 NEPTUN_STREAM_CHUNK_BYTES: Final = 64 * 1024
@@ -50,7 +51,7 @@ class NeptunHttpClient:
             raise FeedFetchError(NEPTUN_LABEL, "InvalidUrl") from None
         if (
             parsed.scheme != "https"
-            or parsed.hostname not in {"www.neptun.mk", "neptun.mk"}
+            or parsed.hostname not in {NEPTUN_HOST, "neptun.mk"}
             or port is not None
             or parsed.username is not None
             or parsed.password is not None
@@ -59,7 +60,7 @@ class NeptunHttpClient:
             or not parsed.path
         ):
             raise FeedFetchError(NEPTUN_LABEL, "InvalidUrl")
-        return urlunsplit(("https", "www.neptun.mk", parsed.path, "", ""))
+        return urlunsplit(("https", NEPTUN_HOST, parsed.path, "", ""))
 
     def fetch_category_model(
         self,
@@ -167,19 +168,7 @@ class NeptunHttpClient:
                             raise FeedFetchError(NEPTUN_LABEL, "InvalidRedirect")
                         current_url = _same_origin_redirect(current_url, location)
                         continue
-                    try:
-                        response.raise_for_status()
-                    except requests.HTTPError:
-                        status = response.status_code
-                        raise FeedFetchError(
-                            NEPTUN_LABEL,
-                            "HTTPError",
-                            status_code=status,
-                            retryable=status in {408, 429} or 500 <= status < 600,
-                            retry_after=parse_retry_after(
-                                response.headers.get("Retry-After"),
-                            ),
-                        ) from None
+                    _check_response_status(response)
                     return content, consumed_bytes
             raise FeedFetchError(NEPTUN_LABEL, "TooManyRedirects")
         except (
@@ -196,6 +185,20 @@ class NeptunHttpClient:
             raise FeedFetchError(NEPTUN_LABEL, type(error).__name__) from None
 
 
+def _check_response_status(response: requests.Response) -> None:
+    try:
+        response.raise_for_status()
+    except requests.HTTPError:
+        status = response.status_code
+        raise FeedFetchError(
+            NEPTUN_LABEL,
+            "HTTPError",
+            status_code=status,
+            retryable=status in {408, 429} or 500 <= status < 600,
+            retry_after=parse_retry_after(response.headers.get("Retry-After")),
+        ) from None
+
+
 def _same_origin_redirect(current_url: str, location: str) -> str:
     redirected_url = urljoin(current_url, location)
     try:
@@ -205,7 +208,7 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
         raise FeedFetchError(NEPTUN_LABEL, "InvalidRedirect") from None
     if (
         redirected.scheme != "https"
-        or redirected.hostname != "www.neptun.mk"
+        or redirected.hostname != NEPTUN_HOST
         or port is not None
         or redirected.username is not None
         or redirected.password is not None

@@ -648,12 +648,13 @@ def test_failed_job_observation_cannot_mask_primary_exception() -> None:
         assert timing.name == "a"
         raise RuntimeError("observer")
 
+    scheduler = RuntimeScheduler(
+        SchedulerJobs((ScheduledJob("a", "ordinary", 1, fail_job),), ()),
+        SchedulerControl(clock.monotonic, clock.sleep, lambda: False),
+        observer=fail_observer,
+    )
     with pytest.raises(ValueError, match="primary") as caught:
-        RuntimeScheduler(
-            SchedulerJobs((ScheduledJob("a", "ordinary", 1, fail_job),), ()),
-            SchedulerControl(clock.monotonic, clock.sleep, lambda: False),
-            observer=fail_observer,
-        ).run()
+        scheduler.run()
     assert caught.value.__notes__ == ["Job timing observer failed: RuntimeError"]
 
 

@@ -84,8 +84,9 @@ def test_revoke_before_claim_and_stale_generation_do_not_mutate(tmp_path: Path) 
         second = store.claim_price_delivery_attempt(batch_id, "q")
         assert first is not None
         assert second is not None
+        current_snapshot = _change("q").current
         with pytest.raises(ValueError, match="not reserved"):
-            store.record_approved_price_delivery(first, _change("q").current)
+            store.record_approved_price_delivery(first, current_snapshot)
         assert store.load_price_snapshots("feed") == ()
         store.record_approved_price_delivery(second, _change("q").current)
 

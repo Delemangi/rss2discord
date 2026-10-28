@@ -203,8 +203,9 @@ def test_setec_strategy_redacts_the_search_api_key(
     )
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert SETEC_SEARCH_KEY not in str(fetch_error.value)
@@ -304,8 +305,9 @@ def test_setec_strategy_rejects_compact_hostile_price_as_invalid_response(
     )
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.cause_type == "InvalidResponse"
@@ -335,8 +337,9 @@ def test_setec_strategy_rejects_malformed_response(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
 
 @pytest.mark.parametrize(
@@ -353,8 +356,9 @@ def test_setec_strategy_classifies_http_failures(
     monkeypatch.setattr(requests, "post", post)
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.status_code == status_code
@@ -368,8 +372,9 @@ def test_setec_strategy_marks_timeout_retryable(
     monkeypatch.setattr(requests, "post", RaisingPost(requests.Timeout()))
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retryable
@@ -386,8 +391,9 @@ def test_setec_strategy_marks_chunked_response_interruption_retryable(
     )
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retryable
@@ -409,8 +415,9 @@ def test_setec_strategy_parses_http_date_retry_after(
     monkeypatch.setattr(requests, "post", post)
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retry_after is not None
@@ -427,8 +434,9 @@ def test_setec_strategy_rejects_oversized_response(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
 
 def test_setec_strategy_rejects_an_undeclared_response_streamed_past_the_byte_bound(
@@ -444,8 +452,9 @@ def test_setec_strategy_rejects_an_undeclared_response_streamed_past_the_byte_bo
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert len(post.urls) == 1
@@ -468,8 +477,9 @@ def test_setec_strategy_rejects_cross_origin_redirect(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
     assert len(post.urls) == 1
 
 
@@ -486,8 +496,9 @@ def test_setec_strategy_rejects_a_redirect_without_a_location_header(
     monkeypatch.setattr(requests, "post", post)
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.cause_type == "InvalidRedirect"
@@ -506,8 +517,9 @@ def test_setec_strategy_rejects_a_redirect_chain_longer_than_the_redirect_bound(
     monkeypatch.setattr(requests, "post", post)
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(CATALOG_URL)
+        _ = strategy.fetch_entries(CATALOG_URL)
 
     # Then
     assert fetch_error.value.cause_type == "TooManyRedirects"
@@ -534,8 +546,9 @@ def test_setec_search_client_charges_a_redirect_body_to_the_scan_byte_budget(
     )
 
     # When
+    client = SetecSearchClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecSearchClient().search(SETEC_SEARCH_URL, request)
+        _ = client.search(SETEC_SEARCH_URL, request)
 
     # Then
     assert fetch_error.value.cause_type == "ScanResponseTooLarge"
@@ -572,8 +585,9 @@ def test_setec_strategy_redacts_malformed_url_credentials() -> None:
     malformed_url = f"https://user:{credential}@℀.example.test/products"
 
     # When
+    strategy = SetecStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        _ = SetecStrategy().fetch_entries(malformed_url)
+        _ = strategy.fetch_entries(malformed_url)
 
     # Then
     assert fetch_error.value.cause_type == "InvalidUrl"

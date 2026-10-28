@@ -100,29 +100,13 @@ class NeptunCatalogClient:
                 expected_total = total
             elif total != expected_total:
                 raise FeedFetchError(NEPTUN_LABEL, "CatalogChanged", retryable=True)
-            if len(batch.items) > NEPTUN_CATALOG_PAGE_SIZE:
-                raise FeedFetchError(NEPTUN_LABEL, "PageCardinalityExceeded")
-            expected_page_items = min(
-                NEPTUN_CATALOG_PAGE_SIZE,
-                total - scanned_count,
-            )
-            if len(batch.items) != expected_page_items:
-                raise FeedFetchError(
-                    NEPTUN_LABEL,
-                    "IncompleteCatalog",
-                    retryable=True,
-                )
+            _validate_page_cardinality(len(batch.items), total, scanned_count)
             scanned_count += len(batch.items)
             if scanned_count > MAX_NEPTUN_CATALOG_PRODUCTS:
                 raise FeedFetchError(NEPTUN_LABEL, "ProductLimitExceeded")
             self._append_unique(products, seen, batch.items)
             if scanned_count >= total:
-                if len(products) != total:
-                    raise FeedFetchError(
-                        NEPTUN_LABEL,
-                        "IncompleteCatalog",
-                        retryable=True,
-                    )
+                _require_complete_catalog(len(products), total)
                 return tuple(products)
         raise FeedFetchError(NEPTUN_LABEL, "PageLimitExceeded")
 
@@ -141,3 +125,16 @@ class NeptunCatalogClient:
                 )
             seen[product.id] = product
             products.append(product)
+
+
+def _validate_page_cardinality(item_count: int, total: int, scanned_count: int) -> None:
+    if item_count > NEPTUN_CATALOG_PAGE_SIZE:
+        raise FeedFetchError(NEPTUN_LABEL, "PageCardinalityExceeded")
+    expected_page_items = min(NEPTUN_CATALOG_PAGE_SIZE, total - scanned_count)
+    if item_count != expected_page_items:
+        raise FeedFetchError(NEPTUN_LABEL, "IncompleteCatalog", retryable=True)
+
+
+def _require_complete_catalog(unique_count: int, total: int) -> None:
+    if unique_count != total:
+        raise FeedFetchError(NEPTUN_LABEL, "IncompleteCatalog", retryable=True)

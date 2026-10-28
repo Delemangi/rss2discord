@@ -36,8 +36,9 @@ def _assert_invalid_paginator(href: str) -> None:
         [href],
     )
 
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_reklama5_page(html, page_request(), FIXED_NOW)
+        parse_reklama5_page(html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == "InvalidPaginator"
     assert not fetch_error.value.retryable

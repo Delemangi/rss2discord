@@ -101,8 +101,7 @@ def test_ownership_requires_same_database_and_thread_binding_unchanged(
     with DatabaseOwnership(database) as owner, DeliveryStore(database) as store:
         with pytest.raises(DatabaseOwnershipError):
             owner.require(tmp_path / "other.db")
-        with (
-            ThreadPoolExecutor(max_workers=1) as executor,
-            pytest.raises(sqlite3.ProgrammingError, match="same thread"),
-        ):
-            executor.submit(store.load_price_snapshots, "feed").result(timeout=10)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(store.load_price_snapshots, "feed")
+            with pytest.raises(sqlite3.ProgrammingError, match="same thread"):
+                future.result(timeout=10)

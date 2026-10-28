@@ -131,22 +131,7 @@ class CCCenterPriceMonitor:
             > MAX_CCCENTER_RETAINED_SNAPSHOTS
         ):
             raise FeedFetchError(CCCENTER_LABEL, "SnapshotLimitExceeded")
-        silent: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        for product in available:
-            current = self._snapshot(product)
-            current_snapshots[product.product_id] = current
-            previous = by_id.get(product.product_id)
-            if previous is None:
-                silent.append(current)
-            elif (
-                previous.amount != current.amount
-                or previous.currency != current.currency
-            ):
-                changes.append(_PriceChange(product, previous, current))
-            elif previous.formatted != current.formatted:
-                silent.append(current)
+        silent, changes, current_snapshots = self._compare_prices(available, by_id)
         store = self._dependencies.snapshots
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
@@ -190,6 +175,29 @@ class CCCenterPriceMonitor:
             )
         else:
             finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
+
+    def _compare_prices(
+        self,
+        products: Sequence[CCCenterProduct],
+        by_id: dict[str, PriceSnapshot],
+    ) -> tuple[list[PriceSnapshot], list[_PriceChange], dict[str, PriceSnapshot]]:
+        silent: list[PriceSnapshot] = []
+        changes: list[_PriceChange] = []
+        current_snapshots: dict[str, PriceSnapshot] = {}
+        for product in products:
+            current = self._snapshot(product)
+            current_snapshots[product.product_id] = current
+            previous = by_id.get(product.product_id)
+            if previous is None:
+                silent.append(current)
+            elif (
+                previous.amount != current.amount
+                or previous.currency != current.currency
+            ):
+                changes.append(_PriceChange(product, previous, current))
+            elif previous.formatted != current.formatted:
+                silent.append(current)
+        return silent, changes, current_snapshots
 
     def _confirm_changes(self, changes: Sequence[_PriceChange]) -> list[_PriceChange]:
         details = self._dependencies.catalog.fetch_product_details(

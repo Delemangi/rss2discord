@@ -72,8 +72,9 @@ def test_pazar3_page_request_accepts_recent_window(page: int) -> None:
 
 @pytest.mark.parametrize("page", [0, 4])
 def test_pazar3_page_request_rejects_pages_outside_recent_window(page: int) -> None:
+    scope = Pazar3SearchScope.from_url(SEARCH_URL)
     with pytest.raises(FeedFetchError) as fetch_error:
-        Pazar3SearchScope.from_url(SEARCH_URL).page_request(page)
+        scope.page_request(page)
 
     assert fetch_error.value.cause_type == "InvalidPage"
 
@@ -87,8 +88,9 @@ def test_pazar3_catalog_page_request_accepts_complete_scope_bound() -> None:
 
 @pytest.mark.parametrize("page", [0, 11])
 def test_pazar3_catalog_page_request_rejects_pages_outside_bound(page: int) -> None:
+    scope = Pazar3SearchScope.from_url(SEARCH_URL)
     with pytest.raises(FeedFetchError) as fetch_error:
-        Pazar3SearchScope.from_url(SEARCH_URL).catalog_page_request(page)
+        scope.catalog_page_request(page)
 
     assert fetch_error.value.cause_type == "InvalidPage"
 

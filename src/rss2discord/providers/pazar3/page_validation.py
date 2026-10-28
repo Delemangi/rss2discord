@@ -61,14 +61,25 @@ def validate_pazar3_page(
     ):
         raise FeedFetchError(PAZAR3_LABEL, "InvalidPage")
 
-    active_pages = pagers[0].select("a.page-number.active")
+    _validate_pager(pagers[0], request, result_count, terminal=terminal)
+    return Pazar3PageEvidence(result_count=result_count, terminal=terminal)
+
+
+def _validate_pager(
+    pager: Tag,
+    request: Pazar3PageRequest,
+    result_count: int,
+    *,
+    terminal: bool,
+) -> None:
+    active_pages = pager.select("a.page-number.active")
     if len(active_pages) != 1:
         raise FeedFetchError(PAZAR3_LABEL, "InvalidPage")
     if _positive_decimal(_attribute(active_pages[0], "page-no")) != request.page:
         raise FeedFetchError(PAZAR3_LABEL, "InvalidPage")
     target_pages = [
         _validate_paginator_link(link, request)
-        for link in pagers[0].select("a")
+        for link in pager.select("a")
         if "disabled" not in _classes(link)
     ]
     last_page = max(1, (result_count + _PAGE_SIZE - 1) // _PAGE_SIZE)
@@ -76,11 +87,6 @@ def validate_pazar3_page(
         terminal and any(page > request.page for page in target_pages)
     ):
         raise FeedFetchError(PAZAR3_LABEL, "InvalidPaginator")
-
-    return Pazar3PageEvidence(
-        result_count=result_count,
-        terminal=terminal,
-    )
 
 
 def normalized_text(node: BeautifulSoup | Tag | None) -> str:

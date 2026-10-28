@@ -34,8 +34,9 @@ def _without_selector(html: bytes, selector: str) -> bytes:
 
 
 def _assert_page_error(html: bytes, cause_type: str = "InvalidPage") -> None:
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_reklama5_page(html, page_request(), FIXED_NOW)
+        parse_reklama5_page(html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == cause_type
     assert not fetch_error.value.retryable

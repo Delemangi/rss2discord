@@ -137,8 +137,9 @@ def test_conflicting_late_candidate_rejected(monkeypatch: pytest.MonkeyPatch) ->
         constructor(OTHER_KEY),
     )
     monkeypatch.setattr(requests, "get", get)
+    client = SetecSearchClient()
     with pytest.raises(FeedFetchError, match="InvalidPublicSearchConfig"):
-        SetecSearchClient().resolve_config()
+        client.resolve_config()
     assert len(get.urls) == 36
 
 
@@ -171,16 +172,19 @@ def test_missing_configuration_rejects_without_search(
     post = RecordingPost([])
     monkeypatch.setattr(requests, "get", get)
     monkeypatch.setattr(requests, "post", post)
+    client = SetecSearchClient()
+    search_request = request()
     with pytest.raises(FeedFetchError, match="InvalidPublicSearchConfig"):
-        SetecSearchClient().search(SETEC_SEARCH_URL, request())
+        client.search(SETEC_SEARCH_URL, search_request)
     assert not post.urls
 
 
 def test_inline_dedupe_and_overflow() -> None:
     assert len(advertised_assets(homepage(35))) == 35
     assert len(advertised_assets(homepage(40))) == 40
+    homepage_body = homepage(41)
     with pytest.raises(FeedFetchError, match="PublicAssetLimitExceeded"):
-        advertised_assets(homepage(41))
+        advertised_assets(homepage_body)
 
 
 @pytest.mark.parametrize(
@@ -238,10 +242,12 @@ def test_auth_failure_has_no_refresh_fallback_or_retry(
     post = RecordingPost([StubResponse(b"denied", status)])
     monkeypatch.setattr(requests, "get", get)
     monkeypatch.setattr(requests, "post", post)
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match=f"HTTP {status}") as caught:
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
     assert caught.value.status_code == status
@@ -279,10 +285,12 @@ def test_failed_attempts_do_not_reset_catalog_budget(
     post = RecordingPost([StubResponse(b"failed", 503)])
     monkeypatch.setattr(requests, "get", get)
     monkeypatch.setattr(requests, "post", post)
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="SearchRequestLimitExceeded"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
     assert len(post.urls) == 1
@@ -293,8 +301,9 @@ def test_shutdown_before_discovery_prevents_wire(
 ) -> None:
     get = small_get()
     monkeypatch.setattr(requests, "get", get)
+    client = SetecSearchClient(OperationBudget(1000, 10, 300, lambda: True))
     with pytest.raises(FeedFetchInterruptedError):
-        SetecSearchClient(OperationBudget(1000, 10, 300, lambda: True)).resolve_config()
+        client.resolve_config()
     assert not get.urls
 
 
@@ -335,8 +344,9 @@ def test_global_streaming_byte_bound_includes_error_body(
     client = SetecSearchClient(budget)
     post = RecordingPost([StubResponse(b"failure-body", 503)])
     monkeypatch.setattr(requests, "post", post)
+    search_request = request()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        client.search(SETEC_SEARCH_URL, request())
+        client.search(SETEC_SEARCH_URL, search_request)
     assert budget.consumed_bytes > budget.max_bytes
     assert budget.request_count == 3
 
@@ -429,8 +439,9 @@ def test_shutdown_while_streaming_charges_bytes_then_stops(
     post = RecordingPost([StubResponse(b"data")])
     monkeypatch.setattr(requests, "post", post)
     budget.is_shutdown_requested = lambda: bool(post.urls)
+    search_request = request()
     with pytest.raises(FeedFetchInterruptedError):
-        client.search(SETEC_SEARCH_URL, request())
+        client.search(SETEC_SEARCH_URL, search_request)
     assert budget.consumed_bytes == before + len(b"data")
     assert len(post.urls) == 1
 
@@ -447,8 +458,9 @@ def test_search_redirects_share_budget_and_cannot_change_index(
     )
     monkeypatch.setattr(requests, "post", post)
     client = SetecSearchClient(OperationBudget(10000, 3, 300))
+    search_request = request()
     with pytest.raises(FeedFetchError, match="SearchRequestLimitExceeded"):
-        client.search(SETEC_SEARCH_URL, request())
+        client.search(SETEC_SEARCH_URL, search_request)
     assert len(post.urls) == 1
     assert client.budget.request_count == 3
 
@@ -458,8 +470,10 @@ def test_search_redirects_share_budget_and_cannot_change_index(
         ],
     )
     monkeypatch.setattr(requests, "post", post)
+    redirect_client = SetecSearchClient()
+    redirect_request = request()
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        SetecSearchClient().search(SETEC_SEARCH_URL, request())
+        redirect_client.search(SETEC_SEARCH_URL, redirect_request)
     assert len(post.urls) == 1
 
 
@@ -473,8 +487,9 @@ def test_search_redirects_share_budget_and_cannot_change_index(
     ],
 )
 def test_advertised_unsafe_script_is_not_silently_skipped(source: str) -> None:
+    script_html = f'<script src="{source}"></script>'.encode()
     with pytest.raises(FeedFetchError):
-        advertised_assets(f'<script src="{source}"></script>'.encode())
+        advertised_assets(script_html)
 
 
 def test_each_catalog_operation_discovers_fresh_configuration(
@@ -512,8 +527,9 @@ def test_partial_stream_failure_keeps_consumed_bytes(
     before = client.budget.consumed_bytes
     post = RecordingPost([BrokenResponse(b"")])
     monkeypatch.setattr(requests, "post", post)
+    search_request = request()
     with pytest.raises(FeedFetchError, match="ChunkedEncodingError") as caught:
-        client.search(SETEC_SEARCH_URL, request())
+        client.search(SETEC_SEARCH_URL, search_request)
     assert client.budget.consumed_bytes == before + len(b"partial")
     assert caught.value.retryable
     assert KEY not in str(caught.value)
@@ -662,10 +678,12 @@ def test_native_counts_reject_coercion_and_negative_values(
     payload["facetDistribution"]["status"]["published"] = count
     post = RecordingPost([StubResponse(json.dumps(payload).encode())])
     monkeypatch.setattr(requests, "post", post)
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
     assert len(post.urls) == 1

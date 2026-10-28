@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Final, Protocol, TypeVar
+from typing import Final, Protocol
 
 from .fetch_errors import FeedFetchError
 
@@ -21,8 +21,6 @@ SQLITE_RETRY_DELAY_SECONDS: Final = 5.0
 SQLITE_TRANSIENT_ERROR_CODES: Final = frozenset(
     {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED},
 )
-
-T = TypeVar("T")
 
 
 def parse_retry_after(value: str | None) -> float | None:
@@ -81,7 +79,7 @@ class FetchRetryPolicy:
     sleep: RetrySleep
     on_retry: FetchRetryLogger
 
-    def execute(
+    def execute[T](
         self,
         operation: Callable[[], T],
         *,
@@ -110,7 +108,7 @@ class SQLiteRetryPolicy:
     sleep: RetrySleep
     on_retry: SQLiteRetryLogger
 
-    def execute(self, operation: Callable[[], T]) -> T:
+    def execute[T](self, operation: Callable[[], T]) -> T:
         """Run an operation until a transient SQLite failure clears or shutdown occurs."""
         while True:
             try:

@@ -132,15 +132,11 @@ class DDStoreCatalogClient:
                 scanned_items += len(page.items)
                 self._append_unique_products(products, seen_products, page.items)
                 if current_page == page.page_info.total_pages:
-                    if (
-                        scanned_items != page.total_count
-                        or len(products) != page.total_count
-                    ):
-                        raise FeedFetchError(
-                            DDSTORE_LABEL,
-                            "PaginationDrift",
-                            retryable=True,
-                        )
+                    _require_complete_catalog(
+                        scanned_items,
+                        len(products),
+                        page.total_count,
+                    )
                     return tuple(products)
             raise FeedFetchError(DDSTORE_LABEL, "PageLimitExceeded")
         finally:
@@ -182,3 +178,12 @@ class DDStoreCatalogClient:
                 "PaginationDrift",
                 retryable=True,
             )
+
+
+def _require_complete_catalog(
+    scanned_items: int,
+    unique_count: int,
+    total_count: int,
+) -> None:
+    if scanned_items != total_count or unique_count != total_count:
+        raise FeedFetchError(DDSTORE_LABEL, "PaginationDrift", retryable=True)

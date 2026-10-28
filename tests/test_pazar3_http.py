@@ -177,10 +177,12 @@ def test_pazar3_http_rejects_pacing_wait_beyond_attempt_deadline(
         waits.append(seconds)
         return True
 
+    request = page_request()
+    budget = scan_budget(expires_at=105.0)
     with pytest.raises(FeedFetchError) as fetch_error:
         pazar3_http.fetch_pazar3_page(
-            page_request(),
-            scan_budget(expires_at=105.0),
+            request,
+            budget,
             pacer,
             record_sleep,
             lambda: False,

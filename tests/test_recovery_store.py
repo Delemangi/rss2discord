@@ -74,9 +74,10 @@ def test_delivery_requires_reservation_and_rejects_duplicate_without_mutation(
         batch = store.load_price_batch(batch_id)
         assert batch is not None
         first = batch.items[0]
+        delivery_claim = PriceDeliveryClaim(batch_id, first.product_id, 1)
         with pytest.raises(ValueError, match="not reserved"):
             store.record_approved_price_delivery(
-                PriceDeliveryClaim(batch_id, first.product_id, 1),
+                delivery_claim,
                 first.current,
             )
         assert store.load_price_snapshots("feed") == ()

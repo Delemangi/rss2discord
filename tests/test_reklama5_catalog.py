@@ -102,10 +102,12 @@ def test_reklama5_catalog_rejects_listing_capacity_before_returning_partial_data
     )
     monkeypatch.setattr(reklama5_catalog, "MAX_REKLAMA5_CATALOG_LISTINGS", 1)
 
+    client = Reklama5CatalogClient(clock=_clock)
+    fetch_retry_policy = _retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -129,10 +131,12 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
         ),
     )
 
+    client = Reklama5CatalogClient(clock=_clock)
+    fetch_retry_policy = _retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -173,10 +177,12 @@ def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
         lambda: RecordingGet([StubResponse(html) for _attempt in range(3)]),
     )
 
+    client = Reklama5CatalogClient(clock=_clock)
+    fetch_retry_policy = _retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -214,10 +220,12 @@ def test_reklama5_catalog_rejects_changed_advertised_result_count(
         lambda: RecordingGet(responses),
     )
 
+    client = Reklama5CatalogClient(clock=_clock)
+    fetch_retry_policy = _retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -259,10 +267,12 @@ def test_reklama5_catalog_fails_when_page_bound_has_no_terminal_evidence(
     )
     monkeypatch.setattr(reklama5_catalog, "MAX_REKLAMA5_CATALOG_PAGES", 1)
 
+    client = Reklama5CatalogClient(clock=_clock)
+    fetch_retry_policy = _retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 

@@ -22,7 +22,7 @@ SETEC_PRODUCT_LOOKUP_BATCH_SIZE: Final = 200
 SETEC_PRICE_PROJECTION: Final = (
     "id",
     "variants.id",
-    "variants.calculated_price.calculated_amount",
+    SETEC_PRICE_FIELD,
     "variants.calculated_price.currency_code",
 )
 SETEC_DISPLAY_PROJECTION: Final = (
@@ -33,7 +33,7 @@ SETEC_DISPLAY_PROJECTION: Final = (
     "created_at",
     "product_categories.name",
     "variants.id",
-    "variants.calculated_price.calculated_amount",
+    SETEC_PRICE_FIELD,
     "variants.calculated_price.original_amount",
     "variants.calculated_price.currency_code",
 )

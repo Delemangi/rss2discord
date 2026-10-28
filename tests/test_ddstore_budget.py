@@ -106,11 +106,17 @@ def test_ddstore_http_rejects_chunk_received_after_absolute_deadline(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreHttpClient()
+    page_request = CatalogPageRequest(
+        current_page=1,
+        max_single_response_bytes=2_097_152,
+    )
+    budget = make_budget(clock)
     with pytest.raises(FeedFetchError, match="ScanTimeout"):
-        DDStoreHttpClient().fetch_page(
+        client.fetch_page(
             "https://ddstore.mk/graphql",
-            CatalogPageRequest(current_page=1, max_single_response_bytes=2_097_152),
-            make_budget(clock),
+            page_request,
+            budget,
         )
 
 
@@ -133,11 +139,17 @@ def test_ddstore_http_stops_streaming_when_shutdown_is_requested(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreHttpClient()
+    page_request = CatalogPageRequest(
+        current_page=1,
+        max_single_response_bytes=2_097_152,
+    )
+    budget = make_budget(clock, shutdown)
     with pytest.raises(FeedFetchInterruptedError):
-        DDStoreHttpClient().fetch_page(
+        client.fetch_page(
             "https://ddstore.mk/graphql",
-            CatalogPageRequest(current_page=1, max_single_response_bytes=2_097_152),
-            make_budget(clock, shutdown),
+            page_request,
+            budget,
         )
 
 
