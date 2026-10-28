@@ -105,10 +105,10 @@ class DiscordWebhookClient:
                 self._log_request_error("request failed", message.feed.id, error)
                 return DiscordDeliveryResult.FAILED
 
-            result = self._retry_response(response, message.feed.id, attempt, sleep)
-            if result is not None:
-                return result
-            if self._is_retryable_response(response):
+            if response.status_code == 429 or 500 <= response.status_code < 600:
+                result = self._retry_response(response, message.feed.id, attempt, sleep)
+                if result is not None:
+                    return result
                 continue
             return self._confirmed_delivery(response, message)
 
@@ -137,10 +137,6 @@ class DiscordWebhookClient:
             message.feed.id,
         )
         return DiscordDeliveryResult.DELIVERED
-
-    @staticmethod
-    def _is_retryable_response(response: requests.Response) -> bool:
-        return response.status_code == 429 or 500 <= response.status_code < 600
 
     def _retry_request_error(
         self,
@@ -178,6 +174,7 @@ class DiscordWebhookClient:
         attempt: int,
         sleep: SleepCallback,
     ) -> DiscordDeliveryResult | None:
+        """Handle a retryable response; None means the next attempt may proceed."""
         if response.status_code == 429:
             wait_time = self._retry_after(response, attempt)
             if attempt == MAX_RETRIES - 1:
@@ -198,29 +195,26 @@ class DiscordWebhookClient:
                 return DiscordDeliveryResult.INTERRUPTED
             return None
 
-        if 500 <= response.status_code < 600:
-            if attempt == MAX_RETRIES - 1:
-                logger.error(
-                    "Discord server retries exhausted for feed %s (HTTP %d)",
-                    feed_id,
-                    response.status_code,
-                )
-                return DiscordDeliveryResult.FAILED
-
-            wait_time = self._retry_delay(attempt)
-            logger.warning(
-                "Discord server error for feed %s on attempt %d/%d; "
-                "retrying in %.1f seconds (HTTP %d)",
+        if attempt == MAX_RETRIES - 1:
+            logger.error(
+                "Discord server retries exhausted for feed %s (HTTP %d)",
                 feed_id,
-                attempt + 1,
-                MAX_RETRIES,
-                wait_time,
                 response.status_code,
             )
-            if not sleep(wait_time):
-                return DiscordDeliveryResult.INTERRUPTED
-            return None
+            return DiscordDeliveryResult.FAILED
 
+        wait_time = self._retry_delay(attempt)
+        logger.warning(
+            "Discord server error for feed %s on attempt %d/%d; "
+            "retrying in %.1f seconds (HTTP %d)",
+            feed_id,
+            attempt + 1,
+            MAX_RETRIES,
+            wait_time,
+            response.status_code,
+        )
+        if not sleep(wait_time):
+            return DiscordDeliveryResult.INTERRUPTED
         return None
 
     def _prepare_delivery(

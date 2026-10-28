@@ -28,6 +28,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
     deliver_price_changes,
+    diff_price_snapshots,
     finish_price_delivery,
     pause_price_fetch_failure,
     prepare_price_delivery,
@@ -159,25 +160,23 @@ class NeksioPriceMonitor:
         products: Sequence[NeksioProduct],
         snapshots_by_product: dict[str, PriceSnapshot],
     ) -> tuple[list[PriceSnapshot], list[_PriceChange], dict[str, PriceSnapshot]]:
-        silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        for product in products:
-            current = self._snapshot(product)
-            current_snapshots[current.product_id] = current
-            previous = snapshots_by_product.get(str(product.product_id))
-            if previous is None:
-                silent_updates.append(current)
-                continue
-            if (
-                previous.amount == current.amount
-                and previous.currency == current.currency
-            ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-                continue
-            changes.append(_PriceChange(product, previous, current))
-        return silent_updates, changes, current_snapshots
+        snapshots = tuple(self._snapshot(product) for product in products)
+        # Associate observations, not IDs: repeated IDs must retain their products.
+        products_by_snapshot = {
+            id(snapshot): product
+            for product, snapshot in zip(products, snapshots, strict=True)
+        }
+        silent, records = diff_price_snapshots(snapshots, snapshots_by_product)
+        changes = [
+            _PriceChange(
+                products_by_snapshot[id(record.current)],
+                record.previous,
+                record.current,
+            )
+            for record in records
+        ]
+        current_snapshots = {snapshot.product_id: snapshot for snapshot in snapshots}
+        return list(silent), changes, current_snapshots
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:
         return PriceSnapshot(

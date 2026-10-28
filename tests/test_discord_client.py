@@ -248,6 +248,46 @@ def test_thumbnail_fallback_remains_selected_after_connection_error(
     assert delays == [0, 2.0]
 
 
+@pytest.mark.parametrize("retry_status", [429, 503])
+def test_thumbnail_fallback_response_is_retried_without_restoring_image(
+    monkeypatch: pytest.MonkeyPatch,
+    retry_status: int,
+) -> None:
+    session = requests.Session()
+    attempts: list[dict[str, PostArgument]] = []
+    responses = [
+        make_response(415),
+        make_response(retry_status, retry_after="0.25"),
+        make_response(200),
+    ]
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        del url
+        attempts.append(kwargs)
+        return responses.pop(0)
+
+    def sleep(seconds: float) -> bool:
+        delays.append(seconds)
+        return True
+
+    monkeypatch.setattr(session, "post", post)
+    image = DownloadedImage(
+        filename="product-image.jpg",
+        content_type="image/jpeg",
+        content=b"image-bytes",
+    )
+
+    result = DiscordWebhookClient(
+        session,
+        image_downloader=StaticImageDownloader(image),
+    ).send(make_anhoch_message(), sleep)
+
+    assert result is DiscordDeliveryResult.DELIVERED
+    assert ["files" in attempt for attempt in attempts] == [True, False, False]
+    assert delays == [0, 0.25 if retry_status == 429 else 2.0]
+
+
 def test_thumbnail_fallback_remains_selected_after_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
