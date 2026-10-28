@@ -171,8 +171,9 @@ def test_fetch_catalog_rejects_oversized_formatted_price(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_stops_before_the_next_page_when_shutdown_is_requested(
@@ -192,8 +193,9 @@ def test_fetch_catalog_stops_before_the_next_page_when_shutdown_is_requested(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchInterruptedError):
-        NeksioCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
             is_shutdown_requested=lambda: next(shutdown_checks),
         )
@@ -218,8 +220,9 @@ def test_fetch_catalog_rejects_price_precision_the_snapshot_store_cannot_persist
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_price_magnitude_the_snapshot_store_cannot_persist(
@@ -240,8 +243,9 @@ def test_fetch_catalog_rejects_price_magnitude_the_snapshot_store_cannot_persist
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_oversized_category_ids_before_requests(
@@ -258,8 +262,9 @@ def test_fetch_catalog_rejects_oversized_category_ids_before_requests(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="MalformedCategoryMarkup"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     assert len(get.urls) == 1
     assert post.urls == []
@@ -277,8 +282,9 @@ def test_fetch_catalog_enforces_the_category_limit(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="CategoryLimitExceeded"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_enforces_the_page_limit(
@@ -300,8 +306,9 @@ def test_fetch_catalog_enforces_the_page_limit(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_enforces_the_unique_product_limit(
@@ -327,5 +334,6 @@ def test_fetch_catalog_enforces_the_unique_product_limit(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)

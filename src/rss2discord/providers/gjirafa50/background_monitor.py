@@ -113,7 +113,7 @@ class Gjirafa50BackgroundPriceMonitor:
             if isinstance(error, FeedFetchError)
             else type(error).__name__
         )
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", cause):
+        if not re.fullmatch(r"[A-Za-z]\w{0,63}", cause, flags=re.ASCII):
             cause = "FetchError"
         blocked = isinstance(error, FeedFetchError) and (
             error.cause_type in {"AccessChallenge", "BotChallenge"}
@@ -137,8 +137,7 @@ class Gjirafa50BackgroundPriceMonitor:
                     ),
                 )
         except sqlite3.Error as persistence_error:
-            logger.error(  # noqa: TRY400 - exception payloads may contain credentials
-                "Gjirafa50 health persistence failed for feed %s (%s; scan %s)",
+            _log_persistence_failure(
                 self._feed.id,
                 type(persistence_error).__name__,
                 cause,
@@ -171,3 +170,13 @@ class Gjirafa50BackgroundPriceMonitor:
             thread = self._thread
         if thread is not None:
             thread.join()
+
+
+def _log_persistence_failure(feed_id: str, error_type: str, cause: str) -> None:
+    # Exception payloads and tracebacks can contain credentials; log names only.
+    logger.error(
+        "Gjirafa50 health persistence failed for feed %s (%s; scan %s)",
+        feed_id,
+        error_type,
+        cause,
+    )

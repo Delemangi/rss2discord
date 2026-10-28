@@ -158,8 +158,9 @@ def test_api_drift_and_incomplete_catalog_fail_closed(
         assert hasattr(transport, field)
         setattr(transport, field, value)
     monkeypatch.setattr(cccenter_catalog, "_perform_request", transport.request)
+    client = CCCenterCatalogClient()
     with pytest.raises(FeedFetchError, match=error):
-        CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+        client.fetch_catalog(CCCENTER_FEED_URL)
 
 
 @pytest.mark.parametrize(
@@ -177,15 +178,17 @@ def test_api_count_and_page_limits_fail_closed(
 ) -> None:
     transport = _ApiTransport(total=total)
     monkeypatch.setattr(cccenter_catalog, "_perform_request", transport.request)
+    client = CCCenterCatalogClient()
     with pytest.raises(FeedFetchError, match=error):
-        CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+        client.fetch_catalog(CCCENTER_FEED_URL)
 
 
 def test_api_requires_exact_json_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = _ApiTransport(malformed_content_type="application/jsonp")
     monkeypatch.setattr(cccenter_catalog, "_perform_request", transport.request)
+    client = CCCenterCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        CCCenterCatalogClient().fetch_catalog(CCCENTER_FEED_URL)
+        client.fetch_catalog(CCCENTER_FEED_URL)
 
 
 def test_detail_inputs_are_validated_before_any_http(
@@ -195,8 +198,9 @@ def test_detail_inputs_are_validated_before_any_http(
     monkeypatch.setattr(cccenter_catalog, "_perform_request", transport.request)
     url = "https://cccenter.mk/product/item-1/"
     invalid = CCCenterListing("different", "Item 1", url, Decimal(1250), None, None)
+    client = CCCenterCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidProductIdentity"):
-        CCCenterCatalogClient().fetch_product_details((invalid,))
+        client.fetch_product_details((invalid,))
     assert transport.calls == []
 
 
@@ -271,21 +275,23 @@ def test_html_detail_preserves_main_product_variable_evidence(
 
 def test_html_detail_refuses_ambiguous_prices_and_sidebar_borrowing() -> None:
     listing = _html_listing()
+    soup = BeautifulSoup(
+        '<h1 class="product_title">Item 1</h1><p class="price">10 ден</p><p class="price">20 ден</p>',
+        "html.parser",
+    )
     with pytest.raises(FeedFetchError, match="AmbiguousPrice"):
         parse_product_detail(
-            BeautifulSoup(
-                '<h1 class="product_title">Item 1</h1><p class="price">10 ден</p><p class="price">20 ден</p>',
-                "html.parser",
-            ),
+            soup,
             listing,
         )
+    sidebar_soup = BeautifulSoup(
+        '<div class="unknown"><h1 class="product_title">Item 1</h1></div>'
+        '<div class="sidebar"><p class="price">9.999 ден</p></div>',
+        "html.parser",
+    )
     with pytest.raises(FeedFetchError, match="MalformedProduct"):
         parse_product_detail(
-            BeautifulSoup(
-                '<div class="unknown"><h1 class="product_title">Item 1</h1></div>'
-                '<div class="sidebar"><p class="price">9.999 ден</p></div>',
-                "html.parser",
-            ),
+            sidebar_soup,
             listing,
         )
 
@@ -309,8 +315,9 @@ def test_shutdown_before_catalog_request_makes_no_transfer(
 ) -> None:
     transport = _ApiTransport()
     monkeypatch.setattr(cccenter_catalog, "_perform_request", transport.request)
+    client = CCCenterCatalogClient()
     with pytest.raises(FeedFetchInterruptedError):
-        CCCenterCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CCCENTER_FEED_URL,
             is_shutdown_requested=lambda: True,
         )

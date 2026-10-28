@@ -181,37 +181,39 @@ def _fetch_content(
                     _read_content(response, budget)
                     current_url = _same_origin_redirect_url(current_url, location)
                     continue
-                if response.status_code >= 400:
-                    status_code = response.status_code
-                    raise FeedFetchError(
-                        NEKSIO_LABEL,
-                        "HTTPError",
-                        status_code=status_code,
-                        retryable=(
-                            status_code in {408, 429} or 500 <= status_code < 600
-                        ),
-                        retry_after=parse_retry_after(
-                            response.headers.get("Retry-After"),
-                        ),
-                    )
+                _check_response_status(response)
                 return _read_content(response, budget)
         raise FeedFetchError(NEKSIO_LABEL, "TooManyRedirects")
     except ValueError:
         raise FeedFetchError(NEKSIO_LABEL, "InvalidUrl") from None
     except requests.RequestsError as error:
-        if budget is not None:
-            if (
-                budget.is_shutdown_requested is not None
-                and budget.is_shutdown_requested()
-            ):
-                raise FeedFetchInterruptedError from None
-            if time.monotonic() >= budget.expires_at:
-                raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded") from None
+        _check_failed_request_budget(budget)
         raise FeedFetchError(
             NEKSIO_LABEL,
             type(error).__name__,
             retryable=True,
         ) from None
+
+
+def _check_failed_request_budget(budget: NeksioScanBudget | None) -> None:
+    if budget is None:
+        return
+    if budget.is_shutdown_requested is not None and budget.is_shutdown_requested():
+        raise FeedFetchInterruptedError from None
+    if time.monotonic() >= budget.expires_at:
+        raise FeedFetchError(NEKSIO_LABEL, "ScanTimeLimitExceeded") from None
+
+
+def _check_response_status(response: requests.Response) -> None:
+    if response.status_code >= 400:
+        status_code = response.status_code
+        raise FeedFetchError(
+            NEKSIO_LABEL,
+            "HTTPError",
+            status_code=status_code,
+            retryable=status_code in {408, 429} or 500 <= status_code < 600,
+            retry_after=parse_retry_after(response.headers.get("Retry-After")),
+        )
 
 
 def _curl_options(timeout: float) -> dict[CurlOpt, int]:

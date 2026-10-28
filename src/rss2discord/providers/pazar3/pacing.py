@@ -28,12 +28,23 @@ class Pazar3RequestPacer:
         if self._next_request_at is not None and now < self._next_request_at:
             if deadline is not None and self._next_request_at >= deadline:
                 raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded")
-            if not sleep(self._next_request_at - now):
-                raise FeedFetchInterruptedError
-            if is_shutdown_requested():
-                raise FeedFetchInterruptedError
-            if deadline is not None and self._monotonic() >= deadline:
-                raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded")
+            self._sleep_until_request(sleep, is_shutdown_requested, now, deadline)
         if is_shutdown_requested():
             raise FeedFetchInterruptedError
         self._next_request_at = self._monotonic() + PAZAR3_REQUEST_INTERVAL_SECONDS
+
+    def _sleep_until_request(
+        self,
+        sleep: SleepCallback,
+        is_shutdown_requested: Callable[[], bool],
+        now: float,
+        deadline: float | None,
+    ) -> None:
+        if self._next_request_at is None:
+            return
+        if not sleep(self._next_request_at - now):
+            raise FeedFetchInterruptedError
+        if is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        if deadline is not None and self._monotonic() >= deadline:
+            raise FeedFetchError(PAZAR3_LABEL, "ScanTimeLimitExceeded")

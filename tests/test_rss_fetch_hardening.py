@@ -133,8 +133,9 @@ def test_http_error_exposes_only_safe_retry_metadata(
     install_response(monkeypatch, response)
 
     # When
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries("https://feed.test/rss?token=secret-token")
+        strategy.fetch_entries("https://feed.test/rss?token=secret-token")
 
     # Then
     assert fetch_error.value.status_code == status_code
@@ -156,8 +157,9 @@ def test_http_date_retry_after_uses_shared_retry_parser(
     )
     install_response(monkeypatch, response)
 
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries("https://feed.test/rss")
+        strategy.fetch_entries("https://feed.test/rss")
 
     assert fetch_error.value.retryable
     assert fetch_error.value.retry_after is not None
@@ -176,8 +178,9 @@ def test_content_length_over_limit_is_rejected_before_streaming(
     install_response(monkeypatch, response)
 
     # When
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries("https://feed.test/rss")
+        strategy.fetch_entries("https://feed.test/rss")
 
     # Then
     assert fetch_error.value.cause_type == "ResponseTooLarge"
@@ -195,8 +198,9 @@ def test_stream_over_limit_is_rejected_and_closed(
     install_response(monkeypatch, response)
 
     # When
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries("https://feed.test/rss")
+        strategy.fetch_entries("https://feed.test/rss")
 
     # Then
     assert fetch_error.value.cause_type == "ResponseTooLarge"
@@ -238,8 +242,9 @@ def test_release_feed_accepts_exact_limit_and_rejects_one_byte_over(
         {"Content-Length": str(GITHUB_RELEASE_LIMIT_BYTES + 1)} if declared else {},
     )
     install_response(monkeypatch, oversized)
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        RSSStrategy().fetch_entries(GITHUB_RELEASE_URL)
+        strategy.fetch_entries(GITHUB_RELEASE_URL)
     assert oversized.closed
 
 
@@ -260,8 +265,9 @@ def test_release_feed_rejects_declared_oversize_before_stream_or_parse(
         return content
 
     monkeypatch.setattr(rss_transport.feedparser, "parse", parse)
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        RSSStrategy().fetch_entries(GITHUB_RELEASE_URL)
+        strategy.fetch_entries(GITHUB_RELEASE_URL)
     assert response.iter_content_calls == 0
     assert not parse_called
 
@@ -283,8 +289,9 @@ def test_release_feed_caps_decoded_stream_without_content_length(
         return content
 
     monkeypatch.setattr(rss_transport.feedparser, "parse", parse)
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        RSSStrategy().fetch_entries(GITHUB_RELEASE_URL)
+        strategy.fetch_entries(GITHUB_RELEASE_URL)
     assert response.iter_content_calls == 1
     assert not parse_called
 
@@ -304,8 +311,9 @@ def test_release_request_gets_default_limit_unless_final_url_qualifies(
 ) -> None:
     response = FakeResponse(200, [b"x" * (RSS_FEED_LIMIT_BYTES + 1)])
     install_response(monkeypatch, response, final_url=final_url)
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        RSSStrategy().fetch_entries(GITHUB_RELEASE_URL)
+        strategy.fetch_entries(GITHUB_RELEASE_URL)
 
 
 def test_nonrelease_request_gets_default_limit_even_if_final_url_qualifies(
@@ -313,8 +321,9 @@ def test_nonrelease_request_gets_default_limit_even_if_final_url_qualifies(
 ) -> None:
     response = FakeResponse(200, [b"x" * (RSS_FEED_LIMIT_BYTES + 1)])
     install_response(monkeypatch, response, final_url=GITHUB_RELEASE_URL)
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        RSSStrategy().fetch_entries("https://example.test/feed.xml")
+        strategy.fetch_entries("https://example.test/feed.xml")
 
 
 def test_shared_strategy_does_not_retain_release_budget_between_feeds(

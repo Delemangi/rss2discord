@@ -416,10 +416,11 @@ def test_cccenter_rejects_redirects_without_following_them(
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
 
+    budget = cccenter_catalog._ScanBudget.start(lambda: False)
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
         CCCenterCatalogClient._fetch_json(
             "https://cccenter.mk/?rest_route=/wc/store/v1/products",
-            cccenter_catalog._ScanBudget.start(lambda: False),
+            budget,
         )
     assert calls[0]["allow_redirects"] is False
 
@@ -443,10 +444,11 @@ def test_cccenter_reads_responses_as_bounded_streams(
         perform,
     )
 
+    budget = cccenter_catalog._ScanBudget.start(lambda: False)
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
         CCCenterCatalogClient._fetch_json(
             "https://cccenter.mk/?rest_route=/wc/store/v1/products",
-            cccenter_catalog._ScanBudget.start(lambda: False),
+            budget,
         )
 
 

@@ -21,6 +21,8 @@ MAX_PLAN_AGE_SECONDS = 86_400
 MAX_OPERATION_SECONDS = 300.0
 MAX_RECOVERY_PRICE_IDS = 50_000
 MAX_RECOVERY_REVIEW_ITEMS = 70_000
+SHA256_PATTERN = r"^[a-f0-9]{64}$"
+INVALID_CONTEXT = "invalid reconciliation context; regenerate the plan"
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,15 +152,15 @@ class NeksioRecoveryProposal(ArtifactModel):
     ] = "c6ca98f834857dfcef413ad765d307328c457fae"
     started_at: datetime
     finished_at: datetime
-    state_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    capture_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    catalog_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    state_digest: str = Field(pattern=SHA256_PATTERN)
+    capture_digest: str = Field(pattern=SHA256_PATTERN)
+    catalog_digest: str = Field(pattern=SHA256_PATTERN)
     catalog_count: int = Field(ge=0, le=10_000)
     limitations: tuple[str, ...]
     items: tuple[NeksioRecoveryProposalItem, ...] = Field(
         max_length=MAX_RECOVERY_REVIEW_ITEMS,
     )
-    proposal_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    proposal_digest: str = Field(pattern=SHA256_PATTERN)
 
     @model_validator(mode="after")
     def require_matching_parser_contract(self) -> Self:
@@ -187,11 +189,11 @@ class ReconciliationPlan(ArtifactModel):
     source_strategy: Literal["ddstore", "hivetec"]
     source_url: str = Field(min_length=1, max_length=2048)
     batch_id: int = Field(gt=0)
-    batch_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
-    batch_state_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    snapshots_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    holds_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
-    catalog_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    batch_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    batch_state_digest: str = Field(pattern=SHA256_PATTERN)
+    snapshots_digest: str = Field(pattern=SHA256_PATTERN)
+    holds_digest: str = Field(pattern=SHA256_PATTERN)
+    catalog_digest: str = Field(pattern=SHA256_PATTERN)
     catalog_count: int = Field(gt=0, le=20_000)
     available_count: int = Field(ge=0, le=20_000)
     captured_at: int = Field(gt=0)
@@ -245,38 +247,51 @@ def validate_dispositions(plan: ReconciliationPlan) -> None:
     if ids != tuple(sorted(set(ids))):
         raise ValueError("reconciliation IDs must be unique and sorted")
     for item in plan.items:
-        if item.context is not None:
-            require_sanitized_context(item.context, plan.provider)
-        if item.disposition == "review":
-            raise ValueError(
-                "every review item needs an explicit accept, hold, or noop decision",
-            )
-        if item.already_held and item.disposition != "hold":
-            raise ValueError("existing holds cannot be released by reconciliation")
-        if item.disposition == "defer":
-            if plan.version != 2:
-                raise ValueError("defer requires reconciliation version 2")
-            if item.target is not None or item.already_held:
-                raise ValueError(
-                    "defer is only valid for missing or unavailable products",
-                )
-        if item.target is None and item.disposition not in {"hold", "defer"}:
-            message = (
-                "missing or unavailable products require hold"
-                if plan.version == 1
-                else "missing or unavailable products require hold or defer"
-            )
-            raise ValueError(message)
-        if item.disposition == "noop" and item.previous != item.target:
-            raise ValueError("noop requires an unchanged snapshot")
-        if item.disposition == "accept" and item.target is not None:
-            if Decimal(item.target.amount) <= 0:
-                raise ValueError("accepted price must be available")
-            if (
-                item.previous is not None
-                and item.previous.currency != item.target.currency
-            ):
-                raise ValueError("accepted currency must match the baseline")
+        _validate_item_disposition(item, plan)
+
+
+def _validate_item_disposition(
+    item: ReconciliationItem,
+    plan: ReconciliationPlan,
+) -> None:
+    if item.context is not None:
+        require_sanitized_context(item.context, plan.provider)
+    if item.disposition == "review":
+        raise ValueError(
+            "every review item needs an explicit accept, hold, or noop decision",
+        )
+    if item.already_held and item.disposition != "hold":
+        raise ValueError("existing holds cannot be released by reconciliation")
+    if item.disposition == "defer":
+        _validate_deferred_item(item, plan.version)
+    if item.target is None and item.disposition not in {"hold", "defer"}:
+        message = (
+            "missing or unavailable products require hold"
+            if plan.version == 1
+            else "missing or unavailable products require hold or defer"
+        )
+        raise ValueError(message)
+    if item.disposition == "noop" and item.previous != item.target:
+        raise ValueError("noop requires an unchanged snapshot")
+    if item.disposition == "accept" and item.target is not None:
+        _validate_accepted_snapshot(item)
+
+
+def _validate_accepted_snapshot(item: ReconciliationItem) -> None:
+    target = item.target
+    if target is None:
+        return
+    if Decimal(target.amount) <= 0:
+        raise ValueError("accepted price must be available")
+    if item.previous is not None and item.previous.currency != target.currency:
+        raise ValueError("accepted currency must match the baseline")
+
+
+def _validate_deferred_item(item: ReconciliationItem, version: int) -> None:
+    if version != 2:
+        raise ValueError("defer requires reconciliation version 2")
+    if item.target is not None or item.already_held:
+        raise ValueError("defer is only valid for missing or unavailable products")
 
 
 def require_safe_source_url(url: str, strategy: str) -> None:
@@ -313,7 +328,7 @@ def require_sanitized_context(context: str, provider: str) -> None:
         value = json.loads(context, object_pairs_hook=_reject_duplicate_json_keys)
     except ValueError:
         raise ValueError(
-            "invalid reconciliation context; regenerate the plan",
+            INVALID_CONTEXT,
         ) from None
     ddstore_fields = {
         "name",
@@ -338,14 +353,14 @@ def require_sanitized_context(context: str, provider: str) -> None:
     }
     fields = {"DDStore": ddstore_fields, "Hivetec": hivetec_fields}.get(provider)
     if not isinstance(value, dict) or fields is None or set(value) != fields:
-        raise ValueError("invalid reconciliation context; regenerate the plan")
+        raise ValueError(INVALID_CONTEXT)
     fingerprint = value["source_context_digest"]
     if (
         not isinstance(fingerprint, str)
         or len(fingerprint) != 64
         or any(character not in "0123456789abcdef" for character in fingerprint)
     ):
-        raise ValueError("invalid reconciliation context; regenerate the plan")
+        raise ValueError(INVALID_CONTEXT)
     categories = value["categories"]
     common_valid = (
         isinstance(value["name"], str)
@@ -373,7 +388,7 @@ def require_sanitized_context(context: str, provider: str) -> None:
             and _is_context_price(value["regular_price"])
         )
     if not common_valid or not projection_valid:
-        raise ValueError("invalid reconciliation context; regenerate the plan")
+        raise ValueError(INVALID_CONTEXT)
 
 
 def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:

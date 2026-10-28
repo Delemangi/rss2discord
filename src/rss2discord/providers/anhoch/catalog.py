@@ -179,19 +179,7 @@ class AnhochCatalogClient:
                             raise FeedFetchError(ANHOCH_LABEL, "ScanResponseTooLarge")
                         current_url = urljoin(current_url, location)
                         continue
-                    try:
-                        response.raise_for_status()
-                    except requests.HTTPError:
-                        status_code = response.status_code
-                        raise FeedFetchError(
-                            ANHOCH_LABEL,
-                            "HTTPError",
-                            status_code=status_code,
-                            retryable=(status_code == 429 or 500 <= status_code < 600),
-                            retry_after=_parse_retry_after(
-                                response.headers.get("Retry-After"),
-                            ),
-                        ) from None
+                    _check_response_status(response)
                     content = cls._read_content(
                         response,
                         max_response_bytes=max_response_bytes,
@@ -245,6 +233,20 @@ class AnhochCatalogClient:
                 raise FeedFetchError(ANHOCH_LABEL, "ScanResponseTooLarge")
             content.extend(chunk)
         return bytes(content)
+
+
+def _check_response_status(response: requests.Response) -> None:
+    try:
+        response.raise_for_status()
+    except requests.HTTPError:
+        status_code = response.status_code
+        raise FeedFetchError(
+            ANHOCH_LABEL,
+            "HTTPError",
+            status_code=status_code,
+            retryable=status_code == 429 or 500 <= status_code < 600,
+            retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+        ) from None
 
 
 def _parse_retry_after(value: str | None) -> float | None:

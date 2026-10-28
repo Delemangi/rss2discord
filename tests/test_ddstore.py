@@ -132,8 +132,9 @@ def test_ddstore_strategy_rejects_unknown_stock_status_as_invalid_response(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_ddstore_strategy_rejects_non_ddstore_https_origin() -> None:
@@ -161,8 +162,9 @@ def test_ddstore_strategy_rejects_cross_origin_redirect(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
     assert len(post.urls) == 1
 
 
@@ -174,8 +176,9 @@ def test_ddstore_strategy_maps_graphql_errors_to_invalid_response(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_ddstore_strategy_rejects_partial_graphql_response_with_data_and_errors(
@@ -191,8 +194,9 @@ def test_ddstore_strategy_rejects_partial_graphql_response_with_data_and_errors(
     )
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_ddstore_product_accepts_nullable_ancillary_display_metadata() -> None:
@@ -255,8 +259,9 @@ def test_ddstore_strategy_maps_malformed_required_name_to_invalid_response(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 @pytest.mark.parametrize(
@@ -275,8 +280,9 @@ def test_ddstore_strategy_rejects_required_fields_without_visible_text(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
 
 
 def test_ddstore_strategy_preserves_lowercase_retry_after_header(
@@ -289,8 +295,9 @@ def test_ddstore_strategy_preserves_lowercase_retry_after_header(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    strategy = DDStoreStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        DDStoreStrategy().fetch_entries(CATALOG_URL)
+        strategy.fetch_entries(CATALOG_URL)
     assert fetch_error.value.retry_after == 7
 
 

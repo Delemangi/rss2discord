@@ -44,10 +44,12 @@ def test_catalog_scan_accumulates_bytes_across_page_responses(
     )
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 

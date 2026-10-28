@@ -248,17 +248,21 @@ class Gjirafa50HttpClient:
                     raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
                 current_url = _same_origin_redirect(current_url, location)
                 continue
-            if response.status_code >= 400:
-                status = response.status_code
-                raise FeedFetchError(
-                    GJIRAFA50_LABEL,
-                    "HTTPError",
-                    status_code=status,
-                    retryable=status in {408, 429} or 500 <= status < 600,
-                    retry_after=parse_retry_after(_header(response, "retry-after")),
-                )
+            _check_response_status(response)
             return bytes(content.content), consumed_bytes
         raise FeedFetchError(GJIRAFA50_LABEL, "TooManyRedirects")
+
+
+def _check_response_status(response: Gjirafa50HttpResponse) -> None:
+    if response.status_code >= 400:
+        status = response.status_code
+        raise FeedFetchError(
+            GJIRAFA50_LABEL,
+            "HTTPError",
+            status_code=status,
+            retryable=status in {408, 429} or 500 <= status < 600,
+            retry_after=parse_retry_after(_header(response, "retry-after")),
+        )
 
 
 def _same_origin_redirect(current_url: str, location: str) -> str:

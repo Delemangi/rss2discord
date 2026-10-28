@@ -88,10 +88,11 @@ def test_pazar3_catalog_rejects_scope_above_product_bound(
         clock=clock,
     )
 
+    fetch_retry_policy = retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
         client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -126,10 +127,11 @@ def test_pazar3_catalog_rejects_changed_result_count(
         clock=clock,
     )
 
+    fetch_retry_policy = retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
         client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -208,10 +210,11 @@ def test_pazar3_catalog_rejects_missing_terminal_page_at_page_limit(
         clock=clock,
     )
 
+    fetch_retry_policy = retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
         client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -250,10 +253,11 @@ def test_pazar3_catalog_retries_partial_cross_page_overlap(
         clock=clock,
     )
 
+    fetch_retry_policy = retry_policy()
     with pytest.raises(FeedFetchError) as fetch_error:
         client.fetch_catalog(
             SEARCH_URL,
-            retry_policy=retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 

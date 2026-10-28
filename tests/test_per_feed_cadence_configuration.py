@@ -48,25 +48,27 @@ def test_load_config_parses_per_feed_interval_and_keeps_price_interval_separate(
 def test_ordinary_interval_rejects_nonpositive_or_nonfinite_values(
     value: float,
 ) -> None:
+    config_payload = {
+        "feeds": [
+            make_feed("feed").model_dump() | {"ordinary_check_interval": value},
+        ],
+    }
     with pytest.raises(ValidationError):
         AppConfig.model_validate(
-            {
-                "feeds": [
-                    make_feed("feed").model_dump() | {"ordinary_check_interval": value},
-                ],
-            },
+            config_payload,
         )
 
 
 @pytest.mark.parametrize("value", ["often", "Infinity", "NaN"])
 def test_ordinary_interval_rejects_invalid_strings(value: str) -> None:
+    config_payload = {
+        "feeds": [
+            make_feed("feed").model_dump() | {"ordinary_check_interval": value},
+        ],
+    }
     with pytest.raises(ValidationError):
         AppConfig.model_validate(
-            {
-                "feeds": [
-                    make_feed("feed").model_dump() | {"ordinary_check_interval": value},
-                ],
-            },
+            config_payload,
         )
 
 

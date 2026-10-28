@@ -93,10 +93,11 @@ def test_neptun_strategy_interprets_winter_date_in_europe_skopje() -> None:
 
 
 def test_neptun_product_rejects_offset_aware_external_date() -> None:
+    payload = product_payload(
+        42,
+        date_inserted="2026-07-21T15:44:34.97+03:00",
+    )
     with pytest.raises(ValidationError, match="DateInserted"):
         NeptunProduct.model_validate(
-            product_payload(
-                42,
-                date_inserted="2026-07-21T15:44:34.97+03:00",
-            ),
+            payload,
         )

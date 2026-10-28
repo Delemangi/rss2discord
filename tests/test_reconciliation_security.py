@@ -328,11 +328,13 @@ def test_context_type_contract_rejects_coercions_and_cross_provider_shapes(
     )
     for field, value in invalid:
         altered = {**context, field: value}
+        context_json = canonical_json(altered)
         with pytest.raises(ValueError, match="regenerate the plan"):
-            require_sanitized_context(canonical_json(altered), provider)
+            require_sanitized_context(context_json, provider)
     other = "Hivetec" if provider == "DDStore" else "DDStore"
+    selected_context_json = canonical_json(context)
     with pytest.raises(ValueError, match="regenerate the plan"):
-        require_sanitized_context(canonical_json(context), other)
+        require_sanitized_context(selected_context_json, other)
 
 
 @pytest.mark.parametrize("action", ["review", "apply"])
@@ -678,13 +680,15 @@ def test_discarded_unsafe_image_drift_still_rejects_apply_with_zero_writes(
         )
         assert old_context == new_context
         before = database_state(store)
+        feed = hivetec_feed()
+        fingerprint = plan.fingerprint()
         with pytest.raises(ValueError, match="drift") as error:
             apply_plan(
                 store,
-                hivetec_feed(),
+                feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=lambda _feed, old: normalize_hivetec_catalog(
                     "hivetec",
                     (changed,),

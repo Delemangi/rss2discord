@@ -54,8 +54,9 @@ def test_latest_products_stops_before_request_when_shutdown_is_requested(
     get = RecordingGet([])
     monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
+    client = Gjirafa50CatalogClient()
     with pytest.raises(FeedFetchInterruptedError):
-        Gjirafa50CatalogClient().fetch_latest_products(
+        client.fetch_latest_products(
             ROOT_URL,
             is_shutdown_requested=lambda: True,
         )
@@ -73,8 +74,9 @@ def test_latest_products_logs_duplicate_id_with_discovery_context(
     )
     monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
+    client = Gjirafa50CatalogClient()
     with pytest.raises(FeedFetchError) as error:
-        Gjirafa50CatalogClient().fetch_latest_products(ROOT_URL)
+        client.fetch_latest_products(ROOT_URL)
 
     assert error.value.cause_type == "DuplicateProductId"
     assert error.value.retryable is True
@@ -107,10 +109,12 @@ def test_catalog_logs_duplicate_id_with_shard_context(
     )
     monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
+    client = Gjirafa50CatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError) as error:
-        Gjirafa50CatalogClient().fetch_catalog(
+        client.fetch_catalog(
             ROOT_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -214,10 +218,12 @@ def test_catalog_fails_closed_when_shard_counts_do_not_cover_parent(
     monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
     # When / Then
+    client = Gjirafa50CatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
-        Gjirafa50CatalogClient().fetch_catalog(
+        client.fetch_catalog(
             ROOT_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -253,10 +259,12 @@ def test_catalog_fails_closed_when_individual_shard_count_changes_after_scan(
     get = RecordingGet([StubResponse(payload) for payload in responses * 3])
     monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
 
+    client = Gjirafa50CatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
-        Gjirafa50CatalogClient().fetch_catalog(
+        client.fetch_catalog(
             ROOT_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: False,
         )
 
@@ -276,10 +284,12 @@ def test_root_recount_change_logs_numeric_catalog_diagnostic_and_attempt_summary
         ],
     )
 
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with Gjirafa50HttpClient(get) as http, pytest.raises(FeedFetchError) as error:
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
 
@@ -303,10 +313,12 @@ def test_enumeration_hits_or_pages_change_logs_numeric_diagnostic(
         ],
     )
 
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with Gjirafa50HttpClient(get) as http, pytest.raises(FeedFetchError) as error:
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
 
@@ -344,10 +356,12 @@ def test_excess_unique_ids_log_numeric_catalog_diagnostic(
     ]
     get = RecordingGet([StubResponse(payload) for payload in responses])
 
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with Gjirafa50HttpClient(get) as http, pytest.raises(FeedFetchError) as error:
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
 
@@ -420,13 +434,15 @@ def test_interrupted_price_scan_logs_one_summary_before_any_request(
     caplog.set_level("INFO")
     get = RecordingGet([])
 
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: True)
     with (
         Gjirafa50HttpClient(get) as http,
         pytest.raises(FeedFetchInterruptedError),
     ):
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: True),
+            operation_budget,
             http,
         )
 
@@ -457,13 +473,15 @@ def test_attempt_summary_logs_exception_class_without_sensitive_message(
         raise original
 
     monkeypatch.setattr(Gjirafa50HttpClient, "fetch_page", fail_page)
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with (
         Gjirafa50HttpClient(RecordingGet([])) as http,
         pytest.raises(RuntimeError, match=r"private\.example") as error,
     ):
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
 
@@ -521,13 +539,15 @@ def test_unsafe_feed_fetch_cause_logs_only_safe_exception_class(
         raise original
 
     monkeypatch.setattr(Gjirafa50HttpClient, "fetch_page", fail_page)
+    client = Gjirafa50CatalogClient()
+    operation_budget = _OperationBudget(lambda: False)
     with (
         Gjirafa50HttpClient(RecordingGet([])) as http,
         pytest.raises(FeedFetchError) as error,
     ):
-        Gjirafa50CatalogClient()._scan_catalog(
+        client._scan_catalog(
             ROOT_URL,
-            _OperationBudget(lambda: False),
+            operation_budget,
             http,
         )
 
@@ -560,8 +580,9 @@ def test_catalog_request_budget_is_shared_across_retries(
         on_retry=lambda error, _delay: retry_errors.append(error),
     )
 
+    client = Gjirafa50CatalogClient()
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        Gjirafa50CatalogClient().fetch_catalog(
+        client.fetch_catalog(
             ROOT_URL,
             retry_policy=retry_policy,
             is_shutdown_requested=lambda: False,

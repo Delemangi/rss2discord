@@ -82,8 +82,9 @@ def test_rss_fetch_error_does_not_expose_feed_url_secret(
 
     monkeypatch.setattr(requests, "get", fail_request)
     # When
+    strategy = RSSStrategy()
     with pytest.raises(FeedFetchError) as fetch_error:
-        RSSStrategy().fetch_entries(feed_url)
+        strategy.fetch_entries(feed_url)
 
     # Then
     rendered_error = "".join(

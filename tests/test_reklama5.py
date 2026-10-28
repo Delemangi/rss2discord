@@ -148,16 +148,18 @@ def test_reklama5_parser_skips_exact_normalized_promoted_marker() -> None:
 
 
 def test_reklama5_parser_rejects_unknown_promotion_marker() -> None:
+    card = Reklama5Card(promotion="Promoted")
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_cards(Reklama5Card(promotion="Promoted"))
+        parse_cards(card)
 
     assert fetch_error.value.cause_type == "InvalidPromotionMarker"
     assert not fetch_error.value.retryable
 
 
 def test_reklama5_parser_rejects_empty_normalized_promotion_marker() -> None:
+    card = Reklama5Card(promotion="   ")
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_cards(Reklama5Card(promotion="   "))
+        parse_cards(card)
 
     assert fetch_error.value.cause_type == "InvalidPromotionMarker"
     assert not fetch_error.value.retryable
@@ -313,8 +315,10 @@ def test_reklama5_parser_skips_nonexistent_and_unparseable_timestamps(
 
 
 def test_reklama5_parser_rejects_a_naive_injected_clock() -> None:
+    card = Reklama5Card()
+    now = FIXED_NOW.replace(tzinfo=None)
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_cards(Reklama5Card(), now=FIXED_NOW.replace(tzinfo=None))
+        parse_cards(card, now=now)
 
     assert fetch_error.value.cause_type == "InvalidClock"
 

@@ -56,8 +56,9 @@ def test_fetch_catalog_rejects_non_first_party_origins(
     _install_successful_catalog_transport(monkeypatch)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(url)
+        client.fetch_catalog(url)
 
     assert fetch_error.value.cause_type == "InvalidUrl"
     assert "top-secret" not in str(fetch_error.value)
@@ -83,8 +84,9 @@ def test_fetch_catalog_rejects_cross_origin_scheme_port_and_credential_redirects
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidRedirect") as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     assert len(get.urls) == 1
     assert "top-secret" not in str(fetch_error.value)
@@ -124,8 +126,9 @@ def test_fetch_catalog_rejects_redirects_past_the_fixed_cap(
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="TooManyRedirects"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     assert len(get.urls) == 11
 
@@ -141,8 +144,9 @@ def test_fetch_catalog_rejects_oversized_homepage(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_oversized_streamed_page(
@@ -161,8 +165,9 @@ def test_fetch_catalog_rejects_oversized_streamed_page(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_homepage_limits_request_timeout_to_remaining_scan_time(
@@ -218,8 +223,9 @@ def test_fetch_catalog_classifies_numeric_retry_after_metadata(
     )
 
     # When
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retry_after == 2.5
@@ -250,8 +256,9 @@ def test_fetch_catalog_classifies_http_date_retry_after_metadata(
     )
 
     # When
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retry_after is not None
@@ -275,8 +282,9 @@ def test_fetch_catalog_marks_request_transport_interruptions_retryable(
     monkeypatch.setattr(requests, "post", RaisingPost(error))
 
     # When
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retryable
@@ -306,8 +314,9 @@ def test_fetch_catalog_marks_stream_interruptions_retryable(
     )
 
     # When
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError) as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
     # Then
     assert fetch_error.value.retryable

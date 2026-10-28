@@ -46,6 +46,14 @@ from rss2discord.recovery_models import (
     PriceSnapshot,
 )
 
+UNSUPPORTED_PREFLIGHT_STATE = "unsupported recovery preflight schema or state"
+UNSUPPORTED_PREFLIGHT_SCHEMA = "unsupported recovery preflight schema"
+PRICE_HOLD_TABLE_INFO = "PRAGMA table_info(price_product_holds)"
+BEGIN_IMMEDIATE = "BEGIN IMMEDIATE"
+PRICE_BATCH_FEED_QUERY = "SELECT feed_id FROM price_change_batches WHERE batch_id = ?"
+PRICE_BATCH_NOT_FOUND = "price batch not found"
+FEED_WHERE_CLAUSE = " WHERE feed_id = ?"
+
 
 class DeliveryStore:
     """Own the additive state tables while preserving legacy delivery rows."""
@@ -217,7 +225,7 @@ class DeliveryStore:
         has_kind = any(
             row[1] == "kind"
             for row in self._connection.execute(
-                "PRAGMA table_info(price_product_holds)",
+                PRICE_HOLD_TABLE_INFO,
             )
         )
         kind_projection = "kind" if has_kind else "'review'"
@@ -270,22 +278,8 @@ class DeliveryStore:
         try:
             self._require_recovery_preflight_schema()
 
-            delivered_count = self._count_feed_rows("delivered_entries", feed_id)
-            if delivered_count > MAX_RECOVERY_PRICE_IDS:
-                raise ValueError("recovery preflight delivered history exceeds limit")
-            delivered_rows = tuple(
-                self._connection.execute(
-                    "SELECT entry_id, delivered_at FROM delivered_entries "
-                    "WHERE feed_id = ? ORDER BY entry_id LIMIT ?",
-                    (feed_id, MAX_RECOVERY_PRICE_IDS + 1),
-                ),
-            )
-            if len(delivered_rows) != delivered_count:
-                raise ValueError("unsupported recovery preflight schema or state")
-            delivered_ids = tuple(self._required_text(row[0]) for row in delivered_rows)
-            delivered_history = tuple(
-                (self._required_text(row[0]), self._required_integer(row[1]))
-                for row in delivered_rows
+            delivered_ids, delivered_history = self._preflight_delivered_history(
+                feed_id,
             )
             initialized_row = self._connection.execute(
                 "SELECT initialized_at FROM initialized_feeds WHERE feed_id = ?",
@@ -297,25 +291,8 @@ class DeliveryStore:
                 else self._required_integer(initialized_row[0])
             )
 
-            snapshot_count = self._count_feed_rows("price_snapshots", feed_id)
-            if snapshot_count > MAX_RECOVERY_PRICE_IDS:
-                raise ValueError("recovery preflight snapshots exceed limit")
-            snapshots = self.load_price_snapshots(feed_id)
-            if len(snapshots) != snapshot_count:
-                raise ValueError("unsupported recovery preflight schema or state")
-
-            candidate_count = self._count_feed_rows(
-                "baseline_candidate_entries",
-                feed_id,
-            )
-            if candidate_count > MAX_RECOVERY_REVIEW_ITEMS:
-                raise ValueError("recovery preflight baseline candidate exceeds limit")
-            baseline_candidate = self.load_baseline_candidate(feed_id)
-            if (
-                0 if baseline_candidate is None else len(baseline_candidate.entry_ids)
-            ) != candidate_count:
-                raise ValueError("unsupported recovery preflight schema or state")
-
+            snapshots = self._preflight_snapshots(feed_id)
+            baseline_candidate = self._preflight_baseline_candidate(feed_id)
             baselined_count = self._count_feed_rows("baselined_entries", feed_id)
             if baselined_count > MAX_RECOVERY_REVIEW_ITEMS:
                 raise ValueError("recovery preflight approved baseline exceeds limit")
@@ -328,7 +305,7 @@ class DeliveryStore:
                 )
             )
             if len(baselined_ids) != baselined_count:
-                raise ValueError("unsupported recovery preflight schema or state")
+                raise ValueError(UNSUPPORTED_PREFLIGHT_STATE)
             baseline_row = self._connection.execute(
                 "SELECT fingerprint, complete, approved_at FROM baseline_states "
                 "WHERE feed_id = ?",
@@ -360,25 +337,7 @@ class DeliveryStore:
                 )
             )
 
-            hold_count = self._count_feed_rows("price_product_holds", feed_id)
-            if hold_count > MAX_RECOVERY_PRICE_IDS:
-                raise ValueError("recovery preflight holds exceed limit")
-            hold_rows = self.list_price_product_holds(feed_id)
-            if len(hold_rows) != hold_count:
-                raise ValueError("unsupported recovery preflight schema or state")
-            holds = tuple(
-                RecoveryHold(
-                    product_id=self._required_text(row["product_id"]),
-                    reconciliation_fingerprint=self._required_text(
-                        row["reconciliation_fingerprint"],
-                    ),
-                    reason=self._required_text(row["reason"]),
-                    created_at=self._required_integer(row["created_at"]),
-                    kind=self._required_hold_kind(row["kind"]),
-                )
-                for row in hold_rows
-            )
-
+            holds = self._preflight_holds(feed_id)
             batch_counts_by_status = {
                 self._required_text(row[0]): self._required_integer(row[1])
                 for row in self._connection.execute(
@@ -478,10 +437,83 @@ class DeliveryStore:
                 state_digest=state_digest,
             )
         except sqlite3.Error as error:
-            raise ValueError("unsupported recovery preflight schema") from error
+            raise ValueError(UNSUPPORTED_PREFLIGHT_SCHEMA) from error
         finally:
             if self._connection.in_transaction:
                 self._connection.rollback()
+
+    def _preflight_baseline_candidate(
+        self,
+        feed_id: str,
+    ) -> BaselineCandidateSummary | None:
+        candidate_count = self._count_feed_rows(
+            "baseline_candidate_entries",
+            feed_id,
+        )
+        if candidate_count > MAX_RECOVERY_REVIEW_ITEMS:
+            raise ValueError("recovery preflight baseline candidate exceeds limit")
+        baseline_candidate = self.load_baseline_candidate(feed_id)
+        if (
+            0 if baseline_candidate is None else len(baseline_candidate.entry_ids)
+        ) != candidate_count:
+            raise ValueError(UNSUPPORTED_PREFLIGHT_STATE)
+
+        return baseline_candidate
+
+    def _preflight_holds(self, feed_id: str) -> tuple[RecoveryHold, ...]:
+        hold_count = self._count_feed_rows("price_product_holds", feed_id)
+        if hold_count > MAX_RECOVERY_PRICE_IDS:
+            raise ValueError("recovery preflight holds exceed limit")
+        hold_rows = self.list_price_product_holds(feed_id)
+        if len(hold_rows) != hold_count:
+            raise ValueError(UNSUPPORTED_PREFLIGHT_STATE)
+        holds = tuple(
+            RecoveryHold(
+                product_id=self._required_text(row["product_id"]),
+                reconciliation_fingerprint=self._required_text(
+                    row["reconciliation_fingerprint"],
+                ),
+                reason=self._required_text(row["reason"]),
+                created_at=self._required_integer(row["created_at"]),
+                kind=self._required_hold_kind(row["kind"]),
+            )
+            for row in hold_rows
+        )
+
+        return holds
+
+    def _preflight_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]:
+        snapshot_count = self._count_feed_rows("price_snapshots", feed_id)
+        if snapshot_count > MAX_RECOVERY_PRICE_IDS:
+            raise ValueError("recovery preflight snapshots exceed limit")
+        snapshots = self.load_price_snapshots(feed_id)
+        if len(snapshots) != snapshot_count:
+            raise ValueError(UNSUPPORTED_PREFLIGHT_STATE)
+
+        return snapshots
+
+    def _preflight_delivered_history(
+        self,
+        feed_id: str,
+    ) -> tuple[tuple[str, ...], tuple[tuple[str, int], ...]]:
+        delivered_count = self._count_feed_rows("delivered_entries", feed_id)
+        if delivered_count > MAX_RECOVERY_PRICE_IDS:
+            raise ValueError("recovery preflight delivered history exceeds limit")
+        delivered_rows = tuple(
+            self._connection.execute(
+                "SELECT entry_id, delivered_at FROM delivered_entries "
+                "WHERE feed_id = ? ORDER BY entry_id LIMIT ?",
+                (feed_id, MAX_RECOVERY_PRICE_IDS + 1),
+            ),
+        )
+        if len(delivered_rows) != delivered_count:
+            raise ValueError(UNSUPPORTED_PREFLIGHT_STATE)
+        delivered_ids = tuple(self._required_text(row[0]) for row in delivered_rows)
+        delivered_history = tuple(
+            (self._required_text(row[0]), self._required_integer(row[1]))
+            for row in delivered_rows
+        )
+        return delivered_ids, delivered_history
 
     def _require_recovery_preflight_schema(self) -> None:
         required_columns = {
@@ -532,13 +564,13 @@ class DeliveryStore:
         }
         for table, required in required_columns.items():
             if table not in existing_tables:
-                raise ValueError("unsupported recovery preflight schema")
+                raise ValueError(UNSUPPORTED_PREFLIGHT_SCHEMA)
             columns = {
                 self._required_text(row[1])
                 for row in self._connection.execute(f'PRAGMA table_info("{table}")')
             }
             if not required <= columns:
-                raise ValueError("unsupported recovery preflight schema")
+                raise ValueError(UNSUPPORTED_PREFLIGHT_SCHEMA)
 
     def _count_feed_rows(self, table: str, feed_id: str) -> int:
         query = {
@@ -555,7 +587,7 @@ class DeliveryStore:
     def _count_rows(self, query: str, feed_id: str) -> int:
         row = self._connection.execute(query, (feed_id,)).fetchone()
         if row is None:
-            raise ValueError("unsupported recovery preflight schema")
+            raise ValueError(UNSUPPORTED_PREFLIGHT_SCHEMA)
         return self._required_integer(row[0])
 
     @staticmethod
@@ -612,7 +644,7 @@ class DeliveryStore:
         if not any(
             row[1] == "kind"
             for row in self._connection.execute(
-                "PRAGMA table_info(price_product_holds)",
+                PRICE_HOLD_TABLE_INFO,
             )
         ):
             return ()
@@ -643,22 +675,17 @@ class DeliveryStore:
         operation_started_at: float,
     ) -> bool:
         """Atomically adopt a validated returning product and release its hold."""
-        if (
-            previous is not None
-            and (previous.feed_id, previous.product_id) != (feed_id, product_id)
-        ) or (observed.feed_id, observed.product_id) != (feed_id, product_id):
-            raise ValueError("availability restoration identity mismatch")
-        if (
-            observed.currency != "MKD"
-            or not observed.amount.is_finite()
-            or observed.amount <= 0
-        ):
-            raise ValueError("availability restoration requires a positive MKD price")
-        if source != "validated_full_catalog" or provider not in {"DDStore", "Hivetec"}:
-            raise ValueError("availability restoration evidence is incomplete")
-        require_sanitized_context(context, provider)
+        self._validate_availability_evidence(
+            feed_id=feed_id,
+            product_id=product_id,
+            previous=previous,
+            observed=observed,
+            source=source,
+            provider=provider,
+            context=context,
+        )
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             if time.monotonic() - operation_started_at > MAX_OPERATION_SECONDS:
                 raise ValueError("stale availability restoration")
             hold = self._connection.execute(
@@ -668,35 +695,12 @@ class DeliveryStore:
             ).fetchone()
             if hold != ("availability", origin_fingerprint):
                 return False
-            origin_row = self._connection.execute(
-                "SELECT feed_id, plan_json FROM price_reconciliations "
-                "WHERE reconciliation_fingerprint = ?",
-                (origin_fingerprint,),
-            ).fetchone()
-            if origin_row is None or origin_row[0] != feed_id:
-                return False
-            origin_plan = ReconciliationPlan.model_validate_json(origin_row[1])
-            validate_dispositions(origin_plan)
-            origin_item = next(
-                (item for item in origin_plan.items if item.product_id == product_id),
-                None,
-            )
-            if (
-                origin_plan.version != 2
-                or origin_plan.feed_id != feed_id
-                or origin_plan.provider != provider
-                or origin_plan.reconciliation_fingerprint != origin_fingerprint
-                or origin_plan.fingerprint() != origin_fingerprint
-                or origin_item is None
-                or origin_item.disposition != "defer"
-                or origin_item.target is not None
-                or (origin_item.previous is None) != (previous is None)
-            ):
-                return False
-            if (
-                origin_item.previous is not None
-                and previous is not None
-                and origin_item.previous.snapshot(feed_id, product_id) != previous
+            if not self._matches_availability_origin(
+                feed_id,
+                provider,
+                product_id,
+                origin_fingerprint,
+                previous,
             ):
                 return False
             batch = self._connection.execute(
@@ -771,6 +775,71 @@ class DeliveryStore:
                 raise ValueError("stale availability restoration")
         return True
 
+    @staticmethod
+    def _validate_availability_evidence(
+        *,
+        feed_id: str,
+        product_id: str,
+        previous: PriceSnapshot | None,
+        observed: PriceSnapshot,
+        source: str,
+        provider: str,
+        context: str,
+    ) -> None:
+        if (
+            previous is not None
+            and (previous.feed_id, previous.product_id) != (feed_id, product_id)
+        ) or (observed.feed_id, observed.product_id) != (feed_id, product_id):
+            raise ValueError("availability restoration identity mismatch")
+        if (
+            observed.currency != "MKD"
+            or not observed.amount.is_finite()
+            or observed.amount <= 0
+        ):
+            raise ValueError("availability restoration requires a positive MKD price")
+        if source != "validated_full_catalog" or provider not in {"DDStore", "Hivetec"}:
+            raise ValueError("availability restoration evidence is incomplete")
+        require_sanitized_context(context, provider)
+
+    def _matches_availability_origin(
+        self,
+        feed_id: str,
+        provider: str,
+        product_id: str,
+        origin_fingerprint: str,
+        previous: PriceSnapshot | None,
+    ) -> bool:
+        origin_row = self._connection.execute(
+            "SELECT feed_id, plan_json FROM price_reconciliations "
+            "WHERE reconciliation_fingerprint = ?",
+            (origin_fingerprint,),
+        ).fetchone()
+        if origin_row is None or origin_row[0] != feed_id:
+            return False
+        origin_plan = ReconciliationPlan.model_validate_json(origin_row[1])
+        validate_dispositions(origin_plan)
+        origin_item = next(
+            (item for item in origin_plan.items if item.product_id == product_id),
+            None,
+        )
+        if (
+            origin_plan.version != 2
+            or origin_plan.feed_id != feed_id
+            or origin_plan.provider != provider
+            or origin_plan.reconciliation_fingerprint != origin_fingerprint
+            or origin_plan.fingerprint() != origin_fingerprint
+            or origin_item is None
+            or origin_item.disposition != "defer"
+            or origin_item.target is not None
+            or (origin_item.previous is None) != (previous is None)
+        ):
+            return False
+        return not (
+            origin_item.previous is not None
+            and previous is not None
+            and origin_item.previous.snapshot(feed_id, product_id) != previous
+        )
+
     def price_batch_state_digest(self, batch_id: int) -> str:
         return digest(
             {
@@ -843,7 +912,7 @@ class DeliveryStore:
         if plan.reconciliation_fingerprint != plan.fingerprint():
             raise ValueError("reconciliation fingerprint mismatch")
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             receipt = self.load_price_reconciliation(plan.reconciliation_fingerprint)
             if receipt is not None:
                 return receipt
@@ -902,39 +971,7 @@ class DeliveryStore:
                     sum(item.disposition == "noop" for item in plan.items),
                 ),
             )
-            for item in plan.items:
-                self._connection.execute(
-                    "INSERT INTO price_reconciliation_items (reconciliation_fingerprint, product_id, disposition, item_json) VALUES (?, ?, ?, ?)",
-                    (
-                        plan.reconciliation_fingerprint,
-                        item.product_id,
-                        "hold" if item.disposition == "defer" else item.disposition,
-                        item.model_dump_json(),
-                    ),
-                )
-                if item.disposition in {"hold", "defer"}:
-                    self._connection.execute(
-                        "INSERT OR IGNORE INTO price_product_holds (feed_id, product_id, reconciliation_fingerprint, reason, kind) VALUES (?, ?, ?, ?, ?)",
-                        (
-                            plan.feed_id,
-                            item.product_id,
-                            plan.reconciliation_fingerprint,
-                            item.reason.strip() or plan.reason,
-                            "availability" if item.disposition == "defer" else "review",
-                        ),
-                    )
-                elif item.disposition == "accept" and item.target is not None:
-                    self._connection.execute(
-                        "INSERT INTO price_snapshots (feed_id, product_id, amount, formatted, currency) VALUES (?, ?, ?, ?, ?) "
-                        "ON CONFLICT(feed_id, product_id) DO UPDATE SET amount = excluded.amount, formatted = excluded.formatted, currency = excluded.currency, updated_at = unixepoch()",
-                        (
-                            plan.feed_id,
-                            item.product_id,
-                            item.target.amount,
-                            item.target.formatted,
-                            item.target.currency,
-                        ),
-                    )
+            self._write_reconciliation_items(plan)
             self._connection.execute(
                 "UPDATE price_change_batches SET status = 'revoked', reason = ?, updated_at = unixepoch() WHERE batch_id = ?",
                 (
@@ -949,6 +986,41 @@ class DeliveryStore:
             if receipt is None:  # pragma: no cover
                 raise RuntimeError("reconciliation receipt missing")
             return receipt
+
+    def _write_reconciliation_items(self, plan: ReconciliationPlan) -> None:
+        for item in plan.items:
+            self._connection.execute(
+                "INSERT INTO price_reconciliation_items (reconciliation_fingerprint, product_id, disposition, item_json) VALUES (?, ?, ?, ?)",
+                (
+                    plan.reconciliation_fingerprint,
+                    item.product_id,
+                    "hold" if item.disposition == "defer" else item.disposition,
+                    item.model_dump_json(),
+                ),
+            )
+            if item.disposition in {"hold", "defer"}:
+                self._connection.execute(
+                    "INSERT OR IGNORE INTO price_product_holds (feed_id, product_id, reconciliation_fingerprint, reason, kind) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        plan.feed_id,
+                        item.product_id,
+                        plan.reconciliation_fingerprint,
+                        item.reason.strip() or plan.reason,
+                        "availability" if item.disposition == "defer" else "review",
+                    ),
+                )
+            elif item.disposition == "accept" and item.target is not None:
+                self._connection.execute(
+                    "INSERT INTO price_snapshots (feed_id, product_id, amount, formatted, currency) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(feed_id, product_id) DO UPDATE SET amount = excluded.amount, formatted = excluded.formatted, currency = excluded.currency, updated_at = unixepoch()",
+                    (
+                        plan.feed_id,
+                        item.product_id,
+                        item.target.amount,
+                        item.target.formatted,
+                        item.target.currency,
+                    ),
+                )
 
     def record_price_change_candidate(
         self,
@@ -1046,7 +1118,7 @@ class DeliveryStore:
         """Approve only an exact candidate/paused fingerprint and reason."""
         _require_reason(reason)
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             active = self._connection.execute(
                 "SELECT batch_id FROM price_change_batches "
                 "WHERE feed_id = ? AND status IN ('approved', 'paused') "
@@ -1089,10 +1161,10 @@ class DeliveryStore:
         """Revoke a candidate or active batch after exact audit selection."""
         _require_reason(reason)
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             row = self._find_price_batch(batch_id, feed_id, fingerprint)
             if row is None:
-                raise ValueError("price batch not found")
+                raise ValueError(PRICE_BATCH_NOT_FOUND)
             selected_id, selected_fingerprint, status = row
             if fingerprint is not None and selected_fingerprint != fingerprint:
                 raise ValueError("price batch fingerprint mismatch")
@@ -1107,7 +1179,7 @@ class DeliveryStore:
             selected_feed_id = feed_id
             if selected_feed_id is None:
                 feed_row = self._connection.execute(
-                    "SELECT feed_id FROM price_change_batches WHERE batch_id = ?",
+                    PRICE_BATCH_FEED_QUERY,
                     (selected_id,),
                 ).fetchone()
                 selected_feed_id = None if feed_row is None else str(feed_row[0])
@@ -1143,7 +1215,7 @@ class DeliveryStore:
         its generation and invalidates any late callback for the old claim.
         """
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             try:
                 active = self._connection.execute(
                     "SELECT 1 FROM price_change_batches "
@@ -1281,7 +1353,7 @@ class DeliveryStore:
                 (batch_id,),
             )
             feed_row = self._connection.execute(
-                "SELECT feed_id FROM price_change_batches WHERE batch_id = ?",
+                PRICE_BATCH_FEED_QUERY,
                 (batch_id,),
             ).fetchone()
             self._prune_terminal_price_batches(
@@ -1298,7 +1370,7 @@ class DeliveryStore:
         where = ""
         parameters: tuple[object, ...] = ()
         if feed_id is not None:
-            where = " WHERE feed_id = ?"
+            where = FEED_WHERE_CLAUSE
             parameters = (feed_id,)
         if not include_terminal:
             where += " AND " if where else " WHERE "
@@ -1330,7 +1402,7 @@ class DeliveryStore:
         if any(not product_id for product_id in normalized):
             raise ValueError("normal price product IDs must be non-empty")
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             try:
                 active = self._connection.execute(
                     "SELECT 1 FROM price_change_batches "
@@ -1478,7 +1550,7 @@ class DeliveryStore:
     ) -> BaselineCandidateSummary:
         _require_reason(reason)
         with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(BEGIN_IMMEDIATE)
             row = self._connection.execute(
                 "SELECT fingerprint, status FROM baseline_candidates WHERE feed_id = ?",
                 (feed_id,),
@@ -1591,7 +1663,7 @@ class DeliveryStore:
         self,
         feed_id: str | None = None,
     ) -> tuple[BaselineCandidateSummary, ...]:
-        where = " WHERE feed_id = ?" if feed_id is not None else ""
+        where = FEED_WHERE_CLAUSE if feed_id is not None else ""
         query = "SELECT feed_id FROM baseline_candidates" + where  # noqa: S608
         query += " ORDER BY feed_id"
         rows = self._connection.execute(
@@ -1635,18 +1707,12 @@ class DeliveryStore:
                 "quarantined",
                 "recovery_required",
             }
-            should_log = (
-                changed
-                or recovered
-                or (
-                    update.state
-                    in {"failed", "blocked", "quarantined", "recovery_required"}
-                    and (
-                        previous_notified is None
-                        or update.attempted_at - int(previous_notified)
-                        >= reminder_seconds
-                    )
-                )
+            should_log = self._should_log_health(
+                update,
+                changed,
+                recovered,
+                previous_notified,
+                reminder_seconds,
             )
             blocked_until = previous_blocked_until
             if update.state == "blocked" and (
@@ -1658,36 +1724,7 @@ class DeliveryStore:
             if update.state != "blocked" and changed:
                 blocked_until = None
             if row is None:
-                self._connection.execute(
-                    "INSERT INTO health_state "
-                    "(feed_id, job_kind, state, cause, attempted_at, success, nonempty, "
-                    "item_count, duration_ms, scheduler_lag_ms, transition_at, "
-                    "consecutive_failures, total_attempts, total_successes, total_nonempty, "
-                    "total_items, blocked_until, last_notified_at, last_success_at, "
-                    "last_nonempty_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        update.feed_id,
-                        update.job_kind,
-                        update.state,
-                        update.cause,
-                        update.attempted_at,
-                        int(update.success),
-                        int(update.nonempty),
-                        update.item_count,
-                        update.duration_ms,
-                        update.scheduler_lag_ms,
-                        update.attempted_at,
-                        0 if update.success else 1,
-                        int(update.success),
-                        int(update.nonempty),
-                        update.item_count,
-                        blocked_until,
-                        update.attempted_at if should_log else None,
-                        update.attempted_at if update.success else None,
-                        update.attempted_at if update.nonempty else None,
-                    ),
-                )
+                self._insert_health_state(update, blocked_until, should_log)
             else:
                 self._connection.execute(
                     "UPDATE health_state SET state = ?, cause = ?, attempted_at = ?, "
@@ -1728,6 +1765,65 @@ class DeliveryStore:
                 )
         return HealthNotice(changed, recovered, should_log, previous_state)
 
+    def _insert_health_state(
+        self,
+        update: HealthUpdate,
+        blocked_until: int | None,
+        should_log: bool,
+    ) -> None:
+        self._connection.execute(
+            "INSERT INTO health_state "
+            "(feed_id, job_kind, state, cause, attempted_at, success, nonempty, "
+            "item_count, duration_ms, scheduler_lag_ms, transition_at, "
+            "consecutive_failures, total_attempts, total_successes, total_nonempty, "
+            "total_items, blocked_until, last_notified_at, last_success_at, "
+            "last_nonempty_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                update.feed_id,
+                update.job_kind,
+                update.state,
+                update.cause,
+                update.attempted_at,
+                int(update.success),
+                int(update.nonempty),
+                update.item_count,
+                update.duration_ms,
+                update.scheduler_lag_ms,
+                update.attempted_at,
+                0 if update.success else 1,
+                int(update.success),
+                int(update.nonempty),
+                update.item_count,
+                blocked_until,
+                update.attempted_at if should_log else None,
+                update.attempted_at if update.success else None,
+                update.attempted_at if update.nonempty else None,
+            ),
+        )
+
+    @staticmethod
+    def _should_log_health(
+        update: HealthUpdate,
+        changed: bool,
+        recovered: bool,
+        previous_notified: int | None,
+        reminder_seconds: int,
+    ) -> bool:
+        should_log = (
+            changed
+            or recovered
+            or (
+                update.state
+                in {"failed", "blocked", "quarantined", "recovery_required"}
+                and (
+                    previous_notified is None
+                    or update.attempted_at - int(previous_notified) >= reminder_seconds
+                )
+            )
+        )
+        return should_log
+
     def get_blocked_until(self, feed_id: str) -> int | None:
         row = self._connection.execute(
             "SELECT MAX(blocked_until) FROM health_state "
@@ -1758,7 +1854,7 @@ class DeliveryStore:
             )
 
     def list_health(self, feed_id: str | None = None) -> tuple[HealthRecord, ...]:
-        where = " WHERE feed_id = ?" if feed_id is not None else ""
+        where = FEED_WHERE_CLAUSE if feed_id is not None else ""
         query = (
             "SELECT feed_id, job_kind, state, cause, attempted_at, success, nonempty, "
             "item_count, duration_ms, scheduler_lag_ms, transition_at, "
@@ -1957,7 +2053,7 @@ class DeliveryStore:
         hold_columns = {
             str(row[1])
             for row in self._connection.execute(
-                "PRAGMA table_info(price_product_holds)",
+                PRICE_HOLD_TABLE_INFO,
             )
         }
         if "kind" not in hold_columns:
@@ -2047,7 +2143,7 @@ class DeliveryStore:
         )
         first = rows.fetchone()
         if first is None:
-            raise ValueError("price batch not found")
+            raise ValueError(PRICE_BATCH_NOT_FOUND)
         items: list[PriceBatchItem] = []
         for row in chain((first,), rows):
             if row[12] is None:
@@ -2107,7 +2203,7 @@ class DeliveryStore:
             (batch_id,),
         ).fetchone()
         if row is None:
-            raise ValueError("price batch not found")
+            raise ValueError(PRICE_BATCH_NOT_FOUND)
         return PriceBatchSummary(
             batch_id=int(row[0]),
             feed_id=row[1],
@@ -2128,7 +2224,7 @@ class DeliveryStore:
 
     def _prune_terminal_price_batches_for_batch(self, batch_id: int) -> None:
         row = self._connection.execute(
-            "SELECT feed_id FROM price_change_batches WHERE batch_id = ?",
+            PRICE_BATCH_FEED_QUERY,
             (batch_id,),
         ).fetchone()
         if row is not None:

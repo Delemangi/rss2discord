@@ -51,8 +51,9 @@ def test_parser_accepts_dot_grouped_mkd_price() -> None:
 def test_parser_rejects_price_below_mkd_cent_precision() -> None:
     payload = catalog_payload(1, [(1, Decimal("1.50"))]).replace(b"1,50", b"1,505")
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
 
 @pytest.mark.parametrize("price", [b"12.34", b"1.2,50", b"1,2"])
@@ -62,8 +63,9 @@ def test_parser_rejects_price_outside_provider_grammar(price: bytes) -> None:
         b' data-discountedprice=\\"' + price + b'\\"',
     )
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
 
 def test_parser_rejects_oversized_price_before_decimal_conversion(
@@ -79,8 +81,9 @@ def test_parser_rejects_oversized_price_before_decimal_conversion(
     )
     monkeypatch.setattr(gjirafa50_parser, "Decimal", parse_decimal)
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
     parse_decimal.assert_not_called()
 
@@ -91,8 +94,9 @@ def test_parser_rejects_product_url_with_credentials_or_explicit_port() -> None:
         b"https://user:pass@gjirafa50.mk:444/product-1",
     )
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
 
 def test_parser_rejects_product_url_from_other_storefront() -> None:
@@ -101,10 +105,11 @@ def test_parser_rejects_product_url_from_other_storefront() -> None:
         b"https://gjirafa50.mk/product-1",
     )
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
         parse_gjirafa50_page(
             payload,
-            datetime.now(UTC),
+            observed_at,
             "https://gjirafa50.com/",
         )
 
@@ -115,8 +120,9 @@ def test_parser_rejects_image_url_with_credentials_or_fragment() -> None:
         b"https://user:pass@50cdn.gjirafamall.tech/1.jpg#fragment",
     )
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidImageUrl"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
 
 def test_parser_derives_display_price_from_validated_numeric_price() -> None:
@@ -133,8 +139,9 @@ def test_parser_derives_display_price_from_validated_numeric_price() -> None:
 def test_parser_rejects_declared_product_count_above_page_size() -> None:
     payload = catalog_payload(25, [(product_id, 100) for product_id in range(1, 26)])
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
 
 def test_parser_rejects_nested_card_excess_before_parsing_products(
@@ -151,8 +158,9 @@ def test_parser_rejects_nested_card_excess_before_parsing_products(
     parse_product = Mock(side_effect=AssertionError("product parsing must not start"))
     monkeypatch.setattr(gjirafa50_parser, "_parse_product", parse_product)
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="InvalidCardinality"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
     parse_product.assert_not_called()
 
@@ -172,7 +180,8 @@ def test_parser_rejects_html_over_tag_budget_before_building_tree(
     monkeypatch.setattr(gjirafa50_parser, "MAX_GJIRAFA50_HTML_TAG_TOKENS", 3)
     monkeypatch.setattr(gjirafa50_parser, "BeautifulSoup", parse_html)
 
+    observed_at = datetime.now(UTC)
     with pytest.raises(FeedFetchError, match="HtmlComplexityExceeded"):
-        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
 
     parse_html.assert_not_called()

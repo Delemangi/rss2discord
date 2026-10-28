@@ -93,8 +93,9 @@ def test_fetch_catalog_rejects_conflicting_duplicate_product_ids(
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="DuplicateProductId"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_malformed_category_markup(
@@ -111,8 +112,9 @@ def test_fetch_catalog_rejects_malformed_category_markup(
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="MalformedCategoryMarkup"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_empty_category_enumeration(
@@ -123,8 +125,9 @@ def test_fetch_catalog_rejects_empty_category_enumeration(
     monkeypatch.setattr(requests, "get", get)
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="EmptyCategoryEnumeration"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 def test_fetch_catalog_rejects_a_complete_zero_product_catalog(
@@ -143,8 +146,9 @@ def test_fetch_catalog_rejects_a_complete_zero_product_catalog(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="EmptyCatalog"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 @pytest.mark.parametrize(
@@ -167,8 +171,9 @@ def test_fetch_catalog_rejects_malformed_json_and_invalid_product_models(
     monkeypatch.setattr(requests, "post", RecordingPost([StubResponse(payload)]))
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
 
 
 @pytest.mark.parametrize(
@@ -210,5 +215,6 @@ def test_fetch_catalog_rejects_inconsistent_pagination(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match=cause_type):
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)

@@ -114,10 +114,7 @@ class HivetecCatalogClient:
                     max_response_bytes=MAX_HIVETEC_RESPONSE_BYTES,
                 ),
             )
-            if fetched.total > MAX_HIVETEC_CATALOG_PRODUCTS:
-                raise FeedFetchError(HIVETEC_LABEL, "ProductLimitExceeded")
-            if fetched.total_pages > MAX_HIVETEC_CATALOG_PAGES:
-                raise FeedFetchError(HIVETEC_LABEL, "PageLimitExceeded")
+            _validate_catalog_size(fetched.total, fetched.total_pages)
             if expected_total is None:
                 expected_total = fetched.total
                 expected_pages = fetched.total_pages
@@ -131,22 +128,13 @@ class HivetecCatalogClient:
                 len(product.categories) for product in fetched.products
             )
             scanned_images += sum(len(product.images) for product in fetched.products)
-            if (
-                scanned_categories > MAX_HIVETEC_CATALOG_CATEGORIES
-                or scanned_images > MAX_HIVETEC_CATALOG_IMAGES
-            ):
-                raise FeedFetchError(HIVETEC_LABEL, "MetadataLimitExceeded")
+            _validate_metadata_size(scanned_categories, scanned_images)
             scanned_products += len(fetched.products)
             self._append_unique_products(products, seen_products, fetched.products)
             if expected_pages == 0 and expected_total == 0:
                 return ()
             if expected_pages is not None and page >= expected_pages:
-                if scanned_products != expected_total:
-                    raise FeedFetchError(
-                        HIVETEC_LABEL,
-                        "IncompleteCatalog",
-                        retryable=True,
-                    )
+                _require_complete_catalog(scanned_products, expected_total)
                 return tuple(products)
         raise FeedFetchError(HIVETEC_LABEL, "PageLimitExceeded")
 
@@ -163,3 +151,26 @@ class HivetecCatalogClient:
                 products.append(product)
                 continue
             raise FeedFetchError(HIVETEC_LABEL, "DuplicateProductId")
+
+
+def _validate_catalog_size(total: int, pages: int) -> None:
+    if total > MAX_HIVETEC_CATALOG_PRODUCTS:
+        raise FeedFetchError(HIVETEC_LABEL, "ProductLimitExceeded")
+    if pages > MAX_HIVETEC_CATALOG_PAGES:
+        raise FeedFetchError(HIVETEC_LABEL, "PageLimitExceeded")
+
+
+def _validate_metadata_size(categories: int, images: int) -> None:
+    if (
+        categories > MAX_HIVETEC_CATALOG_CATEGORIES
+        or images > MAX_HIVETEC_CATALOG_IMAGES
+    ):
+        raise FeedFetchError(HIVETEC_LABEL, "MetadataLimitExceeded")
+
+
+def _require_complete_catalog(
+    scanned_products: int,
+    expected_total: int | None,
+) -> None:
+    if scanned_products != expected_total:
+        raise FeedFetchError(HIVETEC_LABEL, "IncompleteCatalog", retryable=True)

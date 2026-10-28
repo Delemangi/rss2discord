@@ -38,6 +38,7 @@ def test_fetch_catalog_rejects_pagination_metadata_drift_as_retryable(
     )
 
     # When / Then
+    client = NeksioCatalogClient()
     with pytest.raises(FeedFetchError, match="PaginationMetadataDrift") as fetch_error:
-        NeksioCatalogClient().fetch_catalog(CATALOG_URL)
+        client.fetch_catalog(CATALOG_URL)
     assert fetch_error.value.retryable

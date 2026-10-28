@@ -57,8 +57,9 @@ def test_latest_products_rejects_page_over_requested_cardinality(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded"):
-        NeptunCatalogClient().fetch_latest_products(CATEGORY_URL)
+        client.fetch_latest_products(CATEGORY_URL)
 
 
 def test_latest_products_rejects_incomplete_declared_window(
@@ -73,8 +74,9 @@ def test_latest_products_rejects_incomplete_declared_window(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
     with pytest.raises(FeedFetchError, match="InvalidCardinality"):
-        NeptunCatalogClient().fetch_latest_products(CATEGORY_URL)
+        client.fetch_latest_products(CATEGORY_URL)
 
 
 def test_latest_products_rejects_duplicate_product_ids(
@@ -90,8 +92,9 @@ def test_latest_products_rejects_duplicate_product_ids(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
     with pytest.raises(FeedFetchError, match="DuplicateProductId") as error:
-        NeptunCatalogClient().fetch_latest_products(CATEGORY_URL)
+        client.fetch_latest_products(CATEGORY_URL)
 
     assert error.value.retryable
 
@@ -108,10 +111,12 @@ def test_complete_category_scan_rejects_identical_duplicate_products(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match="DuplicateProductId") as error:
-        NeptunCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATEGORY_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=never_shutdown,
         )
 
@@ -134,10 +139,12 @@ def test_complete_category_scan_rejects_conflicting_duplicates(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match="DuplicateProductId") as error:
-        NeptunCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATEGORY_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=never_shutdown,
         )
 
@@ -158,10 +165,12 @@ def test_complete_category_scan_fails_closed_on_product_or_completion_bounds(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match=cause):
-        NeptunCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATEGORY_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=never_shutdown,
         )
 
@@ -238,10 +247,12 @@ def test_complete_category_scan_checks_shutdown_between_pages(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchInterruptedError):
-        NeptunCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATEGORY_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: (
                 len([call for call in requests_spy.calls if call[0] == "POST"]) == 1
             ),
@@ -271,9 +282,11 @@ def test_complete_category_scan_counts_bytes_across_pages(
     monkeypatch.setattr(requests, "get", requests_spy.get)
     monkeypatch.setattr(requests, "post", requests_spy.post)
 
+    client = NeptunCatalogClient()
+    fetch_retry_policy = no_wait_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        NeptunCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATEGORY_URL,
-            retry_policy=no_wait_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=never_shutdown,
         )

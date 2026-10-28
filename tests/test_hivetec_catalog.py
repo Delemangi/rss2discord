@@ -71,10 +71,12 @@ def test_hivetec_catalog_rejects_changed_pagination_totals(
     monkeypatch.setattr(hivetec_transport, "_perform_request", get)
 
     # When / Then
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PaginationDrift"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -97,10 +99,12 @@ def test_hivetec_catalog_rejects_product_limit_before_requesting_later_pages(
     monkeypatch.setattr(hivetec_transport, "_perform_request", get)
 
     # When / Then
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert len(get.urls) == 1
@@ -125,9 +129,11 @@ def test_hivetec_catalog_rejects_identical_duplicate_product_ids(
         ),
     )
 
+    client = HivetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="DuplicateProductId"):
-        HivetecCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             SHOP_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )

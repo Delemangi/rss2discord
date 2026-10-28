@@ -41,12 +41,13 @@ class XenForoStrategy(ScraperStrategy):
         ) or normalize_http_url(url)
         posts = thread.get("posts", [])
 
-        if posts:
-            for post in posts:
-                if isinstance(post, dict):
-                    post["title"] = title
-                    if thread_url:
-                        post["thread_url"] = thread_url
+        if not posts:
+            return posts, title
+        for post in posts:
+            if isinstance(post, dict):
+                post["title"] = title
+                if thread_url:
+                    post["thread_url"] = thread_url
 
         return posts, title
 

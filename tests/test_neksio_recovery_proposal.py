@@ -474,10 +474,11 @@ def test_pending_candidate_evidence_retains_independent_size_limit(
         1,
     )
 
+    catalog_capture = _single_capture((product_card(80_000),))
     with pytest.raises(ValueError, match="baseline candidate exceeds limit"):
         build_recovery_proposal(
             state,
-            _single_capture((product_card(80_000),)),
+            catalog_capture,
         )
 
 
@@ -496,10 +497,12 @@ def test_proposal_reviews_changed_price_and_rejects_noncanonical_cursor(
     ).items[0]
     assert item.price_status == "review"
 
+    invalid_state = replace(state, normal_cursor=("01", 10))
+    catalog_capture = _single_capture((product_card(1),))
     with pytest.raises(ValueError, match="canonical positive decimal IDs"):
         build_recovery_proposal(
-            replace(state, normal_cursor=("01", 10)),
-            _single_capture((product_card(1),)),
+            invalid_state,
+            catalog_capture,
         )
 
 
@@ -518,8 +521,9 @@ def test_price_retention_union_is_rechecked_after_catalog_validation(
         "rss2discord.providers.neksio.reconciliation.MAX_RECOVERY_PRICE_IDS",
         1,
     )
+    catalog_capture = _single_capture((product_card(1),))
     with pytest.raises(ValueError, match="price-retention union"):
-        build_recovery_proposal(state, _single_capture((product_card(1),)))
+        build_recovery_proposal(state, catalog_capture)
 
 
 def test_full_delivery_history_does_not_consume_price_retention_budget(
@@ -647,8 +651,9 @@ def test_cross_category_negative_quantities_do_not_collapse_after_normalization(
         categories=(1, 2),
     )
 
+    state = _state(database)
     with pytest.raises(ValueError, match="conflicting cross-category"):
-        build_recovery_proposal(_state(database), capture)
+        build_recovery_proposal(state, capture)
 
 
 def test_offline_stock_adapter_does_not_mutate_raw_json_or_capture_bytes(
@@ -706,8 +711,10 @@ def test_capture_rejects_coerced_json_ids_and_quantities(
     _seed_store(database)
     card = product_card(1)
     card[field] = value  # type: ignore[literal-required]
+    state = _state(database)
+    catalog_capture = _single_capture((card,))
     with pytest.raises(ValueError, match="JSON integers"):
-        build_recovery_proposal(_state(database), _single_capture((card,)))
+        build_recovery_proposal(state, catalog_capture)
 
 
 def test_capture_rejects_duplicate_keys_and_nonfinite_json_numbers(
@@ -717,23 +724,27 @@ def test_capture_rejects_duplicate_keys_and_nonfinite_json_numbers(
     _seed_store(database)
     card = json.dumps(product_card(1)).encode()
     duplicate_page = b'{"categoryId":1,"categoryId":1}'
+    state = _state(database)
+    duplicate_key_capture = _single_capture(
+        (product_card(1),),
+        response_body=duplicate_page,
+    )
     with pytest.raises(ValueError, match="ambiguous"):
         build_recovery_proposal(
-            _state(database),
-            _single_capture(
-                (product_card(1),),
-                response_body=duplicate_page,
-            ),
+            state,
+            duplicate_key_capture,
         )
 
     nonfinite_card = card.replace(b'"priceWTax": 1200', b'"priceWTax": NaN')
+    persisted_state = _state(database)
+    nonfinite_capture = _single_capture(
+        (product_card(1),),
+        response_body=page_payload(1, 1, 1, 1, (json.loads(nonfinite_card),)),
+    )
     with pytest.raises(ValueError, match="ambiguous"):
         build_recovery_proposal(
-            _state(database),
-            _single_capture(
-                (product_card(1),),
-                response_body=page_payload(1, 1, 1, 1, (json.loads(nonfinite_card),)),
-            ),
+            persisted_state,
+            nonfinite_capture,
         )
 
 
@@ -743,13 +754,15 @@ def test_capture_rejects_missing_stock_quantity(tmp_path: Path) -> None:
     page = json.loads(page_payload(1, 1, 1, 1, (product_card(1),)))
     del page["productCards"][0]["quantity"]
 
+    state = _state(database)
+    catalog_capture = _single_capture(
+        (product_card(1),),
+        response_body=json.dumps(page).encode(),
+    )
     with pytest.raises(ValueError, match="JSON integers"):
         build_recovery_proposal(
-            _state(database),
-            _single_capture(
-                (product_card(1),),
-                response_body=json.dumps(page).encode(),
-            ),
+            state,
+            catalog_capture,
         )
 
 
@@ -795,8 +808,9 @@ def test_capture_requires_complete_consistent_inventory(
             (_page(1, (card,)), _page(2, (conflicting,))),
             categories=(1, 2),
         )
+    state = _state(database)
     with pytest.raises(ValueError, match=message):
-        build_recovery_proposal(_state(database), capture)
+        build_recovery_proposal(state, capture)
 
 
 def test_duplicate_card_cannot_satisfy_declared_unique_category_total(
@@ -814,8 +828,10 @@ def test_duplicate_card_cannot_satisfy_declared_unique_category_total(
         ),
         _page(1, (product_card(1),), page_number=2, page_count=2, total=101),
     )
+    state = _state(database)
+    capture = _capture(pages)
     with pytest.raises(ValueError, match="duplicate product"):
-        build_recovery_proposal(_state(database), _capture(pages))
+        build_recovery_proposal(state, capture)
 
 
 def test_empty_category_requires_its_page_and_combined_catalog_nonempty(
@@ -828,10 +844,12 @@ def test_empty_category_requires_its_page_and_combined_catalog_nonempty(
     capture = _capture((empty, nonempty), categories=(1, 2))
 
     assert build_recovery_proposal(_state(database), capture).catalog_count == 1
+    state = _state(database)
+    empty_capture = _capture((empty,), categories=(1,))
     with pytest.raises(ValueError, match="catalog is empty"):
         build_recovery_proposal(
-            _state(database),
-            _capture((empty,), categories=(1,)),
+            state,
+            empty_capture,
         )
 
 
@@ -839,25 +857,33 @@ def test_capture_enforces_source_time_and_response_budgets(tmp_path: Path) -> No
     database = tmp_path / "state.db"
     _seed_store(database)
     normal = _single_capture((product_card(1),))
+    state = _state(database)
+    wrong_origin_capture = replace(normal, source_url="https://g.store.neksio.mk/path")
     with pytest.raises(ValueError, match="exact Neksio origin"):
         build_recovery_proposal(
-            _state(database),
-            replace(normal, source_url="https://g.store.neksio.mk/path"),
+            state,
+            wrong_origin_capture,
         )
+    persisted_state = _state(database)
+    naive_time_capture = replace(normal, started_at=STARTED.replace(tzinfo=None))
     with pytest.raises(ValueError, match="aware UTC"):
         build_recovery_proposal(
-            _state(database),
-            replace(normal, started_at=STARTED.replace(tzinfo=None)),
+            persisted_state,
+            naive_time_capture,
         )
+    capture_state = _state(database)
+    overlong_capture = replace(normal, finished_at=STARTED + timedelta(seconds=301))
     with pytest.raises(ValueError, match="duration"):
         build_recovery_proposal(
-            _state(database),
-            replace(normal, finished_at=STARTED + timedelta(seconds=301)),
+            capture_state,
+            overlong_capture,
         )
+    budget_state = _state(database)
+    oversized_capture = replace(normal, homepage_body=b"x" * (1_048_576 + 1))
     with pytest.raises(ValueError, match="homepage exceeds"):
         build_recovery_proposal(
-            _state(database),
-            replace(normal, homepage_body=b"x" * (1_048_576 + 1)),
+            budget_state,
+            oversized_capture,
         )
 
 
@@ -929,8 +955,9 @@ def test_proposal_cannot_be_parsed_as_an_applicable_reconciliation_plan(
     assert proposal.version == 2
     assert proposal.parser_contract == "neksio-negative-integer-stock-v1"
     assert proposal.parser_base_revision == "ca5b85e9a3aeaf11ecd8d896eeba95c57e181515"
+    proposal_json = proposal.model_dump_json()
     with pytest.raises(ValidationError):
-        ReconciliationPlan.model_validate_json(proposal.model_dump_json())
+        ReconciliationPlan.model_validate_json(proposal_json)
 
 
 def test_v1_artifacts_remain_parseable_and_parser_triples_are_exact(
@@ -1000,8 +1027,9 @@ def test_v1_and_v2_proposals_are_rejected_by_admin_parser_before_write(
         output_path = tmp_path / f"reviewed-{candidate.version}-{index}.json"
         plan_path.write_text(candidate.model_dump_json(), encoding="utf-8")
         assert candidate.applicable is False
+        plan_bytes = plan_path.read_bytes()
         with pytest.raises(ValidationError):
-            ReconciliationPlan.model_validate_json(plan_path.read_bytes())
+            ReconciliationPlan.model_validate_json(plan_bytes)
         result = admin._reconciliation_command(
             Namespace(
                 reconciliation_command="review",

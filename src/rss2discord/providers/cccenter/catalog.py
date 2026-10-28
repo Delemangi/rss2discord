@@ -57,6 +57,8 @@ _PRICE_RE: Final = re.compile(
 )
 _CCCENTER_HOST: Final = "cccenter.mk"
 _HTML_PARSER: Final = "html.parser"
+_PRICE_SELECTOR: Final = ".price"
+_PRODUCT_TITLE_SELECTOR: Final = "h1.product_title"
 MAX_CCCENTER_DETAIL_PRODUCTS: Final = 10
 _ENCODED_DOUBLE_PRIME: Final = r"(?i:%e2%80%b3)"
 _PRODUCT_SLUG_PART: Final = rf"(?:[a-z0-9]|{_ENCODED_DOUBLE_PRIME})+"
@@ -332,9 +334,9 @@ def parse_product_listing(card: Tag | None) -> CCCenterListing:
     if not name or link is None:
         raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
     product_url = _safe_product_url(str(link.get("href", "")))
-    current_price, original_price = _prices(card.select_one(".price"))
+    current_price, original_price = _prices(card.select_one(_PRICE_SELECTOR))
     price_status = _price_status(
-        card.select_one(".price"),
+        card.select_one(_PRICE_SELECTOR),
         current_price,
         is_variable="product-type-variable" in str(card.get("class") or ""),
     )
@@ -360,9 +362,9 @@ def parse_product_detail(
     listing: CCCenterListing | CCCenterProduct,
 ) -> CCCenterProduct:
     product_document = _main_product(document)
-    heading = product_document.select_one("h1.product_title")
+    heading = product_document.select_one(_PRODUCT_TITLE_SELECTOR)
     price_nodes = product_document.select(".summary .price") or product_document.select(
-        ".price",
+        _PRICE_SELECTOR,
     )
     if len(price_nodes) > 1:
         raise FeedFetchError(CCCENTER_LABEL, "AmbiguousPrice")
@@ -433,11 +435,11 @@ def _main_product(document: BeautifulSoup) -> Tag:
         ),
     ):
         node.decompose()
-    headings = cleaned.select("h1.product_title")
+    headings = cleaned.select(_PRODUCT_TITLE_SELECTOR)
     if len(headings) != 1 or not _text(headings[0]):
         raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
     for node in reversed(cleaned.select(".product")):
-        if node.select_one("h1.product_title") is None:
+        if node.select_one(_PRODUCT_TITLE_SELECTOR) is None:
             node.decompose()
     for parent in headings[0].parents:
         if isinstance(parent, Tag) and (
@@ -451,24 +453,32 @@ def _main_product(document: BeautifulSoup) -> Tag:
     # must not borrow a price from elsewhere in the document.
     container = headings[0].parent
     if isinstance(container, Tag) and container.name in {"[document]", "body"}:
-        fragment = BeautifulSoup("", _HTML_PARSER)
-        field_classes = {
-            "product_title",
-            "summary",
-            "price",
-            "sku",
-            "stock",
-            "posted_in",
-            "woocommerce-product-gallery",
-            "variations_form",
-        }
-        for child in list(container.children):
-            if isinstance(child, Tag) and set(child.get("class") or []).intersection(
-                field_classes,
-            ):
-                fragment.append(child.extract())
-        return fragment
+        return _product_fragment(container)
     raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+
+
+def _product_fragment(container: Tag) -> BeautifulSoup:
+    fragment = BeautifulSoup("", _HTML_PARSER)
+    field_classes = {
+        "product_title",
+        "summary",
+        "price",
+        "sku",
+        "stock",
+        "posted_in",
+        "woocommerce-product-gallery",
+        "variations_form",
+    }
+    # Collect selected children before extraction mutates the source container.
+    fields = [
+        child
+        for child in container.children
+        if isinstance(child, Tag)
+        and set(child.get("class") or []).intersection(field_classes)
+    ]
+    for child in fields:
+        fragment.append(child.extract())
+    return fragment
 
 
 def _is_in_stock(stock: Tag | None) -> bool:
@@ -593,10 +603,18 @@ class CCCenterCatalogClient:
             )
             if len(cards) != expected:
                 raise FeedFetchError(CCCENTER_LABEL, "IncompletePage")
-            for item in cards:
-                budget.before_chunk()
-                products.append(self._store_product(item, seen_ids))
+            self._append_store_products(cards, products, seen_ids, budget)
         # Recheck first-page metadata after enumeration to detect collection drift.
+        self._check_final_page(total, page_count, budget)
+        budget.after_request()
+        return tuple(products)
+
+    def _check_final_page(
+        self,
+        total: int,
+        page_count: int,
+        budget: _ScanBudget,
+    ) -> None:
         final_cards, final_total, final_pages = self._fetch_store_page(1, budget)
         if final_total != total or final_pages != page_count:
             raise FeedFetchError(CCCENTER_LABEL, "CatalogMetadataDrift")
@@ -605,8 +623,17 @@ class CCCenterCatalogClient:
         final_seen: set[tuple[str, str | int]] = set()
         for item in final_cards:
             self._store_product(item, final_seen)
-        budget.after_request()
-        return tuple(products)
+
+    def _append_store_products(
+        self,
+        cards: Sequence[Any],
+        products: list[CCCenterProduct],
+        seen_ids: set[tuple[str, str | int]],
+        budget: _ScanBudget,
+    ) -> None:
+        for item in cards:
+            budget.before_chunk()
+            products.append(self._store_product(item, seen_ids))
 
     @staticmethod
     def _store_product(
@@ -635,20 +662,7 @@ class CCCenterCatalogClient:
         if not isinstance(name, str) or not unescape(name).strip():
             raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
         current, original, status = _store_price(item)
-        images = item.get("images", [])
-        if not isinstance(images, list):
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
-        image = images[0].get("src") if images and isinstance(images[0], dict) else None
-        sku = item.get("sku", "")
-        cats = item.get("categories", [])
-        if not isinstance(sku, str) or not isinstance(cats, list):
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
-        if not all(
-            isinstance(c, dict) and isinstance(c.get("name"), str) and c["name"].strip()
-            for c in cats
-        ):
-            raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
-        categories = tuple(unescape(c["name"]).strip() for c in cats)
+        image, sku, categories = _store_display_fields(item)
         stock = item.get("is_in_stock")
         if not isinstance(stock, bool):
             raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
@@ -686,7 +700,7 @@ class CCCenterCatalogClient:
                 int(response.headers["X-WP-Total"]),
                 int(response.headers["X-WP-TotalPages"]),
             )
-        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        except (ValueError, KeyError, TypeError):
             raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None
         if not isinstance(items, list) or total <= 0 or pages <= 0:
             raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse")
@@ -717,7 +731,7 @@ class CCCenterCatalogClient:
             items = json.loads(content)
             total = int(response.headers["X-WP-Total"])
             pages = int(response.headers["X-WP-TotalPages"])
-        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        except (ValueError, KeyError, TypeError):
             raise FeedFetchError(CCCENTER_LABEL, "InvalidDetail") from None
         if total != 1 or pages != 1:
             raise FeedFetchError(CCCENTER_LABEL, "InvalidDetail")
@@ -848,6 +862,25 @@ def _decode_html(response: _HttpResponse, content: bytearray) -> str:
         raise FeedFetchError(CCCENTER_LABEL, "InvalidResponse") from None
 
 
+def _store_display_fields(
+    item: dict[str, Any],
+) -> tuple[Any, str, tuple[str, ...]]:
+    images = item.get("images", [])
+    if not isinstance(images, list):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+    image = images[0].get("src") if images and isinstance(images[0], dict) else None
+    sku = item.get("sku", "")
+    cats = item.get("categories", [])
+    if not isinstance(sku, str) or not isinstance(cats, list):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+    if not all(
+        isinstance(c, dict) and isinstance(c.get("name"), str) and c["name"].strip()
+        for c in cats
+    ):
+        raise FeedFetchError(CCCENTER_LABEL, "MalformedProduct")
+    return image, sku, tuple(unescape(c["name"]).strip() for c in cats)
+
+
 def _store_price(
     item: dict[str, Any],
 ) -> tuple[Decimal | None, Decimal | None, CCCenterPriceStatus]:
@@ -888,7 +921,7 @@ def _store_price(
 
 
 def _minor_amount(raw: Any) -> Decimal:  # noqa: ANN401
-    if not isinstance(raw, str) or not re.fullmatch(r"[0-9]+", raw):
+    if not isinstance(raw, str) or not re.fullmatch(r"\d+", raw, flags=re.ASCII):
         raise FeedFetchError(CCCENTER_LABEL, "MalformedPrice")
     try:
         whole = raw[:-2] or "0"

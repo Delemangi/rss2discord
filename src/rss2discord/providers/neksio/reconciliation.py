@@ -48,7 +48,9 @@ from rss2discord.reconciliation_models import (
 )
 from rss2discord.recovery_models import PriceSnapshot
 
-_PRODUCT_ID_PATTERN = re.compile(r"[1-9][0-9]{0,18}\Z", re.ASCII)
+_PRODUCT_ID_PATTERN = re.compile(r"[1-9]\d{0,18}\Z", re.ASCII)
+_PRODUCTS_ARRAY_ERROR = "captured Neksio products must be a JSON array"
+_PRODUCT_OBJECT_ERROR = "captured Neksio product must be a JSON object"
 _PARSER_CONTRACT: Literal["neksio-negative-integer-stock-v1"] = (
     "neksio-negative-integer-stock-v1"
 )
@@ -110,27 +112,15 @@ def build_recovery_proposal(
         )
         target_snapshot = _price_snapshot(state.feed_id, product) if product else None
         target = _snapshot_for_proposal(target_snapshot) if target_snapshot else None
-        price_status: Literal["unchanged", "review", "existing_hold", "history_only"]
-        if product_id in held_ids:
-            price_status = "existing_hold"
-        elif previous is not None and target is not None:
-            price_status = "unchanged" if previous == target else "review"
-        elif previous is not None or target is not None:
-            price_status = "review"
-        else:
-            price_status = "history_only"
-
-        discovery_status: Literal[
-            "already_handled",
-            "review_existing_unseen",
-            "not_observed",
-        ]
-        if product_id in delivered_ids or product_id in baselined_ids:
-            discovery_status = "already_handled"
-        elif product is not None:
-            discovery_status = "review_existing_unseen"
-        else:
-            discovery_status = "not_observed"
+        price_status = _proposal_price_status(
+            previous,
+            target,
+            held=product_id in held_ids,
+        )
+        discovery_status = _proposal_discovery_status(
+            product,
+            handled=product_id in delivered_ids or product_id in baselined_ids,
+        )
 
         context = None
         if product is not None:
@@ -178,6 +168,31 @@ def build_recovery_proposal(
     )
 
 
+def _proposal_price_status(
+    previous: ReconciliationSnapshot | None,
+    target: ReconciliationSnapshot | None,
+    *,
+    held: bool,
+) -> Literal["unchanged", "review", "existing_hold", "history_only"]:
+    if held:
+        return "existing_hold"
+    if previous is not None and target is not None:
+        return "unchanged" if previous == target else "review"
+    if previous is not None or target is not None:
+        return "review"
+    return "history_only"
+
+
+def _proposal_discovery_status(
+    product: NeksioProduct | None,
+    *,
+    handled: bool,
+) -> Literal["already_handled", "review_existing_unseen", "not_observed"]:
+    if handled:
+        return "already_handled"
+    return "review_existing_unseen" if product is not None else "not_observed"
+
+
 def _validate_capture_identity(capture: NeksioCatalogCapture) -> None:
     if not capture.feed_id or len(capture.feed_id) > 256:
         raise ValueError("invalid recovery capture feed ID")
@@ -195,6 +210,10 @@ def _validate_capture_identity(capture: NeksioCatalogCapture) -> None:
         raise ValueError("recovery homepage exceeds response byte limit")
     if 1 + len(capture.pages) > MAX_NEKSIO_SCAN_RESPONSES:
         raise ValueError("recovery capture exceeds response count limit")
+    _validate_captured_body_limits(capture)
+
+
+def _validate_captured_body_limits(capture: NeksioCatalogCapture) -> None:
     response_bytes = len(capture.homepage_body)
     for page in capture.pages:
         if (
@@ -227,68 +246,129 @@ def _validate_catalog_capture(
     for category_id in categories:
         if not 1 <= category_id <= MAX_NEKSIO_CATEGORY_ID:
             raise ValueError("invalid captured Neksio category ID")
-        first = _captured_page(capture.pages, cursor, category_id, 1)
-        first_page, first_raw = first
-        declared_pages = first_page.no_of_pages
-        page_count = 1 if first_page.no_of_products == 0 else declared_pages
-        if page_count < 1 or page_count > MAX_NEKSIO_PAGES_PER_CATEGORY:
-            raise ValueError("captured Neksio page limit exceeded")
-        category_ids: set[int] = set()
-        for page_number in range(1, page_count + 1):
-            if page_number == 1:
-                page, raw = first_page, first_raw
-            else:
-                page, raw = _captured_page(
-                    capture.pages,
-                    cursor,
-                    category_id,
-                    page_number,
-                )
-            cursor += 1
-            if (
-                page.category_id != category_id
-                or page.no_of_pages != declared_pages
-                or page.no_of_products != first_page.no_of_products
-            ):
-                raise ValueError("captured Neksio pagination metadata drift")
-            raw_cards = raw["productCards"]
-            if not isinstance(raw_cards, list):
-                raise TypeError("captured Neksio products must be a JSON array")
-            for index, card in enumerate(page.product_cards):
-                raw_card = raw_cards[index]
-                if not isinstance(raw_card, dict):
-                    raise TypeError("captured Neksio product must be a JSON object")
-                raw_quantity = raw_card["quantity"]
-                if type(raw_quantity) is not int:
-                    raise TypeError("captured Neksio quantity must be a JSON integer")
-                product = card.observe(capture.started_at)
-                product_id = product.product_id
-                if product_id in category_ids:
-                    raise ValueError("duplicate product in captured category")
-                category_ids.add(product_id)
-                existing = products.get(product_id)
-                if existing is not None:
-                    if (
-                        existing.model_dump(exclude={"observed_at"})
-                        != product.model_dump(exclude={"observed_at"})
-                        or raw_quantities[product_id] != raw_quantity
-                    ):
-                        raise ValueError("conflicting cross-category Neksio product")
-                else:
-                    if len(products) >= MAX_NEKSIO_PRODUCTS:
-                        raise ValueError("captured Neksio product limit exceeded")
-                    products[product_id] = product
-                    raw_quantities[product_id] = raw_quantity
-                    memberships[product_id] = set()
-                memberships[product_id].add(category_id)
-        if len(category_ids) != first_page.no_of_products:
-            raise ValueError("captured category unique IDs do not match declared total")
+        cursor = _validate_captured_category(
+            capture,
+            cursor,
+            category_id,
+            products=products,
+            raw_quantities=raw_quantities,
+            memberships=memberships,
+        )
 
     if cursor != len(capture.pages):
         raise ValueError("captured Neksio pages are missing, repeated, or extra")
     if not products:
         raise ValueError("captured Neksio catalog is empty")
     return products, raw_quantities, memberships
+
+
+def _validate_captured_category(
+    capture: NeksioCatalogCapture,
+    cursor: int,
+    category_id: int,
+    *,
+    products: dict[int, NeksioProduct],
+    raw_quantities: dict[int, int],
+    memberships: dict[int, set[int]],
+) -> int:
+    first = _captured_page(capture.pages, cursor, category_id, 1)
+    first_page, first_raw = first
+    declared_pages = first_page.no_of_pages
+    page_count = 1 if first_page.no_of_products == 0 else declared_pages
+    if page_count < 1 or page_count > MAX_NEKSIO_PAGES_PER_CATEGORY:
+        raise ValueError("captured Neksio page limit exceeded")
+    category_ids: set[int] = set()
+    for page_number in range(1, page_count + 1):
+        if page_number == 1:
+            page, raw = first_page, first_raw
+        else:
+            page, raw = _captured_page(
+                capture.pages,
+                cursor,
+                category_id,
+                page_number,
+            )
+        cursor += 1
+        if (
+            page.category_id != category_id
+            or page.no_of_pages != declared_pages
+            or page.no_of_products != first_page.no_of_products
+        ):
+            raise ValueError("captured Neksio pagination metadata drift")
+        _merge_captured_page(
+            page,
+            raw,
+            capture.started_at,
+            category_id,
+            category_ids,
+            products=products,
+            raw_quantities=raw_quantities,
+            memberships=memberships,
+        )
+    if len(category_ids) != first_page.no_of_products:
+        raise ValueError("captured category unique IDs do not match declared total")
+
+    return cursor
+
+
+def _merge_captured_page(
+    page: NeksioCatalogPage,
+    raw: dict[str, JsonValue],
+    observed_at: datetime,
+    category_id: int,
+    category_ids: set[int],
+    *,
+    products: dict[int, NeksioProduct],
+    raw_quantities: dict[int, int],
+    memberships: dict[int, set[int]],
+) -> None:
+    raw_cards = raw["productCards"]
+    if not isinstance(raw_cards, list):
+        raise TypeError(_PRODUCTS_ARRAY_ERROR)
+    for index, card in enumerate(page.product_cards):
+        raw_card = raw_cards[index]
+        if not isinstance(raw_card, dict):
+            raise TypeError(_PRODUCT_OBJECT_ERROR)
+        raw_quantity = raw_card["quantity"]
+        if type(raw_quantity) is not int:
+            raise TypeError("captured Neksio quantity must be a JSON integer")
+        product = card.observe(observed_at)
+        product_id = product.product_id
+        if product_id in category_ids:
+            raise ValueError("duplicate product in captured category")
+        category_ids.add(product_id)
+        _merge_captured_product(
+            product,
+            raw_quantity,
+            products,
+            raw_quantities,
+            memberships,
+        )
+        memberships[product_id].add(category_id)
+
+
+def _merge_captured_product(
+    product: NeksioProduct,
+    raw_quantity: int,
+    products: dict[int, NeksioProduct],
+    raw_quantities: dict[int, int],
+    memberships: dict[int, set[int]],
+) -> None:
+    product_id = product.product_id
+    existing = products.get(product_id)
+    if existing is not None:
+        if (
+            existing.model_dump(exclude={"observed_at"})
+            != product.model_dump(exclude={"observed_at"})
+            or raw_quantities[product_id] != raw_quantity
+        ):
+            raise ValueError("conflicting cross-category Neksio product")
+        return
+    if len(products) >= MAX_NEKSIO_PRODUCTS:
+        raise ValueError("captured Neksio product limit exceeded")
+    products[product_id] = product
+    raw_quantities[product_id] = raw_quantity
+    memberships[product_id] = set()
 
 
 def _captured_page(
@@ -326,11 +406,11 @@ def _offline_page_for_validation(
     page = raw_page.copy()
     raw_cards = raw_page.get("productCards")
     if not isinstance(raw_cards, list):
-        raise TypeError("captured Neksio products must be a JSON array")
+        raise TypeError(_PRODUCTS_ARRAY_ERROR)
     normalized_cards: list[JsonValue] = []
     for raw_card in raw_cards:
         if not isinstance(raw_card, dict):
-            raise TypeError("captured Neksio product must be a JSON object")
+            raise TypeError(_PRODUCT_OBJECT_ERROR)
         card = raw_card.copy()
         quantity = card.get("quantity")
         if type(quantity) is not int:
@@ -352,7 +432,7 @@ def _strict_json(body: bytes) -> JsonValue:
             ),
         )
         _reject_nonfinite_numbers(value)
-    except (UnicodeDecodeError, ValueError, TypeError):
+    except (ValueError, TypeError):
         raise ValueError("invalid or ambiguous captured JSON") from None
     else:
         return value
@@ -411,38 +491,57 @@ def _require_raw_page_types(raw: JsonValue) -> None:
             raise ValueError("captured Neksio pagination values must be JSON integers")
     cards = raw.get("productCards")
     if not isinstance(cards, list):
-        raise TypeError("captured Neksio products must be a JSON array")
+        raise TypeError(_PRODUCTS_ARRAY_ERROR)
     for card in cards:
-        if not isinstance(card, dict):
-            raise TypeError("captured Neksio product must be a JSON object")
-        product_id = card.get("productId")
-        if type(product_id) is not int:
-            raise ValueError("captured Neksio IDs and quantities must be JSON integers")
-        quantity = card.get("quantity")
-        if type(quantity) is not int:
-            raise ValueError("captured Neksio IDs and quantities must be JSON integers")
-        if not 1 <= product_id <= MAX_SQLITE_SIGNED_INTEGER:
-            raise ValueError("captured Neksio product ID is out of range")
-        amount = card.get("priceWTax")
-        if type(amount) not in (int, float) or (
-            isinstance(amount, float) and not math.isfinite(amount)
-        ):
-            raise ValueError("captured Neksio price must be a finite JSON number")
-        string_fields = (
-            "productName",
-            "productCode",
-            "category",
-            "priceWTax_f",
-            "imagePath",
-        )
-        if any(type(card.get(name)) is not str for name in string_fields):
-            raise ValueError("captured Neksio display fields must be strings")
-        for name in ("subCategory", "manufacturer", "old_PriceWTax"):
-            if name in card and card[name] is not None and type(card[name]) is not str:
-                raise ValueError("captured Neksio optional display fields are invalid")
+        _require_raw_card_types(card)
+
+
+def _require_raw_card_types(card: JsonValue) -> None:
+    if not isinstance(card, dict):
+        raise TypeError(_PRODUCT_OBJECT_ERROR)
+    product_id = card.get("productId")
+    if type(product_id) is not int:
+        raise ValueError("captured Neksio IDs and quantities must be JSON integers")
+    quantity = card.get("quantity")
+    if type(quantity) is not int:
+        raise ValueError("captured Neksio IDs and quantities must be JSON integers")
+    if not 1 <= product_id <= MAX_SQLITE_SIGNED_INTEGER:
+        raise ValueError("captured Neksio product ID is out of range")
+    amount = card.get("priceWTax")
+    if type(amount) not in (int, float) or (
+        isinstance(amount, float) and not math.isfinite(amount)
+    ):
+        raise ValueError("captured Neksio price must be a finite JSON number")
+    string_fields = (
+        "productName",
+        "productCode",
+        "category",
+        "priceWTax_f",
+        "imagePath",
+    )
+    if any(type(card.get(name)) is not str for name in string_fields):
+        raise ValueError("captured Neksio display fields must be strings")
+    for name in ("subCategory", "manufacturer", "old_PriceWTax"):
+        if name in card and card[name] is not None and type(card[name]) is not str:
+            raise ValueError("captured Neksio optional display fields are invalid")
 
 
 def _validate_preflight_state(state: RecoveryPreflightState) -> None:
+    _validate_preflight_limits(state)
+    _validate_preflight_snapshots(state)
+    _validate_preflight_history(state)
+    _validate_preflight_candidate(state)
+    if state.normal_cursor is not None:
+        _require_canonical_id(state.normal_cursor[0])
+        if type(state.normal_cursor[1]) is not int:
+            raise ValueError("invalid recovery normal-delivery cursor timestamp")
+    if len(state.batch_counts) != len(_BATCH_STATUSES) or any(
+        type(count) is not int or count < 0 for count in state.batch_counts
+    ):
+        raise ValueError("invalid recovery batch diagnostics")
+
+
+def _validate_preflight_limits(state: RecoveryPreflightState) -> None:
     if type(state.feed_id) is not str or not state.feed_id:
         raise ValueError("invalid recovery preflight feed ID")
     if len(state.snapshots) > MAX_RECOVERY_PRICE_IDS:
@@ -462,6 +561,9 @@ def _validate_preflight_state(state: RecoveryPreflightState) -> None:
     ):
         if not re.fullmatch(r"[a-f0-9]{64}", value):
             raise ValueError(f"invalid recovery {name} digest")
+
+
+def _validate_preflight_snapshots(state: RecoveryPreflightState) -> None:
     ids: list[str] = []
     for snapshot in state.snapshots:
         _require_canonical_id(snapshot.product_id)
@@ -473,6 +575,9 @@ def _validate_preflight_state(state: RecoveryPreflightState) -> None:
         ids.append(snapshot.product_id)
     if len(ids) != len(set(ids)):
         raise ValueError("recovery snapshots contain duplicate IDs")
+
+
+def _validate_preflight_history(state: RecoveryPreflightState) -> None:
     for collection in (state.delivered_ids, state.baselined_ids):
         if len(collection) != len(set(collection)):
             raise ValueError("recovery history contains duplicate IDs")
@@ -484,6 +589,9 @@ def _validate_preflight_state(state: RecoveryPreflightState) -> None:
             raise ValueError("unsupported recovery hold kind")
     if len({hold.product_id for hold in state.holds}) != len(state.holds):
         raise ValueError("recovery holds contain duplicate IDs")
+
+
+def _validate_preflight_candidate(state: RecoveryPreflightState) -> None:
     if state.baseline_candidate is not None:
         if state.baseline_candidate.feed_id != state.feed_id:
             raise ValueError("recovery candidate feed ID mismatch")
@@ -497,14 +605,6 @@ def _validate_preflight_state(state: RecoveryPreflightState) -> None:
             raise ValueError("unsupported recovery baseline candidate status")
         for product_id in state.baseline_candidate.entry_ids:
             _require_canonical_id(product_id)
-    if state.normal_cursor is not None:
-        _require_canonical_id(state.normal_cursor[0])
-        if type(state.normal_cursor[1]) is not int:
-            raise ValueError("invalid recovery normal-delivery cursor timestamp")
-    if len(state.batch_counts) != len(_BATCH_STATUSES) or any(
-        type(count) is not int or count < 0 for count in state.batch_counts
-    ):
-        raise ValueError("invalid recovery batch diagnostics")
 
 
 def _require_canonical_id(product_id: str) -> None:

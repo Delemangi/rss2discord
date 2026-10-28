@@ -186,11 +186,7 @@ class DDStoreHttpClient:
         except ValueError:
             raise FeedFetchError(DDSTORE_LABEL, "InvalidUrl") from None
         except requests.RequestsError as error:
-            if content.abort_error is not None:
-                raise content.abort_error from None
-            if budget.is_shutdown_requested():
-                raise FeedFetchInterruptedError from None
-            budget.remaining_seconds()
+            _check_failed_request(content, budget)
             raise FeedFetchError(
                 DDSTORE_LABEL,
                 type(error).__name__,
@@ -203,6 +199,14 @@ class DDStoreHttpClient:
         except ValidationError:
             raise FeedFetchError(DDSTORE_LABEL, "InvalidResponse") from None
         return FetchedDDStorePage(catalog_response, response_bytes)
+
+
+def _check_failed_request(content: _BoundedContent, budget: DDStoreScanBudget) -> None:
+    if content.abort_error is not None:
+        raise content.abort_error from None
+    if budget.is_shutdown_requested():
+        raise FeedFetchInterruptedError from None
+    budget.remaining_seconds()
 
 
 def _validate_declared_content_length(

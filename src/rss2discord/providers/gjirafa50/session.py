@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from http.cookies import CookieError, SimpleCookie
+from http.cookies import CookieError, Morsel, SimpleCookie
 from typing import Final, Protocol, assert_never
 from urllib.parse import urlsplit
 
@@ -144,7 +144,8 @@ class CurlCffiGjirafa50Session:
                     case _DeleteRoutingCookie():
                         self._routing_cookies.pop(hostname, None)
                     case None:
-                        pass
+                        # No valid routing directive leaves the existing cookie intact.
+                        return CurlCffiGjirafa50Response(response, raw_header_lines)
                     case unreachable:
                         assert_never(unreachable)
             return CurlCffiGjirafa50Response(response, raw_header_lines)
@@ -163,6 +164,15 @@ def _routing_cookie(
     raw_lines: list[bytes],
     hostname: str,
 ) -> _RoutingCookieDirective:
+    directive: _RoutingCookieDirective = None
+    for value in _final_cookie_values(raw_lines):
+        candidate = _routing_cookie_value(value, hostname)
+        if candidate is not None:
+            directive = candidate
+    return directive
+
+
+def _final_cookie_values(raw_lines: list[bytes]) -> list[str]:
     values: list[str] = []
     for raw_line in raw_lines:
         line = raw_line.rstrip(b"\r\n")
@@ -172,49 +182,53 @@ def _routing_cookie(
             raw_name, raw_value = line.split(b":", 1)
             if raw_name.strip().lower() == b"set-cookie":
                 values.append(raw_value.decode("latin-1").strip())
-    directive: _RoutingCookieDirective = None
-    for value in values:
-        cookie = SimpleCookie()
+    return values
+
+
+def _routing_cookie_value(value: str, hostname: str) -> _RoutingCookieDirective:
+    cookie = SimpleCookie()
+    try:
+        cookie.load(value)
+    except CookieError:
+        return None
+    routing_cookie = cookie.get("gjs")
+    if routing_cookie is None:
+        return None
+    domain = routing_cookie["domain"]
+    if routing_cookie["path"] != "/" or domain not in {
+        "",
+        hostname,
+        f".{hostname}",
+    }:
+        return None
+    return _routing_cookie_expiry(routing_cookie)
+
+
+def _routing_cookie_expiry(routing_cookie: Morsel[str]) -> _RoutingCookieDirective:
+    max_age = routing_cookie["max-age"]
+    expiry_deadline: float | None = None
+    if max_age:
         try:
-            cookie.load(value)
-        except CookieError:
-            continue
-        routing_cookie = cookie.get("gjs")
-        if routing_cookie is None:
-            continue
-        domain = routing_cookie["domain"]
-        if routing_cookie["path"] != "/" or domain not in {
-            "",
-            hostname,
-            f".{hostname}",
-        }:
-            continue
-        max_age = routing_cookie["max-age"]
-        expiry_deadline: float | None = None
-        if max_age:
-            try:
-                max_age_seconds = int(max_age)
-            except ValueError:
-                continue
-            if max_age_seconds <= 0:
-                directive = _DeleteRoutingCookie()
-                continue
-            expiry_deadline = time.monotonic() + max_age_seconds
-        elif expires := routing_cookie["expires"]:
-            try:
-                expires_at = parsedate_to_datetime(expires)
-            except (OverflowError, TypeError, ValueError):
-                continue
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=UTC)
-            remaining_seconds = (expires_at - datetime.now(UTC)).total_seconds()
-            if remaining_seconds <= 0:
-                directive = _DeleteRoutingCookie()
-                continue
-            expiry_deadline = time.monotonic() + remaining_seconds
-        if GJIRAFA50_ROUTING_COOKIE_PATTERN.fullmatch(routing_cookie.value) is not None:
-            directive = _SetRoutingCookie(routing_cookie.value, expiry_deadline)
-    return directive
+            max_age_seconds = int(max_age)
+        except ValueError:
+            return None
+        if max_age_seconds <= 0:
+            return _DeleteRoutingCookie()
+        expiry_deadline = time.monotonic() + max_age_seconds
+    elif expires := routing_cookie["expires"]:
+        try:
+            expires_at = parsedate_to_datetime(expires)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        remaining_seconds = (expires_at - datetime.now(UTC)).total_seconds()
+        if remaining_seconds <= 0:
+            return _DeleteRoutingCookie()
+        expiry_deadline = time.monotonic() + remaining_seconds
+    if GJIRAFA50_ROUTING_COOKIE_PATTERN.fullmatch(routing_cookie.value) is not None:
+        return _SetRoutingCookie(routing_cookie.value, expiry_deadline)
+    return None
 
 
 def _parse_final_headers(raw_lines: list[bytes]) -> Mapping[str, str]:

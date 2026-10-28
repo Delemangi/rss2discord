@@ -135,8 +135,10 @@ def test_pazar3_parser_keeps_eight_year_leap_day_search_and_fold_zero() -> None:
 
 def test_pazar3_parser_rejects_naive_clock_and_invalid_time_components() -> None:
     html = listing_page(1, [Pazar3Card().html()], total=1)
+    request = page_request()
+    naive_now = FIXED_NOW.replace(tzinfo=None)
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_pazar3_page(html, page_request(), FIXED_NOW.replace(tzinfo=None))
+        parse_pazar3_page(html, request, naive_now)
 
     assert fetch_error.value.cause_type == "InvalidClock"
     assert parse_cards(Pazar3Card(timestamp="Денес 24:00")) == ()
@@ -253,18 +255,19 @@ def test_pazar3_parser_accepts_relative_paginator_link() -> None:
 
 
 def test_pazar3_parser_rejects_more_than_three_promoted_rows() -> None:
+    page_html = listing_page(
+        1,
+        [Pazar3Card().html()],
+        total=1,
+        top_cards=[
+            Pazar3Card(product_id=str(product_id)).html() for product_id in range(1, 5)
+        ],
+    )
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
         parse_pazar3_page(
-            listing_page(
-                1,
-                [Pazar3Card().html()],
-                total=1,
-                top_cards=[
-                    Pazar3Card(product_id=str(product_id)).html()
-                    for product_id in range(1, 5)
-                ],
-            ),
-            page_request(),
+            page_html,
+            request,
             FIXED_NOW,
         )
 
@@ -281,8 +284,9 @@ def test_pazar3_parser_rejects_zero_results_with_forward_page() -> None:
         1,
     )
 
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_pazar3_page(html, page_request(), FIXED_NOW)
+        parse_pazar3_page(html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == "InvalidPaginator"
 
@@ -292,8 +296,10 @@ def test_pazar3_parser_rejects_short_non_terminal_page() -> None:
         Pazar3Card(product_id=str(product_id)).html() for product_id in range(1, 50)
     ]
 
+    page_html = listing_page(1, cards, total=100)
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_pazar3_page(listing_page(1, cards, total=100), page_request(), FIXED_NOW)
+        parse_pazar3_page(page_html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == "InvalidPage"
 
@@ -308,8 +314,9 @@ def test_pazar3_parser_rejects_malformed_paginator_anchor() -> None:
         1,
     )
 
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_pazar3_page(html, page_request(), FIXED_NOW)
+        parse_pazar3_page(html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == "InvalidPaginator"
 
@@ -323,22 +330,25 @@ def test_pazar3_parser_rejects_terminal_page_above_page_size() -> None:
     ).encode()
     html = listing_page(1, cards, total=51).replace(page_two_link, b"", 1)
 
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
-        parse_pazar3_page(html, page_request(), FIXED_NOW)
+        parse_pazar3_page(html, request, FIXED_NOW)
 
     assert fetch_error.value.cause_type == "InvalidPage"
 
 
 def test_pazar3_parser_rejects_non_newest_sort() -> None:
+    page_html = listing_page(
+        1,
+        [Pazar3Card().html()],
+        total=1,
+        active_sort="PriceAsc",
+    )
+    request = page_request()
     with pytest.raises(FeedFetchError) as fetch_error:
         parse_pazar3_page(
-            listing_page(
-                1,
-                [Pazar3Card().html()],
-                total=1,
-                active_sort="PriceAsc",
-            ),
-            page_request(),
+            page_html,
+            request,
             FIXED_NOW,
         )
 

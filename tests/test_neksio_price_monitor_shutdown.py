@@ -79,14 +79,15 @@ def test_shutdown_after_fetch_stops_before_delivery(tmp_path: Path) -> None:
             RecordingSender([]),
         )
         baseline.scan()
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([(after,)]),
+            store,
+            sender,
+            is_shutdown_requested=shutdown_after_fetch,
+        )
         with pytest.raises(FeedFetchInterruptedError):
-            make_monitor(
-                make_feed(),
-                CatalogStub([(after,)]),
-                store,
-                sender,
-                is_shutdown_requested=shutdown_after_fetch,
-            ).scan()
+            monitor.scan()
         assert sender.messages == []
         assert snapshots_by_product(store)[1].formatted == "100 MKD"
 

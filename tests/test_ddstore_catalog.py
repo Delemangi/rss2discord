@@ -74,10 +74,12 @@ def test_ddstore_catalog_client_rejects_metadata_drift(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="CatalogMetadataDrift"):
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -110,10 +112,12 @@ def test_ddstore_catalog_client_rejects_conflicting_duplicate_uid(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PaginationDrift") as fetch_error:
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert fetch_error.value.retryable
@@ -139,10 +143,12 @@ def test_ddstore_catalog_client_rejects_identical_duplicate_substitution(
     )
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PaginationDrift") as fetch_error:
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert fetch_error.value.retryable
@@ -171,10 +177,12 @@ def test_ddstore_catalog_client_rejects_nonfinal_page_cardinality_drift(
     )
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PaginationDrift") as fetch_error:
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert fetch_error.value.retryable
@@ -192,10 +200,12 @@ def test_ddstore_catalog_client_rejects_complete_empty_catalog(
     )
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="EmptyCatalog") as fetch_error:
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert fetch_error.value.retryable
@@ -232,10 +242,12 @@ def test_ddstore_catalog_client_rejects_final_page_cardinality_drift(
     )
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PaginationDrift") as fetch_error:
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
     assert fetch_error.value.retryable
@@ -251,10 +263,12 @@ def test_ddstore_catalog_client_rejects_oversized_response(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -278,10 +292,12 @@ def test_ddstore_catalog_client_honors_shutdown_before_next_page(
     monkeypatch.setattr(ddstore_http, "_create_session", lambda: post)
 
     # When / Then
+    client = DDStoreCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchInterruptedError):
-        DDStoreCatalogClient().fetch_catalog(
+        client.fetch_catalog(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=lambda: len(post.urls) == 1,
         )
     assert len(post.urls) == 1

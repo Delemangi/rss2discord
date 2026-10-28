@@ -87,13 +87,15 @@ def test_v2_defer_is_limited_to_missing_or_unavailable_and_not_existing_holds() 
         target=ReconciliationSnapshot(amount="1", formatted="1", currency="MKD"),
         disposition="accept",
     ).model_copy(update={"already_held": True})
+    plan = _plan(held_accept)
     with pytest.raises(ValueError, match="existing holds"):
-        validate_dispositions(_plan(held_accept))
+        validate_dispositions(plan)
 
 
 def test_defer_is_rejected_for_v1_and_unknown_artifact_fields_or_versions() -> None:
+    item = _item()
     with pytest.raises(ValueError, match="version 2"):
-        validate_dispositions(_plan(_item(), version=1))
+        _plan(item, version=1)
     payload = json.loads((FIXTURE / "plan.json").read_text())
     payload["version"] = 3
     with pytest.raises(ValidationError):
@@ -140,13 +142,17 @@ def test_invalid_v2_defer_is_rejected_before_catalog_fetch_or_store_access() -> 
     def forbidden_fetch(*_args: object) -> tuple[object, ...]:
         raise AssertionError("invalid artifact must be rejected before network fetch")
 
+    store = Store()
+    feed = make_feed()
+    ownership = Ownership()
+    fingerprint = plan.fingerprint()
     with pytest.raises(ValueError, match="only valid"):
         apply_plan(
-            Store(),  # type: ignore[arg-type]
-            make_feed(),
+            store,  # type: ignore[arg-type]
+            feed,
             plan,
-            Ownership(),  # type: ignore[arg-type]
-            fingerprint=plan.fingerprint(),
+            ownership,  # type: ignore[arg-type]
+            fingerprint=fingerprint,
             catalog_fetch=forbidden_fetch,  # type: ignore[arg-type]
         )
 
@@ -167,12 +173,16 @@ def test_tampered_v1_defer_is_rejected_before_catalog_fetch() -> None:
     def forbidden_fetch(*_args: object) -> tuple[object, ...]:
         raise AssertionError("invalid artifact must be rejected before network fetch")
 
+    store = Store()
+    feed = make_feed()
+    ownership = Ownership()
+    fingerprint = tampered.fingerprint()
     with pytest.raises(ValueError, match="version 2"):
         apply_plan(
-            Store(),  # type: ignore[arg-type]
-            make_feed(),
+            store,  # type: ignore[arg-type]
+            feed,
             tampered,
-            Ownership(),  # type: ignore[arg-type]
-            fingerprint=tampered.fingerprint(),
+            ownership,  # type: ignore[arg-type]
+            fingerprint=fingerprint,
             catalog_fetch=forbidden_fetch,  # type: ignore[arg-type]
         )

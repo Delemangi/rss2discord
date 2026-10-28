@@ -421,42 +421,13 @@ class Gjirafa50CatalogClient:
                     expected,
                     len(page.products),
                 )
-            for product in page.products:
-                previous = products.get(product.id)
-                if previous is not None:
-                    if previous == product:
-                        continue
-                    logger.warning(
-                        "Gjirafa50 conflicting duplicate product ID: "
-                        "phase=enumeration page=%d product_id=%d price_range=%s; "
-                        "catalog completeness is unverified",
-                        page_number,
-                        product.id,
-                        price_range,
-                    )
-                    raise FeedFetchError(
-                        GJIRAFA50_LABEL,
-                        "DuplicateProductId",
-                        retryable=True,
-                    )
-                if len(products) >= root_total:
-                    logger.warning(
-                        "Gjirafa50 unique product count exceeds root count: "
-                        "phase=enumeration page=%d price_range=%s "
-                        "root_total=%d unique_ids=%d",
-                        page_number,
-                        price_range,
-                        root_total,
-                        len(products) + 1,
-                    )
-                    raise FeedFetchError(
-                        GJIRAFA50_LABEL,
-                        "CatalogChanged",
-                        retryable=True,
-                    )
-                if len(products) >= MAX_GJIRAFA50_PRODUCTS:
-                    raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
-                products[product.id] = product
+            self._merge_shard_products(
+                page.products,
+                products,
+                root_total,
+                page_number,
+                price_range,
+            )
         sentinel = scan.fetch(
             pages + 1,
             price_range,
@@ -468,6 +439,47 @@ class Gjirafa50CatalogClient:
             and (sentinel.total_hits != total or sentinel.total_pages != pages)
         ):
             raise FeedFetchError(GJIRAFA50_LABEL, "InvalidTerminalPage", retryable=True)
+
+    @staticmethod
+    def _merge_shard_products(
+        incoming: tuple[Gjirafa50Product, ...],
+        products: dict[int, Gjirafa50Product],
+        root_total: int,
+        page_number: int,
+        price_range: Gjirafa50PriceRange,
+    ) -> None:
+        for product in incoming:
+            previous = products.get(product.id)
+            if previous is not None:
+                if previous == product:
+                    continue
+                logger.warning(
+                    "Gjirafa50 conflicting duplicate product ID: "
+                    "phase=enumeration page=%d product_id=%d price_range=%s; "
+                    "catalog completeness is unverified",
+                    page_number,
+                    product.id,
+                    price_range,
+                )
+                raise FeedFetchError(
+                    GJIRAFA50_LABEL,
+                    "DuplicateProductId",
+                    retryable=True,
+                )
+            if len(products) >= root_total:
+                logger.warning(
+                    "Gjirafa50 unique product count exceeds root count: "
+                    "phase=enumeration page=%d price_range=%s "
+                    "root_total=%d unique_ids=%d",
+                    page_number,
+                    price_range,
+                    root_total,
+                    len(products) + 1,
+                )
+                raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
+            if len(products) >= MAX_GJIRAFA50_PRODUCTS:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+            products[product.id] = product
 
     @staticmethod
     def _append_unique(

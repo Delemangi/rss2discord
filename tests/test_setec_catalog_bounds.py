@@ -62,10 +62,12 @@ def test_setec_catalog_client_rejects_a_declared_catalog_larger_than_the_product
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -92,10 +94,12 @@ def test_setec_catalog_client_rejects_a_band_response_larger_than_the_response_b
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -118,10 +122,12 @@ def test_setec_catalog_client_rejects_total_response_bytes_larger_than_the_scan_
     )
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -142,10 +148,12 @@ def test_setec_catalog_client_rejects_a_scan_that_exhausts_the_search_request_bu
     )
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="SearchRequestLimitExceeded"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -176,10 +184,12 @@ def test_setec_catalog_client_rejects_a_band_page_larger_than_the_search_page_si
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
+    fetch_retry_policy = no_wait_fetch_retry_policy()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded"):
-        SetecCatalogClient().fetch_price_index(
+        client.fetch_price_index(
             CATALOG_URL,
-            retry_policy=no_wait_fetch_retry_policy(),
+            retry_policy=fetch_retry_policy,
             is_shutdown_requested=catalog_scan_should_stop,
         )
 
@@ -206,8 +216,9 @@ def test_setec_catalog_client_rejects_a_discovery_window_larger_than_the_window_
     monkeypatch.setattr(requests, "post", post)
 
     # When / Then
+    client = SetecCatalogClient()
     with pytest.raises(FeedFetchError, match="PageCardinalityExceeded"):
-        SetecCatalogClient().fetch_latest_products(CATALOG_URL)
+        client.fetch_latest_products(CATALOG_URL)
 
     # Then
     assert len(post.urls) == 1

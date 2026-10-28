@@ -184,8 +184,10 @@ def test_detail_requires_one_well_formed_exact_url_match(
 ) -> None:
     for key, value in response_update.items():
         setattr(transport, key, value)
+    client = CCCenterCatalogClient()
+    selected_listing = listing(1)
     with pytest.raises(FeedFetchError, match=error):
-        CCCenterCatalogClient().fetch_product_detail(listing(1))
+        client.fetch_product_detail(selected_listing)
 
 
 def test_detail_accepts_zero_as_unpriced_scalar_and_encodes_unicode_slug(
@@ -228,9 +230,11 @@ def test_detail_response_price_and_locator_remain_available_for_confirmation(
 def test_batch_rejects_more_than_ten_before_fetching(
     transport: DetailTransport,
 ) -> None:
+    client = CCCenterCatalogClient()
+    listings = tuple(listing(i) for i in range(11))
     with pytest.raises(FeedFetchError, match="DetailProductLimitExceeded"):
-        CCCenterCatalogClient().fetch_product_details(
-            tuple(listing(i) for i in range(11)),
+        client.fetch_product_details(
+            listings,
         )
     assert transport.urls == []
 
@@ -266,8 +270,10 @@ def test_entire_selection_is_validated_before_first_request(
     invalid: CCCenterListing,
     error: str,
 ) -> None:
+    client = CCCenterCatalogClient()
+    listings = (listing(1), invalid)
     with pytest.raises(FeedFetchError, match=error) as raised:
-        CCCenterCatalogClient().fetch_product_details((listing(1), invalid))
+        client.fetch_product_details(listings)
     assert transport.urls == []
     assert "secret" not in str(raised.value)
 
@@ -276,9 +282,11 @@ def test_deadline_is_shared_and_later_transfers_get_only_remaining_time(
     transport: DetailTransport,
 ) -> None:
     transport.durations = [250, 51]
+    client = CCCenterCatalogClient()
+    listings = (listing(1), listing(2), listing(3))
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
-        CCCenterCatalogClient().fetch_product_details(
-            (listing(1), listing(2), listing(3)),
+        client.fetch_product_details(
+            listings,
         )
     assert transport.timeouts == [300, 50]
     assert len(transport.urls) == 2
@@ -299,8 +307,10 @@ def test_detail_parsing_also_consumes_the_aggregate_deadline(
         return product
 
     monkeypatch.setattr(CCCenterCatalogClient, "_store_product", staticmethod(parse))
+    client = CCCenterCatalogClient()
+    listings = (listing(1), listing(2))
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
-        CCCenterCatalogClient().fetch_product_details((listing(1), listing(2)))
+        client.fetch_product_details(listings)
     assert len(transport.urls) == 1
 
 
@@ -309,8 +319,10 @@ def test_aggregate_request_cap_is_not_reset_between_products(
     transport: DetailTransport,
 ) -> None:
     monkeypatch.setattr(cccenter_catalog, "MAX_CCCENTER_REQUESTS", 1)
+    client = CCCenterCatalogClient()
+    listings = (listing(1), listing(2))
     with pytest.raises(FeedFetchError, match="RequestLimitExceeded"):
-        CCCenterCatalogClient().fetch_product_details((listing(1), listing(2)))
+        client.fetch_product_details(listings)
     assert len(transport.urls) == 1
 
 
@@ -319,17 +331,21 @@ def test_aggregate_bytes_are_not_reset_between_products(
     transport: DetailTransport,
 ) -> None:
     monkeypatch.setattr(cccenter_catalog, "MAX_CCCENTER_SCAN_BYTES", 400)
+    client = CCCenterCatalogClient()
+    listings = (listing(1), listing(2), listing(3))
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):
-        CCCenterCatalogClient().fetch_product_details(
-            (listing(1), listing(2), listing(3)),
+        client.fetch_product_details(
+            listings,
         )
     assert len(transport.urls) == 2
 
 
 def test_shutdown_before_batch_makes_no_requests(transport: DetailTransport) -> None:
+    client = CCCenterCatalogClient()
+    listings = (listing(1),)
     with pytest.raises(FeedFetchInterruptedError):
-        CCCenterCatalogClient().fetch_product_details(
-            (listing(1),),
+        client.fetch_product_details(
+            listings,
             is_shutdown_requested=lambda: True,
         )
     assert transport.urls == []
@@ -338,9 +354,11 @@ def test_shutdown_before_batch_makes_no_requests(transport: DetailTransport) -> 
 def test_shutdown_during_later_response_discards_partial_batch(
     transport: DetailTransport,
 ) -> None:
+    client = CCCenterCatalogClient()
+    listings = (listing(1), listing(2), listing(3))
     with pytest.raises(FeedFetchInterruptedError):
-        CCCenterCatalogClient().fetch_product_details(
-            (listing(1), listing(2), listing(3)),
+        client.fetch_product_details(
+            listings,
             is_shutdown_requested=lambda: len(transport.urls) >= 2,
         )
     assert len(transport.urls) == 2
@@ -353,6 +371,8 @@ def test_redirect_cannot_change_selected_source_identity(
         status_code=302,
         headers={"Location": listing(2).url},
     )
+    client = CCCenterCatalogClient()
+    listings = (listing(1),)
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
-        CCCenterCatalogClient().fetch_product_details((listing(1),))
+        client.fetch_product_details(listings)
     assert len(transport.urls) == 1

@@ -102,15 +102,11 @@ def build_components_v2_payload(
     presentation = (
         present_pwn_watch(entry.title, entry.description) if pwn_watch else None
     )
-    title = (
-        presentation.title
-        if presentation is not None
-        else (
-            f"Price change: {entry.title}"
-            if entry.price_direction is not None
-            else entry.title
-        )
-    )
+    title = entry.title
+    if presentation is not None:
+        title = presentation.title
+    elif entry.price_direction is not None:
+        title = f"Price change: {entry.title}"
     heading = _build_heading(title, link)
     severity = presentation.severity if presentation is not None else None
     badge = f"**{severity.upper()} SEVERITY**" if severity else None
@@ -137,39 +133,14 @@ def build_components_v2_payload(
     description_component = _text_display(description) if description else None
     badge_component = _text_display(badge) if badge else None
 
-    if safe_image_url is not None:
-        # A Section pairs its children with the thumbnail. Keep it to the title
-        # and the metrics so a long description gets the full container width.
-        section_children: list[JSONValue] = [heading_component]
-        trailing: list[JSONValue] = []
-        if metrics_component is not None:
-            section_children.append(metrics_component)
-            if description_component is not None:
-                trailing.append(description_component)
-        elif description_component is not None:
-            section_children.append(description_component)
-        container_components.append(
-            {
-                "accessory": {
-                    "description": _thumbnail_description(entry.title),
-                    "media": {"url": safe_image_url},
-                    "type": THUMBNAIL_COMPONENT,
-                },
-                "components": section_children,
-                "type": SECTION_COMPONENT,
-            },
-        )
-        if badge_component is not None:
-            container_components.insert(0, badge_component)
-        container_components.extend(trailing)
-    else:
-        if badge_component is not None:
-            container_components.append(badge_component)
-        container_components.append(heading_component)
-        if metrics_component is not None:
-            container_components.append(metrics_component)
-        if description_component is not None:
-            container_components.append(description_component)
+    container_components = _layout_content(
+        safe_image_url,
+        entry.title,
+        heading_component,
+        metrics_component,
+        description_component,
+        badge_component=badge_component,
+    )
 
     container_components.append(
         {
@@ -198,6 +169,66 @@ def build_components_v2_payload(
     return payload
 
 
+def _layout_content(
+    safe_image_url: str | None,
+    title: str,
+    heading_component: JSONValue,
+    metrics_component: JSONValue,
+    description_component: JSONValue,
+    *,
+    badge_component: JSONValue,
+) -> list[JSONValue]:
+    container_components: list[JSONValue] = []
+    if safe_image_url is not None:
+        # A Section pairs its children with the thumbnail. Keep it to the title
+        # and the metrics so a long description gets the full container width.
+        section_children, trailing = _section_content(
+            heading_component,
+            metrics_component,
+            description_component,
+        )
+        container_components.append(
+            {
+                "accessory": {
+                    "description": _thumbnail_description(title),
+                    "media": {"url": safe_image_url},
+                    "type": THUMBNAIL_COMPONENT,
+                },
+                "components": section_children,
+                "type": SECTION_COMPONENT,
+            },
+        )
+        if badge_component is not None:
+            container_components.insert(0, badge_component)
+        container_components.extend(trailing)
+    else:
+        if badge_component is not None:
+            container_components.append(badge_component)
+        container_components.append(heading_component)
+        if metrics_component is not None:
+            container_components.append(metrics_component)
+        if description_component is not None:
+            container_components.append(description_component)
+
+    return container_components
+
+
+def _section_content(
+    heading: JSONValue,
+    metrics: JSONValue,
+    description: JSONValue,
+) -> tuple[list[JSONValue], list[JSONValue]]:
+    children: list[JSONValue] = [heading]
+    trailing: list[JSONValue] = []
+    if metrics is not None:
+        children.append(metrics)
+        if description is not None:
+            trailing.append(description)
+    elif description is not None:
+        children.append(description)
+    return children, trailing
+
+
 def _text_display(content: str) -> dict[str, JSONValue]:
     return {"content": content, "type": TEXT_DISPLAY_COMPONENT}
 
@@ -210,8 +241,6 @@ def _accent_color(feed: FeedConfig, entry: EntryData) -> int:
             return PRICE_DECREASE_ACCENT_COLOR
         case PriceDirection.INCREASE:
             return PRICE_INCREASE_ACCENT_COLOR
-        case None:
-            pass
     if feed.embed_color is not None:
         return feed.embed_color
     return DEFAULT_ACCENT_COLOR
@@ -297,18 +326,7 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
     # Reserved up front so the gap can never be the reason a detail is dropped.
     gap_cost = len("\n") + len(METRICS_GAP) if headline else 0
     remaining = MAX_METRICS_CHARACTERS - len(headline) - gap_cost
-    supporting_lines: list[str] = []
-    for text in supporting:
-        if not text:
-            continue
-        line = f"{SUBTEXT_PREFIX}{text}"
-        cost = len(line) + (len("\n") if supporting_lines or headline else 0)
-        if cost > remaining:
-            # Skip rather than stop: one overlong detail should not cost the
-            # reader every shorter one behind it.
-            continue
-        remaining -= cost
-        supporting_lines.append(line)
+    supporting_lines = _supporting_metric_lines(supporting, remaining, bool(headline))
 
     lines = [headline] if headline else []
     # Only worth its characters when it actually separates something.
@@ -318,6 +336,27 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
     if not lines:
         return None
     return "\n".join(lines)
+
+
+def _supporting_metric_lines(
+    supporting: list[str],
+    remaining: int,
+    has_headline: bool,
+) -> list[str]:
+    supporting_lines: list[str] = []
+    for text in supporting:
+        if not text:
+            continue
+        line = f"{SUBTEXT_PREFIX}{text}"
+        cost = len(line) + (len("\n") if supporting_lines or has_headline else 0)
+        if cost > remaining:
+            # Skip rather than stop: one overlong detail should not cost the
+            # reader every shorter one behind it.
+            continue
+        remaining -= cost
+        supporting_lines.append(line)
+
+    return supporting_lines
 
 
 def _render_headline_metric(metric: SourceMetric, prior: SourceMetric | None) -> str:

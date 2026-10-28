@@ -32,7 +32,7 @@ _MONTH_PATTERN: Final = re.compile(
     rf"(?P<day>\d{{1,2}}) (?P<month>{'|'.join(MACEDONIAN_MONTHS)}) {ACTIVITY_TIME_PATTERN}",
 )
 _IMAGE_PATTERN: Final = re.compile(
-    r"background-image\s*:\s*url\(\s*(['\"]?)(?P<url>[^)'\"]+)\1\s*\)",
+    r"background-image\s*+:\s*+url\(\s*+(['\"]?)(?P<url>[^)'\"]++)\1\s*+\)",
     re.IGNORECASE,
 )
 _SUMMARY_LENGTH: Final = 2_000
@@ -76,42 +76,17 @@ def parse_reklama5_page(
     organic_ids: set[EntryId] = set()
     organic_row_count = 0
     for card in soup.select("#sr-holder > .ad-top-div"):
-        promotion = card.select_one(".promotedBtn")
-        if promotion is not None:
-            if normalized_text(promotion) == "Промовирано":
-                continue
-            raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
+        if _is_promoted(card):
+            continue
 
         identity = _listing_identity(card, request)
         if identity is None:
             continue
-        link, entry_id, canonical_url = identity
-        organic_ids.add(entry_id)
-        title = normalized_text(link)
-        activity_text = normalized_text(card.select_one(".ad-date-div-1"))
-        activity_at = _parse_activity(
-            activity_text.removesuffix(_NEW_AD_BADGE_SUFFIX),
-            local_now,
-        )
-        if not title or activity_at is None:
-            continue
-        summary = normalized_text(card.select_one(".searchAdDesc"))
-        if len(summary) > _SUMMARY_LENGTH:
-            summary = f"{summary[: _SUMMARY_LENGTH - 3]}..."
-        listings.append(
-            Reklama5Listing(
-                entry_id=entry_id,
-                url=canonical_url,
-                title=title,
-                summary=summary,
-                price=normalized_text(card.select_one(".search-ad-price")),
-                location=normalized_text(card.select_one(".city-span")),
-                category=normalized_text(card.select_one(".ad-category-div small")),
-                activity_at=activity_at,
-                image_url=_image_url(card, request),
-            ),
-        )
-        organic_row_count += 1
+        organic_ids.add(identity[1])
+        listing = _parse_listing(card, request, local_now, identity)
+        if listing is not None:
+            listings.append(listing)
+            organic_row_count += 1
     frozen_ids = frozenset(organic_ids)
     has_paginator_links = bool(evidence.paginator_pages)
     if evidence.result_count == 0:
@@ -129,6 +104,46 @@ def parse_reklama5_page(
         result_count=evidence.result_count,
         terminal=terminal,
     )
+
+
+def _parse_listing(
+    card: Tag,
+    request: Reklama5PageRequest,
+    local_now: datetime,
+    identity: tuple[Tag, EntryId, str],
+) -> Reklama5Listing | None:
+    link, entry_id, canonical_url = identity
+    title = normalized_text(link)
+    activity_text = normalized_text(card.select_one(".ad-date-div-1"))
+    activity_at = _parse_activity(
+        activity_text.removesuffix(_NEW_AD_BADGE_SUFFIX),
+        local_now,
+    )
+    if not title or activity_at is None:
+        return None
+    summary = normalized_text(card.select_one(".searchAdDesc"))
+    if len(summary) > _SUMMARY_LENGTH:
+        summary = f"{summary[: _SUMMARY_LENGTH - 3]}..."
+    return Reklama5Listing(
+        entry_id=entry_id,
+        url=canonical_url,
+        title=title,
+        summary=summary,
+        price=normalized_text(card.select_one(".search-ad-price")),
+        location=normalized_text(card.select_one(".city-span")),
+        category=normalized_text(card.select_one(".ad-category-div small")),
+        activity_at=activity_at,
+        image_url=_image_url(card, request),
+    )
+
+
+def _is_promoted(card: Tag) -> bool:
+    promotion = card.select_one(".promotedBtn")
+    if promotion is None:
+        return False
+    if normalized_text(promotion) != "Промовирано":
+        raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
+    return True
 
 
 def _listing_identity(
@@ -178,25 +193,29 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
                 int(match.group("day")),
             )
         elif match := _MONTH_PATTERN.fullmatch(value):
-            month = MACEDONIAN_MONTHS[match.group("month")]
-            day = int(match.group("day"))
-            oldest_year = local_now.year - _MAX_YEARLESS_DATE_LOOKBACK_YEARS
-            for year in range(local_now.year, oldest_year - 1, -1):
-                try:
-                    wall_date = date(year, month, day)
-                except ValueError:
-                    continue
-                candidate = localize_wall_time(wall_date, match)
-                if candidate is None:
-                    continue
-                if candidate.astimezone(UTC) <= local_now.astimezone(UTC):
-                    return candidate
-            return None
+            return _yearless_activity(match, local_now)
         else:
             return None
         return localize_wall_time(wall_date, match)
     except ValueError:
         return None
+
+
+def _yearless_activity(match: re.Match[str], local_now: datetime) -> datetime | None:
+    month = MACEDONIAN_MONTHS[match.group("month")]
+    day = int(match.group("day"))
+    oldest_year = local_now.year - _MAX_YEARLESS_DATE_LOOKBACK_YEARS
+    for year in range(local_now.year, oldest_year - 1, -1):
+        try:
+            wall_date = date(year, month, day)
+        except ValueError:
+            continue
+        candidate = localize_wall_time(wall_date, match)
+        if candidate is not None and candidate.astimezone(UTC) <= local_now.astimezone(
+            UTC,
+        ):
+            return candidate
+    return None
 
 
 def _image_url(card: Tag, request: Reklama5PageRequest) -> str | None:

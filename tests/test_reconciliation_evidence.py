@@ -37,13 +37,15 @@ def test_legacy_schema_addition_is_atomic_with_reconciliation(tmp_path: Path) ->
         )
         store._connection.commit()
         before = database_state(store)
+        feed = make_feed()
+        fingerprint = plan.fingerprint()
         with pytest.raises(sqlite3.IntegrityError, match="baseline failed"):
             apply_plan(
                 store,
-                make_feed(),
+                feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before
@@ -117,24 +119,28 @@ def test_age_bound_includes_fresh_collection_and_final_transaction(
         before = database_state(store)
         clock = iter((0.0, 301.0))
         monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+        feed = make_feed()
+        fingerprint = plan.fingerprint()
         with pytest.raises(ValueError, match="stale"):
             apply_plan(
                 store,
-                make_feed(),
+                feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before
         clock = iter((0.0, 0.0, 301.0))
+        apply_feed = make_feed()
+        fresh_fingerprint = plan.fingerprint()
         with pytest.raises(ValueError, match="stale"):
             apply_plan(
                 store,
-                make_feed(),
+                apply_feed,
                 plan,
                 ownership,
-                fingerprint=plan.fingerprint(),
+                fingerprint=fresh_fingerprint,
                 catalog_fetch=fetch_current,
             )
         assert database_state(store) == before
@@ -151,11 +157,12 @@ def test_batch_compare_and_swap_and_noop_do_not_fake_delivery(tmp_path: Path) ->
             reason="state advanced after plan",
         )
         before = database_state(store)
+        operation_started_at = time.monotonic()
         with pytest.raises(ValueError, match="state drift"):
             store.apply_price_reconciliation(
                 plan,
                 ownership,
-                operation_started_at=time.monotonic(),
+                operation_started_at=operation_started_at,
             )
         assert database_state(store) == before
         products = (make_product("1", amount=100), make_product("2", amount=100))

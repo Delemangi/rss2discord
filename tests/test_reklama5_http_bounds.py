@@ -76,10 +76,12 @@ def test_reklama5_fetch_classifies_curl_timeout_at_deadline_as_scan_limit(
     monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: session)
     monkeypatch.setattr(reklama5_http.time, "monotonic", lambda: next(monotonic_values))
 
+    request = search_scope().page_request(1)
+    budget = scan_budget(expires_at=1.0)
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(
-            search_scope().page_request(1),
-            scan_budget(expires_at=1.0),
+            request,
+            budget,
         )
 
     assert fetch_error.value.cause_type == "ScanTimeLimitExceeded"
@@ -128,8 +130,10 @@ def test_reklama5_fetch_rejects_declared_and_streamed_oversized_bodies(
         lambda: RecordingGet([response]),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "ResponseTooLarge"
     assert not fetch_error.value.retryable
@@ -187,10 +191,12 @@ def test_reklama5_fetch_rejects_redirect_or_final_body_past_attempt_byte_limit(
         lambda: RecordingGet(responses),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget(bytes_remaining=4)
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(
-            search_scope().page_request(1),
-            scan_budget(bytes_remaining=4),
+            request,
+            budget,
         )
 
     assert fetch_error.value.cause_type == "ScanByteLimitExceeded"
@@ -207,8 +213,9 @@ def test_reklama5_fetch_reads_and_charges_http_error_before_classification(
         lambda: RecordingGet([StubResponse(b"unavailable", status_code=503)]),
     )
 
+    request = search_scope().page_request(1)
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), budget)
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "HTTPError"
     assert fetch_error.value.retryable
@@ -232,8 +239,10 @@ def test_reklama5_fetch_prioritizes_oversized_http_error_body(
         ),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "ResponseTooLarge"
     assert not fetch_error.value.retryable
@@ -250,8 +259,10 @@ def test_reklama5_fetch_classifies_http_statuses(
         lambda: RecordingGet([StubResponse(b"error", status_code=status_code)]),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.status_code == status_code
     assert fetch_error.value.retryable is (
@@ -278,8 +289,10 @@ def test_reklama5_fetch_classifies_cf_challenge_before_status_handling(
         ),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchError) as fetch_error:
-        fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+        fetch_reklama5_page(request, budget)
 
     assert fetch_error.value.cause_type == "BotChallenge"
     assert fetch_error.value.status_code == status_code
@@ -315,10 +328,12 @@ def test_reklama5_fetch_rejects_empty_response_completed_after_deadline(
         lambda: next(monotonic_values),
     )
 
+    request = search_scope().page_request(1)
+    budget = scan_budget(bytes_remaining=100, expires_at=1)
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(
-            search_scope().page_request(1),
-            scan_budget(bytes_remaining=100, expires_at=1),
+            request,
+            budget,
         )
 
     assert fetch_error.value.cause_type == "ScanTimeLimitExceeded"

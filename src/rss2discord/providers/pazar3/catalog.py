@@ -7,7 +7,7 @@ from typing import Final
 from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryId
 from rss2discord.providers.pazar3.http import Pazar3ScanBudget, fetch_pazar3_page
-from rss2discord.providers.pazar3.models import Pazar3Listing
+from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.parser import parse_pazar3_page
 from rss2discord.providers.pazar3.scope import (
@@ -85,34 +85,52 @@ class Pazar3CatalogClient:
                     "ChangedResultCount",
                     retryable=True,
                 )
-            if page_number > 1 and page.organic_ids & seen_ids:
-                raise FeedFetchError(PAZAR3_LABEL, "PaginationCycle", retryable=True)
-            if not page.terminal and page.organic_row_count != PAZAR3_RESULTS_PER_PAGE:
-                raise FeedFetchError(PAZAR3_LABEL, "IncompletePage", retryable=True)
-            if not page.organic_ids and not page.terminal:
-                raise FeedFetchError(
-                    PAZAR3_LABEL,
-                    "EmptyNonTerminalPage",
-                    retryable=True,
-                )
-            for listing in page.listings:
-                existing = listings.get(listing.entry_id)
-                if existing is not None and existing != listing:
-                    raise FeedFetchError(PAZAR3_LABEL, "ConflictingProductId")
-                listings.setdefault(listing.entry_id, listing)
+            _validate_catalog_page(page, page_number, seen_ids)
+            _merge_listings(page.listings, listings)
             seen_ids.update(page.organic_ids)
             organic_row_count += page.organic_row_count
             if page.terminal:
-                if (
-                    organic_row_count != expected_result_count
-                    or len(seen_ids) != expected_result_count
-                ):
-                    raise FeedFetchError(
-                        PAZAR3_LABEL,
-                        "IncompleteCatalog",
-                        retryable=True,
-                    )
-                if is_shutdown_requested():
-                    raise FeedFetchInterruptedError
+                _require_complete_catalog(
+                    organic_row_count,
+                    len(seen_ids),
+                    expected_result_count,
+                    is_shutdown_requested,
+                )
                 return tuple(listings.values())
         raise FeedFetchError(PAZAR3_LABEL, "PageLimitExceeded")
+
+
+def _validate_catalog_page(
+    page: Pazar3Page,
+    page_number: int,
+    seen_ids: set[EntryId],
+) -> None:
+    if page_number > 1 and page.organic_ids & seen_ids:
+        raise FeedFetchError(PAZAR3_LABEL, "PaginationCycle", retryable=True)
+    if not page.terminal and page.organic_row_count != PAZAR3_RESULTS_PER_PAGE:
+        raise FeedFetchError(PAZAR3_LABEL, "IncompletePage", retryable=True)
+    if not page.organic_ids and not page.terminal:
+        raise FeedFetchError(PAZAR3_LABEL, "EmptyNonTerminalPage", retryable=True)
+
+
+def _merge_listings(
+    incoming: tuple[Pazar3Listing, ...],
+    listings: dict[EntryId, Pazar3Listing],
+) -> None:
+    for listing in incoming:
+        existing = listings.get(listing.entry_id)
+        if existing is not None and existing != listing:
+            raise FeedFetchError(PAZAR3_LABEL, "ConflictingProductId")
+        listings.setdefault(listing.entry_id, listing)
+
+
+def _require_complete_catalog(
+    row_count: int,
+    unique_count: int,
+    expected_count: int,
+    is_shutdown_requested: Callable[[], bool],
+) -> None:
+    if row_count != expected_count or unique_count != expected_count:
+        raise FeedFetchError(PAZAR3_LABEL, "IncompleteCatalog", retryable=True)
+    if is_shutdown_requested():
+        raise FeedFetchInterruptedError
