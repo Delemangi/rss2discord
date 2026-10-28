@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -16,6 +17,44 @@ from tests.neksio_price_monitor_helpers import (
     make_product,
     snapshots_by_product,
 )
+
+
+def test_compare_prices_preserves_classification_order_and_duplicate_products(
+    tmp_path: Path,
+) -> None:
+    products = tuple(
+        make_product(index, amount="100.00", formatted="100 MKD")
+        for index in range(1, 6)
+    )
+    duplicate = make_product(4, amount="120.25", formatted="120.25 MKD")
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_monitor(make_feed(), CatalogStub([]), store, RecordingSender([]))
+        current = tuple(monitor._snapshot(item) for item in products)
+        persisted = {
+            current[1].product_id: replace(current[1], amount=Decimal("100.0")),
+            current[2].product_id: replace(current[2], formatted="old formatting"),
+            current[3].product_id: replace(current[3], amount=Decimal(90)),
+            current[4].product_id: replace(current[4], currency="EUR"),
+        }
+
+        silent, changes, snapshots = monitor._compare_prices(
+            (*products, duplicate),
+            persisted,
+        )
+
+    assert silent == [current[0], current[2]]
+    assert [change.product for change in changes] == [
+        products[3],
+        products[4],
+        duplicate,
+    ]
+    assert [change.previous for change in changes] == [
+        persisted["4"],
+        persisted["5"],
+        persisted["4"],
+    ]
+    assert snapshots["4"].amount == Decimal("120.25")
+    assert snapshots["4"].formatted == "120.25 MKD"
 
 
 def test_scan_baselines_new_products_silently_and_keeps_removed_history(

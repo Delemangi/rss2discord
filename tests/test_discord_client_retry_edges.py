@@ -122,6 +122,49 @@ def test_final_server_error_response_does_not_sleep(
     assert delays == [2.0, 4.0]
 
 
+@pytest.mark.parametrize("retry_status", [429, 500, 599])
+@pytest.mark.parametrize(
+    ("terminal_status", "body", "expected"),
+    [
+        (200, b'{"id":"123"}', DiscordDeliveryResult.DELIVERED),
+        (200, b"", DiscordDeliveryResult.FAILED),
+        (400, b'{"message":"rejected"}', DiscordDeliveryResult.FAILED),
+        (499, b"rejected", DiscordDeliveryResult.FAILED),
+        (600, b"", DiscordDeliveryResult.FAILED),
+    ],
+)
+def test_retry_response_then_terminal_response_is_confirmed_without_another_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    retry_status: int,
+    terminal_status: int,
+    body: bytes,
+    expected: DiscordDeliveryResult,
+) -> None:
+    session = requests.Session()
+    terminal_response = make_response(terminal_status)
+    terminal_response._content = body
+    responses = [make_response(retry_status, retry_after="0.25"), terminal_response]
+    attempts = 0
+    delays: list[float] = []
+
+    def post(url: str, **kwargs: PostArgument) -> requests.Response:
+        nonlocal attempts
+        del url, kwargs
+        attempts += 1
+        return responses.pop(0)
+
+    monkeypatch.setattr(session, "post", post)
+
+    result = DiscordWebhookClient(session).send(
+        make_message(),
+        record_delays(delays, continue_waiting=True),
+    )
+
+    assert result is expected
+    assert attempts == 2
+    assert delays == [0.25 if retry_status == 429 else 2.0]
+
+
 @pytest.mark.parametrize("error_type", [requests.ConnectionError, requests.Timeout])
 def test_exhausted_connection_errors_do_not_sleep_after_final_attempt(
     monkeypatch: pytest.MonkeyPatch,

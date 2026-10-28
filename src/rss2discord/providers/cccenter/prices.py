@@ -26,6 +26,7 @@ from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceRecoveryStore,
     deliver_price_changes,
+    diff_price_snapshots,
     finish_price_delivery,
     pause_price_fetch_failure,
     pause_price_recovery,
@@ -181,23 +182,23 @@ class CCCenterPriceMonitor:
         products: Sequence[CCCenterProduct],
         by_id: dict[str, PriceSnapshot],
     ) -> tuple[list[PriceSnapshot], list[_PriceChange], dict[str, PriceSnapshot]]:
-        silent: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        for product in products:
-            current = self._snapshot(product)
-            current_snapshots[product.product_id] = current
-            previous = by_id.get(product.product_id)
-            if previous is None:
-                silent.append(current)
-            elif (
-                previous.amount != current.amount
-                or previous.currency != current.currency
-            ):
-                changes.append(_PriceChange(product, previous, current))
-            elif previous.formatted != current.formatted:
-                silent.append(current)
-        return silent, changes, current_snapshots
+        snapshots = tuple(self._snapshot(product) for product in products)
+        # Associate observations, not IDs: repeated IDs must retain their products.
+        products_by_snapshot = {
+            id(snapshot): product
+            for product, snapshot in zip(products, snapshots, strict=True)
+        }
+        silent, records = diff_price_snapshots(snapshots, by_id)
+        changes = [
+            _PriceChange(
+                products_by_snapshot[id(record.current)],
+                record.previous,
+                record.current,
+            )
+            for record in records
+        ]
+        current_snapshots = {snapshot.product_id: snapshot for snapshot in snapshots}
+        return list(silent), changes, current_snapshots
 
     def _confirm_changes(self, changes: Sequence[_PriceChange]) -> list[_PriceChange]:
         details = self._dependencies.catalog.fetch_product_details(
