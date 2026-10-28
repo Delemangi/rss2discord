@@ -105,14 +105,23 @@ class DiscordWebhookClient:
                 self._log_request_error("request failed", message.feed.id, error)
                 return DiscordDeliveryResult.FAILED
 
-            if response.status_code == 429 or 500 <= response.status_code < 600:
-                result = self._retry_response(response, message.feed.id, attempt, sleep)
-                if result is not None:
-                    return result
-                continue
-            return self._confirmed_delivery(response, message)
+            result = self._handle_response(response, message, attempt, sleep)
+            if result is not None:
+                return result
 
         return DiscordDeliveryResult.FAILED
+
+    def _handle_response(
+        self,
+        response: requests.Response,
+        message: WebhookMessage,
+        attempt: int,
+        sleep: SleepCallback,
+    ) -> DiscordDeliveryResult | None:
+        """Confirm a terminal response or return None when a retry may proceed."""
+        if response.status_code == 429 or 500 <= response.status_code < 600:
+            return self._retry_response(response, message.feed.id, attempt, sleep)
+        return self._confirmed_delivery(response, message)
 
     def _confirmed_delivery(
         self,
