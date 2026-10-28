@@ -19,6 +19,8 @@ MAX_DISCOVERY_REQUESTS = 48
 MAX_DISCOVERY_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_DISCOVERY_BYTES = 16 * 1024 * 1024
 DISCOVERY_SECONDS = 120.0
+_CHUNK_PATH_PREFIX = "static/chunks/"
+_STATIC_PATH_PREFIX = "/_next/static/"
 
 # Direct constructor plus immediately associated index, not independent literals.
 _CONSTRUCTOR = re.compile(
@@ -44,17 +46,22 @@ def _advertised_paths(text: str) -> Iterator[str]:
 
 
 def _static_script_suffix(value: str) -> str | None:
-    if value.startswith("static/chunks/"):
-        return value[len("static/chunks/") :]
-    if value.startswith("/_next/static/"):
-        return value[len("/_next/static/") :]
-    for prefix in ("https://", "http://", "//"):
-        if value.startswith(prefix):
-            # The old origin portion required at least one character before
-            # /_next/static/, but did not otherwise normalize or trust it.
-            start = value.find("/_next/static/", len(prefix) + 1)
-            return value[start + len("/_next/static/") :] if start >= 0 else None
-    return None
+    if value.startswith(_CHUNK_PATH_PREFIX):
+        return value[len(_CHUNK_PATH_PREFIX) :]
+    if value.startswith(_STATIC_PATH_PREFIX):
+        return value[len(_STATIC_PATH_PREFIX) :]
+    scheme, separator, remainder = value.partition(":")
+    if separator and scheme in {"http", "https"} and remainder.startswith("//"):
+        authority_start = len(scheme) + len(separator) + 2
+    elif value.startswith("//"):
+        authority_start = 2
+    else:
+        return None
+    # Discovery recognizes insecure advertisements so static_url can reject
+    # them; it never upgrades them or authorizes an HTTP request. Preserve the
+    # required character before the static path without normalizing the URL.
+    start = value.find(_STATIC_PATH_PREFIX, authority_start + 1)
+    return value[start + len(_STATIC_PATH_PREFIX) :] if start >= 0 else None
 
 
 def _has_script_suffix(suffix: str) -> bool:
@@ -114,7 +121,7 @@ def static_url(value: str) -> str:
     """Validate a path before normalization can hide traversal."""
     # Next explicitly advertises these literal paths relative to /_next/.
     # This is normalization of an advertised path, not import reconstruction.
-    if value.startswith("static/chunks/"):
+    if value.startswith(_CHUNK_PATH_PREFIX):
         value = "/_next/" + value
     if any(part in {".", ".."} for part in value.split("/")) or any(
         ord(char) <= 32 for char in value
@@ -130,7 +137,7 @@ def static_url(value: str) -> str:
             and parsed.username is None
             and parsed.password is None
             and not parsed.fragment
-            and parsed.path.startswith("/_next/static/")
+            and parsed.path.startswith(_STATIC_PATH_PREFIX)
             and parsed.path.endswith(".js")
             # Route placeholders are percent-encoded by Next. No other escape
             # is accepted: encoded traversal, separators and double encoding fail.
