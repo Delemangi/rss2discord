@@ -28,7 +28,7 @@ build-backend = "uv_build"
 dev = [
     "mypy>=2.4.1",
     "pytest>=9.2.0",
-    "ruff>=0.17.3",
+    "ruff>=0.17.4",
     "types-pyyaml>=6.0.12.20261030",
     "types-requests>=2.33.0.20261030",
 ]
