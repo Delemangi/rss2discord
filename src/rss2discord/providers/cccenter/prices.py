@@ -10,6 +10,7 @@ from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.price_safety import MAX_UNAPPROVED_PRICE_CHANGES
 from rss2discord.providers.cccenter.bounds import (
     CCCENTER_LABEL,
     MAX_CCCENTER_RETAINED_SNAPSHOTS,
@@ -136,6 +137,33 @@ class CCCenterPriceMonitor:
         store = self._dependencies.snapshots
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
+        active = store.load_active_price_batch(self._feed.id)
+        held = store.held_price_product_ids(self._feed.id)
+        eligible = [c for c in changes if c.current.product_id not in held]
+        bulk = len(eligible) > MAX_UNAPPROVED_PRICE_CHANGES and active is None
+        confirmed_bulk: list[_PriceChange] = []
+        if bulk:
+            selected_ids = self._dependencies.sqlite_retry_policy.execute(
+                lambda: store.select_normal_price_deliveries(
+                    feed_id=self._feed.id,
+                    product_ids=(c.current.product_id for c in eligible),
+                ),
+            )
+            if selected_ids is None:
+                return
+            selected_set = set(selected_ids)
+            confirmed_bulk = self._confirm_changes(
+                [c for c in eligible if c.current.product_id in selected_set],
+            )
+            if not confirmed_bulk:
+                record_price_health(
+                    store,
+                    self._feed.id,
+                    "failed",
+                    "PriceConfirmationDeferred",
+                    len(current_snapshots),
+                )
+                return
         plan = self._dependencies.sqlite_retry_policy.execute(
             lambda: prepare_price_delivery(
                 store=store,
@@ -143,14 +171,25 @@ class CCCenterPriceMonitor:
                 provider="cccenter",
                 changes=tuple(
                     PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
+                    for c in (confirmed_bulk if bulk else changes)
                 ),
                 current=current_snapshots,
                 persisted=by_id,
                 catalog_count=len(products),
+                force_summary=bulk,
+                additional_pending=len(eligible) - len(confirmed_bulk) if bulk else 0,
             ),
         )
         if plan.blocked:
+            return
+        if plan.summary is not None:
+            deliver_price_changes(
+                (),
+                self._dependencies,
+                self._message,
+                plan=plan,
+                feed=self._feed,
+            )
             return
         changes_by_id = {change.current.product_id: change for change in changes}
         selected = [changes_by_id[product_id] for product_id in plan.selected_ids]
@@ -165,7 +204,13 @@ class CCCenterPriceMonitor:
             self._dependencies.sqlite_retry_policy.execute(
                 lambda: self._dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        deliver_price_changes(confirmed, self._dependencies, self._message, plan=plan)
+        deliver_price_changes(
+            confirmed,
+            self._dependencies,
+            self._message,
+            plan=plan,
+            feed=self._feed,
+        )
         if unconfirmed:
             record_price_health(
                 store,

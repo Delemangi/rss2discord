@@ -9,7 +9,6 @@ from rss2discord.price_safety import (
     MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
     MAX_UNAPPROVED_PRICE_CHANGES,
     assess_price_safety,
-    canonical_manifest_fingerprint,
 )
 from rss2discord.recovery_models import (
     HealthUpdate,
@@ -72,6 +71,9 @@ def pause_price_fetch_failure(
     feed_id: str,
     error: FeedFetchError,
 ) -> bool:
+    active = store.load_active_price_batch(feed_id)
+    if active is not None and active.delivery_mode == "automatic_summary":
+        return False
     batch = _pause_price_batch(store, feed_id, error.cause_type)
     if batch is None:
         return False
@@ -111,6 +113,8 @@ def prepare_price_delivery(
     current: Mapping[str, PriceSnapshot],
     persisted: Mapping[str, PriceSnapshot],
     catalog_count: int,
+    force_summary: bool = False,
+    additional_pending: int = 0,
 ) -> PriceDeliveryPlan:
     """Validate the complete diff and select bounded work without claiming sends."""
     held = store.held_price_product_ids(feed_id)
@@ -135,6 +139,16 @@ def prepare_price_delivery(
         if pause_price_recovery(store, feed_id, "CurrencyChanged"):
             return PriceDeliveryPlan(blocked=True)
         raise FeedFetchError(provider, "CurrencyChanged")
+    if batch is not None and batch.delivery_mode == "automatic_summary":
+        if batch.provider == provider and all(
+            item.product_id not in held
+            and persisted.get(item.product_id) == item.previous
+            for item in batch.items
+        ):
+            return PriceDeliveryPlan(batch_id=batch.batch_id, summary=batch)
+        if not store.retire_drifted_price_summary(batch.batch_id):
+            return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
+        return PriceDeliveryPlan(blocked=True)
     if batch is not None:
         return _prepare_active_batch(
             store,
@@ -145,27 +159,20 @@ def prepare_price_delivery(
             current=current,
             persisted=persisted,
         )
-    if len(changes) > MAX_UNAPPROVED_PRICE_CHANGES:
-        store.record_price_change_candidate(
+    if force_summary or len(changes) > MAX_UNAPPROVED_PRICE_CHANGES:
+        batch = store.stage_automatic_price_summary(
             feed_id=feed_id,
             provider=provider,
-            fingerprint=canonical_manifest_fingerprint(
-                feed_id=feed_id,
-                provider=provider,
-                items=changes,
-            ),
             catalog_count=catalog_count,
             available_count=len(current),
             items=changes,
         )
-        record_price_health(
-            store,
-            feed_id,
-            "quarantined",
-            "PriceChangeLimitExceeded",
-            len(changes),
+        return PriceDeliveryPlan(
+            blocked=batch.status != "approved",
+            batch_id=batch.batch_id,
+            summary=batch,
+            additional_pending=additional_pending,
         )
-        return PriceDeliveryPlan(blocked=True)
     selected = store.select_normal_price_deliveries(
         feed_id=feed_id,
         product_ids=tuple(change.product_id for change in changes),

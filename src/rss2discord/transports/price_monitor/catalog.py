@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping
 from functools import partial
 
+from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.recovery_models import PriceChangeRecord, PriceSnapshot
@@ -20,6 +21,7 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
     *,
     change_for: Callable[[PriceSnapshot, PriceSnapshot], ChangeT],
     feed_id: str,
+    feed: FeedConfig | None = None,
     provider: str,
     current: Mapping[str, PriceSnapshot],
     persisted: Mapping[str, PriceSnapshot],
@@ -70,6 +72,8 @@ def deliver_catalog_price_changes[ChangeT: CatalogPriceChange](
         dependencies,
         message_for,
         feed_id=feed_id,
+        feed=feed,
+        source_title=(feed.name if feed is not None else None) or provider,
         plan=plan,
         silent_updates=silent,
         changes=changes,

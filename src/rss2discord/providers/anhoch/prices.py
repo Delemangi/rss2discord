@@ -149,6 +149,7 @@ class AnhochPriceMonitor:
             (by_id[product_id] for product_id in plan.selected_ids),
             self._dependencies,
             self._message_for,
+            feed=self._feed,
             plan=plan,
         )
         finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))

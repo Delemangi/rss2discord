@@ -136,7 +136,7 @@ def test_price_monitor_advances_changed_snapshot_only_after_delivery(
         assert store.load_price_snapshots("neptun")[0].amount == Decimal(100)
 
 
-def test_price_monitor_rejects_more_than_one_hundred_changes_without_mutation(
+def test_price_monitor_summarizes_more_than_one_hundred_changes(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(make_product(index, 100) for index in range(1, 102))
@@ -148,12 +148,20 @@ def test_price_monitor_rejects_more_than_one_hundred_changes_without_mutation(
         monitor.scan()
 
         monitor.scan()
-        assert len(store.list_price_change_batches(feed_id="neptun")) == 1
+        assert (
+            len(
+                store.list_price_change_batches(
+                    feed_id="neptun",
+                    include_terminal=True,
+                ),
+            )
+            == 1
+        )
 
-        assert sender.messages == []
+        assert len(sender.messages) == 1
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("neptun")
-        } == {Decimal(100)}
+        } == {Decimal(90)}
 
 
 def test_price_monitor_rejects_snapshot_capacity_before_mutation(

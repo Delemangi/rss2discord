@@ -18,6 +18,7 @@ from rss2discord.transports.catalog_normalization import (
     normalize_hivetec_catalog,
 )
 from rss2discord.transports.price_monitor import prepare_price_delivery
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 from tests.reconciliation_helpers import fetch_current, reviewed, setup_plan
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_ddstore_price_monitor import (
@@ -44,7 +45,7 @@ def test_ddstore_real_monitor_future_only_and_permanent_holds(tmp_path: Path) ->
     with DeliveryStore(database) as store:
         monitor = make_monitor(feed, CatalogStub([baseline, current]), store, sender)
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         assert sender.messages == []
         batch = store.list_price_change_batches(feed.id)[0]
         with DatabaseOwnership(database) as ownership:
@@ -136,7 +137,7 @@ def test_hivetec_real_monitor_future_only_after_reconciliation(tmp_path: Path) -
     with DeliveryStore(database) as store:
         monitor = hivetec_monitor(HivetecStub([baseline, current]), store, sender)
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         assert sender.messages == []
         batch = store.list_price_change_batches(feed.id)[0]
         with DatabaseOwnership(database) as ownership:

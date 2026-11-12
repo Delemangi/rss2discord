@@ -152,6 +152,7 @@ class NeptunPriceMonitor:
             self._dependencies,
             self._message_for,
             feed_id=self._feed.id,
+            feed=self._feed,
             plan=plan,
             silent_updates=silent_updates,
             changes=changes,

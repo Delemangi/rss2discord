@@ -5,6 +5,7 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.providers.setec.models import SetecProduct
 from tests import setec_price_monitor_helpers as setec
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 
 
 def product_with_variant_id(
@@ -66,7 +67,7 @@ def test_approved_batch_missing_variant_id_pauses_before_any_send(
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = setec.make_monitor(setec.make_feed(), catalog, store, sender)
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(feed_id="setec")[0]
         store.approve_price_change_batch(
             feed_id="setec",

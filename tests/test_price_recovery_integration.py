@@ -26,6 +26,7 @@ from rss2discord.recovery_models import (
 from rss2discord.retries import FeedFetchInterruptedError
 from tests import test_ddstore_price_monitor as dd
 from tests import test_hivetec_price_monitor as hive
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_adapter_c2_provider_caps import Monitor, build
 
@@ -119,7 +120,7 @@ def test_catalog_silent_updates_wait_until_approved_batch_finishes(
         )
         stale = replace(unchanged, formatted="stale display")
         store.upsert_price_snapshot(stale)
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(provider)[0]
         store.approve_price_change_batch(
             feed_id=provider,
@@ -162,7 +163,7 @@ def test_normal_changes_send_without_approval_with_ten_attempt_cap(
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_actual_101_changes_quarantine_then_drain_same_approval(
+def test_actual_101_changes_deliver_one_automatic_summary(
     tmp_path: Path,
     provider: str,
 ) -> None:
@@ -175,47 +176,24 @@ def test_actual_101_changes_quarantine_then_drain_same_approval(
             sender,
         )
         monitor.scan()
-        before = store.load_price_snapshots(provider)
         monitor.scan()
-        assert store.load_price_snapshots(provider) == before
-        assert sender.messages == []
-        candidate = store.list_price_change_batches(provider)[0]
-        assert candidate.status == "candidate"
-        assert candidate.pending_count == 101
-        assert store.list_health(provider)[0].state == "quarantined"
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="reviewed all 101 changes",
-        )
-        monitor.scan()
-        active = store.load_active_price_batch(provider)
-        assert active is not None
-        assert active.fingerprint == candidate.fingerprint
-        assert active.pending_count == 91
-        assert active.delivered_count == 10
-        assert sum(item.attempt_count for item in active.items) == 10
-        assert len(sender.messages) == 10
-        monitor.scan()
-        shrunk = store.load_active_price_batch(provider)
-        assert shrunk is not None
-        assert shrunk.fingerprint == candidate.fingerprint
-        assert shrunk.pending_count == 81
-        for _ in range(9):
-            monitor.scan()
         assert store.load_active_price_batch(provider) is None
-        assert len(sender.messages) == 101
+        batch = store.list_price_change_batches(provider, include_terminal=True)[0]
+        assert batch.delivery_mode == "automatic_summary"
+        assert batch.approved_at is None
+        assert batch.delivered_count == 101
+        assert len(sender.messages) == 1
         assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
         assert store.list_health(provider)[0].state == "healthy"
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_unapproved_movement_replaces_full_candidate_without_writes(
+def test_unsent_summary_remains_immutable_after_source_movement(
     tmp_path: Path,
     provider: str,
 ) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        sender = RecordingSender([])
+        sender = RecordingSender([DiscordDeliveryResult.FAILED] * 2)
         monitor = monitor_for(
             provider,
             [(100,) * 101, (90,) * 101, (80,) * 101],
@@ -229,11 +207,11 @@ def test_unapproved_movement_replaces_full_candidate_without_writes(
         monitor.scan()
         candidates = store.list_price_change_batches(provider)
         assert len(candidates) == 1
-        assert candidates[0].fingerprint != old.fingerprint
+        assert candidates[0].fingerprint == old.fingerprint
         assert candidates[0].pending_count == 101
-        assert candidates[0].status == "candidate"
+        assert candidates[0].status == "approved"
         assert store.load_price_snapshots(provider) == before
-        assert sender.messages == []
+        assert len(sender.messages) == 2
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
@@ -264,7 +242,7 @@ def test_approved_invalid_manifest_or_fetch_pauses_without_delivery(
             sender,
         )
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(provider)[0]
         store.approve_price_change_batch(
             feed_id=provider,
@@ -316,7 +294,7 @@ def test_failed_approved_items_rotate_beyond_ten_lifetime_attempts(
             sender,
         )
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(provider)[0]
         store.approve_price_change_batch(
             feed_id=provider,
@@ -434,7 +412,7 @@ def test_inflight_success_is_acknowledged_after_revoke_and_next_send_is_blocked(
             else build(provider, 101, store, sender)
         )
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(provider)[0]
         store.approve_price_change_batch(
             feed_id=provider,
@@ -446,7 +424,7 @@ def test_inflight_success_is_acknowledged_after_revoke_and_next_send_is_blocked(
         assert batch is not None
         assert batch.status == "revoked"
         assert batch.delivered_count == 1
-        assert batch.pending_count == 100
+        assert batch.pending_count == batch.item_count - 1
         assert sum(item.attempt_count for item in batch.items) == 1
         assert len(sender.messages) == 1
         assert sum(s.amount == 90 for s in store.load_price_snapshots(provider)) == 1
@@ -492,7 +470,7 @@ def test_unsuccessful_sender_releases_exact_claim(
             sender,
         )
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches("ddstore")[0]
         store.approve_price_change_batch(
             feed_id="ddstore",

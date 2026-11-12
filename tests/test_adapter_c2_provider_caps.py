@@ -16,6 +16,7 @@ from tests import test_neptun_price_monitor as neptun
 from tests import test_pazar3_price_monitor as pazar3
 from tests import test_reklama5_price_monitor as reklama5
 from tests import test_technomarket_price_monitor as techno
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
 from tests.test_cccenter_price_monitor import product
 
@@ -146,7 +147,10 @@ def test_every_adapter_caps_normal_and_approved_attempts(
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = build(provider, count, store, sender)
         monitor.scan()
-        monitor.scan()
+        if count == 101:
+            scan_legacy_candidate(monitor, store)
+        else:
+            monitor.scan()
         if count == 101:
             assert sender.messages == []
             candidate = store.list_price_change_batches(feed_id=provider)[0]

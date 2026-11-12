@@ -193,22 +193,34 @@ def test_reklama5_price_monitor_parses_nonbreaking_thousands_separator(
         assert store.load_price_snapshots("reklama5")[0].amount == Decimal(1_200)
 
 
-def test_reklama5_price_monitor_rejects_change_limit_without_mutation(
+def test_reklama5_price_monitor_summarizes_bulk_changes(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(_listing(str(i), "100 ден.") for i in range(101))
     changed = tuple(_listing(str(i), "90 ден.") for i in range(101))
 
     with DeliveryStore(tmp_path / "state.db") as store:
-        monitor = _monitor(CatalogStub([baseline, changed]), store, RecordingSender([]))
+        monitor = _monitor(
+            CatalogStub([baseline, changed]),
+            store,
+            RecordingSender([DiscordDeliveryResult.DELIVERED]),
+        )
         monitor.scan()
 
         monitor.scan()
-        assert len(store.list_price_change_batches(feed_id="reklama5")) == 1
+        assert (
+            len(
+                store.list_price_change_batches(
+                    feed_id="reklama5",
+                    include_terminal=True,
+                ),
+            )
+            == 1
+        )
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("reklama5")
         } == {
-            Decimal(100),
+            Decimal(90),
         }
 
 

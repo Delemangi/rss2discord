@@ -11,6 +11,7 @@ from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from tests import setec_price_monitor_helpers as setec
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
 from tests.test_cccenter_price_monitor import product
 
@@ -67,7 +68,7 @@ def test_normal_plan_fences_stale_approval_before_silent_updates_and_sends(
     with DeliveryStore(path) as store, DeliveryStore(path) as admin:
         monitor = setec.make_monitor(setec.make_feed(), catalog, store, sender)
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches("setec")[0]
 
         def approve() -> None:

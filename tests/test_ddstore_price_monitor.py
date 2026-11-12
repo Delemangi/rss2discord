@@ -200,7 +200,7 @@ def test_ddstore_price_monitor_delivers_one_hundred_changes(tmp_path: Path) -> N
         } == {Decimal(90)}
 
 
-def test_ddstore_price_monitor_rejects_more_than_one_hundred_changes(
+def test_ddstore_price_monitor_summarizes_more_than_one_hundred_changes(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -218,13 +218,15 @@ def test_ddstore_price_monitor_rejects_more_than_one_hundred_changes(
         # When / Then
         monitor.scan()
 
-        assert sender.messages == []
+        assert len(sender.messages) == 1
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
-        } == {Decimal(100)}
-        assert store.list_price_change_batches("ddstore")[0].status == "candidate"
-        assert store.list_price_change_batches("ddstore")[0].pending_count == 101
-        assert store.list_health("ddstore")[0].state == "quarantined"
+        } == {Decimal(90)}
+        assert (
+            store.list_price_change_batches("ddstore", include_terminal=True)[0].status
+            == "completed"
+        )
+        assert store.list_health("ddstore")[0].state == "healthy"
 
 
 @pytest.mark.parametrize(

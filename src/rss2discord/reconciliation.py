@@ -115,6 +115,8 @@ def _build_plan(
         raise ValueError("selected batch identity/fingerprint mismatch")
     if batch.status not in {"candidate", "approved", "paused", "revoked"}:
         raise ValueError("selected batch is not reconcilable backlog")
+    if batch.delivery_mode != "individual":
+        raise ValueError("automatic summaries are not supported by reconciliation")
     store.require_no_open_price_claims(feed.id)
     snapshots_digest = store.price_snapshots_digest(feed.id)
     batch_digest = store.price_batch_state_digest(batch_id)

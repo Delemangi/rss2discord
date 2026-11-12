@@ -31,6 +31,14 @@ class PriceDeliveryClaim:
 
 
 @dataclass(frozen=True, slots=True)
+class PriceSummaryClaim:
+    """Receipt authorizing one whole immutable summary manifest."""
+
+    batch_id: int
+    generation: int
+
+
+@dataclass(frozen=True, slots=True)
 class PriceChangeRecord:
     """A stable-ID price transition from a persisted to a current snapshot."""
 
@@ -72,6 +80,7 @@ class PriceBatchSummary:
     approved_at: int | None = None
     paused_at: int | None = None
     completed_at: int | None = None
+    delivery_mode: str = "individual"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +93,10 @@ class PriceBatch:
     @property
     def batch_id(self) -> int:
         return self.summary.batch_id
+
+    @property
+    def delivery_mode(self) -> str:
+        return self.summary.delivery_mode
 
     @property
     def feed_id(self) -> str:

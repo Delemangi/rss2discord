@@ -19,7 +19,14 @@ from rss2discord.providers.setec.prices import SetecPriceMonitor
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests import setec_price_monitor_helpers as setec
+from tests.legacy_price_batch_helpers import enable_legacy_candidates
 from tests.test_cccenter_price_monitor import CatalogStub, product
+
+
+@pytest.fixture(autouse=True)
+def legacy_manifest_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These regressions exercise existing operator-approved individual history."""
+    enable_legacy_candidates(monkeypatch)
 
 
 class DetailCatalog(CatalogStub):

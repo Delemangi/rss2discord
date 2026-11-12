@@ -132,6 +132,7 @@ class HivetecPriceMonitor:
         deliver_catalog_price_changes(
             self._dependencies,
             self._message_for,
+            feed=self._feed,
             change_for=lambda previous, current: _PriceChange(
                 products_by_id[current.product_id],
                 previous,

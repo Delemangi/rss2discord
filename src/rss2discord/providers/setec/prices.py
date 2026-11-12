@@ -15,6 +15,7 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
+from rss2discord.price_safety import MAX_UNAPPROVED_PRICE_CHANGES
 from rss2discord.providers.setec.catalog_bounds import SETEC_LABEL
 from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
 from rss2discord.providers.setec.strategy import (
@@ -146,21 +147,71 @@ class SetecPriceMonitor:
 
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
+        active = snapshot_store.load_active_price_batch(self._feed.id)
+        held = snapshot_store.held_price_product_ids(self._feed.id)
+        eligible = [
+            pending for pending in pending_changes if pending.product_id not in held
+        ]
+        bulk = len(eligible) > MAX_UNAPPROVED_PRICE_CHANGES and active is None
+        confirmed_bulk: list[_PriceChange] = []
+        if bulk:
+            selected = self._dependencies.sqlite_retry_policy.execute(
+                lambda: snapshot_store.select_setec_summary_confirmations(
+                    feed_id=self._feed.id,
+                    product_ids=(p.product_id for p in eligible),
+                ),
+            )
+            if selected is None:
+                return
+            by_id = {pending.product_id: pending for pending in eligible}
+            confirmed_bulk = self._resolve_changes(
+                [by_id[product_id] for product_id in selected],
+            )
+            if not confirmed_bulk:
+                record_price_health(
+                    snapshot_store,
+                    self._feed.id,
+                    "failed",
+                    "PriceConfirmationDeferred",
+                    len(current_snapshots),
+                )
+                return
+        records = (
+            tuple(
+                PriceChangeRecord(c.current.product_id, c.previous, c.current)
+                for c in confirmed_bulk
+            )
+            if bulk
+            else tuple(
+                PriceChangeRecord(p.product_id, p.previous, p.current)
+                for p in pending_changes
+            )
+        )
         plan = self._dependencies.sqlite_retry_policy.execute(
             lambda: prepare_price_delivery(
                 store=snapshot_store,
                 feed_id=self._feed.id,
                 provider="setec",
-                changes=tuple(
-                    PriceChangeRecord(p.product_id, p.previous, p.current)
-                    for p in pending_changes
-                ),
+                changes=records,
                 current=current_snapshots,
                 persisted=snapshots_by_product,
                 catalog_count=len(price_entries),
+                force_summary=bulk,
+                additional_pending=max(0, len(eligible) - len(confirmed_bulk))
+                if bulk
+                else 0,
             ),
         )
         if plan.blocked:
+            return
+        if plan.summary is not None:
+            deliver_price_changes(
+                (),
+                self._dependencies,
+                self._message_for,
+                plan=plan,
+                feed=self._feed,
+            )
             return
         if silent_updates and plan.allow_silent_updates:
             self._dependencies.sqlite_retry_policy.execute(

@@ -33,8 +33,9 @@ contracts. Provider modules adapt source-specific products to this flow.
    currency changes produce change records. Missing products do not erase history.
    Comparison does not authorize delivery, release holds, or write to the database.
 3. **Plan.** `prepare_price_delivery` excludes held identities, checks currency and
-   recovery state, quarantines oversized change sets, and selects bounded delivery
-   work. A plan selects work; it does not claim an attempt or send a notification.
+   recovery state, and selects individual alerts or an automatic bulk summary.
+   More than 100 changed products selects summary handling, not automatic approval
+   of individual alerts. A plan does not claim an attempt or send a notification.
 4. **Confirm where required.** Providers such as CCCenter and Setec perform their
    own confirmation before delivery. Complete-catalog providers use their validated
    observations without adopting another provider's confirmation policy.
@@ -45,6 +46,40 @@ contracts. Provider modules adapt source-specific products to this flow.
    guarantee that every selected message reaches Discord.
 6. **Record health.** Record the completed scan's state without treating a blocked
    or quarantined plan as a healthy delivery cycle.
+
+## Automatic bulk summaries
+
+An automatic summary reports a bounded set of validated price observations in one
+message. The stored manifest is immutable once staged. A failed or interrupted
+send leaves its represented baselines unchanged; a confirmed send advances only
+those targets in one atomic acknowledgement. Prices that move again can be
+reported by a later scan. A retry reports the stored observation rather than
+pretending it is a new live-price check.
+
+Setec additionally confirms variant identity, currency and amount against product
+details. It selects at most 200 products for confirmation per scan, with durable
+rotation past unconfirmed identities. Only confirmed products enter the summary;
+unconfirmed products retain their old baselines. Large backlogs therefore drain
+across scans rather than requiring one unbounded confirmation operation.
+
+Automatic summaries do not release holds, approve old candidates, or resume
+operator-paused individual batches. Invalid catalogs, currency changes and access
+challenges retain their existing safeguards. Routine bulk volume and invalid
+source evidence are different conditions.
+
+Summary delivery is at-least-once: a crash after Discord accepts a message but
+before local acknowledgement can produce a duplicate. Atomic acknowledgement
+checks the stored previous baselines, holds and claim generation before updating
+any represented product. No database transaction spans the network send.
+
+### Deployment and rollback
+
+Existing batches retain individual delivery semantics. Automatic summaries use
+an explicit delivery mode; their internal active status is not operator approval.
+Older binaries do not understand this mode. Do not roll back to an older binary
+while an automatic summary remains active or has an open claim. Resolve that
+state using compatible code first, with all writers stopped before any offline
+administrative operation. Preserve database history and consistent backups.
 
 DDStore and Hivetec additionally support availability holds: a returning product
 can acquire a new baseline silently only after the existing reconciliation checks

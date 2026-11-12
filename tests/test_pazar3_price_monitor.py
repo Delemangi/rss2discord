@@ -180,7 +180,7 @@ def test_pazar3_price_monitor_retries_failed_delivery_without_advancing_snapshot
         assert store.load_price_snapshots("pazar3")[0].amount == Decimal(90)
 
 
-def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
+def test_pazar3_price_monitor_summarizes_bulk_changes(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(priced(str(i), "100 МКД") for i in range(101))
@@ -190,16 +190,24 @@ def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
         price_monitor = monitor(
             CatalogStub([baseline, changed]),
             store,
-            RecordingSender([]),
+            RecordingSender([DiscordDeliveryResult.DELIVERED]),
         )
         price_monitor.scan()
 
         price_monitor.scan()
-        assert len(store.list_price_change_batches(feed_id="pazar3")) == 1
+        assert (
+            len(
+                store.list_price_change_batches(
+                    feed_id="pazar3",
+                    include_terminal=True,
+                ),
+            )
+            == 1
+        )
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("pazar3")
         } == {
-            Decimal(100),
+            Decimal(90),
         }
 
 

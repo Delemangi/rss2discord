@@ -16,6 +16,7 @@ from rss2discord.recovery_models import (
     PriceChangeRecord,
     PriceDeliveryClaim,
     PriceSnapshot,
+    PriceSummaryClaim,
 )
 from rss2discord.retries import SQLiteRetryPolicy
 
@@ -32,6 +33,34 @@ class PriceSnapshotStore(Protocol):
 
 class PriceRecoveryStore(PriceSnapshotStore, Protocol):
     def held_price_product_ids(self, feed_id: str) -> frozenset[str]: ...
+
+    def stage_automatic_price_summary(
+        self,
+        *,
+        feed_id: str,
+        provider: str,
+        items: Iterable[PriceChangeRecord],
+        catalog_count: int,
+        available_count: int,
+    ) -> PriceBatch: ...
+
+    def claim_price_summary_attempt(
+        self,
+        batch_id: int,
+    ) -> PriceSummaryClaim | None: ...
+
+    def release_price_summary_attempt(self, claim: PriceSummaryClaim) -> bool: ...
+
+    def record_price_summary_delivery(self, claim: PriceSummaryClaim) -> None: ...
+
+    def retire_drifted_price_summary(self, batch_id: int) -> bool: ...
+
+    def select_setec_summary_confirmations(
+        self,
+        *,
+        feed_id: str,
+        product_ids: Iterable[str],
+    ) -> tuple[str, ...] | None: ...
 
     def record_price_change_candidate(
         self,
@@ -85,6 +114,8 @@ class PriceDeliveryPlan:
     selected_ids: tuple[str, ...] = ()
     batch_id: int | None = None
     blocked: bool = False
+    summary: PriceBatch | None = None
+    additional_pending: int = 0
 
     @property
     def allow_silent_updates(self) -> bool:

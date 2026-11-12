@@ -147,7 +147,7 @@ def test_hivetec_price_monitor_retries_failed_delivery_without_advancing_snapsho
         assert len(sender.messages) == 2
 
 
-def test_hivetec_price_monitor_rejects_change_limit_without_mutation(
+def test_hivetec_price_monitor_summarizes_bulk_changes(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -158,18 +158,21 @@ def test_hivetec_price_monitor_rejects_change_limit_without_mutation(
         price_monitor = monitor(
             CatalogStub([baseline, changed]),
             store,
-            RecordingSender([]),
+            RecordingSender([DiscordDeliveryResult.DELIVERED]),
         )
         price_monitor.scan()
 
         # When / Then
         price_monitor.scan()
 
-        assert store.list_price_change_batches("hivetec")[0].status == "candidate"
+        assert (
+            store.list_price_change_batches("hivetec", include_terminal=True)[0].status
+            == "completed"
+        )
         assert {
             str(snapshot.amount) for snapshot in store.load_price_snapshots("hivetec")
         } == {
-            "1499",
+            "1299",
         }
 
 

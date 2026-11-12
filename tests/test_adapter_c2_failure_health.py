@@ -14,6 +14,7 @@ from rss2discord.providers.gjirafa50 import (
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
 from rss2discord.runtime.health import feed_is_blocked
 from rss2discord.transports.price_monitor import pause_price_fetch_failure
+from tests.legacy_price_batch_helpers import scan_legacy_candidate
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_adapter_c2_provider_caps import Monitor, build
 from tests.test_gjirafa50_background_monitor import _build_background_monitor
@@ -67,7 +68,7 @@ def test_consumed_failure_records_one_outcome_and_preserves_recovery(
             else build(provider, 101, store, sender)
         )
         monitor.scan()
-        monitor.scan()
+        scan_legacy_candidate(monitor, store)
         candidate = store.list_price_change_batches(feed_id=provider)[0]
         store.approve_price_change_batch(
             feed_id=provider,
