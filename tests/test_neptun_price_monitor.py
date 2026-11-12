@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +18,7 @@ from rss2discord.providers.neptun.prices import (
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import scan as scan_module
 from tests.neptun_helpers import product_payload
 from tests.setec_price_monitor_helpers import RecordingSender
 
@@ -148,15 +149,6 @@ def test_price_monitor_summarizes_more_than_one_hundred_changes(
         monitor.scan()
 
         monitor.scan()
-        assert (
-            len(
-                store.list_price_change_batches(
-                    feed_id="neptun",
-                    include_terminal=True,
-                ),
-            )
-            == 1
-        )
 
         assert len(sender.messages) == 1
         assert {
@@ -229,23 +221,19 @@ def test_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
                 is_shutdown_requested=lambda: shutdown_requested,
             ),
         )
-        select = store.select_normal_price_deliveries
 
-        def select_then_shutdown(
-            *,
-            feed_id: str,
-            product_ids: Iterable[str],
-            limit: int = 10,
-        ) -> tuple[str, ...] | None:
+        prepare = scan_module.prepare_price_delivery
+
+        def prepare_then_shutdown(**kwargs: object) -> object:
             nonlocal shutdown_requested
-            selected = select(feed_id=feed_id, product_ids=product_ids, limit=limit)
+            plan = prepare(**kwargs)  # type: ignore[arg-type]
             shutdown_requested = True
-            return selected
+            return plan
 
         monkeypatch.setattr(
-            store,
-            "select_normal_price_deliveries",
-            select_then_shutdown,
+            scan_module,
+            "prepare_price_delivery",
+            prepare_then_shutdown,
         )
         monitor.scan()
 

@@ -30,7 +30,7 @@ class CompleteCatalogStrategy(FakeStrategy):
     allow_missing_timestamp_after_complete_baseline = True
     seed_existing_on_first_fetch = True
     max_new_entries_per_fetch = 1
-    max_delivery_history = 2
+    max_delivery_history = 10
 
 
 class CountingStrategy(FakeStrategy):
@@ -83,29 +83,29 @@ def test_fresh_catalog_baseline_is_not_delivery_and_allows_only_new_undated_ids(
             sender,
         )
         app.process_feed(feed)
-        assert store.has_complete_baseline(feed.id)
+        assert store.is_feed_initialized(feed.id)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.total_attempts, health.total_successes) == (
             "healthy",
             1,
             1,
         )
-        assert store.has_baselined(feed.id, "0")
-        assert store.count_delivered(feed.id) == 0
+        assert store.has_delivered(feed.id, "0")
+        assert store.count_delivered(feed.id) == 5
         assert sender.messages == []
         strategy.entries.append(_undated("new"))
         app.process_feed(feed)
         app.process_feed(feed)
-        assert store.count_delivered(feed.id) == 1
+        assert store.count_delivered(feed.id) == 6
         assert store.has_delivered(feed.id, "new")
-        assert not store.has_delivered(feed.id, "0")
+        assert store.has_delivered(feed.id, "0")
         assert len(sender.messages) == 1
 
 
-def test_legacy_catalog_waits_for_exact_manual_baseline_approval(
+def test_initialized_catalog_does_not_require_manual_baseline_approval(
     tmp_path: Path,
 ) -> None:
-    sender = FakeSender([True])
+    sender = FakeSender([True, True])
     with DeliveryStore(tmp_path / "state.db") as store:
         app, feed, strategy = _catalog_app(
             store,
@@ -114,25 +114,16 @@ def test_legacy_catalog_waits_for_exact_manual_baseline_approval(
         )
         store.seed_feed(feed.id, ["legacy"])
         app.process_feed(feed)
-        candidate = store.load_baseline_candidate(feed.id)
-        assert candidate is not None
-        assert not store.has_complete_baseline(feed.id)
-        assert store.list_health(feed.id)[0].state == "recovery_required"
-        app.process_feed(feed)
-        assert store.load_baseline_candidate(feed.id) == candidate
-        assert sender.messages == []
-        store.approve_feed_baseline_candidate(
-            feed_id=feed.id,
-            fingerprint=candidate.fingerprint,
-            reason="Reviewed complete inventory",
-        )
-        app.process_feed(feed)
+        assert store.is_feed_initialized(feed.id)
+        assert store.list_health(feed.id)[0].state == "healthy"
+        assert [message.entry.title for message in sender.messages] == ["missed"]
+        assert store.has_delivered(feed.id, "missed")
         strategy.entries.append(_undated("new"))
         app.process_feed(feed)
-        assert [message.entry.title for message in sender.messages] == ["new"]
-        assert store.count_delivered(feed.id) == 2
-        assert not store.has_delivered(feed.id, "missed")
-        assert store.has_baselined(feed.id, "missed")
+        assert [message.entry.title for message in sender.messages] == [
+            "missed",
+            "new",
+        ]
 
 
 def test_baseline_does_not_disable_age_filter_for_dated_catalog_entries(
@@ -159,11 +150,7 @@ def test_rss_missing_timestamp_remains_rejected_even_with_explicit_baseline(
     feed = make_feed("rss")
     sender = FakeSender([])
     with DeliveryStore(tmp_path / "state.db") as store:
-        store.initialize_feed_with_baseline(
-            feed_id=feed.id,
-            entry_ids=["old"],
-            reason="Existing inventory",
-        )
+        store.seed_feed(feed.id, ["old"])
         app = RSSToDiscord(AppConfig(feeds=(feed,), max_post_age_days=1), store, sender)
         app._strategies["rss"] = FakeStrategy([_undated("new")])
         app.process_feed(feed)
@@ -178,7 +165,7 @@ def test_failed_catalog_does_not_create_baseline_candidate(tmp_path: Path) -> No
             FeedFetchError("CCCenter", "IncompletePage"),
         )
         _process_feed_safely(feed, app.process_feed, app._store)
-        assert store.load_baseline_candidate(feed.id) is None
+        assert store.count_delivered(feed.id) == 1
         assert store.list_health(feed.id)[0].state == "failed"
 
 
@@ -296,7 +283,7 @@ def test_health_error_payload_and_logs_do_not_expose_exception_secret(
         assert "secret.example" not in caplog.text
 
 
-def test_successful_price_return_and_timing_do_not_erase_quarantine(
+def test_successful_price_return_and_timing_do_not_erase_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -312,8 +299,8 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
             HealthUpdate(
                 feed.id,
                 "price",
-                "quarantined",
-                "ApprovalRequired",
+                "failed",
+                "DeliveryRetryPending",
                 int(time.time()),
                 True,
                 True,
@@ -345,8 +332,8 @@ def test_successful_price_return_and_timing_do_not_erase_quarantine(
         jobs[0].run()
         _record_job_timing(store, JobTiming(feed.id, "price", 1, 4, 6))
         record = store.list_health(feed.id)[0]
-        assert record.state == "quarantined"
-        assert record.cause == "ApprovalRequired"
+        assert record.state == "failed"
+        assert record.cause == "DeliveryRetryPending"
         assert record.item_count == 200
         assert record.duration_ms == 2000
         assert record.scheduler_lag_ms == 3000

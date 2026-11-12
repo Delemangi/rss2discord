@@ -13,9 +13,9 @@ See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs
 
 ## Setec public-webstore scope
 
-Setec searches now consistently select `status = 'published' AND is_web_active = 'true'` for latest discovery, full price-index counts/bands, and product-ID confirmation lookups. This is an explicitly reviewed source-scope change, separate from repairing public search-configuration discovery. Product IDs, variant handling, currency rules, price caps, scheduling, and approval requirements are unchanged.
+Setec searches now consistently select `status = 'published' AND is_web_active = 'true'` for latest discovery, full price-index counts/bands, and product-ID confirmation lookups. This is an explicitly reviewed source-scope change, separate from repairing public search-configuration discovery. Product IDs, variant handling, currency rules, price caps, and scheduling are unchanged.
 
-Historical identities and price snapshots remain preserved, including products no longer visible in the public webstore; absence is not permission to reset, delete, waive, or release their history. Existing stale price candidates must not be approved. Fresh validated bulk changes use automatic summaries; Setec additionally confirms at most 200 products per scan against product details before including them. This does not approve historical individual batches or release holds.
+Historical identities and price snapshots remain preserved, including products no longer visible in the public webstore; absence is not permission to reset or delete their history. Setec confirms product details before reporting a change and rotates through at most 2,000 confirmations per scan. Confirmed changes are reported, never silently dropped.
 
 Search configuration is discovered afresh per operation from explicitly advertised same-origin public JavaScript, without a legacy-key fallback. Discovery is limited to 40 unique assets, 48 physical requests, 2 MiB per response, 16 MiB total decoded bytes, and 120 seconds. These are sublimits within full-catalog operations' existing 1,000-request/500-MiB caps and new 300-second deadline. Latest operations have a 150-second deadline and an enclosing discovery-plus-search byte allowance; their existing 1-MiB single-search-response and redirect-chain byte limits are unchanged. Full indexes are accepted only after a final root count/bounds recheck agrees with the initial summary; incomplete or drifting evidence fails closed.
 
@@ -64,62 +64,28 @@ See [price-monitoring flow](docs/price-monitoring-flow.md) for the comparison, p
 
 RSS/Atom responses are bounded to 1 MiB by default. A 2 MiB allowance applies only when both the requested URL and final response URL are exact public GitHub release Atom addresses (`https://github.com/<owner>/<repo>/releases.atom`); the same decoded-response size checks still apply.
 
-## Inspecting and recovering state
+## Price notifications
 
-The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Health and price/baseline inspection commands are read-only. Replace example batch `42`, feed IDs, and fingerprints with inspected values. Before a state-changing operation, stop every writer and back up the database safely, including any WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.
+Each price scan compares the validated catalog with the stored baseline.
+
+- Up to 25 changed products in one scan send one price-change card per product.
+- A larger scan sends one digest message with a few example cards and two attachments: a complete Markdown table and a complete CSV.
+- The baseline and the pending notification rows are written in one transaction before delivery. A failed or interrupted Discord send leaves the notification pending and retries on a later scan; changes are not lost.
+- Delivery is at-least-once. An ambiguous timeout or crash after Discord accepts a message can produce a duplicate.
+- There is no approval, quarantine, or pause step for price changes. Invalid or incomplete catalog evidence is rejected and retried; it never overwrites a valid price.
+
+Upgrading from a database that still contains the retired approval, hold, or reconciliation tables drops those tables after a one-time cursor migration. Take a consistent backup before the first start with the new version. Price snapshots, delivered entries, initialized feeds, health, and pending notifications are preserved.
+
+## Inspecting state
+
+The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Both commands are read-only:
 
 ```sh
 python -m rss2discord.admin --database data/state.db health list
-python -m rss2discord.admin --database data/state.db price list --feed-id FEED_ID --all
-python -m rss2discord.admin --database data/state.db price show 42 --offset 0 --sample-limit 100
-python -m rss2discord.admin --database data/state.db baseline list --feed-id cccenter
-python -m rss2discord.admin --database data/state.db baseline show cccenter --offset 0 --sample-limit 100
+python -m rss2discord.admin --database data/state.db notifications list --status pending --limit 50
 ```
 
-Fresh scans with more than 100 changed products use one automatic bulk summary instead of a flood of individual alerts. Only validated, confirmed observations are represented; successful summary delivery advances exactly those price baselines atomically. Failed sends retain the manifest for retry. Source errors, holds and operator-paused individual batches are not automatically waived. See [price-monitoring flow](docs/price-monitoring-flow.md#automatic-bulk-summaries) for retry and rollback restrictions.
-
-For historical individual recovery batches, inspect every page of `price show` (`--offset` advances by the returned count) and confirm the same full fingerprint, batch, and total throughout. Normal and approved individual scans allow at most ten delivery attempts, not ten guaranteed deliveries. Manual approval remains available for individual recovery; it permits later scans to deliver, not an immediate send. Automatic summary mode is not operator approval and cannot be converted to individual delivery by approval. Revocation prevents new deliveries but cannot stop an already in-flight send or undo one already sent. Both approval and revocation require the full fingerprint and a meaningful reason:
-
-```sh
-python -m rss2discord.admin --database data/state.db price approve --feed-id FEED_ID --fingerprint FULL_FINGERPRINT --reason "Reviewed exact targets"
-python -m rss2discord.admin --database data/state.db price revoke 42 --fingerprint FULL_FINGERPRINT --reason "Withdraw review"
-```
-
-CCCenter baseline approval suppresses the reviewed existing inventory; it does not notify for those products. Inspect every page and verify its full fingerprint and count before approval. There is no baseline-revoke command:
-
-```sh
-python -m rss2discord.admin --database data/state.db baseline approve --feed-id cccenter --fingerprint FULL_FINGERPRINT --reason "Suppress reviewed inventory"
-```
-
-## DDStore / Hivetec future-only reconciliation
-
-This offline workflow applies only to DDStore and Hivetec. It silently accepts reviewed **current** prices as the future baseline; it does not send historical alerts. Price holds do not suppress product discovery. New V2 plans distinguish review-only `hold` from availability `defer`; V1 plans and existing holds remain review-only. There are no automatic price-legitimacy thresholds or commands to release review holds.
-
-1. Stop **all** writers, including old binaries and database clients, and verify a consistent backup. Keep them stopped through apply and any discovery-baseline approval. `--writers-stopped` is an operator acknowledgment, not an automated check. Do not bypass `.writer.lock` or clear claims to proceed.
-2. Use read-only `price list` / `price show` to select the feed, batch, and exact full batch fingerprint. Create a fresh plan with a truthful operator and review reference:
-
-   ```sh
-   python -m rss2discord.admin --database data/state.db reconcile plan --config config/config.yaml --feed-id ddstore --batch-id 42 --batch-fingerprint FULL_BATCH_FINGERPRINT --reason "Operator: YOUR_NAME; review ticket: YOUR_REFERENCE" --writers-stopped --output draft.json
-   ```
-
-3. Preserve the draft and edit a separate copy. Review **every** item and its context. `accept` adopts the exact positive MKD price; `hold` preserves the old snapshot and requires review indefinitely; `defer` is only for missing/unpriced products and permits a later silent reset when a complete valid catalog supplies a price; `noop` is only for unchanged prices. Missing/unpriced products require `hold` or V2 `defer`. Existing hold kinds cannot be downgraded. Active recovery batches or open claims can delay deferred products' return; their release and replacement baseline are recorded atomically without sending.
-4. Seal the edited artifact, independently inspect it and retain the full reconciliation fingerprint, then apply and inspect the receipt and holds:
-
-   ```sh
-   python -m rss2discord.admin reconcile review --plan edited.json --output reviewed.json
-   python -m rss2discord.admin --database data/state.db reconcile apply --config config/config.yaml --feed-id ddstore --plan reviewed.json --fingerprint FULL_RECONCILIATION_FINGERPRINT --writers-stopped
-   python -m rss2discord.admin --database data/state.db reconcile receipt --fingerprint FULL_RECONCILIATION_FINGERPRINT
-    python -m rss2discord.admin --database data/state.db reconcile holds --feed-id ddstore
-    ```
-
-5. For future-only **discovery** too, separately prepare the known inventory from the applied receipt, inspect every page with `baseline show`, and approve its exact baseline fingerprint before restarting writers. This suppresses historical accepted, held, missing and unpriced identities without marking them delivered. An incompatible complete ordinary baseline is immutable: preparation refuses it; stop and review the mismatch rather than expecting replacement:
-
-   ```sh
-   python -m rss2discord.admin --database data/state.db baseline prepare --config config/config.yaml --feed-id ddstore --reconciliation-fingerprint FULL_RECONCILIATION_FINGERPRINT --writers-stopped --reason "Prepare reviewed historical inventory"
-   python -m rss2discord.admin --database data/state.db baseline approve --feed-id ddstore --fingerprint FULL_BASELINE_FINGERPRINT --reason "Suppress reviewed historical inventory"
-   ```
-
-Plan output files must not already exist. Sealing validates an artifact; it is not a signature or authorization. Plans expire after 24 hours; each evidence operation is limited to 300 seconds. Apply refetches and rechecks complete source and database evidence. Drift, incomplete evidence, or invalid decisions cause refusal without database changes: regenerate and review a fresh plan; never force a mismatch. Retain the receipt, artifacts, and backup. Reconciliation records an audit receipt without marking historical alerts as delivered.
+Before any offline database operation, stop every writer and back up the database safely, including WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.
 
 ## Runtime and development
 

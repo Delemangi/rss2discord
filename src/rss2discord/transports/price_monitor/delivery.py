@@ -1,18 +1,21 @@
 """Delivery stage for source-neutral price monitoring."""
 
+import time
 from collections.abc import Callable, Iterable, Sequence
-from datetime import UTC, datetime
 from functools import partial
-from itertools import islice
 from typing import assert_never
+from uuid import uuid4
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import EntryData
-from rss2discord.price_safety import MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN
-from rss2discord.recovery_models import PriceDeliveryClaim, PriceSnapshot
+from rss2discord.price_notifications import (
+    PriceNotification,
+    PriceNotificationDeliveryResult,
+)
+from rss2discord.recovery_models import PriceSnapshot
 
+from . import digest
 from .contracts import (
     DeliverablePriceChange,
     PriceAlertDelivery,
@@ -23,15 +26,8 @@ from .contracts import (
 from .planning import finish_price_delivery, record_price_health
 
 
-def persist_price_delivery(
-    store: PriceRecoveryStore,
-    claim: PriceDeliveryClaim | None,
-    snapshot: PriceSnapshot,
-) -> None:
-    if claim is None:
-        store.upsert_price_snapshot(snapshot)
-    else:
-        store.record_approved_price_delivery(claim, snapshot)
+def persist_price_delivery(store: PriceRecoveryStore, snapshot: PriceSnapshot) -> None:
+    store.upsert_price_snapshot(snapshot)
 
 
 def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
@@ -42,21 +38,29 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
     plan: PriceDeliveryPlan,
     feed: FeedConfig | None = None,
     source_title: str | None = None,
+    baseline_extra: Sequence[PriceSnapshot] = (),
+    current_snapshots: Sequence[PriceSnapshot] | None = None,
 ) -> None:
-    if plan.blocked:
-        return
-    if plan.summary is not None:
-        if feed is None:
-            raise ValueError("summary delivery requires explicit feed context")
-        deliver_price_summary(
+    del source_title
+    materialized = tuple(changes)
+    if plan.bulk:
+        _deliver_bulk(
+            materialized,
             dependencies,
-            feed,
-            source_title or feed.name or plan.summary.provider,
-            plan,
+            message_for,
+            plan=plan,
+            feed=feed,
+            baseline_extra=baseline_extra,
+            current_snapshots=current_snapshots,
         )
         return
+    if feed is not None and not _drain_pending(dependencies, feed):
+        return
+    selected = set(plan.selected_ids)
     delay_before_next = False
-    for change in islice(changes, MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN):
+    for change in materialized:
+        if change.current.product_id not in selected:
+            continue
         if dependencies.delivery.is_shutdown_requested():
             return
         if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
@@ -67,153 +71,120 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         message = message_for(change)
         if dependencies.delivery.is_shutdown_requested():
             return
-        claim = _claim_price_change(dependencies, plan, change.current.product_id)
-        if plan.batch_id is not None and claim is None:
-            return
-        result = _send_claimed_price_change(dependencies, message, claim)
-        should_continue, delay_before_next = _handle_price_delivery_result(
-            dependencies,
-            change.current,
-            claim,
-            result,
-        )
-        if not should_continue:
-            return
-
-
-def deliver_planned_price_changes[PriceChangeT: DeliverablePriceChange](
-    dependencies: PriceChangeDeliveryDependencies,
-    message_for: Callable[[PriceChangeT], WebhookMessage],
-    *,
-    feed_id: str,
-    plan: PriceDeliveryPlan,
-    silent_updates: Sequence[PriceSnapshot],
-    changes: Sequence[PriceChangeT],
-    item_count: int,
-    feed: FeedConfig | None = None,
-    source_title: str | None = None,
-) -> None:
-    """Apply permitted silent updates, deliver selected changes, and record health."""
-    if plan.blocked:
-        return
-    if plan.summary is not None:
-        if feed is None:
-            raise ValueError("summary delivery requires explicit feed context")
-        deliver_price_summary(
-            dependencies,
-            feed,
-            source_title or feed.name or plan.summary.provider,
-            plan,
-        )
-        return
-    if silent_updates and plan.allow_silent_updates:
-        dependencies.sqlite_retry_policy.execute(
-            lambda: dependencies.snapshots.upsert_price_snapshots(silent_updates),
-        )
-    changes_by_id = {change.current.product_id: change for change in changes}
-    deliver_price_changes(
-        (changes_by_id[product_id] for product_id in plan.selected_ids),
-        dependencies,
-        message_for,
-        plan=plan,
-    )
-    finish_price_delivery(
-        dependencies.snapshots,
-        feed_id,
-        plan,
-        item_count,
-    )
-
-
-def deliver_price_summary(
-    dependencies: PriceChangeDeliveryDependencies,
-    feed: FeedConfig,
-    source_title: str,
-    plan: PriceDeliveryPlan,
-) -> None:
-    """Send once outside SQLite transactions; retry only the local acknowledgement."""
-    batch = plan.summary
-    if batch is None or dependencies.delivery.is_shutdown_requested():
-        return
-    claim = dependencies.sqlite_retry_policy.execute(
-        partial(dependencies.snapshots.claim_price_summary_attempt, batch.batch_id),
-    )
-    if claim is None:
-        return
-    try:
-        increases = sum(
-            item.current.amount > item.previous.amount for item in batch.items
-        )
-        decreases = sum(
-            item.current.amount < item.previous.amount for item in batch.items
-        )
-        observed = datetime.fromtimestamp(batch.summary.created_at, UTC).isoformat()
-        description = (
-            f"{batch.item_count} confirmed price changes: {increases} increases, {decreases} decreases.\n"
-            f"Observed: {observed}\nBatch: {batch.batch_id} / {batch.fingerprint[:16]}\n"
-            "This summary covers the stored observations."
-        )
-        if plan.additional_pending:
-            description += f"\n{plan.additional_pending} additional changes remain pending for future scans."
-        message = WebhookMessage(
-            feed=feed,
-            source_title=source_title[:160],
-            entry=EntryData(
-                title="Price change summary",
-                link=feed.url,
-                description=description,
-                author="",
-                timestamp=observed,
-            ),
-        )
-        if dependencies.delivery.is_shutdown_requested():
-            return
         result = dependencies.sender.send(message, dependencies.delivery.sleep)
         if result is DiscordDeliveryResult.DELIVERED:
             dependencies.sqlite_retry_policy.execute(
-                partial(dependencies.snapshots.record_price_summary_delivery, claim),
+                partial(
+                    persist_price_delivery,
+                    dependencies.snapshots,
+                    change.current,
+                ),
             )
-            finish_price_delivery(
-                dependencies.snapshots,
-                feed.id,
-                plan,
-                batch.summary.available_count,
+            delay_before_next = True
+            continue
+        if result is DiscordDeliveryResult.INTERRUPTED:
+            return
+        if dependencies.delivery.is_shutdown_requested():
+            return
+
+
+def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
+    changes: Sequence[PriceChangeT],
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[PriceChangeT], WebhookMessage],
+    *,
+    plan: PriceDeliveryPlan,
+    feed: FeedConfig | None,
+    baseline_extra: Sequence[PriceSnapshot],
+    current_snapshots: Sequence[PriceSnapshot] | None,
+) -> None:
+    if feed is None:
+        raise ValueError("bulk price delivery requires explicit feed context")
+    messages = tuple((change, message_for(change)) for change in changes)
+    notifications = tuple(
+        PriceNotification(
+            product_id=change.current.product_id,
+            previous=change.previous,
+            current=change.current,
+            entry=message.entry,
+            source_title=message.source_title,
+        )
+        for change, message in messages
+    )
+    observed_at = int(time.time())
+    changed_ids = {notification.product_id for notification in notifications}
+    baseline_changed = (
+        tuple(
+            snapshot
+            for snapshot in current_snapshots
+            if snapshot.product_id in changed_ids
+        )
+        if current_snapshots is not None
+        else tuple(notification.current for notification in notifications)
+    )
+    count = dependencies.sqlite_retry_policy.execute(
+        partial(
+            dependencies.snapshots.record_price_scan,
+            feed_id=feed.id,
+            group_id=uuid4().hex,
+            observed_at=observed_at,
+            baseline_updates=(*baseline_changed, *baseline_extra),
+            notifications=notifications,
+        ),
+    )
+    result = digest.deliver_price_notifications(dependencies, feed, feed.id)
+    match result:
+        case PriceNotificationDeliveryResult.DRAINED:
+            finish_price_delivery(dependencies.snapshots, feed.id, plan, count)
+        case PriceNotificationDeliveryResult.FAILED:
+            pending = dependencies.sqlite_retry_policy.execute(
+                partial(
+                    dependencies.snapshots.count_pending_price_notifications,
+                    feed.id,
+                ),
             )
-        else:
             record_price_health(
                 dependencies.snapshots,
                 feed.id,
                 "failed",
-                "AutomaticSummaryRetryPending",
-                batch.item_count,
+                "DeliveryRetryPending",
+                pending,
             )
-    finally:
-        dependencies.sqlite_retry_policy.execute(
-            partial(dependencies.snapshots.release_price_summary_attempt, claim),
-        )
+        case PriceNotificationDeliveryResult.INTERRUPTED:
+            return
+        case unreachable:
+            assert_never(unreachable)
 
 
-def _send_claimed_price_change(
+def drain_pending_price_notifications(
     dependencies: PriceChangeDeliveryDependencies,
-    message: WebhookMessage,
-    claim: PriceDeliveryClaim | None,
-) -> DiscordDeliveryResult:
-    try:
-        result = dependencies.sender.send(message, dependencies.delivery.sleep)
-    except BaseException:
-        if claim is not None:
-            dependencies.sqlite_retry_policy.execute(
-                partial(
-                    dependencies.snapshots.release_price_delivery_attempt,
-                    claim,
-                ),
-            )
-        raise
-    if result is not DiscordDeliveryResult.DELIVERED and claim is not None:
-        dependencies.sqlite_retry_policy.execute(
-            partial(dependencies.snapshots.release_price_delivery_attempt, claim),
+    feed: FeedConfig,
+) -> bool:
+    """Drain queued outbox groups, returning whether the feed is drained."""
+    return _drain_pending(dependencies, feed)
+
+
+def _drain_pending(
+    dependencies: PriceChangeDeliveryDependencies,
+    feed: FeedConfig,
+) -> bool:
+    result = digest.deliver_price_notifications(dependencies, feed, feed.id)
+    if result is PriceNotificationDeliveryResult.FAILED:
+        pending = dependencies.sqlite_retry_policy.execute(
+            partial(
+                dependencies.snapshots.count_pending_price_notifications,
+                feed.id,
+            ),
         )
-    return result
+        record_price_health(
+            dependencies.snapshots,
+            feed.id,
+            "failed",
+            "DeliveryRetryPending",
+            pending,
+        )
+        return False
+    return result is PriceNotificationDeliveryResult.DRAINED
 
 
 def _wait_between_price_deliveries(
@@ -223,48 +194,3 @@ def _wait_between_price_deliveries(
     if delay_before_next and delivery.delay_between_posts > 0:
         return delivery.sleep(delivery.delay_between_posts)
     return True
-
-
-def _claim_price_change(
-    dependencies: PriceChangeDeliveryDependencies,
-    plan: PriceDeliveryPlan,
-    product_id: str,
-) -> PriceDeliveryClaim | None:
-    claim = None
-    if plan.batch_id is not None:
-        claim = dependencies.sqlite_retry_policy.execute(
-            partial(
-                dependencies.snapshots.claim_price_delivery_attempt,
-                plan.batch_id,
-                product_id,
-            ),
-        )
-        if claim is None:
-            return None
-    return claim
-
-
-def _handle_price_delivery_result(
-    dependencies: PriceChangeDeliveryDependencies,
-    snapshot: PriceSnapshot,
-    claim: PriceDeliveryClaim | None,
-    result: DiscordDeliveryResult,
-) -> tuple[bool, bool]:
-    """Acknowledge a delivered snapshot and decide whether to continue and delay."""
-    match result:
-        case DiscordDeliveryResult.DELIVERED:
-            dependencies.sqlite_retry_policy.execute(
-                partial(
-                    persist_price_delivery,
-                    dependencies.snapshots,
-                    claim,
-                    snapshot,
-                ),
-            )
-            return True, True
-        case DiscordDeliveryResult.FAILED:
-            return not dependencies.delivery.is_shutdown_requested(), False
-        case DiscordDeliveryResult.INTERRUPTED:
-            return False, False
-        case unreachable:
-            assert_never(unreachable)

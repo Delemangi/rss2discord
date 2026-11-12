@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from functools import partial
 from pathlib import Path
 from typing import Final, Protocol
 
@@ -15,20 +14,15 @@ from rss2discord.providers.gjirafa50.catalog import MAX_GJIRAFA50_PRODUCTS
 from rss2discord.providers.gjirafa50.models import Gjirafa50Product
 from rss2discord.providers.gjirafa50.parser import GJIRAFA50_LABEL
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
-from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_planned_price_changes,
-    diff_price_snapshots,
-    prepare_price_delivery,
-    prepare_price_scan,
     price_direction,
     run_price_scan,
 )
@@ -68,13 +62,6 @@ class Gjirafa50PriceMonitorDependencies:
     cooldown_peer_feed_ids: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: Gjirafa50Product
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class Gjirafa50PriceMonitor:
     def __init__(
         self,
@@ -85,99 +72,58 @@ class Gjirafa50PriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        run_price_scan(self._scan, self._dependencies.snapshots, self._feed.id)
+        self._scan()
 
     def _scan(self) -> None:
-        products, persisted = prepare_price_scan(
-            fetch_products=partial(
-                self._dependencies.catalog.fetch_catalog,
-                self._feed.url,
-                retry_policy=self._dependencies.fetch_retry_policy,
-                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            ),
-            load_snapshots=partial(
-                self._dependencies.sqlite_retry_policy.execute,
-                partial(
-                    self._dependencies.snapshots.load_price_snapshots,
-                    self._feed.id,
-                    limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS + 1,
-                ),
-            ),
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        products = self._dependencies.catalog.fetch_catalog(
+            self._feed.url,
+            retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            snapshot_limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS,
-            label=GJIRAFA50_LABEL,
         )
-        by_product = {snapshot.product_id: snapshot for snapshot in persisted}
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        products_by_id: dict[str, Gjirafa50Product] = {}
+        observations: list[PriceObservation[Gjirafa50Product]] = []
         for product in products:
             if product.price <= 0:
                 continue
-            current = PriceSnapshot(
-                self._feed.id,
-                str(product.id),
-                product.price,
-                product.formatted_price,
-                product.currency,
-            )
-            current_snapshots[current.product_id] = current
-            products_by_id[current.product_id] = product
-        if (
-            len(by_product.keys() | current_snapshots.keys())
-            > MAX_GJIRAFA50_RETAINED_SNAPSHOTS
-        ):
-            raise FeedFetchError(GJIRAFA50_LABEL, "SnapshotLimitExceeded")
-        silent_updates, records = diff_price_snapshots(
-            current_snapshots.values(),
-            by_product,
-        )
-        changes = tuple(
-            _PriceChange(
-                products_by_id[record.product_id],
-                record.previous,
-                record.current,
-            )
-            for record in records
-        )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        store = self._dependencies.snapshots
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=store,
-                feed_id=self._feed.id,
-                provider="gjirafa50",
-                changes=tuple(
-                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
+            observations.append(
+                PriceObservation(
+                    product,
+                    PriceSnapshot(
+                        self._feed.id,
+                        str(product.id),
+                        product.price,
+                        product.formatted_price,
+                        product.currency,
+                    ),
                 ),
-                current=current_snapshots,
-                persisted=by_product,
-                catalog_count=len(products),
-            ),
-        )
-        deliver_planned_price_changes(
-            self._dependencies,
-            self._message_for,
-            feed_id=self._feed.id,
+            )
+        run_price_scan(
             feed=self._feed,
-            plan=plan,
-            silent_updates=silent_updates,
-            changes=changes,
-            item_count=len(current_snapshots),
+            dependencies=self._dependencies,
+            provider="gjirafa50",
+            label=GJIRAFA50_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS,
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
+    def _message_for(
+        self,
+        product: Gjirafa50Product,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
         return WebhookMessage(
             feed=self._feed,
             entry=replace(
-                Gjirafa50Strategy().get_entry_data(change.product),
+                Gjirafa50Strategy().get_entry_data(product),
                 description="",
                 source_metrics=(
-                    SourceMetric("Price", change.current.formatted),
-                    SourceMetric("Previous", change.previous.formatted, prior=True),
+                    SourceMetric("Price", current.formatted),
+                    SourceMetric("Previous", previous.formatted, prior=True),
                 ),
-                price_direction=price_direction(change.previous, change.current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or GJIRAFA50_LABEL,
         )

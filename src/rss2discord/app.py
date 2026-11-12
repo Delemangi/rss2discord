@@ -79,17 +79,13 @@ class RSSToDiscord:
         if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         health_state = "healthy" if entries else "empty"
-        if baseline_state == "recovery_required":
-            health_state = "recovery_required"
         record_runtime_health(
             self._store,
             HealthUpdate(
                 feed_id=feed.id,
                 job_kind="ordinary",
                 state=health_state,
-                cause="CompleteBaselineRequired"
-                if baseline_state == "recovery_required"
-                else None,
+                cause=None,
                 attempted_at=attempted_at,
                 success=True,
                 nonempty=bool(entries),
@@ -143,7 +139,7 @@ class RSSToDiscord:
                 entry_data,
                 feed.id,
                 allow_missing_timestamp=strategy.allow_missing_timestamp_after_complete_baseline
-                and self._store.has_complete_baseline(feed.id),
+                and self._store.is_feed_initialized(feed.id),
             ):
                 continue
 
@@ -179,7 +175,7 @@ class RSSToDiscord:
         is_seen = entry_id in seen_entry_ids
         seen_entry_ids.add(entry_id)
 
-        if is_seen or self._store.has_handled_entry(feed.id, entry_id):
+        if is_seen or self._store.has_delivered(feed.id, entry_id):
             return None
 
         return entry_id
@@ -243,29 +239,19 @@ class RSSToDiscord:
         feed: FeedConfig,
         strategy: ScraperStrategy,
         entries: list[Any],
-    ) -> Literal["ready", "initialized", "recovery_required", "empty"]:
+    ) -> Literal["ready", "initialized", "empty"]:
         if not strategy.allow_missing_timestamp_after_complete_baseline:
             return "ready"
-        if self._store.has_complete_baseline(feed.id):
+        if self._store.is_feed_initialized(feed.id):
             return "ready"
         if not entries:
             return "empty"
         entry_ids = strategy.get_initialization_entry_ids(entries)
         if len(entry_ids) != len(entries):
             raise FeedFetchError("Feed", "InvalidBaselineEntries")
-        if self._store.is_feed_initialized(feed.id):
-            self._store.record_feed_baseline_candidate(
-                feed_id=feed.id,
-                entry_ids=entry_ids,
-                reason="Complete catalog recovery baseline required",
-            )
-            return "recovery_required"
-        self._store.initialize_feed_with_baseline(
-            feed_id=feed.id,
-            entry_ids=entry_ids,
-            reason="Initial complete catalog baseline",
-        )
-        return "initialized"
+        if self._store.seed_feed(feed.id, entry_ids):
+            return "initialized"
+        return "ready"
 
     def _fetch_entries(
         self,

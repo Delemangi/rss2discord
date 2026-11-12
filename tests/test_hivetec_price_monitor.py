@@ -165,10 +165,6 @@ def test_hivetec_price_monitor_summarizes_bulk_changes(
         # When / Then
         price_monitor.scan()
 
-        assert (
-            store.list_price_change_batches("hivetec", include_terminal=True)[0].status
-            == "completed"
-        )
         assert {
             str(snapshot.amount) for snapshot in store.load_price_snapshots("hivetec")
         } == {

@@ -2,17 +2,12 @@
 
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_safety import (
-    MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
-    MAX_UNAPPROVED_PRICE_CHANGES,
-    assess_price_safety,
-)
+from rss2discord.price_safety import MAX_INLINE_PRICE_CHANGES
 from rss2discord.recovery_models import (
     HealthUpdate,
-    PriceBatch,
     PriceChangeRecord,
     PriceSnapshot,
 )
@@ -45,63 +40,18 @@ def record_price_health(
         logger.info("Price health for feed %s: %s (%s)", feed_id, state, cause)
 
 
-def pause_price_recovery(store: PriceRecoveryStore, feed_id: str, cause: str) -> bool:
-    batch = _pause_price_batch(store, feed_id, cause)
-    if batch is None:
-        return False
-    record_price_health(store, feed_id, "recovery_required", cause, batch.pending_count)
-    return True
-
-
-def _pause_price_batch(
-    store: PriceRecoveryStore,
-    feed_id: str,
-    cause: str,
-) -> PriceBatch | None:
-    batch = store.load_active_price_batch(feed_id)
-    if batch is None:
-        return None
-    if batch.status == "approved":
-        store.pause_price_change_batch(batch.batch_id, cause)
-    return batch
-
-
-def pause_price_fetch_failure(
-    store: PriceRecoveryStore,
-    feed_id: str,
-    error: FeedFetchError,
-) -> bool:
-    active = store.load_active_price_batch(feed_id)
-    if active is not None and active.delivery_mode == "automatic_summary":
-        return False
-    batch = _pause_price_batch(store, feed_id, error.cause_type)
-    if batch is None:
-        return False
-    blocked = (
-        error.cause_type in {"AccessChallenge", "BotChallenge"}
-        or error.status_code == 403
-    )
-    record_price_health(
-        store,
-        feed_id,
-        "blocked" if blocked else "recovery_required",
-        error.cause_type,
-        0 if blocked else batch.pending_count,
-    )
-    return True
-
-
-def run_price_scan(
-    scan: Callable[[], None],
-    store: PriceRecoveryStore,
-    feed_id: str,
+def validate_price_currencies(
+    *,
+    provider: str,
+    current: Mapping[str, PriceSnapshot],
+    persisted: Mapping[str, PriceSnapshot],
 ) -> None:
-    """Pause an active recovery batch when the monitor fetch fails."""
-    try:
-        scan()
-    except FeedFetchError as error:
-        if not pause_price_fetch_failure(store, feed_id, error):
-            raise
+    if any(
+        snapshot.currency != persisted[product_id].currency
+        for product_id, snapshot in current.items()
+        if product_id in persisted
+    ):
+        raise FeedFetchError(provider, "CurrencyChanged")
 
 
 def prepare_price_delivery(
@@ -116,73 +66,16 @@ def prepare_price_delivery(
     force_summary: bool = False,
     additional_pending: int = 0,
 ) -> PriceDeliveryPlan:
-    """Validate the complete diff and select bounded work without claiming sends."""
-    held = store.held_price_product_ids(feed_id)
-    current = {key: value for key, value in current.items() if key not in held}
-    persisted = {key: value for key, value in persisted.items() if key not in held}
-    changes = tuple(change for change in changes if change.product_id not in held)
-    batch = store.load_active_price_batch(feed_id)
-    if batch is not None and batch.status == "paused":
-        record_price_health(
-            store,
-            feed_id,
-            "recovery_required",
-            "PriceBatchPaused",
-            batch.pending_count,
-        )
-        return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
-    if any(
-        snapshot.currency != persisted[product_id].currency
-        for product_id, snapshot in current.items()
-        if product_id in persisted
-    ):
-        if pause_price_recovery(store, feed_id, "CurrencyChanged"):
-            return PriceDeliveryPlan(blocked=True)
-        raise FeedFetchError(provider, "CurrencyChanged")
-    if batch is not None and batch.delivery_mode == "automatic_summary":
-        if batch.provider == provider and all(
-            item.product_id not in held
-            and persisted.get(item.product_id) == item.previous
-            for item in batch.items
-        ):
-            return PriceDeliveryPlan(batch_id=batch.batch_id, summary=batch)
-        if not store.retire_drifted_price_summary(batch.batch_id):
-            return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
-        return PriceDeliveryPlan(blocked=True)
-    if batch is not None:
-        return _prepare_active_batch(
-            store,
-            feed_id,
-            provider,
-            batch,
-            held,
-            current=current,
-            persisted=persisted,
-        )
-    if force_summary or len(changes) > MAX_UNAPPROVED_PRICE_CHANGES:
-        batch = store.stage_automatic_price_summary(
-            feed_id=feed_id,
-            provider=provider,
-            catalog_count=catalog_count,
-            available_count=len(current),
-            items=changes,
-        )
-        return PriceDeliveryPlan(
-            blocked=batch.status != "approved",
-            batch_id=batch.batch_id,
-            summary=batch,
-            additional_pending=additional_pending,
-        )
-    selected = store.select_normal_price_deliveries(
-        feed_id=feed_id,
-        product_ids=tuple(change.product_id for change in changes),
-        limit=MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
+    """Validate currency stability and choose inline cards or one digest."""
+    del store, feed_id, catalog_count
+    validate_price_currencies(
+        provider=provider,
+        current=current,
+        persisted=persisted,
     )
-    return (
-        PriceDeliveryPlan(blocked=True)
-        if selected is None
-        else PriceDeliveryPlan(selected)
-    )
+    if force_summary or len(changes) > MAX_INLINE_PRICE_CHANGES:
+        return PriceDeliveryPlan(bulk=True, additional_pending=additional_pending)
+    return PriceDeliveryPlan(tuple(change.product_id for change in changes))
 
 
 def finish_price_delivery(
@@ -191,54 +84,12 @@ def finish_price_delivery(
     plan: PriceDeliveryPlan,
     item_count: int,
 ) -> None:
-    if plan.batch_id is not None:
-        store.complete_price_change_batch_if_drained(plan.batch_id)
+    """Record health only."""
+    del plan
     record_price_health(
         store,
         feed_id,
         "healthy" if item_count else "empty",
         None,
         item_count,
-    )
-
-
-def _prepare_active_batch(
-    store: PriceRecoveryStore,
-    feed_id: str,
-    provider: str,
-    batch: PriceBatch,
-    held: frozenset[str],
-    *,
-    current: Mapping[str, PriceSnapshot],
-    persisted: Mapping[str, PriceSnapshot],
-) -> PriceDeliveryPlan:
-    pending = tuple(
-        item
-        for item in batch.items
-        if item.status == "pending" and item.product_id not in held
-    )
-    decision = assess_price_safety(
-        expected=pending,
-        current=current,
-        persisted=persisted,
-    )
-    if batch.provider != provider or not decision.allowed:
-        pause_price_recovery(store, feed_id, decision.reason or "ProviderChanged")
-        return PriceDeliveryPlan(batch_id=batch.batch_id, blocked=True)
-    if not pending:
-        store.complete_price_change_batch_if_drained(batch.batch_id)
-        return PriceDeliveryPlan(batch_id=batch.batch_id)
-    ordered = sorted(
-        pending,
-        key=lambda item: (
-            item.attempt_count,
-            item.last_attempt_at if item.last_attempt_at is not None else -1,
-            item.ordinal,
-        ),
-    )
-    return PriceDeliveryPlan(
-        tuple(
-            item.product_id for item in ordered[:MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN]
-        ),
-        batch.batch_id,
     )

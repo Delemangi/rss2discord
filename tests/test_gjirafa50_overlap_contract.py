@@ -12,7 +12,7 @@ import pytest
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
-from rss2discord.providers.gjirafa50 import catalog, http, prices
+from rss2discord.providers.gjirafa50 import catalog, http
 from rss2discord.providers.gjirafa50.catalog import Gjirafa50CatalogClient
 from rss2discord.providers.gjirafa50.http import (
     FetchedGjirafa50Page,
@@ -30,6 +30,7 @@ from rss2discord.providers.gjirafa50.prices import (
 from rss2discord.retries import SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import scan as scan_module
 from tests.gjirafa50_helpers import ROOT_URL, RecordingGet, no_wait_retry_policy
 from tests.setec_price_monitor_helpers import RecordingSender
 
@@ -357,7 +358,7 @@ def test_invalid_real_catalog_never_reaches_snapshot_or_delivery_work(
     previous = PriceSnapshot(feed.id, "1", Decimal(140), "140,00 MKD.", "MKD")
     sender = RecordingSender([])
     prepare_delivery = Mock(side_effect=AssertionError("unexpected delivery planning"))
-    monkeypatch.setattr(prices, "prepare_price_delivery", prepare_delivery)
+    monkeypatch.setattr(scan_module, "prepare_price_delivery", prepare_delivery)
 
     with DeliveryStore(tmp_path / "state.db") as store:
         store.upsert_price_snapshots((previous,))
@@ -397,5 +398,4 @@ def test_invalid_real_catalog_never_reaches_snapshot_or_delivery_work(
         prepare_delivery.assert_not_called()
         assert sender.messages == []
         assert load_snapshots(feed.id) == (previous,)
-        assert store.load_active_price_batch(feed.id) is None
-        store.require_no_open_price_claims(feed.id)
+        assert store.count_pending_price_notifications(feed.id) == 0

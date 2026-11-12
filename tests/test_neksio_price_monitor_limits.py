@@ -35,14 +35,5 @@ def test_scan_summarizes_bulk_changes_then_initializes_new_products(
         monitor.scan()
         for _ in range(2):
             monitor.scan()
-            assert (
-                len(
-                    store.list_price_change_batches(
-                        feed_id="neksio",
-                        include_terminal=True,
-                    ),
-                )
-                == 1
-            )
         assert len(sender.messages) == 1
         assert sum(s.amount == 90 for s in snapshots_by_product(store).values()) == 101

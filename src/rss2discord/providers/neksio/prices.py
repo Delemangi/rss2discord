@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final, Protocol
@@ -13,12 +13,10 @@ from rss2discord.discord.client import (
     DiscordSender,
     WebhookMessage,
 )
-from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import SourceMetric
 from rss2discord.providers.neksio.client import NEKSIO_LABEL
 from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.providers.neksio.strategy import _entry_data
-from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
@@ -26,13 +24,10 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_price_changes,
-    diff_price_snapshots,
-    finish_price_delivery,
-    pause_price_fetch_failure,
-    prepare_price_delivery,
     price_direction,
+    run_price_scan,
 )
 
 MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
@@ -62,13 +57,6 @@ class NeksioPriceMonitorDependencies:
     delivery: PriceAlertDelivery
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: NeksioProduct
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class NeksioPriceMonitor:
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
@@ -81,15 +69,7 @@ class NeksioPriceMonitor:
         self._dependencies: NeksioPriceMonitorDependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        self._scan()
 
     def _scan(self) -> None:
         """Fetch, classify, persist silent updates, then deliver changed prices in order."""
@@ -103,81 +83,18 @@ class NeksioPriceMonitor:
                 ),
             ),
         )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted_snapshots = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(self._feed.id),
+        observations = tuple(
+            PriceObservation(product, self._snapshot(product)) for product in products
         )
-        snapshots_by_product = {
-            snapshot.product_id: snapshot for snapshot in persisted_snapshots
-        }
-        retained_product_ids = set(snapshots_by_product)
-        retained_product_ids.update(str(product.product_id) for product in products)
-        if len(retained_product_ids) > MAX_NEKSIO_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(NEKSIO_LABEL, "SnapshotLimitExceeded")
-        silent_updates, changes, current_snapshots = self._compare_prices(
-            products,
-            snapshots_by_product,
-        )
-
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        store = self._dependencies.snapshots
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=store,
-                feed_id=self._feed.id,
-                provider="neksio",
-                changes=tuple(
-                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
-                ),
-                current=current_snapshots,
-                persisted=snapshots_by_product,
-                catalog_count=len(products),
-            ),
-        )
-        if plan.blocked:
-            return
-        if silent_updates and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
-                ),
-            )
-
-        by_id = {change.current.product_id: change for change in changes}
-        deliver_price_changes(
-            (by_id[product_id] for product_id in plan.selected_ids),
-            self._dependencies,
-            self._message_for,
+        run_price_scan(
             feed=self._feed,
-            plan=plan,
+            dependencies=self._dependencies,
+            provider="neksio",
+            label=NEKSIO_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=MAX_NEKSIO_RETAINED_SNAPSHOTS,
         )
-        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
-
-    def _compare_prices(
-        self,
-        products: Sequence[NeksioProduct],
-        snapshots_by_product: dict[str, PriceSnapshot],
-    ) -> tuple[list[PriceSnapshot], list[_PriceChange], dict[str, PriceSnapshot]]:
-        snapshots = tuple(self._snapshot(product) for product in products)
-        # Associate observations, not IDs: repeated IDs must retain their products.
-        products_by_snapshot = {
-            id(snapshot): product
-            for product, snapshot in zip(products, snapshots, strict=True)
-        }
-        silent, records = diff_price_snapshots(snapshots, snapshots_by_product)
-        changes = [
-            _PriceChange(
-                products_by_snapshot[id(record.current)],
-                record.previous,
-                record.current,
-            )
-            for record in records
-        ]
-        current_snapshots = {snapshot.product_id: snapshot for snapshot in snapshots}
-        return list(silent), changes, current_snapshots
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:
         return PriceSnapshot(
@@ -188,24 +105,31 @@ class NeksioPriceMonitor:
             currency="MKD",
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        product = change.product
+    def _message_for(
+        self,
+        product: NeksioProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
         return WebhookMessage(
             feed=self._feed,
             entry=replace(
                 _entry_data(product),
-                source_metrics=self._metrics_for(change),
-                price_direction=price_direction(change.previous, change.current),
+                source_metrics=self._metrics_for(product, previous, current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or NEKSIO_LABEL,
         )
 
     @staticmethod
-    def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
-        product = change.product
+    def _metrics_for(
+        product: NeksioProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> tuple[SourceMetric, ...]:
         metrics = [
-            SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
+            SourceMetric(label="Price", value=current.formatted),
+            SourceMetric(label="Previous", value=previous.formatted, prior=True),
         ]
         if product.old_formatted_price:
             metrics.append(

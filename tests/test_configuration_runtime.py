@@ -96,7 +96,10 @@ def test_database_open_failure_exits_without_traceback(
     logs = format_logs(caplog)
     assert exit_code == 1
     assert all(record.exc_info is None for record in caplog.records)
-    assert "Storage initialization failed (OperationalError)" in logs
+    assert (
+        "Storage initialization failed (OperationalError: unable to open database file)"
+        in logs
+    )
 
 
 def test_module_entrypoint_delegates_to_main(

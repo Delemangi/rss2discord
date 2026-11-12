@@ -171,11 +171,13 @@ def test_ddstore_price_monitor_retains_history_while_seeding_current_products(
         } == {"old-1", "old-2", "new"}
 
 
-def test_ddstore_price_monitor_delivers_one_hundred_changes(tmp_path: Path) -> None:
+def test_ddstore_price_monitor_delivers_one_digest_for_one_hundred_changes(
+    tmp_path: Path,
+) -> None:
     # Given
     baseline = tuple(make_product(str(index), amount=100) for index in range(100))
     changed = tuple(make_product(str(index), amount=90) for index in range(100))
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
@@ -187,14 +189,9 @@ def test_ddstore_price_monitor_delivers_one_hundred_changes(tmp_path: Path) -> N
         monitor.scan()
         monitor.scan()
 
-        # When
-        assert len(sender.messages) == 10
-        assert store.list_price_change_batches("ddstore") == ()
-        for _ in range(9):
-            monitor.scan()
-
         # Then
-        assert len(sender.messages) == 100
+        assert len(sender.messages) == 1
+        assert len(sender.messages[0].files) == 2
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
         } == {Decimal(90)}
@@ -209,7 +206,7 @@ def test_ddstore_price_monitor_summarizes_more_than_one_hundred_changes(
     catalog = CatalogStub(
         [baseline, changed],
     )
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(make_feed(), catalog, store, sender)
@@ -219,13 +216,10 @@ def test_ddstore_price_monitor_summarizes_more_than_one_hundred_changes(
         monitor.scan()
 
         assert len(sender.messages) == 1
+        assert len(sender.messages[0].files) == 2
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
         } == {Decimal(90)}
-        assert (
-            store.list_price_change_batches("ddstore", include_terminal=True)[0].status
-            == "completed"
-        )
         assert store.list_health("ddstore")[0].state == "healthy"
 
 

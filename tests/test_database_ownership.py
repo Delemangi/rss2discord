@@ -44,7 +44,7 @@ except DatabaseOwnershipError:
     assert result.stdout.strip() == "owned"
 
 
-def test_readers_work_while_application_owns_database_admin_writers_refused(
+def test_readers_work_while_application_owns_database(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -54,44 +54,8 @@ def test_readers_work_while_application_owns_database_admin_writers_refused(
     with DatabaseOwnership(database):
         assert main(["--database", str(database), "health"]) == 0
         assert capsys.readouterr().out.strip() == "[]"
-        assert main(["--database", str(database), "price", "list"]) == 0
-        capsys.readouterr()
-        assert (
-            main(
-                [
-                    "--database",
-                    str(database),
-                    "price",
-                    "approve",
-                    "--feed-id",
-                    "feed",
-                    "--fingerprint",
-                    "0" * 64,
-                    "--reason",
-                    "test",
-                ],
-            )
-            == 2
-        )
-        assert "ownership unavailable" in capsys.readouterr().out
-        assert (
-            main(
-                [
-                    "--database",
-                    str(database),
-                    "baseline",
-                    "approve",
-                    "--feed-id",
-                    "feed",
-                    "--fingerprint",
-                    "0" * 64,
-                    "--reason",
-                    "test",
-                ],
-            )
-            == 2
-        )
-        assert "ownership unavailable" in capsys.readouterr().out
+        assert main(["--database", str(database), "notifications", "list"]) == 0
+        assert capsys.readouterr().out.strip() == "[]"
 
 
 def test_ownership_requires_same_database_and_thread_binding_unchanged(
