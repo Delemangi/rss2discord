@@ -28,8 +28,6 @@ def test_neptun_strategy_has_safe_seed_and_history_contract() -> None:
 
     assert strategy.seed_existing_on_first_fetch
     assert strategy.require_entries_for_initialization
-    assert strategy.max_new_entries_per_fetch == 30
-    assert strategy.max_delivery_history == 10_000
 
 
 def test_neptun_strategy_maps_product_to_rich_entry() -> None:

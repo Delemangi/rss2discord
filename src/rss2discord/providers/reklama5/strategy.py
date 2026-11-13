@@ -36,8 +36,6 @@ def _validate_discovery_page(
 class Reklama5Strategy(ScraperStrategy):
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = False
-    max_new_entries_per_fetch = None
-    max_delivery_history = None
 
     def __init__(
         self,

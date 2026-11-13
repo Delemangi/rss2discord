@@ -74,6 +74,13 @@ Each price scan compares the validated catalog with the stored baseline.
 - Delivery is at-least-once. An ambiguous timeout or crash after Discord accepts a message can produce a duplicate.
 - There is no approval, quarantine, or pause step for price changes. Invalid or incomplete catalog evidence is rejected and retried; it never overwrites a valid price.
 
+## New-item notifications
+
+- Up to 25 new items in one scan send one card per item.
+- More send one digest with up to three cards and complete searchable HTML and CSV attachments.
+- Entries are marked delivered only after Discord confirms delivery, so a failed send retries on the next scan.
+- There are no new-entry or delivery-history caps that can permanently stop a feed.
+
 Upgrading from a database that still contains the retired approval, hold, or reconciliation tables drops those tables after a one-time cursor migration. Take a consistent backup before the first start with the new version. Price snapshots, delivered entries, initialized feeds, health, and pending notifications are preserved.
 
 ## Inspecting state

@@ -16,8 +16,6 @@ class ScraperStrategy(ABC):
     allow_missing_timestamp_after_complete_baseline = False
     seed_existing_on_first_fetch = False
     require_entries_for_initialization = False
-    max_new_entries_per_fetch: int | None = None
-    max_delivery_history: int | None = None
 
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:

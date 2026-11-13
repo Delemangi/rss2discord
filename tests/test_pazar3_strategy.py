@@ -148,4 +148,3 @@ def test_pazar3_strategy_preserves_scan_order_for_equal_timestamps(
     entries, _source = strategy.fetch_entries(SEARCH_URL)
 
     assert [entry.entry_id for entry in entries] == ["1", "2"]
-    assert strategy.max_delivery_history is None

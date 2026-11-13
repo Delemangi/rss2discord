@@ -128,11 +128,19 @@ class DeliveryStore:
         return row is not None
 
     def mark_delivered(self, feed_id: str, entry_id: str) -> None:
+        self.mark_delivered_many(feed_id, (entry_id,))
+
+    def mark_delivered_many(
+        self,
+        feed_id: str,
+        entry_ids: Iterable[str],
+    ) -> None:
+        """Record a confirmed batch of delivered entries idempotently."""
         with self._connection:
-            self._connection.execute(
+            self._connection.executemany(
                 "INSERT OR IGNORE INTO delivered_entries (feed_id, entry_id) "
                 "VALUES (?, ?)",
-                (feed_id, entry_id),
+                ((feed_id, entry_id) for entry_id in entry_ids),
             )
 
     def count_delivered(self, feed_id: str) -> int:

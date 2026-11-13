@@ -11,7 +11,6 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.neksio.catalog import NeksioCatalogClient
 from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.providers.neksio.strategy import NeksioStrategy
-from rss2discord.transports import FeedFetchError
 from tests.app_helpers import FakeSender
 
 
@@ -118,98 +117,3 @@ def test_neksio_empty_first_fetch_does_not_initialize_the_feed(
 
         # Then
         assert not store.is_feed_initialized(feed.id)
-
-
-def test_neksio_repeatedly_rejects_too_many_new_products_without_delivery(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    first = NeksioProduct(
-        product_id=1,
-        product_name="First",
-        product_code="FIRST",
-        category="Components",
-        subcategory="Graphics",
-        manufacturer="Example",
-        price_with_tax=Decimal(1200),
-        formatted_price="1.200 MKD",
-        image_path="/images/1.png",
-        stock_quantity=1,
-        observed_at=datetime.now(UTC),
-    )
-    products = (
-        first,
-        first.model_copy(update={"product_id": 2, "product_name": "Second"}),
-    )
-    monkeypatch.setattr(NeksioStrategy, "max_new_entries_per_fetch", 1, raising=False)
-    monkeypatch.setattr(
-        NeksioCatalogClient,
-        "fetch_catalog",
-        lambda client, url, *, is_shutdown_requested=None: products,
-    )
-    feed = FeedConfig(
-        id="neksio-products",
-        url="https://g.store.neksio.mk/",
-        webhook="https://discord.test/neksio",
-        strategy="neksio",
-    )
-
-    # When / Then
-    with DeliveryStore(tmp_path / "state.db") as store:
-        store.seed_feed(feed.id, ())
-        sender = FakeSender([True, True])
-        app = RSSToDiscord(AppConfig(feeds=(feed,)), store, sender)
-        for _ in range(2):
-            with pytest.raises(FeedFetchError) as error_info:
-                app.process_feed(feed)
-            assert error_info.value.strategy == "Feed"
-            assert error_info.value.cause_type == "NewEntryLimitExceeded"
-        assert sender.messages == []
-        assert not store.has_delivered(feed.id, "1")
-        assert not store.has_delivered(feed.id, "2")
-
-
-def test_neksio_repeatedly_rejects_delivery_history_growth_without_delivery(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    product = NeksioProduct(
-        product_id=3,
-        product_name="Third",
-        product_code="THIRD",
-        category="Components",
-        subcategory="Graphics",
-        manufacturer="Example",
-        price_with_tax=Decimal(1200),
-        formatted_price="1.200 MKD",
-        image_path="/images/3.png",
-        stock_quantity=1,
-        observed_at=datetime.now(UTC),
-    )
-    monkeypatch.setattr(NeksioStrategy, "max_delivery_history", 2, raising=False)
-    monkeypatch.setattr(
-        NeksioCatalogClient,
-        "fetch_catalog",
-        lambda client, url, *, is_shutdown_requested=None: (product,),
-    )
-    feed = FeedConfig(
-        id="neksio-products",
-        url="https://g.store.neksio.mk/",
-        webhook="https://discord.test/neksio",
-        strategy="neksio",
-    )
-
-    # When / Then
-    with DeliveryStore(tmp_path / "state.db") as store:
-        store.seed_feed(feed.id, ("1", "2"))
-        sender = FakeSender([True])
-        app = RSSToDiscord(AppConfig(feeds=(feed,)), store, sender)
-        for _ in range(2):
-            with pytest.raises(FeedFetchError) as error_info:
-                app.process_feed(feed)
-            assert error_info.value.strategy == "Feed"
-            assert error_info.value.cause_type == "DeliveryHistoryLimitExceeded"
-        assert sender.messages == []
-        assert not store.has_delivered(feed.id, "3")

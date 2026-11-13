@@ -7,14 +7,12 @@ from zoneinfo import ZoneInfo
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.providers.neptun.catalog import (
-    NEPTUN_WINDOW_SIZE,
     NeptunCatalogClient,
 )
 from rss2discord.providers.neptun.http import NEPTUN_LABEL, NEPTUN_ORIGIN
 from rss2discord.providers.neptun.models import NeptunProduct
 from rss2discord.transports.base import ScraperStrategy
 
-MAX_NEPTUN_DELIVERY_HISTORY: Final = 10_000
 NEPTUN_TIME_ZONE: Final = "Europe/Skopje"
 
 
@@ -24,8 +22,6 @@ class NeptunStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch: bool = True
     require_entries_for_initialization: bool = True
-    max_new_entries_per_fetch: int | None = NEPTUN_WINDOW_SIZE
-    max_delivery_history: int | None = MAX_NEPTUN_DELIVERY_HISTORY
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[NeptunProduct], str]:

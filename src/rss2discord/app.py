@@ -5,9 +5,9 @@ from typing import Any, Final, Literal
 
 from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
 from .configuration import AppConfig, FeedConfig
-from .delivery_limits import enforce_delivery_limits
 from .delivery_store import DeliveryStore
-from .discord.client import DiscordSender, WebhookMessage
+from .discord.client import DiscordDeliveryResult, DiscordSender, WebhookMessage
+from .discord.discovery_digest import INLINE_ENTRY_LIMIT, build_discovery_digest
 from .discovery_builders import build_discovery_strategies
 from .models import EntryData, EntryId
 from .recovery_models import HealthUpdate
@@ -106,7 +106,6 @@ class RSSToDiscord:
         """Return whether processing completed rather than being interrupted."""
         if self._seed_existing_entries(feed, strategy, entries):
             return True
-        enforce_delivery_limits(feed.id, entries, strategy, self._store)
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
@@ -116,6 +115,7 @@ class RSSToDiscord:
             else None
         )
         enrichment_limit_logged = False
+        pending: list[tuple[EntryId, EntryData]] = []
 
         for entry in entries:
             if self.is_shutdown_requested():
@@ -143,9 +143,48 @@ class RSSToDiscord:
             ):
                 continue
 
-            if not self._deliver_entry(feed, entry_data, source_title, entry_id):
-                return False
-        return True
+            pending.append((entry_id, entry_data))
+
+        if not pending:
+            return True
+        if len(pending) <= INLINE_ENTRY_LIMIT:
+            for entry_id, entry_data in pending:
+                if self.is_shutdown_requested():
+                    return False
+                if not self._deliver_entry(
+                    feed,
+                    entry_data,
+                    source_title,
+                    entry_id,
+                ):
+                    return False
+            return True
+        return self._deliver_discovery_digest(feed, pending, source_title)
+
+    def _deliver_discovery_digest(
+        self,
+        feed: FeedConfig,
+        pending: list[tuple[EntryId, EntryData]],
+        source_title: str,
+    ) -> bool:
+        if self.is_shutdown_requested():
+            return False
+        message = build_discovery_digest(
+            feed,
+            pending,
+            source_title,
+        )
+        result = self._sender.send(message, self._runtime.sleep)
+        if result is DiscordDeliveryResult.INTERRUPTED:
+            return False
+        if result is not DiscordDeliveryResult.DELIVERED:
+            return True
+        if not self._persist_deliveries(
+            feed.id,
+            tuple(entry_id for entry_id, _ in pending),
+        ):
+            return False
+        return self._runtime.sleep(self._config.delay_between_posts)
 
     def _deliver_entry(
         self,
@@ -319,6 +358,24 @@ class RSSToDiscord:
         )
         try:
             retry_policy.execute(lambda: self._store.mark_delivered(feed_id, entry_id))
+        except SQLiteRetryInterruptedError:
+            return False
+        return True
+
+    def _persist_deliveries(self, feed_id: str, entry_ids: tuple[EntryId, ...]) -> bool:
+        retry_policy = SQLiteRetryPolicy(
+            sleep=self._runtime.sleep,
+            on_retry=lambda error, delay: logger.warning(
+                "Could not persist deliveries for feed %s; retrying in %.1f seconds (%s)",
+                feed_id,
+                delay,
+                type(error).__name__,
+            ),
+        )
+        try:
+            retry_policy.execute(
+                lambda: self._store.mark_delivered_many(feed_id, entry_ids),
+            )
         except SQLiteRetryInterruptedError:
             return False
         return True

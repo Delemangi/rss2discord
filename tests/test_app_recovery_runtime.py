@@ -29,8 +29,6 @@ from tests.runtime_helpers import FakeClock, RecordingMonitor
 class CompleteCatalogStrategy(FakeStrategy):
     allow_missing_timestamp_after_complete_baseline = True
     seed_existing_on_first_fetch = True
-    max_new_entries_per_fetch = 1
-    max_delivery_history = 10
 
 
 class CountingStrategy(FakeStrategy):
@@ -448,40 +446,6 @@ def test_expired_blocked_probe_restarts_cooldown(
         assert store.get_blocked_until(feed.id) == now + 43201
         _process_feed_safely(feed, app.process_feed, app._store)
         assert strategy.calls == 1
-
-
-@pytest.mark.parametrize("limit", ["max_new_entries_per_fetch", "max_delivery_history"])
-def test_repeated_delivery_limit_failures_record_one_outcome_without_false_recovery(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    limit: str,
-) -> None:
-    caplog.set_level(logging.INFO)
-    feed = make_feed("limited")
-    strategy = FakeStrategy([make_entry("a"), make_entry("b")])
-    setattr(strategy, limit, 1)
-    sender = FakeSender([])
-    with DeliveryStore(tmp_path / "state.db") as store:
-        app = make_app(store, sender, strategy, (feed,))
-        for attempt in range(1, 4):
-            _process_feed_safely(feed, app.process_feed, app._store)
-            health = store.list_health(feed.id)[0]
-            assert health.state == "failed"
-            assert health.total_attempts == attempt
-            assert health.total_successes == 0
-            assert health.consecutive_failures == attempt
-        assert sender.messages == []
-        assert "recovered=True" not in caplog.text
-        assert caplog.text.count("health=failed") == 1
-
-        strategy.entries.clear()
-        _process_feed_safely(feed, app.process_feed, app._store)
-        health = store.list_health(feed.id)[0]
-        assert health.state == "empty"
-        assert health.total_attempts == 4
-        assert health.total_successes == 1
-        assert health.consecutive_failures == 0
-        assert caplog.text.count("recovered=True") == 1
 
 
 def test_ordinary_delivery_exception_records_only_failure_then_real_recovery(

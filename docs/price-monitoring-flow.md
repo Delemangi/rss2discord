@@ -84,6 +84,14 @@ Opening an older database performs an idempotent migration:
 Take a consistent database backup before the first start with this version; the
 dropped tables are not recreated.
 
+## Discovery delivery
+
+Ordinary new items follow the same presentation rule: up to 25 send individual
+cards, and larger batches send one digest with up to three cards plus complete
+HTML and CSV attachments. Entries are marked delivered only after Discord
+confirms, and there are no new-entry or delivery-history caps that can stop a
+feed permanently.
+
 ## Boundaries to preserve
 
 - Keep shutdown checks around interruptible work, including message preparation

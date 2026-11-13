@@ -10,8 +10,6 @@ from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.transports.base import ScraperStrategy
 
 NEKSIO_PRODUCT_DETAILS_PATH: Final = "Product/Details/"
-MAX_NEKSIO_NEW_PRODUCTS_PER_FETCH: Final = 100
-MAX_NEKSIO_DELIVERY_HISTORY: Final = 50_000
 
 __all__ = ["NeksioProduct", "NeksioStrategy"]
 
@@ -21,8 +19,6 @@ class NeksioStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = True
-    max_new_entries_per_fetch = MAX_NEKSIO_NEW_PRODUCTS_PER_FETCH
-    max_delivery_history = MAX_NEKSIO_DELIVERY_HISTORY
 
     def __init__(
         self,

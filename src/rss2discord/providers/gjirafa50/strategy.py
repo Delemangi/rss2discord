@@ -2,27 +2,22 @@
 
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Final, final, override
+from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.providers.gjirafa50.catalog import (
-    GJIRAFA50_WINDOW_SIZE,
     Gjirafa50CatalogClient,
 )
 from rss2discord.providers.gjirafa50.models import Gjirafa50Product
 from rss2discord.providers.gjirafa50.parser import GJIRAFA50_LABEL
 from rss2discord.transports.base import ScraperStrategy
 
-MAX_GJIRAFA50_DELIVERY_HISTORY: Final = 100_000
-
 
 @final
 class Gjirafa50Strategy(ScraperStrategy):
     seed_existing_on_first_fetch: bool = True
     require_entries_for_initialization: bool = True
-    max_new_entries_per_fetch: int | None = GJIRAFA50_WINDOW_SIZE
-    max_delivery_history: int | None = MAX_GJIRAFA50_DELIVERY_HISTORY
 
     def __init__(
         self,
