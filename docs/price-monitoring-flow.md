@@ -41,10 +41,12 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    notification rows in one transaction. No network work happens inside that
    transaction.
 6. **Deliver.** Pending groups drain oldest-first. A group of at most 25 rows
-   sends one card per product. A larger group sends one digest with direction and
-   category totals, the largest plausible drops and rises, and complete HTML and
-   CSV attachments. The HTML report is self-contained and searchable/sortable.
-   Rows are marked sent only after Discord confirms delivery.
+   sends one card per product. A larger group sends one or two compact briefs:
+   header direction totals and category bars, then up to 20 largest drops and 20
+   largest rises with links and percentages. The complete HTML and CSV reports
+   attach once, to the final brief. The HTML report is self-contained and
+   searchable/sortable. Rows are marked sent only after Discord confirms every
+   brief in the group.
 7. **Record health.** A drained outbox records `healthy` or `empty`. A failed
    send records `failed` with cause `DeliveryRetryPending` and leaves the rows
    pending.

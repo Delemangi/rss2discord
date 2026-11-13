@@ -7,6 +7,7 @@ import sqlite3
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,14 +18,18 @@ from rss2discord.discord.message import ReportFile, prepare_delivery
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
 from rss2discord.price_notifications import (
     PriceNotification,
+    PriceNotificationDeliveryResult,
     PriceNotificationRecord,
     entry_from_json,
     entry_to_json,
 )
+from rss2discord.retries import SQLiteRetryPolicy
+from rss2discord.transports.price_monitor import PriceAlertDelivery
 from rss2discord.transports.price_monitor import digest as digest_module
 from rss2discord.transports.price_monitor.digest import (
-    build_digest,
+    build_digest_messages,
     build_report_files,
+    deliver_price_notifications,
 )
 from tests import setec_price_monitor_helpers as setec
 
@@ -43,6 +48,7 @@ def entry(
     *,
     description: str = "",
     image_url: str | None = None,
+    categories: tuple[str, ...] = ("Computers", "Accessories"),
 ) -> EntryData:
     return EntryData(
         title=f"Product {product_id}",
@@ -52,7 +58,7 @@ def entry(
         timestamp="2026-11-12T10:00:00+00:00",
         discussion_url="https://shop.example.test/talk",
         image_url=image_url,
-        categories=("Computers", "Accessories"),
+        categories=categories,
         source_metrics=(
             SourceMetric("Price", "90 MKD"),
             SourceMetric("Previous", "100 MKD", prior=True),
@@ -89,6 +95,7 @@ def record(
     current_price: str = "90",
     description: str = "",
     image_url: str | None = None,
+    categories: tuple[str, ...] = ("Computers", "Accessories"),
     observed_at: int = 1_700_000_000,
     attempts: int = 0,
 ) -> PriceNotificationRecord:
@@ -104,7 +111,12 @@ def record(
         previous_amount=(None if previous_price is None else Decimal(previous_price)),
         current_amount=Decimal(current_price),
         currency="MKD",
-        entry=entry(product_id, description=description, image_url=image_url),
+        entry=entry(
+            product_id,
+            description=description,
+            image_url=image_url,
+            categories=categories,
+        ),
         source_title="Test Shop",
         observed_at=observed_at,
         attempts=attempts,
@@ -319,7 +331,7 @@ def test_digest_payload_aligns_attachments_files_and_file_components() -> None:
         )
         for index in range(26)
     )
-    message = build_digest(setec.make_feed(), records)
+    message = build_digest_messages(setec.make_feed(), records)[0]
     assert message.entry.title == "Price changes"
 
     class NoDownload:
@@ -388,7 +400,7 @@ def test_digest_respects_component_and_text_limits_and_has_no_images() -> None:
         )
         for index in range(26)
     )
-    message = build_digest(setec.make_feed(), records)
+    message = build_digest_messages(setec.make_feed(), records)[0]
 
     class NoDownload:
         def download(self, url: str) -> None:
@@ -414,6 +426,155 @@ def test_digest_respects_component_and_text_limits_and_has_no_images() -> None:
         return total
 
     assert text_length(components) <= 4000
+
+
+def test_mixed_drops_and_rises_send_two_brief_messages() -> None:
+    records = (
+        *(
+            record(
+                f"drop-{index}",
+                notification_id=index + 1,
+                previous_price="100",
+                current_price="90",
+                categories=(f"Category {index % 5}",),
+            )
+            for index in range(20)
+        ),
+        *(
+            record(
+                f"rise-{index}",
+                notification_id=100 + index,
+                previous_price="100",
+                current_price="110",
+                categories=(f"Category {index % 5}",),
+            )
+            for index in range(10)
+        ),
+        record(
+            "extreme",
+            notification_id=200,
+            previous_price="100",
+            current_price="1100",
+        ),
+    )
+    messages = build_digest_messages(setec.make_feed(), records)
+    assert len(messages) == 2
+    drops, rises = messages
+    assert drops.files == ()
+    assert "**Largest drops**" in drops.entry.description
+    assert "**Largest rises**" not in drops.entry.description
+    assert "████" in drops.entry.description
+    assert "-10.0%" in drops.entry.description
+    assert "+10.0%" in rises.entry.description
+    assert rises.files
+    assert len(rises.files) == 2
+    assert "**Largest rises**" in rises.entry.description
+    assert "extreme moves" in rises.entry.description
+    assert "The complete searchable list is attached (HTML and CSV)." in (
+        rises.entry.description
+    )
+    assert all(len(message.entry.description) <= 4000 for message in messages)
+    assert drops.entry.description.count("→") == 20
+    assert rises.entry.description.count("→") == 10
+
+
+def test_all_drops_attach_reports_to_single_message() -> None:
+    records = tuple(
+        record(
+            str(index),
+            notification_id=index + 1,
+            previous_price="100",
+            current_price="90",
+        )
+        for index in range(30)
+    )
+    messages = build_digest_messages(setec.make_feed(), records)
+    assert len(messages) == 1
+    assert len(messages[0].files) == 2
+    assert "**Largest drops**" in messages[0].entry.description
+    assert "The complete searchable list is attached (HTML and CSV)." in (
+        messages[0].entry.description
+    )
+
+
+def _digest_dependencies(
+    store: DeliveryStore,
+    sender: setec.RecordingSender,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        snapshots=store,
+        sender=sender,
+        sqlite_retry_policy=SQLiteRetryPolicy(
+            sleep=lambda _: True,
+            on_retry=lambda *_: None,
+        ),
+        delivery=PriceAlertDelivery(
+            sleep=lambda _: True,
+            delay_between_posts=0,
+            is_shutdown_requested=lambda: False,
+        ),
+    )
+
+
+def _mixed_scan(store: DeliveryStore) -> None:
+    notifications = tuple(
+        PriceNotification(
+            product_id=f"p-{index}",
+            previous=PriceSnapshot("feed", f"p-{index}", Decimal(100), "100", "MKD"),
+            current=PriceSnapshot(
+                "feed",
+                f"p-{index}",
+                Decimal(90 if index % 2 == 0 else 110),
+                "90" if index % 2 == 0 else "110",
+                "MKD",
+            ),
+            entry=entry(f"p-{index}"),
+            source_title="Test Shop",
+        )
+        for index in range(26)
+    )
+    store.record_price_scan(
+        feed_id="feed",
+        group_id="mixed",
+        observed_at=1_700_000_000,
+        baseline_updates=tuple(item.current for item in notifications),
+        notifications=notifications,
+    )
+
+
+def test_two_message_digest_marks_all_rows_after_both_sends(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        _mixed_scan(store)
+        sender = setec.RecordingSender(
+            [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.DELIVERED],
+        )
+        result = deliver_price_notifications(
+            _digest_dependencies(store, sender),
+            setec.make_feed(),
+            "feed",
+        )
+        assert result is PriceNotificationDeliveryResult.DRAINED
+        assert len(sender.messages) == 2
+        assert store.count_pending_price_notifications("feed") == 0
+
+
+def test_failed_second_digest_message_leaves_all_rows_pending(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        _mixed_scan(store)
+        sender = setec.RecordingSender(
+            [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.FAILED],
+        )
+        result = deliver_price_notifications(
+            _digest_dependencies(store, sender),
+            setec.make_feed(),
+            "feed",
+        )
+        assert result is PriceNotificationDeliveryResult.FAILED
+        assert len(sender.messages) == 2
+        pending = store.load_pending_price_group("feed")
+        assert pending is not None
+        assert len(pending[1]) == 26
+        assert all(item.attempts == 1 for item in pending[1])
 
 
 def test_failed_large_digest_keeps_rows_pending_and_retry_reuses_them(
