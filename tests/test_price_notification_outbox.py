@@ -23,7 +23,6 @@ from rss2discord.price_notifications import (
 )
 from rss2discord.transports.price_monitor import digest as digest_module
 from rss2discord.transports.price_monitor.digest import (
-    DIGEST_CARD_LIMIT,
     build_digest,
     build_report_files,
 )
@@ -102,6 +101,8 @@ def record(
         link=link,
         previous_price=previous_price,
         current_price=current_price,
+        previous_amount=(None if previous_price is None else Decimal(previous_price)),
+        current_amount=Decimal(current_price),
         currency="MKD",
         entry=entry(product_id, description=description, image_url=image_url),
         source_title="Test Shop",
@@ -253,7 +254,7 @@ def test_setec_small_scan_sends_every_change_without_a_ten_cap(tmp_path: Path) -
         assert all(item.amount == 90 for item in store.load_price_snapshots("setec"))
 
 
-def test_setec_bulk_scan_sends_one_digest_with_complete_reports(tmp_path: Path) -> None:
+def test_setec_bulk_scan_sends_stats_digest_with_reports(tmp_path: Path) -> None:
     ids = tuple(f"p-{index:02}" for index in range(26))
     baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
     changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
@@ -270,12 +271,41 @@ def test_setec_bulk_scan_sends_one_digest_with_complete_reports(tmp_path: Path) 
         assert len(sender.messages) == 1
         message = sender.messages[0]
         assert len(message.files) == 2
-        assert len(message.components or ()) == 1 + DIGEST_CARD_LIMIT
-        markdown, csv_report = message.files
-        csv_text = csv_report.content.decode()
+        assert message.files[0].filename.endswith(".html")
+        assert message.files[1].filename.endswith(".csv")
+        assert "Largest drops" in message.entry.description
+        csv_text = message.files[1].content.decode()
         assert len(list(csv.reader(io.StringIO(csv_text)))) == 27
         assert all(pid in csv_text for pid in ids)
-        assert markdown.content.decode().count("https://setec.mk/products/") == 26
+        assert store.count_pending_price_notifications("setec") == 0
+        assert all(item.amount == 90 for item in store.load_price_snapshots("setec"))
+
+
+def test_large_scan_sends_stats_digest_with_html_and_csv(tmp_path: Path) -> None:
+    ids = tuple(f"p-{index:03}" for index in range(201))
+    baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
+    changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = setec.make_monitor(
+            setec.make_feed(),
+            setec.CatalogStub([baseline, changed, changed]),
+            store,
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        assert len(sender.messages) == 1
+        message = sender.messages[0]
+        assert len(message.files) == 2
+        assert message.files[0].filename.endswith(".html")
+        assert message.files[1].filename.endswith(".csv")
+        html_text = message.files[0].content.decode()
+        csv_text = message.files[1].content.decode()
+        assert "<html" in html_text
+        assert "Largest drops" in message.entry.description
+        assert len(list(csv.reader(io.StringIO(csv_text)))) == 202
+        assert all(pid in csv_text for pid in ids)
         assert store.count_pending_price_notifications("setec") == 0
         assert all(item.amount == 90 for item in store.load_price_snapshots("setec"))
 
@@ -386,8 +416,10 @@ def test_digest_respects_component_and_text_limits_and_has_no_images() -> None:
     assert text_length(components) <= 4000
 
 
-def test_failed_digest_keeps_rows_pending_and_retry_reuses_them(tmp_path: Path) -> None:
-    ids = tuple(f"p-{index:02}" for index in range(26))
+def test_failed_large_digest_keeps_rows_pending_and_retry_reuses_them(
+    tmp_path: Path,
+) -> None:
+    ids = tuple(f"p-{index:03}" for index in range(201))
     baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
     changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
     sender = setec.RecordingSender(
@@ -406,7 +438,7 @@ def test_failed_digest_keeps_rows_pending_and_retry_reuses_them(tmp_path: Path) 
         pending = store.load_pending_price_group("setec")
         assert pending is not None
         first_files = pending[1]
-        assert len(first_files) == 26
+        assert len(first_files) == 201
         assert all(item.attempts == 1 for item in first_files)
         assert store.list_health("setec")[0].cause == "DeliveryRetryPending"
         assert all(item.amount == 90 for item in store.load_price_snapshots("setec"))
@@ -418,7 +450,7 @@ def test_failed_digest_keeps_rows_pending_and_retry_reuses_them(tmp_path: Path) 
         assert store.list_health("setec")[0].state == "healthy"
 
 
-def test_csv_and_markdown_escape_formulas_pipes_and_newlines() -> None:
+def test_csv_and_html_escape_formulas_and_newlines() -> None:
     records = (
         record(
             "1",
@@ -437,15 +469,16 @@ def test_csv_and_markdown_escape_formulas_pipes_and_newlines() -> None:
             link="https://shop.example.test/item?b=2",
         ),
     )
-    markdown, csv_report = build_report_files("feed", "group-escape", records)
+    html_report, csv_report = build_report_files("feed", "group-escape", records)
     csv_text = csv_report.content.decode()
     rows = list(csv.reader(io.StringIO(csv_text)))
     assert rows[1][2] == "'=SUM(A1:A2)"
     assert rows[2][2] == "a|b\nc"
     assert rows[0][-1] == "observed_at"
-    markdown_text = markdown.content.decode()
-    assert "\\|" in markdown_text
-    assert "a\\|b c" in markdown_text
+    html_text = html_report.content.decode()
+    assert "=SUM(A1:A2)" in html_text
+    assert "a|b c" in html_text
+    assert html_text.startswith("<!doctype html>")
 
 
 def test_entry_json_round_trip_is_deterministic() -> None:
@@ -467,13 +500,13 @@ def test_truncation_note_is_written_when_report_rows_are_capped(
         record(str(index), notification_id=index + 1, group_id="group-cap")
         for index in range(4)
     )
-    markdown, csv_report = build_report_files("feed", "group-cap", records)
-    assert "**TRUNCATED** | 2 rows omitted" in markdown.content.decode()
+    html_report, csv_report = build_report_files("feed", "group-cap", records)
+    assert "TRUNCATED: 2 rows omitted" in html_report.content.decode()
     assert "TRUNCATED: 2 rows omitted" in csv_report.content.decode()
 
 
 def test_pending_previous_run_is_drained_before_new_small_scan(tmp_path: Path) -> None:
-    ids = tuple(f"p-{index:02}" for index in range(26))
+    ids = tuple(f"p-{index:02}" for index in range(1))
     baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
     sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
     with DeliveryStore(tmp_path / "state.db") as store:

@@ -172,18 +172,19 @@ def test_inline_and_bulk_boundary(tmp_path: Path) -> None:
         )
         assert len(sender.messages) == 25
 
-    with DeliveryStore(tmp_path / "bulk.db") as store:
-        bulk_ids = tuple(str(index) for index in range(26))
-        seed(store, tuple(snapshot(product_id) for product_id in bulk_ids))
+    with DeliveryStore(tmp_path / "digest.db") as store:
+        digest_ids = tuple(str(index) for index in range(201))
+        seed(store, tuple(snapshot(product_id) for product_id in digest_ids))
         sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
         run(
             store,
             sender,
             [
                 PriceObservation(product_id, snapshot(product_id, 90))
-                for product_id in bulk_ids
+                for product_id in digest_ids
             ],
             feed_id="feed",
+            limit=500,
         )
         assert len(sender.messages) == 1
         assert len(sender.messages[0].files) == 2

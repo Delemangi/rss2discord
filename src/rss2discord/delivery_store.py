@@ -271,8 +271,9 @@ class DeliveryStore:
                 self._connection.executemany(
                     "INSERT INTO price_notifications "
                     "(feed_id, group_id, product_id, title, link, previous_price, "
-                    "current_price, currency, entry_json, source_title, observed_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "current_price, previous_amount, current_amount, currency, "
+                    "entry_json, source_title, observed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         (
                             feed_id,
@@ -286,6 +287,14 @@ class DeliveryStore:
                                 else notification.previous.formatted
                             ),
                             notification.current.formatted,
+                            (
+                                None
+                                if notification.previous is None
+                                else canonicalize_price_amount(
+                                    notification.previous.amount,
+                                )
+                            ),
+                            canonicalize_price_amount(notification.current.amount),
                             notification.current.currency,
                             entry_to_json(notification.entry),
                             notification.source_title,
@@ -325,15 +334,18 @@ class DeliveryStore:
                 link=str(item[5]),
                 previous_price=None if item[6] is None else str(item[6]),
                 current_price=str(item[7]),
-                currency=str(item[8]),
-                entry=entry_from_json(str(item[9])),
-                source_title=str(item[10]),
-                observed_at=int(item[11]),
-                attempts=int(item[12]),
+                previous_amount=(None if item[8] is None else Decimal(str(item[8]))),
+                current_amount=Decimal(str(item[9])),
+                currency=str(item[10]),
+                entry=entry_from_json(str(item[11])),
+                source_title=str(item[12]),
+                observed_at=int(item[13]),
+                attempts=int(item[14]),
             )
             for item in self._connection.execute(
                 "SELECT notification_id, feed_id, group_id, product_id, title, link, "
-                "previous_price, current_price, currency, entry_json, source_title, "
+                "previous_price, current_price, previous_amount, current_amount, "
+                "currency, entry_json, source_title, "
                 "observed_at, attempts FROM price_notifications "
                 "WHERE feed_id = ? AND group_id = ? AND status = 'pending' "
                 "ORDER BY notification_id",
@@ -724,13 +736,25 @@ class DeliveryStore:
                 "notification_id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 "feed_id TEXT NOT NULL, group_id TEXT NOT NULL, product_id TEXT NOT NULL, "
                 "title TEXT NOT NULL, link TEXT NOT NULL, previous_price TEXT, "
-                "current_price TEXT NOT NULL, currency TEXT NOT NULL, "
+                "current_price TEXT NOT NULL, previous_amount TEXT, "
+                "current_amount TEXT, currency TEXT NOT NULL, "
                 "entry_json TEXT NOT NULL, source_title TEXT NOT NULL, "
                 "observed_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' "
                 "CHECK(status IN ('pending','sent')), "
                 "attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER, "
                 "sent_at INTEGER, last_error TEXT)",
             )
+            notification_columns = {
+                str(row[1])
+                for row in self._connection.execute(
+                    "PRAGMA table_info(price_notifications)",
+                )
+            }
+            for column in ("previous_amount", "current_amount"):
+                if column not in notification_columns:
+                    self._connection.execute(
+                        f"ALTER TABLE price_notifications ADD COLUMN {column} TEXT",
+                    )
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS price_notifications_pending "
                 "ON price_notifications(feed_id, status, notification_id)",

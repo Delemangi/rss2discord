@@ -41,9 +41,10 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    notification rows in one transaction. No network work happens inside that
    transaction.
 6. **Deliver.** Pending groups drain oldest-first. A group of at most 25 rows
-   sends one card per product. A larger group sends one digest with up to three
-   example cards and complete Markdown and CSV attachments. Rows are marked sent
-   only after Discord confirms delivery.
+   sends one card per product. A larger group sends one digest with direction and
+   category totals, the largest plausible drops and rises, and complete HTML and
+   CSV attachments. The HTML report is self-contained and searchable/sortable.
+   Rows are marked sent only after Discord confirms delivery.
 7. **Record health.** A drained outbox records `healthy` or `empty`. A failed
    send records `failed` with cause `DeliveryRetryPending` and leaves the rows
    pending.
@@ -56,13 +57,16 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   before sending new work.
 - Delivery is at-least-once. A crash after Discord accepts a message but before
   the local `sent` update can produce a duplicate.
-- Reports contain every row: title, link, previous price, current price,
-  currency, and observation time. Files are capped at 50,000 rows and 8 MiB;
-  overflow is marked explicitly in the final line rather than truncated
+- Reports contain every row: title, link, category, previous price, current
+  price, currency, and observation time. Files are capped at 50,000 rows and
+  8 MiB; overflow is marked explicitly in the final line rather than truncated
   silently.
-- CSV fields that begin with `=`, `+`, `-`, or `@` are prefixed to prevent
-  spreadsheet formula execution. Markdown table cells escape pipes and
-  line breaks.
+- The HTML report is self-contained: filter by text or direction and sort any
+  column without a network request. CSV fields that begin with `=`, `+`, `-`, or
+  `@` are prefixed to prevent spreadsheet formula execution.
+- The digest lists only moves inside a plausible 0.1×–10× band; more extreme
+  values are counted and left in the report, so a bad source value cannot
+  dominate the headline.
 
 ## Upgrade migration
 

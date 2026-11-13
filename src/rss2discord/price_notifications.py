@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
@@ -33,6 +34,8 @@ class PriceNotificationRecord:
     link: str
     previous_price: str | None
     current_price: str
+    previous_amount: Decimal | None
+    current_amount: Decimal
     currency: str
     entry: EntryData
     source_title: str
