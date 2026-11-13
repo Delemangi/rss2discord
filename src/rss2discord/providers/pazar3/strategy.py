@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -16,6 +17,9 @@ from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
 type Pazar3Clock = Callable[[], datetime]
+
+logger = logging.getLogger(__name__)
+PAZAR3_PAGE_ATTEMPTS = 4
 
 
 def _blocking_sleep(seconds: float) -> bool:
@@ -53,17 +57,27 @@ class Pazar3Strategy(ScraperStrategy):
             if self._is_shutdown_requested():
                 raise FeedFetchInterruptedError
             request = scope.page_request(page_number)
-            page = parse_pazar3_page(
-                fetch_pazar3_page(
-                    request,
-                    budget,
-                    self._pacer,
-                    self._sleep,
-                    self._is_shutdown_requested,
-                ),
-                request,
-                now,
-            )
+            for attempt in range(1, PAZAR3_PAGE_ATTEMPTS + 1):
+                try:
+                    content = fetch_pazar3_page(
+                        request,
+                        budget,
+                        self._pacer,
+                        self._sleep,
+                        self._is_shutdown_requested,
+                    )
+                except FeedFetchError as error:
+                    if not error.retryable or attempt == PAZAR3_PAGE_ATTEMPTS:
+                        raise
+                    logger.warning(
+                        "Pazar3 page %d failed on attempt %d (%s); retrying",
+                        page_number,
+                        attempt,
+                        error.cause_type,
+                    )
+                else:
+                    break
+            page = parse_pazar3_page(content, request, now)
             _validate_discovery_page(page, page_number, seen_ids)
             for listing in page.listings:
                 retained.setdefault(listing.entry_id, (listing, scan_position))
