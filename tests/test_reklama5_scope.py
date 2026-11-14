@@ -126,6 +126,7 @@ def test_reklama5_catalog_page_request_accepts_the_full_category_window() -> Non
     request = scope.catalog_page_request(250)
 
     assert request.page == 250
+    assert urlsplit(request.url).path == "/Search/Index"
     assert parse_qsl(urlsplit(request.url).query, keep_blank_values=True)[-1] == (
         "page",
         "250",
