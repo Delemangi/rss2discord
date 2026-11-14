@@ -341,4 +341,4 @@ def test_pazar3_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
         assert snapshots["1"].amount == Decimal(100)
         assert snapshots["2"].amount == Decimal(200)
         assert sender.messages == []
-        assert store.list_health("pazar3")[0].item_count == 2
+        assert store.list_health("pazar3")[0].item_count == 1

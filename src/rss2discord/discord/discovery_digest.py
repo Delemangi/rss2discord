@@ -6,7 +6,7 @@ import csv
 import io
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from html import escape
 from typing import Final
@@ -19,14 +19,16 @@ from rss2discord.discord.components import (
     build_components_v2_payload,
 )
 from rss2discord.discord.message import ReportFile, WebhookMessage
+from rss2discord.discord.report import (
+    csv_safe,
+    html_shell,
+    write_bounded_rows,
+)
 from rss2discord.models import EntryData
 
 INLINE_ENTRY_LIMIT: Final = 25
 MAX_DIGEST_CARDS: Final = 3
 MAX_DIGEST_CATEGORIES: Final = 5
-MAX_REPORT_ROWS: Final = 50_000
-MAX_REPORT_BYTES: Final = 8 * 1024 * 1024
-FORMULA_PREFIXES: Final = frozenset("=+-@")
 CSV_HEADER: Final = (
     "feed",
     "entry_id",
@@ -36,6 +38,13 @@ CSV_HEADER: Final = (
     "published",
     "categories",
     "description",
+)
+DISCOVERY_HEADERS: Final = (
+    ("Title", "text"),
+    ("Author", "text"),
+    ("Published", "text"),
+    ("Categories", "text"),
+    ("Link", "text"),
 )
 
 
@@ -191,19 +200,23 @@ def _html_report(
     feed_id: str,
     entries: Sequence[tuple[str, EntryData]],
 ) -> str:
-    buffer = io.StringIO()
-    buffer.write(_HTML_PREFIX.replace("{feed}", escape(feed_id)))
-    written = _write_bounded_rows(
-        buffer,
+    body = io.StringIO()
+    written = write_bounded_rows(
+        body,
         entries,
-        write_row=lambda item: buffer.write(_html_row(item)),
-        write_truncation=lambda omitted: buffer.write(
+        write_row=lambda item: body.write(_html_row(item)),
+        write_truncation=lambda omitted: body.write(
             f'<tr class="truncated"><td colspan="5">TRUNCATED: '
             f"{omitted:,} rows omitted</td></tr>",
         ),
     )
-    buffer.write(_HTML_SUFFIX)
-    return buffer.getvalue().replace("{count}", f"{written:,}")
+    return html_shell(
+        feed_id,
+        "New items",
+        DISCOVERY_HEADERS,
+        body.getvalue(),
+        written,
+    )
 
 
 def _html_row(item: tuple[str, EntryData]) -> str:
@@ -237,7 +250,7 @@ def _csv_report(
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(CSV_HEADER)
-    _write_bounded_rows(
+    write_bounded_rows(
         buffer,
         entries,
         write_row=lambda item: writer.writerow(_csv_row(feed_id, item)),
@@ -260,7 +273,7 @@ def _csv_report(
 def _csv_row(feed_id: str, item: tuple[str, EntryData]) -> tuple[str, ...]:
     entry_id, entry = item
     return tuple(
-        _csv_safe(value)
+        csv_safe(value)
         for value in (
             feed_id,
             entry_id,
@@ -272,34 +285,6 @@ def _csv_row(feed_id: str, item: tuple[str, EntryData]) -> tuple[str, ...]:
             entry.description,
         )
     )
-
-
-def _csv_safe(value: str) -> str:
-    return f"'{value}" if value[:1] in FORMULA_PREFIXES else value
-
-
-def _write_bounded_rows(
-    buffer: io.StringIO,
-    entries: Sequence[tuple[str, EntryData]],
-    *,
-    write_row: Callable[[tuple[str, EntryData]], object],
-    write_truncation: Callable[[int], object],
-) -> int:
-    written = 0
-    for item in entries:
-        if written >= MAX_REPORT_ROWS:
-            break
-        start = buffer.tell()
-        write_row(item)
-        if buffer.tell() > MAX_REPORT_BYTES:
-            buffer.seek(start)
-            buffer.truncate()
-            break
-        written += 1
-    omitted = len(entries) - written
-    if omitted:
-        write_truncation(omitted)
-    return written
 
 
 def _single_line(value: str, limit: int) -> str:
@@ -318,73 +303,3 @@ def _safe_filename_part(value: str) -> str:
         for character in value
     )
     return cleaned or "feed"
-
-
-_HTML_PREFIX: Final = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>New items — {feed}</title>
-<style>
-:root { color-scheme: light dark; }
-body { font: 15px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; }
-h1 { font-size: 1.3rem; margin: 0 0 12px; }
-.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-input { padding: 8px; font: inherit; border: 1px solid #8884; border-radius: 6px; flex: 1 1 260px; }
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; min-width: 760px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #8883; text-align: left; vertical-align: top; }
-th { cursor: pointer; position: sticky; top: 0; background: Canvas; }
-tr.truncated td { font-weight: 600; text-align: center; }
-a { color: inherit; }
-.note { opacity: .7; font-size: .9em; }
-</style>
-</head>
-<body>
-<h1>New items — {feed}</h1>
-<div class="controls">
-<input id="q" type="search" placeholder="Search title, author, categories" aria-label="Search">
-<span class="note">{count} rows</span>
-</div>
-<div class="table-wrap">
-<table id="t">
-<thead><tr>
-<th data-sort="text">Title</th><th data-sort="text">Author</th>
-<th data-sort="text">Published</th><th data-sort="text">Categories</th>
-<th data-sort="text">Link</th>
-</tr></thead>
-<tbody>
-"""
-
-_HTML_SUFFIX: Final = """</tbody>
-</table>
-</div>
-<script>
-const q = document.getElementById('q');
-const rows = [...document.querySelectorAll('#t tbody tr[data-search]')];
-function apply() {
-  const text = q.value.trim().toLowerCase();
-  for (const row of rows) {
-    row.hidden = !!text && !row.dataset.search.includes(text);
-  }
-}
-q.addEventListener('input', apply);
-for (const th of document.querySelectorAll('#t th')) {
-  th.addEventListener('click', () => {
-    const index = [...th.parentElement.children].indexOf(th);
-    const body = th.closest('table').tBodies[0];
-    const sorted = [...body.rows].sort((a, b) => {
-      const av = a.cells[index].textContent.trim().toLowerCase();
-      const bv = b.cells[index].textContent.trim().toLowerCase();
-      return av < bv ? -1 : av > bv ? 1 : 0;
-    });
-    if (th.dataset.asc === 'true') sorted.reverse();
-    th.dataset.asc = th.dataset.asc === 'true' ? 'false' : 'true';
-    for (const row of sorted) body.appendChild(row);
-  });
-}
-</script>
-</body>
-</html>
-"""

@@ -20,6 +20,7 @@ from .contracts import (
     DeliverablePriceChange,
     PriceAlertDelivery,
     PriceChangeDeliveryDependencies,
+    PriceDeliveryOutcome,
     PriceDeliveryPlan,
     PriceRecoveryStore,
 )
@@ -40,11 +41,11 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
     source_title: str | None = None,
     baseline_extra: Sequence[PriceSnapshot] = (),
     current_snapshots: Sequence[PriceSnapshot] | None = None,
-) -> None:
+) -> PriceDeliveryOutcome:
     del source_title
     materialized = tuple(changes)
     if plan.bulk:
-        _deliver_bulk(
+        return _deliver_bulk(
             materialized,
             dependencies,
             message_for,
@@ -53,24 +54,28 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
             baseline_extra=baseline_extra,
             current_snapshots=current_snapshots,
         )
-        return
-    if feed is not None and not _drain_pending(dependencies, feed):
-        return
+    if feed is not None:
+        drained = drain_pending_price_notifications(dependencies, feed)
+        if drained is PriceDeliveryOutcome.FAILED:
+            return PriceDeliveryOutcome.FAILED
+        if drained is PriceDeliveryOutcome.INTERRUPTED:
+            return PriceDeliveryOutcome.INTERRUPTED
     selected = set(plan.selected_ids)
     delay_before_next = False
+    had_failure = False
     for change in materialized:
         if change.current.product_id not in selected:
             continue
         if dependencies.delivery.is_shutdown_requested():
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
         if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
         delay_before_next = False
         if dependencies.delivery.is_shutdown_requested():
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
         message = message_for(change)
         if dependencies.delivery.is_shutdown_requested():
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
         result = dependencies.sender.send(message, dependencies.delivery.sleep)
         if result is DiscordDeliveryResult.DELIVERED:
             dependencies.sqlite_retry_policy.execute(
@@ -83,9 +88,13 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
             delay_before_next = True
             continue
         if result is DiscordDeliveryResult.INTERRUPTED:
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
+        had_failure = True
         if dependencies.delivery.is_shutdown_requested():
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
+    return (
+        PriceDeliveryOutcome.FAILED if had_failure else PriceDeliveryOutcome.DELIVERED
+    )
 
 
 def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
@@ -97,7 +106,7 @@ def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
     feed: FeedConfig | None,
     baseline_extra: Sequence[PriceSnapshot],
     current_snapshots: Sequence[PriceSnapshot] | None,
-) -> None:
+) -> PriceDeliveryOutcome:
     if feed is None:
         raise ValueError("bulk price delivery requires explicit feed context")
     messages = tuple((change, message_for(change)) for change in changes)
@@ -132,10 +141,21 @@ def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
             notifications=notifications,
         ),
     )
-    result = digest.deliver_price_notifications(dependencies, feed, feed.id)
+    result = digest.deliver_price_notifications(
+        dependencies,
+        feed,
+        feed.id,
+        additional_pending=plan.additional_pending,
+    )
     match result:
         case PriceNotificationDeliveryResult.DRAINED:
-            finish_price_delivery(dependencies.snapshots, feed.id, plan, count)
+            finish_price_delivery(
+                dependencies.snapshots,
+                feed.id,
+                plan,
+                plan.item_count or count,
+            )
+            return PriceDeliveryOutcome.DELIVERED
         case PriceNotificationDeliveryResult.FAILED:
             pending = dependencies.sqlite_retry_policy.execute(
                 partial(
@@ -150,8 +170,9 @@ def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
                 "DeliveryRetryPending",
                 pending,
             )
+            return PriceDeliveryOutcome.FAILED
         case PriceNotificationDeliveryResult.INTERRUPTED:
-            return
+            return PriceDeliveryOutcome.INTERRUPTED
         case unreachable:
             assert_never(unreachable)
 
@@ -159,15 +180,8 @@ def _deliver_bulk[PriceChangeT: DeliverablePriceChange](
 def drain_pending_price_notifications(
     dependencies: PriceChangeDeliveryDependencies,
     feed: FeedConfig,
-) -> bool:
-    """Drain queued outbox groups, returning whether the feed is drained."""
-    return _drain_pending(dependencies, feed)
-
-
-def _drain_pending(
-    dependencies: PriceChangeDeliveryDependencies,
-    feed: FeedConfig,
-) -> bool:
+) -> PriceDeliveryOutcome:
+    """Drain queued outbox groups and report the delivery outcome."""
     result = digest.deliver_price_notifications(dependencies, feed, feed.id)
     if result is PriceNotificationDeliveryResult.FAILED:
         pending = dependencies.sqlite_retry_policy.execute(
@@ -183,8 +197,10 @@ def _drain_pending(
             "DeliveryRetryPending",
             pending,
         )
-        return False
-    return result is PriceNotificationDeliveryResult.DRAINED
+        return PriceDeliveryOutcome.FAILED
+    if result is PriceNotificationDeliveryResult.DRAINED:
+        return PriceDeliveryOutcome.DELIVERED
+    return PriceDeliveryOutcome.INTERRUPTED
 
 
 def _wait_between_price_deliveries(

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.discord import report as report_module
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.components import TEXT_DISPLAY_COMPONENT
 from rss2discord.discord.message import ReportFile, prepare_delivery
@@ -25,7 +26,6 @@ from rss2discord.price_notifications import (
 )
 from rss2discord.retries import SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
-from rss2discord.transports.price_monitor import digest as digest_module
 from rss2discord.transports.price_monitor.digest import (
     build_digest_messages,
     build_report_files,
@@ -428,6 +428,71 @@ def test_digest_respects_component_and_text_limits_and_has_no_images() -> None:
     assert text_length(components) <= 4000
 
 
+def test_brief_preserves_decimal_prices_and_exact_percentage() -> None:
+    records = (
+        record(
+            "decimal",
+            notification_id=1,
+            previous_price="100.4",
+            current_price="100.6",
+        ),
+    )
+    message = build_digest_messages(setec.make_feed(), records)[0]
+    assert "100.4" in message.entry.description
+    assert "100.6" in message.entry.description
+    assert "+0.2%" in message.entry.description
+    assert "100 →" not in message.entry.description
+    assert "→ 101" not in message.entry.description
+
+
+def test_additional_pending_note_appears_only_when_present() -> None:
+    records = tuple(
+        record(str(index), notification_id=index + 1) for index in range(26)
+    )
+    with_pending = build_digest_messages(
+        setec.make_feed(),
+        records,
+        additional_pending=22,
+    )[-1]
+    assert "22 additional changes are pending confirmation" in (
+        with_pending.entry.description
+    )
+    without_pending = build_digest_messages(setec.make_feed(), records)[-1]
+    assert "additional changes are pending confirmation" not in (
+        without_pending.entry.description
+    )
+
+
+def test_delivery_threads_additional_pending_into_brief(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        record_scan(store, tuple(str(index) for index in range(26)))
+        sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
+        result = deliver_price_notifications(
+            _digest_dependencies(store, sender),
+            setec.make_feed(),
+            "feed",
+            additional_pending=22,
+        )
+        assert result is PriceNotificationDeliveryResult.DRAINED
+        assert "22 additional changes are pending confirmation" in (
+            sender.messages[0].entry.description
+        )
+
+
+def test_report_count_placeholder_in_title_survives() -> None:
+    records = (
+        record(
+            "count",
+            notification_id=1,
+            title="{count} bargain",
+        ),
+    )
+    html_report, _csv_report = build_report_files("feed", "group", records)
+    html_text = html_report.content.decode()
+    assert "{count} bargain" in html_text
+    assert '<span class="note">1 rows</span>' in html_text
+
+
 def test_mixed_drops_and_rises_send_two_brief_messages() -> None:
     records = (
         *(
@@ -656,7 +721,7 @@ def test_entry_json_round_trip_is_deterministic() -> None:
 def test_truncation_note_is_written_when_report_rows_are_capped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(digest_module, "MAX_REPORT_ROWS", 2)
+    monkeypatch.setattr(report_module, "MAX_REPORT_ROWS", 2)
     records = tuple(
         record(str(index), notification_id=index + 1, group_id="group-cap")
         for index in range(4)
@@ -664,6 +729,18 @@ def test_truncation_note_is_written_when_report_rows_are_capped(
     html_report, csv_report = build_report_files("feed", "group-cap", records)
     assert "TRUNCATED: 2 rows omitted" in html_report.content.decode()
     assert "TRUNCATED: 2 rows omitted" in csv_report.content.decode()
+
+
+def test_truncation_note_is_written_when_report_characters_are_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(report_module, "MAX_REPORT_CHARACTERS", 20)
+    records = tuple(
+        record(str(index), notification_id=index + 1, group_id="group-chars")
+        for index in range(3)
+    )
+    _html_report, csv_report = build_report_files("feed", "group-chars", records)
+    assert "TRUNCATED: 3 rows omitted" in csv_report.content.decode()
 
 
 def test_pending_previous_run_is_drained_before_new_small_scan(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, Final, Literal
 
 from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
@@ -27,6 +28,14 @@ from .transports import FeedFetchError, ScraperStrategy
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
+
+
+class EntryProcessingOutcome(StrEnum):
+    """Whether discovery delivery completed, was interrupted, or failed."""
+
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    DELIVERY_FAILED = "delivery_failed"
 
 
 class RSSToDiscord:
@@ -69,13 +78,35 @@ class RSSToDiscord:
         if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
-        if baseline_state == "ready" and not self._process_entries(
-            feed,
-            strategy,
-            entries,
-            fetched_source_title,
-        ):
-            return JobOutcome.ATTEMPTED
+        if baseline_state == "ready":
+            outcome = self._process_entries(
+                feed,
+                strategy,
+                entries,
+                fetched_source_title,
+            )
+            if outcome is EntryProcessingOutcome.INTERRUPTED:
+                return JobOutcome.ATTEMPTED
+            if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+                record_runtime_health(
+                    self._store,
+                    HealthUpdate(
+                        feed_id=feed.id,
+                        job_kind="ordinary",
+                        state="failed",
+                        cause="DeliveryRetryPending",
+                        attempted_at=attempted_at,
+                        success=False,
+                        nonempty=bool(entries),
+                        item_count=len(entries),
+                        duration_ms=max(
+                            0,
+                            int((time.monotonic() - started_at) * 1000),
+                        ),
+                        scheduler_lag_ms=0,
+                    ),
+                )
+                return JobOutcome.ATTEMPTED
         if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         health_state = "healthy" if entries else "empty"
@@ -102,10 +133,10 @@ class RSSToDiscord:
         strategy: ScraperStrategy,
         entries: list[Any],
         fetched_source_title: str,
-    ) -> bool:
-        """Return whether processing completed rather than being interrupted."""
+    ) -> EntryProcessingOutcome:
+        """Process pending entries, reporting completion, interruption, or failure."""
         if self._seed_existing_entries(feed, strategy, entries):
-            return True
+            return EntryProcessingOutcome.COMPLETED
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
@@ -119,7 +150,7 @@ class RSSToDiscord:
 
         for entry in entries:
             if self.is_shutdown_requested():
-                return False
+                return EntryProcessingOutcome.INTERRUPTED
 
             entry_id = self._unhandled_entry_id(feed, strategy, entry, seen_entry_ids)
             if entry_id is None:
@@ -146,19 +177,27 @@ class RSSToDiscord:
             pending.append((entry_id, entry_data))
 
         if not pending:
-            return True
+            return EntryProcessingOutcome.COMPLETED
         if len(pending) <= INLINE_ENTRY_LIMIT:
+            had_failure = False
             for entry_id, entry_data in pending:
                 if self.is_shutdown_requested():
-                    return False
-                if not self._deliver_entry(
+                    return EntryProcessingOutcome.INTERRUPTED
+                outcome = self._deliver_entry(
                     feed,
                     entry_data,
                     source_title,
                     entry_id,
-                ):
-                    return False
-            return True
+                )
+                if outcome is EntryProcessingOutcome.INTERRUPTED:
+                    return EntryProcessingOutcome.INTERRUPTED
+                if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+                    had_failure = True
+            return (
+                EntryProcessingOutcome.DELIVERY_FAILED
+                if had_failure
+                else EntryProcessingOutcome.COMPLETED
+            )
         return self._deliver_discovery_digest(feed, pending, source_title)
 
     def _deliver_discovery_digest(
@@ -166,9 +205,9 @@ class RSSToDiscord:
         feed: FeedConfig,
         pending: list[tuple[EntryId, EntryData]],
         source_title: str,
-    ) -> bool:
+    ) -> EntryProcessingOutcome:
         if self.is_shutdown_requested():
-            return False
+            return EntryProcessingOutcome.INTERRUPTED
         message = build_discovery_digest(
             feed,
             pending,
@@ -176,15 +215,21 @@ class RSSToDiscord:
         )
         result = self._sender.send(message, self._runtime.sleep)
         if result is DiscordDeliveryResult.INTERRUPTED:
-            return False
+            return EntryProcessingOutcome.INTERRUPTED
         if result is not DiscordDeliveryResult.DELIVERED:
-            return True
+            logger.warning(
+                "Discord rejected discovery digest for feed %s; will retry",
+                feed.id,
+            )
+            return EntryProcessingOutcome.DELIVERY_FAILED
         if not self._persist_deliveries(
             feed.id,
             tuple(entry_id for entry_id, _ in pending),
         ):
-            return False
-        return self._runtime.sleep(self._config.delay_between_posts)
+            return EntryProcessingOutcome.INTERRUPTED
+        if not self._runtime.sleep(self._config.delay_between_posts):
+            return EntryProcessingOutcome.INTERRUPTED
+        return EntryProcessingOutcome.COMPLETED
 
     def _deliver_entry(
         self,
@@ -192,13 +237,22 @@ class RSSToDiscord:
         entry: EntryData,
         source_title: str,
         entry_id: EntryId,
-    ) -> bool:
+    ) -> EntryProcessingOutcome:
         message = WebhookMessage(feed=feed, entry=entry, source_title=source_title)
-        if not self._sender.send(message, self._runtime.sleep):
-            return True
+        result = self._sender.send(message, self._runtime.sleep)
+        if result is DiscordDeliveryResult.INTERRUPTED:
+            return EntryProcessingOutcome.INTERRUPTED
+        if result is not DiscordDeliveryResult.DELIVERED:
+            logger.warning(
+                "Discord rejected entry delivery for feed %s; will retry",
+                feed.id,
+            )
+            return EntryProcessingOutcome.DELIVERY_FAILED
         if not self._persist_delivery(feed.id, entry_id):
-            return False
-        return self._runtime.sleep(self._config.delay_between_posts)
+            return EntryProcessingOutcome.INTERRUPTED
+        if not self._runtime.sleep(self._config.delay_between_posts):
+            return EntryProcessingOutcome.INTERRUPTED
+        return EntryProcessingOutcome.COMPLETED
 
     def _unhandled_entry_id[EntryT](
         self,

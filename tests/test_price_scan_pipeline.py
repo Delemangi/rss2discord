@@ -256,6 +256,27 @@ def test_rotated_confirmation_reports_additional_pending(
         assert len(sender.messages) == 4
 
 
+def test_rotated_confirmation_note_reaches_digest(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(60))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            confirm=lambda observations: observations,
+            confirmation_limit=30,
+        )
+        assert len(sender.messages) == 1
+        assert "30 additional changes are pending confirmation" in (
+            sender.messages[0].entry.description
+        )
+
+
 def test_no_confirmed_change_records_deferral(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         ids = tuple(str(index) for index in range(26))
@@ -342,6 +363,7 @@ def test_shutdown_checkpoints_stop_before_mutation(
             )
         assert sender.messages == []
         assert all(item.amount == 100 for item in store.load_price_snapshots("feed"))
+        assert store.list_health("feed") == ()
 
 
 def test_currency_mismatch_raises_before_delivery(tmp_path: Path) -> None:
@@ -356,3 +378,70 @@ def test_currency_mismatch_raises_before_delivery(tmp_path: Path) -> None:
             )
         assert sender.messages == []
         assert all(item.amount == 100 for item in store.load_price_snapshots("feed"))
+
+
+def _seed_pending_notification(store: DeliveryStore) -> None:
+    current = snapshot("2")
+    store.record_price_scan(
+        feed_id="feed",
+        group_id="pending",
+        observed_at=100,
+        baseline_updates=(current,),
+        notifications=(
+            PriceNotification(
+                product_id="2",
+                previous=None,
+                current=current,
+                entry=message_for("2", current, current).entry,
+                source_title="Shop",
+            ),
+        ),
+    )
+
+
+def test_failed_pending_drain_keeps_failed_health(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed(store, (snapshot("1"),))
+        _seed_pending_notification(store)
+        sender = RecordingSender(
+            [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
+        )
+        run(store, sender, [PriceObservation("1", snapshot("1"))])
+        health = store.list_health("feed")[0]
+        assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
+        assert store.count_pending_price_notifications("feed") == 1
+        run(store, sender, [PriceObservation("1", snapshot("1"))])
+        assert store.count_pending_price_notifications("feed") == 0
+        assert store.list_health("feed")[0].state == "healthy"
+
+
+def test_failed_card_records_failed_health_and_retries(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed(store, (snapshot("1"),))
+        sender = RecordingSender(
+            [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
+        )
+        run(store, sender, [PriceObservation("1", snapshot("1", 90))])
+        health = store.list_health("feed")[0]
+        assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
+        assert all(item.amount == 100 for item in store.load_price_snapshots("feed"))
+        run(store, sender, [PriceObservation("1", snapshot("1", 90))])
+        assert store.list_health("feed")[0].state == "healthy"
+        assert store.load_price_snapshots("feed")[0].amount == 90
+
+
+def test_bulk_health_reports_available_catalog_count(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(201))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            limit=500,
+        )
+        assert store.list_health("feed")[0].item_count == 201

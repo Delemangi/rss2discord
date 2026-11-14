@@ -473,7 +473,7 @@ def test_ordinary_delivery_exception_records_only_failure_then_real_recovery(
         assert store.has_delivered(feed.id, "a")
 
 
-def test_unsuccessful_send_is_not_a_fetch_failure(tmp_path: Path) -> None:
+def test_unsuccessful_send_records_delivery_failure(tmp_path: Path) -> None:
     feed = make_feed("delivery")
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(
@@ -485,10 +485,11 @@ def test_unsuccessful_send_is_not_a_fetch_failure(tmp_path: Path) -> None:
         _process_feed_safely(feed, app.process_feed, app._store)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.total_attempts, health.total_successes) == (
-            "healthy",
+            "failed",
             1,
-            1,
+            0,
         )
+        assert health.cause == "DeliveryRetryPending"
         assert not store.has_delivered(feed.id, "a")
 
 

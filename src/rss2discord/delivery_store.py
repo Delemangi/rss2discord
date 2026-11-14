@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
@@ -333,23 +333,7 @@ class DeliveryStore:
             return None
         group_id = str(row[0])
         records = tuple(
-            PriceNotificationRecord(
-                notification_id=int(item[0]),
-                feed_id=str(item[1]),
-                group_id=str(item[2]),
-                product_id=str(item[3]),
-                title=str(item[4]),
-                link=str(item[5]),
-                previous_price=None if item[6] is None else str(item[6]),
-                current_price=str(item[7]),
-                previous_amount=(None if item[8] is None else Decimal(str(item[8]))),
-                current_amount=Decimal(str(item[9])),
-                currency=str(item[10]),
-                entry=entry_from_json(str(item[11])),
-                source_title=str(item[12]),
-                observed_at=int(item[13]),
-                attempts=int(item[14]),
-            )
+            self._price_notification_record(item)
             for item in self._connection.execute(
                 "SELECT notification_id, feed_id, group_id, product_id, title, link, "
                 "previous_price, current_price, previous_amount, current_amount, "
@@ -361,6 +345,35 @@ class DeliveryStore:
             )
         )
         return group_id, records
+
+    @staticmethod
+    def _price_notification_record(
+        item: Sequence[object],
+    ) -> PriceNotificationRecord:
+        previous_amount = None if item[8] is None else Decimal(str(item[8]))
+        if item[9] is not None:
+            current_amount = Decimal(str(item[9]))
+        elif previous_amount is not None:
+            current_amount = previous_amount
+        else:
+            current_amount = Decimal(0)
+        return PriceNotificationRecord(
+            notification_id=int(str(item[0])),
+            feed_id=str(item[1]),
+            group_id=str(item[2]),
+            product_id=str(item[3]),
+            title=str(item[4]),
+            link=str(item[5]),
+            previous_price=None if item[6] is None else str(item[6]),
+            current_price=str(item[7]),
+            previous_amount=previous_amount,
+            current_amount=current_amount,
+            currency=str(item[10]),
+            entry=entry_from_json(str(item[11])),
+            source_title=str(item[12]),
+            observed_at=int(str(item[13])),
+            attempts=int(str(item[14])),
+        )
 
     def mark_price_notifications_sent(
         self,

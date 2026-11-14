@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import partial
@@ -19,6 +19,11 @@ from rss2discord.discord.components import (
     TEXT_DISPLAY_COMPONENT,
 )
 from rss2discord.discord.message import ReportFile, WebhookMessage
+from rss2discord.discord.report import (
+    csv_safe,
+    html_shell,
+    write_bounded_rows,
+)
 from rss2discord.models import EntryData
 from rss2discord.price_notifications import (
     PriceNotificationDeliveryResult,
@@ -29,8 +34,6 @@ from rss2discord.transports.price_monitor.contracts import (
 )
 
 INLINE_CARD_LIMIT: Final = 25
-MAX_REPORT_ROWS: Final = 50_000
-MAX_REPORT_BYTES: Final = 8 * 1024 * 1024
 MAX_DIGEST_CATEGORIES: Final = 5
 MAX_TOP_MOVES_PER_DIRECTION: Final = 20
 MAX_BRIEF_CHARACTERS: Final = 3_900
@@ -49,12 +52,21 @@ CSV_HEADER: Final = (
     "currency",
     "observed_at",
 )
-FORMULA_PREFIXES: Final = frozenset("=+-@")
+PRICE_HEADERS: Final = (
+    ("Product", "text"),
+    ("Category", "text"),
+    ("Previous", "text"),
+    ("Current", "text"),
+    ("Change", "number"),
+    ("Direction", "text"),
+)
 
 
 def build_digest_messages(
     feed: FeedConfig,
     records: Sequence[PriceNotificationRecord],
+    *,
+    additional_pending: int = 0,
 ) -> tuple[WebhookMessage, ...]:
     """Build one or two dense brief messages plus the complete reports."""
     if not records:
@@ -72,10 +84,21 @@ def build_digest_messages(
         if extremes
         else None
     )
+    pending_note = (
+        f"{additional_pending:,} additional changes are pending confirmation "
+        "and will follow in later scans."
+        if additional_pending
+        else None
+    )
+    final_suffix = [
+        *_optional(extreme_note),
+        *_optional(pending_note),
+        ATTACHMENT_NOTE,
+    ]
     drop_rows = [_move_line(item) for item in drops]
     rise_rows = [_move_line(item) for item in rises]
     if drops:
-        suffix = [] if rises else [*_optional(extreme_note), ATTACHMENT_NOTE]
+        suffix = [] if rises else final_suffix
         messages = [
             _brief_message(
                 feed,
@@ -95,7 +118,7 @@ def build_digest_messages(
                     prefix=f"**Largest rises** — {source_title}",
                     heading=None,
                     rows=rise_rows,
-                    suffix=[*_optional(extreme_note), ATTACHMENT_NOTE],
+                    suffix=final_suffix,
                     files=files,
                 ),
             )
@@ -107,7 +130,7 @@ def build_digest_messages(
             prefix=header,
             heading="**Largest rises**" if rises else None,
             rows=rise_rows,
-            suffix=[*_optional(extreme_note), ATTACHMENT_NOTE],
+            suffix=final_suffix,
             files=files,
         ),
     )
@@ -186,6 +209,8 @@ def deliver_price_notifications(
     dependencies: PriceChangeDeliveryDependencies,
     feed: FeedConfig,
     feed_id: str,
+    *,
+    additional_pending: int = 0,
 ) -> PriceNotificationDeliveryResult:
     """Drain every pending group oldest-first, one Discord message at a time."""
     while not dependencies.delivery.is_shutdown_requested():
@@ -198,7 +223,12 @@ def deliver_price_notifications(
         result = (
             _deliver_inline_cards(dependencies, feed, records)
             if len(records) <= INLINE_CARD_LIMIT
-            else _deliver_digest(dependencies, feed, records)
+            else _deliver_digest(
+                dependencies,
+                feed,
+                records,
+                additional_pending=additional_pending,
+            )
         )
         if result is not PriceNotificationDeliveryResult.DRAINED:
             return result
@@ -240,8 +270,16 @@ def _deliver_digest(
     dependencies: PriceChangeDeliveryDependencies,
     feed: FeedConfig,
     records: Sequence[PriceNotificationRecord],
+    *,
+    additional_pending: int = 0,
 ) -> PriceNotificationDeliveryResult:
-    for index, message in enumerate(build_digest_messages(feed, records)):
+    for index, message in enumerate(
+        build_digest_messages(
+            feed,
+            records,
+            additional_pending=additional_pending,
+        ),
+    ):
         if dependencies.delivery.is_shutdown_requested():
             return PriceNotificationDeliveryResult.INTERRUPTED
         if index and not _wait_before_next(dependencies, True):
@@ -338,7 +376,18 @@ def _move_line(
         .replace("\n", "")
         .replace("\r", "")
     )
-    return f"{previous:>7,.0f} → {current:>7,.0f}  {percent:+7.1f}%  [{title}]({link})"
+    return (
+        f"{_format_amount(previous):>8} → {_format_amount(current):>8}  "
+        f"{percent:+7.1f}%  [{title}]({link})"
+    )
+
+
+def _format_amount(value: Decimal) -> str:
+    """Render up to two decimals with thousands separators and no trailing zeros."""
+    text = f"{value:,.2f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 def _direction_counts(
@@ -410,7 +459,7 @@ def _csv_report(
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(CSV_HEADER)
-    written = _write_bounded_rows(
+    write_bounded_rows(
         buffer,
         records,
         write_row=lambda record: writer.writerow(_csv_row(feed_id, record)),
@@ -418,7 +467,6 @@ def _csv_report(
             ("", "", f"TRUNCATED: {omitted} rows omitted", "", "", "", "", ""),
         ),
     )
-    del written
     return buffer.getvalue()
 
 
@@ -426,19 +474,17 @@ def _html_report(
     feed_id: str,
     records: Sequence[PriceNotificationRecord],
 ) -> str:
-    buffer = io.StringIO()
-    buffer.write(_HTML_PREFIX.replace("{feed}", escape(feed_id)))
-    written = _write_bounded_rows(
-        buffer,
+    body = io.StringIO()
+    written = write_bounded_rows(
+        body,
         records,
-        write_row=lambda record: buffer.write(_html_row(record)),
-        write_truncation=lambda omitted: buffer.write(
+        write_row=lambda record: body.write(_html_row(record)),
+        write_truncation=lambda omitted: body.write(
             f'<tr class="truncated"><td colspan="6">TRUNCATED: '
             f"{omitted} rows omitted</td></tr>",
         ),
     )
-    buffer.write(_HTML_SUFFIX)
-    return buffer.getvalue().replace("{count}", f"{written:,}")
+    return html_shell(feed_id, "Price changes", PRICE_HEADERS, body.getvalue(), written)
 
 
 def _html_row(record: PriceNotificationRecord) -> str:
@@ -467,119 +513,9 @@ def _html_row(record: PriceNotificationRecord) -> str:
     )
 
 
-_HTML_PREFIX: Final = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Price changes — {feed}</title>
-<style>
-:root { color-scheme: light dark; }
-body { font: 15px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; }
-h1 { font-size: 1.3rem; margin: 0 0 12px; }
-.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-input, select { padding: 8px; font: inherit; border: 1px solid #8884; border-radius: 6px; }
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; min-width: 720px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #8883; text-align: left; vertical-align: top; }
-th { cursor: pointer; position: sticky; top: 0; background: Canvas; }
-tr.up td:nth-child(5) { color: #c0392b; }
-tr.down td:nth-child(5) { color: #1e8449; }
-tr.truncated td { font-weight: 600; text-align: center; }
-a { color: inherit; }
-.note { opacity: .7; font-size: .9em; }
-</style>
-</head>
-<body>
-<h1>Price changes — {feed}</h1>
-<div class="controls">
-<input id="q" type="search" placeholder="Filter by title or category" aria-label="Filter">
-<select id="dir" aria-label="Direction">
-<option value="">All changes</option>
-<option value="up">Increases</option>
-<option value="down">Decreases</option>
-<option value="unchanged">Unchanged</option>
-</select>
-<span class="note">{count} rows</span>
-</div>
-<div class="table-wrap">
-<table id="t">
-<thead><tr>
-<th data-sort="text">Product</th><th data-sort="text">Category</th>
-<th data-sort="text">Previous</th><th data-sort="text">Current</th>
-<th data-sort="number">Change</th><th data-sort="text">Direction</th>
-</tr></thead>
-<tbody>
-"""
-
-_HTML_SUFFIX: Final = """</tbody>
-</table>
-</div>
-<script>
-const q = document.getElementById('q');
-const dir = document.getElementById('dir');
-const rows = [...document.querySelectorAll('#t tbody tr[data-direction]')];
-function apply() {
-  const text = q.value.trim().toLowerCase();
-  const direction = dir.value;
-  for (const row of rows) {
-    const visible = (!text || row.dataset.search.includes(text))
-      && (!direction || row.dataset.direction === direction);
-    row.hidden = !visible;
-  }
-}
-q.addEventListener('input', apply);
-dir.addEventListener('change', apply);
-for (const th of document.querySelectorAll('#t th')) {
-  th.addEventListener('click', () => {
-    const index = [...th.parentElement.children].indexOf(th);
-    const numeric = th.dataset.sort === 'number';
-    const body = th.closest('table').tBodies[0];
-    const sorted = [...body.rows].sort((a, b) => {
-      const av = numeric ? parseFloat(a.cells[index].dataset.value || '0')
-                         : a.cells[index].textContent.trim().toLowerCase();
-      const bv = numeric ? parseFloat(b.cells[index].dataset.value || '0')
-                         : b.cells[index].textContent.trim().toLowerCase();
-      return av < bv ? -1 : av > bv ? 1 : 0;
-    });
-    if (th.dataset.asc === 'true') sorted.reverse();
-    th.dataset.asc = th.dataset.asc === 'true' ? 'false' : 'true';
-    for (const row of sorted) body.appendChild(row);
-  });
-}
-</script>
-</body>
-</html>
-"""
-
-
-def _write_bounded_rows(
-    buffer: io.StringIO,
-    records: Sequence[PriceNotificationRecord],
-    *,
-    write_row: Callable[[PriceNotificationRecord], object],
-    write_truncation: Callable[[int], object],
-) -> int:
-    written = 0
-    for record in records:
-        if written >= MAX_REPORT_ROWS:
-            break
-        start = buffer.tell()
-        write_row(record)
-        if buffer.tell() > MAX_REPORT_BYTES:
-            buffer.seek(start)
-            buffer.truncate()
-            break
-        written += 1
-    omitted = len(records) - written
-    if omitted:
-        write_truncation(omitted)
-    return written
-
-
 def _csv_row(feed_id: str, record: PriceNotificationRecord) -> tuple[str, ...]:
     return tuple(
-        _csv_safe(value)
+        csv_safe(value)
         for value in (
             feed_id,
             record.product_id,
@@ -591,10 +527,6 @@ def _csv_row(feed_id: str, record: PriceNotificationRecord) -> tuple[str, ...]:
             _observed_text(record.observed_at),
         )
     )
-
-
-def _csv_safe(value: str) -> str:
-    return f"'{value}" if value[:1] in FORMULA_PREFIXES else value
 
 
 def _observed_text(observed_at: int) -> str:

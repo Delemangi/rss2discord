@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryData
-from rss2discord.price_notifications import PriceNotification
+from rss2discord.price_notifications import PriceNotification, entry_to_json
 from rss2discord.recovery_models import HealthUpdate, PriceSnapshot
+from rss2discord.transports.price_monitor.digest import build_digest_messages
 
 
 def _create_legacy_schema(path: Path) -> None:
@@ -349,3 +351,55 @@ def test_initialization_does_not_retry_a_schema_error(
     finally:
         store.close()
     assert len(calls) == 1
+
+
+def test_pending_notification_without_amount_columns_loads_after_upgrade(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "legacy.db"
+    entry = EntryData(
+        title="Legacy product",
+        link="https://shop.example.test/legacy",
+        description="",
+        author="",
+        timestamp=None,
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE price_notifications ("
+            "notification_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "feed_id TEXT NOT NULL, group_id TEXT NOT NULL, product_id TEXT NOT NULL, "
+            "title TEXT NOT NULL, link TEXT NOT NULL, previous_price TEXT, "
+            "current_price TEXT NOT NULL, currency TEXT NOT NULL, "
+            "entry_json TEXT NOT NULL, source_title TEXT NOT NULL, "
+            "observed_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', "
+            "attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER, "
+            "sent_at INTEGER, last_error TEXT)",
+        )
+        connection.execute(
+            "INSERT INTO price_notifications "
+            "(feed_id, group_id, product_id, title, link, previous_price, "
+            "current_price, currency, entry_json, source_title, observed_at) "
+            "VALUES ('feed', 'legacy', 'p-1', 'Legacy product', "
+            "'https://shop.example.test/legacy', '100', '90', 'MKD', ?, 'Shop', 1)",
+            (entry_to_json(entry),),
+        )
+    with DeliveryStore(path) as store:
+        group = store.load_pending_price_group("feed")
+        assert group is not None
+        assert group[0] == "legacy"
+        record = group[1][0]
+        assert record.previous_amount is None
+        assert record.current_amount == Decimal(0)
+        assert record.current_price == "90"
+        assert store.list_price_notifications("feed")[0]["status"] == "pending"
+        messages = build_digest_messages(
+            FeedConfig(
+                id="feed",
+                url="https://shop.example.test/feed",
+                webhook="https://discord.example.test/hook",
+            ),
+            group[1],
+        )
+        assert len(messages) == 1
+        assert len(messages[0].files) == 2

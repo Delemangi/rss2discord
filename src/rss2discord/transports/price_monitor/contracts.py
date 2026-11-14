@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 from rss2discord.discord.client import DiscordSender, SleepCallback
@@ -90,6 +91,15 @@ class PriceDeliveryPlan:
     selected_ids: tuple[str, ...] = ()
     bulk: bool = False
     additional_pending: int = 0
+    item_count: int = 0
+
+
+class PriceDeliveryOutcome(StrEnum):
+    """Observable outcome of delivering one planned price change set."""
+
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True, slots=True)

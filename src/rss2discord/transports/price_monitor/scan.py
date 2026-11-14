@@ -14,7 +14,11 @@ from rss2discord.recovery_models import PriceChangeRecord, PriceSnapshot
 from rss2discord.retries import FeedFetchInterruptedError
 
 from .comparison import diff_price_snapshots
-from .contracts import PriceChangeDeliveryDependencies, PriceDeliveryPlan
+from .contracts import (
+    PriceChangeDeliveryDependencies,
+    PriceDeliveryOutcome,
+    PriceDeliveryPlan,
+)
 from .delivery import deliver_price_changes, drain_pending_price_notifications
 from .planning import (
     finish_price_delivery,
@@ -91,7 +95,9 @@ def run_price_scan[ProductT](
             dependencies.sqlite_retry_policy.execute(
                 lambda: dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        if drain_pending_price_notifications(dependencies, feed):
+        if drain_pending_price_notifications(dependencies, feed) is (
+            PriceDeliveryOutcome.DELIVERED
+        ):
             finish_price_delivery(
                 dependencies.snapshots,
                 feed.id,
@@ -192,7 +198,7 @@ def run_price_scan[ProductT](
             baseline_extra=silent,
         )
         return
-    deliver_price_changes(
+    outcome = deliver_price_changes(
         views,
         dependencies,
         lambda view: view.message,
@@ -200,6 +206,22 @@ def run_price_scan[ProductT](
         feed=feed,
         source_title=feed.name or label,
     )
+    if outcome is PriceDeliveryOutcome.FAILED:
+        pending = dependencies.sqlite_retry_policy.execute(
+            lambda: dependencies.snapshots.count_pending_price_notifications(
+                feed.id,
+            ),
+        )
+        record_price_health(
+            dependencies.snapshots,
+            feed.id,
+            "failed",
+            "DeliveryRetryPending",
+            pending or len(records),
+        )
+        return
+    if outcome is PriceDeliveryOutcome.INTERRUPTED:
+        return
     if len(confirmed) < len(records):
         record_price_health(
             dependencies.snapshots,

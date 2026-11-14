@@ -12,6 +12,7 @@ from .contracts import PriceAlertDelivery as PriceAlertDelivery
 from .contracts import (
     PriceChangeDeliveryDependencies as PriceChangeDeliveryDependencies,
 )
+from .contracts import PriceDeliveryOutcome as PriceDeliveryOutcome
 from .contracts import PriceDeliveryPlan as PriceDeliveryPlan
 from .contracts import PriceRecoveryStore as PriceRecoveryStore
 from .contracts import PriceSnapshotStore as PriceSnapshotStore

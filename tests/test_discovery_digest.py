@@ -102,6 +102,19 @@ def test_digest_html_and_csv_contain_every_entry_with_escaping(
     assert all(f"id-{index}" in csv_text for index in range(26))
 
 
+def test_discovery_count_placeholder_in_title_survives() -> None:
+    entry = make_entry("count")
+    entry = replace(entry, data=replace(entry.data, title="{count} bargain"))
+    message = build_discovery_digest(
+        make_feed("feed"),
+        [(entry.id, entry.data)],
+        "Source",
+    )
+    html = message.files[0].content.decode()
+    assert "{count} bargain" in html
+    assert '<span class="note">1 rows</span>' in html
+
+
 def test_digest_does_not_download_images(tmp_path: Path) -> None:
     entries = [
         (
@@ -126,9 +139,12 @@ def test_failed_digest_leaves_entries_unmarked_then_retries(tmp_path: Path) -> N
         app.process_feed(feed)
         assert len(sender.messages) == 1
         assert store.count_delivered(feed.id) == 0
+        health = store.list_health(feed.id)[0]
+        assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
         app.process_feed(feed)
         assert len(sender.messages) == 2
         assert store.count_delivered(feed.id) == 26
+        assert store.list_health(feed.id)[0].state == "healthy"
 
 
 class InterruptingSender(FakeSender):
@@ -142,6 +158,20 @@ class InterruptingSender(FakeSender):
         return DiscordDeliveryResult.INTERRUPTED
 
 
+def test_failed_single_card_records_failure_and_retries(tmp_path: Path) -> None:
+    feed = make_feed("feed")
+    sender = FakeSender([False, True])
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, FakeStrategy(_entries(1)), (feed,))
+        app.process_feed(feed)
+        health = store.list_health(feed.id)[0]
+        assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
+        assert store.count_delivered(feed.id) == 0
+        app.process_feed(feed)
+        assert store.has_delivered(feed.id, "0")
+        assert store.list_health(feed.id)[0].state == "healthy"
+
+
 def test_interrupted_digest_leaves_entries_unmarked(tmp_path: Path) -> None:
     feed = make_feed("feed")
     sender = InterruptingSender([])
@@ -150,6 +180,7 @@ def test_interrupted_digest_leaves_entries_unmarked(tmp_path: Path) -> None:
         assert app.process_feed(feed) is JobOutcome.ATTEMPTED
         assert len(sender.messages) == 1
         assert store.count_delivered(feed.id) == 0
+        assert store.list_health(feed.id) == ()
 
 
 def test_large_batch_has_no_cap_error(tmp_path: Path) -> None:

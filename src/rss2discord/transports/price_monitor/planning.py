@@ -67,15 +67,22 @@ def prepare_price_delivery(
     additional_pending: int = 0,
 ) -> PriceDeliveryPlan:
     """Validate currency stability and choose inline cards or one digest."""
-    del store, feed_id, catalog_count
+    del store, feed_id
     validate_price_currencies(
         provider=provider,
         current=current,
         persisted=persisted,
     )
     if force_summary or len(changes) > MAX_INLINE_PRICE_CHANGES:
-        return PriceDeliveryPlan(bulk=True, additional_pending=additional_pending)
-    return PriceDeliveryPlan(tuple(change.product_id for change in changes))
+        return PriceDeliveryPlan(
+            bulk=True,
+            additional_pending=additional_pending,
+            item_count=catalog_count,
+        )
+    return PriceDeliveryPlan(
+        tuple(change.product_id for change in changes),
+        item_count=catalog_count,
+    )
 
 
 def finish_price_delivery(
@@ -84,8 +91,18 @@ def finish_price_delivery(
     plan: PriceDeliveryPlan,
     item_count: int,
 ) -> None:
-    """Record health only."""
+    """Record health only; pending outbox work remains a failure."""
     del plan
+    pending = store.count_pending_price_notifications(feed_id)
+    if pending:
+        record_price_health(
+            store,
+            feed_id,
+            "failed",
+            "DeliveryRetryPending",
+            pending,
+        )
+        return
     record_price_health(
         store,
         feed_id,
