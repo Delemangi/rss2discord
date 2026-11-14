@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, assert_never
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
@@ -249,3 +249,5 @@ def build_provider_price_monitor(
             )
         case "rss" | "xenforo" | "itmk_oglasnik":
             return None
+        case unreachable:
+            assert_never(unreachable)
