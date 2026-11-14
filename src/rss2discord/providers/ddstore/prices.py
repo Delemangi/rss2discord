@@ -1,6 +1,5 @@
 """Sequential DDStore price comparison and Discord delivery for one feed."""
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -18,6 +17,7 @@ from rss2discord.providers.ddstore.strategy import (
     format_ddstore_stock,
 )
 from rss2discord.retries import (
+    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
@@ -27,11 +27,10 @@ from rss2discord.transports.catalog_normalization import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_catalog_price_changes,
-    pause_price_fetch_failure,
-    prepare_price_scan,
     price_direction,
+    run_price_scan,
 )
 
 
@@ -68,13 +67,6 @@ class DDStorePriceMonitorDependencies:
     delivery: PriceAlertDelivery
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: DDStoreProduct
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class DDStorePriceMonitor:
     """Compare one full DDStore catalog against persisted price snapshots."""
 
@@ -87,80 +79,52 @@ class DDStorePriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        self._scan()
 
     def _scan(self) -> None:
-        observation_started_at = time.monotonic()
-        products, persisted = prepare_price_scan(
-            fetch_products=lambda: self._dependencies.catalog.fetch_catalog(
-                self._feed.url,
-                retry_policy=self._dependencies.fetch_retry_policy,
-                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            ),
-            load_snapshots=lambda: self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.load_price_snapshots(
-                    self._feed.id,
-                    limit=MAX_DDSTORE_RETAINED_SNAPSHOTS + 1,
-                ),
-            ),
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        products = self._dependencies.catalog.fetch_catalog(
+            self._feed.url,
+            retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
-            label=DDSTORE_LABEL,
         )
-        by_id = {snapshot.product_id: snapshot for snapshot in persisted}
-        observations = normalize_ddstore_catalog(
+        persisted = self._dependencies.sqlite_retry_policy.execute(
+            lambda: self._dependencies.snapshots.load_price_snapshots(
+                self._feed.id,
+                limit=MAX_DDSTORE_RETAINED_SNAPSHOTS + 1,
+            ),
+        )
+        if len(persisted) > MAX_DDSTORE_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(DDSTORE_LABEL, "SnapshotLimitExceeded")
+        normalized = normalize_ddstore_catalog(
             self._feed.id,
             products,
             persisted,
             snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
         )
         products_by_id = {product.uid: product for product in products}
-        origins_query = getattr(
-            self._dependencies.snapshots,
-            "availability_hold_origins",
-            None,
+        observations = tuple(
+            PriceObservation(products_by_id[item.product_id], item.snapshot)
+            for item in normalized
+            if item.snapshot is not None
         )
-        availability_ids = (
-            {str(row["product_id"]) for row in origins_query(self._feed.id)}
-            if origins_query is not None
-            else set()
-        )
-        availability_returns = {
-            item.product_id: (item.snapshot, item.context)
-            for item in observations
-            if item.snapshot is not None and item.product_id in availability_ids
-        }
-        deliver_catalog_price_changes(
-            self._dependencies,
-            self._message_for,
-            change_for=lambda previous, current: _PriceChange(
-                products_by_id[current.product_id],
-                previous,
-                current,
-            ),
-            feed_id=self._feed.id,
+        run_price_scan(
+            feed=self._feed,
+            dependencies=self._dependencies,
             provider=DDSTORE_LABEL,
-            current={
-                item.product_id: item.snapshot
-                for item in observations
-                if item.snapshot is not None
-            },
-            persisted=by_id,
-            catalog_count=len(products),
-            availability_returns=availability_returns,
-            operation_started_at=observation_started_at,
+            label=DDSTORE_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        product = change.product
+    def _message_for(
+        self,
+        product: DDStoreProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
         return WebhookMessage(
             feed=self._feed,
             entry=EntryData(
@@ -177,18 +141,22 @@ class DDStorePriceMonitor:
                     for category in product.categories or ()
                     if category.name is not None
                 ),
-                source_metrics=self._metrics_for(change),
-                price_direction=price_direction(change.previous, change.current),
+                source_metrics=self._metrics_for(product, previous, current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or DDSTORE_LABEL,
         )
 
     @staticmethod
-    def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
-        minimum_price = change.product.price_range.minimum_price
+    def _metrics_for(
+        product: DDStoreProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> tuple[SourceMetric, ...]:
+        minimum_price = product.price_range.minimum_price
         metrics = [
-            SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
+            SourceMetric(label="Price", value=current.formatted),
+            SourceMetric(label="Previous", value=previous.formatted, prior=True),
         ]
         regular_price = minimum_price.regular_price
         if (
@@ -204,7 +172,7 @@ class DDStorePriceMonitor:
         metrics.append(
             SourceMetric(
                 label="Stock",
-                value=format_ddstore_stock(change.product.stock_status),
+                value=format_ddstore_stock(product.stock_status),
             ),
         )
         return tuple(metrics)

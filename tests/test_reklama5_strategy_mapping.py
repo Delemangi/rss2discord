@@ -82,6 +82,4 @@ def test_reklama5_strategy_exposes_delivery_lifecycle_policy() -> None:
 
     assert strategy.seed_existing_on_first_fetch is True
     assert strategy.require_entries_for_initialization is False
-    assert strategy.max_new_entries_per_fetch is None
-    assert strategy.max_delivery_history is None
     assert strategy.get_entry_id(_listing()) == "123"

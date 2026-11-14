@@ -1,9 +1,8 @@
-"""Pure full-catalog price normalization shared by monitors and reconciliation."""
+"""Pure full-catalog price normalization shared by price monitors."""
 
 from dataclasses import dataclass
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.providers.ddstore.strategy import (
     format_ddstore_mkd,
@@ -11,7 +10,6 @@ from rss2discord.providers.ddstore.strategy import (
 )
 from rss2discord.providers.hivetec.models import HivetecProduct
 from rss2discord.providers.hivetec.strategy import format_hivetec_mkd
-from rss2discord.reconciliation_models import canonical_json, digest
 from rss2discord.recovery_models import PriceSnapshot
 
 MAX_DDSTORE_RETAINED_SNAPSHOTS = 50_000
@@ -22,7 +20,6 @@ MAX_HIVETEC_RETAINED_SNAPSHOTS = 10_000
 class CatalogObservation:
     product_id: str
     snapshot: PriceSnapshot | None
-    context: str
 
 
 def ddstore_snapshot(feed_id: str, product: DDStoreProduct) -> PriceSnapshot:
@@ -62,7 +59,6 @@ def normalize_ddstore_catalog(
                 product.price_range.minimum_price.final_price.value,
             )
             else None,
-            _ddstore_context(product),
         )
         for product in products
     )
@@ -83,48 +79,11 @@ def normalize_hivetec_catalog(
             hivetec_snapshot(feed_id, product)
             if product.prices.current_amount > 0
             else None,
-            _hivetec_context(product),
         )
         for product in products
     )
     _validate(observations, persisted, snapshot_limit, "Hivetec")
     return observations
-
-
-def _ddstore_context(product: DDStoreProduct) -> str:
-    minimum = product.price_range.minimum_price
-    return canonical_json(
-        {
-            "name": product.name,
-            "categories": [category.name for category in product.categories or ()],
-            "created_at": product.created_at.isoformat(),
-            "stock_status": product.stock_status,
-            "final_price": canonicalize_price_amount(minimum.final_price.value),
-            "currency": minimum.final_price.currency,
-            "regular_price": canonicalize_price_amount(minimum.regular_price.value)
-            if minimum.regular_price is not None
-            else None,
-            # Only the one-way digest retains omitted URL and other model context;
-            # raw model serialization is never stored in an artifact or audit row.
-            "source_context_digest": digest(product.model_dump(mode="json")),
-        },
-    )
-
-
-def _hivetec_context(product: HivetecProduct) -> str:
-    return canonical_json(
-        {
-            "name": product.name,
-            "categories": [category.name for category in product.categories],
-            "sku": product.sku,
-            "is_in_stock": product.is_in_stock,
-            "price": canonicalize_price_amount(product.prices.current_amount),
-            "regular_price": canonicalize_price_amount(product.prices.regular_amount),
-            "currency": product.prices.currency_code,
-            "currency_minor_unit": product.prices.currency_minor_unit,
-            "source_context_digest": digest(product.model_dump(mode="json")),
-        },
-    )
 
 
 def _validate(

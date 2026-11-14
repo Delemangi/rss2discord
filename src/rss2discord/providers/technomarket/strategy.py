@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Final, final, override
+from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
@@ -13,8 +13,6 @@ from rss2discord.providers.technomarket.catalog import TechnomarketCatalogClient
 from rss2discord.providers.technomarket.models import TechnomarketProduct
 from rss2discord.transports.base import ScraperStrategy
 
-MAX_TECHNOMARKET_DELIVERY_HISTORY: Final = 10_000
-
 
 @final
 class TechnomarketStrategy(ScraperStrategy):
@@ -22,8 +20,6 @@ class TechnomarketStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = True
-    max_new_entries_per_fetch: int | None = None
-    max_delivery_history: int | None = MAX_TECHNOMARKET_DELIVERY_HISTORY
 
     def __init__(
         self,

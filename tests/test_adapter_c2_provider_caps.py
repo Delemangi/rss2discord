@@ -136,7 +136,7 @@ def build(
     "outcome",
     [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
 )
-def test_every_adapter_caps_normal_and_approved_attempts(
+def test_every_adapter_delivers_one_digest_without_batches(
     tmp_path: Path,
     provider: str,
     count: int,
@@ -147,30 +147,13 @@ def test_every_adapter_caps_normal_and_approved_attempts(
         monitor = build(provider, count, store, sender)
         monitor.scan()
         monitor.scan()
-        if count == 101:
-            assert sender.messages == []
-            candidate = store.list_price_change_batches(feed_id=provider)[0]
-            store.approve_price_change_batch(
-                feed_id=provider,
-                fingerprint=candidate.fingerprint,
-                reason="fixture review",
-            )
-            monitor.scan()
-        assert len(sender.messages) == 10
-        first = {message.entry.link for message in sender.messages}
-        monitor.scan()
-        assert len(sender.messages) == 20
-        if count == 101:
-            assert first.isdisjoint(
-                message.entry.link for message in sender.messages[10:]
-            )
-            batch = store.load_active_price_batch(provider)
-            assert batch is not None
-            assert sum(item.attempt_count for item in batch.items) == 20
-            assert batch.pending_count == (
-                81 if outcome is DiscordDeliveryResult.DELIVERED else 101
-            )
+        assert len(sender.messages) == 1
+        message = sender.messages[0]
+        assert message.entry.title == "Price changes"
+        assert len(message.files) == 2
+        expected_changes = 100 if provider == "cccenter" else count
         snapshots = store.load_price_snapshots(provider)
-        assert sum(snapshot.amount == 90 for snapshot in snapshots) == (
-            20 if outcome is DiscordDeliveryResult.DELIVERED else 0
+        assert sum(snapshot.amount == 90 for snapshot in snapshots) == expected_changes
+        assert store.count_pending_price_notifications(provider) == (
+            expected_changes if outcome is DiscordDeliveryResult.FAILED else 0
         )

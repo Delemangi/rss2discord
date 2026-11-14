@@ -148,4 +148,62 @@ def test_pazar3_strategy_preserves_scan_order_for_equal_timestamps(
     entries, _source = strategy.fetch_entries(SEARCH_URL)
 
     assert [entry.entry_id for entry in entries] == ["1", "2"]
-    assert strategy.max_delivery_history is None
+
+
+def test_pazar3_strategy_retries_a_transient_page_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pages = {
+        1: Pazar3Page(
+            (listing("1", minutes=3),),
+            frozenset({EntryId("1")}),
+            1,
+            3,
+            False,
+        ),
+        2: Pazar3Page(
+            (listing("2", minutes=2),),
+            frozenset({EntryId("2")}),
+            1,
+            3,
+            False,
+        ),
+        3: Pazar3Page(
+            (listing("3", minutes=1),),
+            frozenset({EntryId("3")}),
+            1,
+            3,
+            True,
+        ),
+    }
+    requested: list[int] = []
+    remaining_failures = {3: 1}
+
+    def fetch_page(request: Pazar3PageRequest, *_args: object) -> bytes:
+        requested.append(request.page)
+        if request.page == 3 and remaining_failures[3]:
+            remaining_failures[3] -= 1
+            raise FeedFetchError(
+                "Pazar3",
+                "HTTPError",
+                status_code=503,
+                retryable=True,
+            )
+        return str(request.page).encode()
+
+    monkeypatch.setattr(pazar3, "fetch_pazar3_page", fetch_page)
+    monkeypatch.setattr(
+        pazar3,
+        "parse_pazar3_page",
+        lambda html, _request, _now: pages[int(html)],
+    )
+    strategy = pazar3.Pazar3Strategy(
+        clock=lambda: FIXED_NOW,
+        pacer=Pazar3RequestPacer(lambda: 0.0),
+        sleep=lambda _seconds: True,
+    )
+
+    entries, _source = strategy.fetch_entries(SEARCH_URL)
+
+    assert requested == [1, 2, 3, 3]
+    assert [entry.entry_id for entry in entries] == ["3", "2", "1"]

@@ -1,19 +1,14 @@
-import logging
 import sqlite3
-import time
 from pathlib import Path
 
 import pytest
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.gjirafa50 import (
     background_monitor as gjirafa50_background_monitor,
 )
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
-from rss2discord.runtime.health import feed_is_blocked
-from rss2discord.transports.price_monitor import pause_price_fetch_failure
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_adapter_c2_provider_caps import Monitor, build
 from tests.test_gjirafa50_background_monitor import _build_background_monitor
@@ -36,28 +31,11 @@ from tests.test_price_recovery_integration import monitor_for
         "hivetec",
     ],
 )
-@pytest.mark.parametrize(
-    ("cause", "status", "state"),
-    [
-        ("AccessChallenge", 503, "blocked"),
-        ("BotChallenge", 200, "blocked"),
-        ("HTTPError", 403, "blocked"),
-        ("IncompleteCatalog", 200, "recovery_required"),
-    ],
-)
-def test_consumed_failure_records_one_outcome_and_preserves_recovery(
+def test_fetch_failure_surfaces_without_pausing_or_hiding_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    *,
     provider: str,
-    cause: str,
-    status: int,
-    state: str,
 ) -> None:
-    now = int(time.time())
-    monkeypatch.setattr("rss2discord.transports.price_monitor.time.time", lambda: now)
-    caplog.set_level(logging.INFO, logger="rss2discord.transports.price_monitor")
     path = tmp_path / "state.db"
     with DeliveryStore(path) as store:
         sender = RecordingSender([])
@@ -67,81 +45,17 @@ def test_consumed_failure_records_one_outcome_and_preserves_recovery(
             else build(provider, 101, store, sender)
         )
         monitor.scan()
-        monitor.scan()
-        candidate = store.list_price_change_batches(feed_id=provider)[0]
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="fixture review",
-        )
+        before = store.load_price_snapshots(provider)
 
         def fail() -> None:
-            raise FeedFetchError(provider, cause, status_code=status)
+            raise FeedFetchError(provider, "IncompleteCatalog", status_code=200)
 
         monkeypatch.setattr(monitor, "_scan", fail)
-        before = store.list_health(provider)[0]
-        snapshots = store.load_price_snapshots(provider)
-        caplog.clear()
-        monitor.scan()
-        batch = store.load_active_price_batch(provider)
-        assert batch is not None
-        assert batch.status == "paused"
-        health = store.list_health(provider)[0]
-        assert health.state == state
-        assert health.cause == cause
-        assert health.total_attempts == before.total_attempts + 1
-        assert health.consecutive_failures == before.consecutive_failures + 1
-        assert health.total_successes == before.total_successes
-        assert health.last_success_at == before.last_success_at
-        assert health.transition_at == now
-        assert caplog.messages == [
-            f"Price health for feed {provider}: {state} ({cause})",
-        ]
-        deadline = now + 21_600 if state == "blocked" else None
-        assert store.get_blocked_until(provider) == deadline
+        with pytest.raises(FeedFetchError) as raised:
+            monitor.scan()
+        assert raised.value.cause_type == "IncompleteCatalog"
         assert not sender.messages
-        assert store.load_price_snapshots(provider) == snapshots
-
-    with DeliveryStore(path) as reopened:
-        assert reopened.list_health(provider)[0] == health
-        assert reopened.get_blocked_until(provider) == deadline
-        assert reopened.load_price_snapshots(provider) == snapshots
-        if deadline is not None:
-            feed = FeedConfig(
-                id=provider,
-                url="https://example.test/catalog",
-                webhook="https://discord.example.test/hook",
-            )
-            assert feed_is_blocked(feed, (feed,), reopened, deadline - 1)
-            assert not feed_is_blocked(feed, (feed,), reopened, deadline)
-            assert reopened.list_health(provider)[0] == health
-            monkeypatch.setattr(
-                "rss2discord.transports.price_monitor.time.time",
-                lambda: deadline + 1,
-            )
-            caplog.clear()
-            error = FeedFetchError(provider, cause, status_code=status)
-            assert pause_price_fetch_failure(reopened, provider, error)
-            retried = reopened.list_health(provider)[0]
-            assert retried.total_attempts == health.total_attempts + 1
-            assert retried.consecutive_failures == health.consecutive_failures + 1
-            assert retried.total_successes == health.total_successes
-            assert reopened.get_blocked_until(provider) == deadline + 21_601
-            assert caplog.messages == [
-                f"Price health for feed {provider}: blocked ({cause})",
-            ]
-
-
-@pytest.mark.parametrize("cause", ["BotChallenge", "IncompleteCatalog"])
-def test_failure_without_active_recovery_leaves_health_to_caller(
-    tmp_path: Path,
-    cause: str,
-) -> None:
-    with DeliveryStore(tmp_path / "state.db") as store:
-        error = FeedFetchError("fixture", cause)
-        assert not pause_price_fetch_failure(store, "fixture", error)
-        assert store.list_health("fixture") == ()
-        assert store.list_price_change_batches("fixture") == ()
+        assert store.load_price_snapshots(provider) == before
 
 
 @pytest.mark.parametrize(

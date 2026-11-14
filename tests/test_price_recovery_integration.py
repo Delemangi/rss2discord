@@ -1,33 +1,25 @@
 """Real monitor-to-store recovery regressions for DDStore and Hivetec."""
 
-from collections.abc import Iterator
 from dataclasses import replace
-from decimal import Decimal
 from pathlib import Path
 from time import time
 
 import pytest
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     SleepCallback,
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_safety import MAX_PRICE_MANIFEST_ITEMS
 from rss2discord.providers.ddstore.prices import DDStorePriceMonitor
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
-from rss2discord.recovery_models import (
-    HealthUpdate,
-    PriceChangeRecord,
-    PriceDeliveryClaim,
-)
+from rss2discord.recovery_models import HealthUpdate
 from rss2discord.retries import FeedFetchInterruptedError
 from tests import test_ddstore_price_monitor as dd
 from tests import test_hivetec_price_monitor as hive
 from tests.setec_price_monitor_helpers import RecordingSender
-from tests.test_adapter_c2_provider_caps import Monitor, build
 
 PROVIDERS = (
     "anhoch",
@@ -91,253 +83,161 @@ def test_catalog_shutdown_before_planning_never_writes_or_sends(
         with pytest.raises(FeedFetchInterruptedError):
             monitor.scan()
         assert store.load_price_snapshots(provider) == ()
-        assert store.list_price_change_batches(provider) == ()
         assert store.list_health(provider) == ()
         assert sender.messages == []
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_catalog_silent_updates_wait_until_approved_batch_finishes(
+def test_catalog_silent_updates_persist_atomically_with_digest(
     tmp_path: Path,
     provider: str,
 ) -> None:
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
     with DeliveryStore(tmp_path / "state.db") as store:
-        changed = (90,) * 101 + (100,)
-        live = (*changed, 70)
+        changed = (90,) * 101 + (100, 70)
         monitor = monitor_for(
             provider,
-            [(100,) * 102, changed, *([live] * 12)],
+            [(100,) * 102, changed],
             store,
             sender,
         )
         monitor.scan()
-        unchanged = next(
-            snapshot
-            for snapshot in store.load_price_snapshots(provider)
-            if snapshot.product_id == "102"
-        )
-        stale = replace(unchanged, formatted="stale display")
-        store.upsert_price_snapshot(stale)
-        monitor.scan()
-        candidate = store.list_price_change_batches(provider)[0]
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="fixture review",
-        )
-        for _ in range(11):
-            monitor.scan()
-        snapshots = {s.product_id: s for s in store.load_price_snapshots(provider)}
-        assert len(sender.messages) == 101
-        assert store.load_active_price_batch(provider) is None
-        assert snapshots["102"] == stale
-        assert "103" not in snapshots
         monitor.scan()
         snapshots = {s.product_id: s for s in store.load_price_snapshots(provider)}
-        assert snapshots["102"] == unchanged
+        assert len(snapshots) == 103
         assert snapshots["103"].amount == 70
-        assert len(sender.messages) == 101
+        assert sum(s.amount == 90 for s in snapshots.values()) == 101
+        assert len(sender.messages) == 1
+        assert store.count_pending_price_notifications(provider) == 0
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
 @pytest.mark.parametrize("count", [1, 100])
-def test_normal_changes_send_without_approval_with_ten_attempt_cap(
+def test_normal_changes_send_without_approval_or_send_cap(
     tmp_path: Path,
     provider: str,
     count: int,
 ) -> None:
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 10)
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = monitor_for(provider, [(100,) * count, (90,) * count], store, sender)
         monitor.scan()
         monitor.scan()
-        assert len(sender.messages) == min(count, 10)
-        assert store.list_price_change_batches(provider) == ()
-        assert sum(p.amount == 90 for p in store.load_price_snapshots(provider)) == min(
-            count,
-            10,
-        )
-        assert store.list_health(provider)[0].state == "healthy"
-
-
-@pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_actual_101_changes_quarantine_then_drain_same_approval(
-    tmp_path: Path,
-    provider: str,
-) -> None:
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
-    with DeliveryStore(tmp_path / "state.db") as store:
-        monitor = monitor_for(
-            provider,
-            [(100,) * 101, *([(90,) * 101] * 12)],
-            store,
-            sender,
-        )
-        monitor.scan()
-        before = store.load_price_snapshots(provider)
-        monitor.scan()
-        assert store.load_price_snapshots(provider) == before
-        assert sender.messages == []
-        candidate = store.list_price_change_batches(provider)[0]
-        assert candidate.status == "candidate"
-        assert candidate.pending_count == 101
-        assert store.list_health(provider)[0].state == "quarantined"
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="reviewed all 101 changes",
-        )
-        monitor.scan()
-        active = store.load_active_price_batch(provider)
-        assert active is not None
-        assert active.fingerprint == candidate.fingerprint
-        assert active.pending_count == 91
-        assert active.delivered_count == 10
-        assert sum(item.attempt_count for item in active.items) == 10
-        assert len(sender.messages) == 10
-        monitor.scan()
-        shrunk = store.load_active_price_batch(provider)
-        assert shrunk is not None
-        assert shrunk.fingerprint == candidate.fingerprint
-        assert shrunk.pending_count == 81
-        for _ in range(9):
-            monitor.scan()
-        assert store.load_active_price_batch(provider) is None
-        assert len(sender.messages) == 101
+        assert len(sender.messages) == 1
         assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
         assert store.list_health(provider)[0].state == "healthy"
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_unapproved_movement_replaces_full_candidate_without_writes(
+def test_actual_101_changes_deliver_one_detailed_digest(
     tmp_path: Path,
     provider: str,
 ) -> None:
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
     with DeliveryStore(tmp_path / "state.db") as store:
-        sender = RecordingSender([])
         monitor = monitor_for(
             provider,
-            [(100,) * 101, (90,) * 101, (80,) * 101],
+            [(100,) * 101, (90,) * 101],
             store,
             sender,
         )
         monitor.scan()
-        before = store.load_price_snapshots(provider)
         monitor.scan()
-        old = store.list_price_change_batches(provider)[0]
-        monitor.scan()
-        candidates = store.list_price_change_batches(provider)
-        assert len(candidates) == 1
-        assert candidates[0].fingerprint != old.fingerprint
-        assert candidates[0].pending_count == 101
-        assert candidates[0].status == "candidate"
-        assert store.load_price_snapshots(provider) == before
-        assert sender.messages == []
+        assert len(sender.messages) == 1
+        message = sender.messages[0]
+        assert message.entry.title == "Price changes"
+        assert len(message.files) == 2
+        assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
+        assert store.list_health(provider)[0].state == "healthy"
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-@pytest.mark.parametrize(
-    "failure",
-    ["source", "previous", "missing", "unavailable", "fetch", "challenge"],
-)
-def test_approved_invalid_manifest_or_fetch_pauses_without_delivery(
+def test_failed_digest_retries_the_same_pending_rows(
+    tmp_path: Path,
+    provider: str,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        sender = RecordingSender(
+            [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
+        )
+        monitor = monitor_for(
+            provider,
+            [(100,) * 101, (90,) * 101, (90,) * 101],
+            store,
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        pending = store.load_pending_price_group(provider)
+        assert pending is not None
+        assert len(pending[1]) == 101
+        assert all(item.attempts == 1 for item in pending[1])
+        assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
+        monitor.scan()
+        assert len(sender.messages) == 2
+        assert (
+            sender.messages[0].files[1].content == sender.messages[1].files[1].content
+        )
+        assert store.count_pending_price_notifications(provider) == 0
+
+
+@pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
+@pytest.mark.parametrize("failure", ["fetch", "challenge"])
+def test_fetch_failure_raises_without_pausing_or_sending(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
     failure: str,
 ) -> None:
-    target = (90,) * 101
-    live: tuple[int, ...] = target
-    if failure == "source":
-        live = (*target[:-1], 80)
-    if failure == "missing":
-        live = target[:-1]
-    if failure == "unavailable":
-        live = (*target[:-1], 0)
     with DeliveryStore(tmp_path / "state.db") as store:
         sender = RecordingSender([])
         monitor = monitor_for(
             provider,
-            [(100,) * 101, target, live, target],
+            [(100,) * 101, (90,) * 101],
             store,
             sender,
         )
         monitor.scan()
-        monitor.scan()
-        candidate = store.list_price_change_batches(provider)[0]
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="reviewed",
-        )
-        if failure == "previous":
-            store.upsert_price_snapshot(
-                replace(store.load_price_snapshots(provider)[-1], amount=Decimal(99)),
+
+        def fail(*args: object, **kwargs: object) -> None:
+            raise FeedFetchError(
+                provider,
+                "BotChallenge" if failure == "challenge" else "IncompleteCatalog",
             )
-        if failure in {"fetch", "challenge"}:
 
-            def fail(*args: object, **kwargs: object) -> None:
-                raise FeedFetchError(
-                    provider,
-                    "BotChallenge" if failure == "challenge" else "IncompleteCatalog",
-                )
-
-            monkeypatch.setattr(monitor._dependencies.catalog, "fetch_catalog", fail)
-        monitor.scan()
-        active = store.load_active_price_batch(provider)
-        assert active is not None
-        assert active.status == "paused"
-        assert active.pending_count == 101
-        assert sender.messages == []
-        assert store.list_health(provider)[0].state == (
-            "blocked" if failure == "challenge" else "recovery_required"
-        )
-        if failure == "challenge":
-            assert store.get_blocked_until(provider) is not None
-        if failure not in {"fetch", "challenge"}:
+        monkeypatch.setattr(monitor._dependencies.catalog, "fetch_catalog", fail)
+        with pytest.raises(FeedFetchError):
             monitor.scan()
-            assert store.load_active_price_batch(provider) is not None
-            assert sender.messages == []
+        assert sender.messages == []
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-def test_failed_approved_items_rotate_beyond_ten_lifetime_attempts(
+def test_repeated_digest_failures_keep_rows_pending(
     tmp_path: Path,
     provider: str,
 ) -> None:
-    scans = 122
-    sender = RecordingSender([DiscordDeliveryResult.FAILED] * (10 * scans))
+    scans = 5
+    sender = RecordingSender([DiscordDeliveryResult.FAILED] * scans)
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = monitor_for(
             provider,
-            [(100,) * 101, *([(90,) * 101] * (scans + 1))],
+            [(100,) * 101, *([(90,) * 101] * scans)],
             store,
             sender,
         )
         monitor.scan()
-        monitor.scan()
-        candidate = store.list_price_change_batches(provider)[0]
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="reviewed",
-        )
         for _ in range(scans):
-            prior_count = len(sender.messages)
             monitor.scan()
-            assert 1 <= len(sender.messages) - prior_count <= 10
-        active = store.load_active_price_batch(provider)
-        assert active is not None
-        assert active.status == "approved"
-        attempts = [item.attempt_count for item in active.items]
-        assert min(attempts) > 10
-        assert max(attempts) - min(attempts) <= 1
-        assert active.pending_count == 101
-        assert all(p.amount == 100 for p in store.load_price_snapshots(provider))
+        assert len(sender.messages) == scans
+        pending = store.load_pending_price_group(provider)
+        assert pending is not None
+        assert len(pending[1]) == 101
+        assert all(item.attempts == scans for item in pending[1])
+        assert store.count_pending_price_notifications(provider) == 101
+        assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
 
 
-def test_repeated_health_quarantine_transition_updates_without_binding_error(
+def test_repeated_health_failure_transition_updates_without_binding_error(
     tmp_path: Path,
 ) -> None:
     now = int(time())
@@ -346,8 +246,8 @@ def test_repeated_health_quarantine_transition_updates_without_binding_error(
             HealthUpdate(
                 feed_id="feed",
                 job_kind="price",
-                state="quarantined",
-                cause="PriceChangeApprovalRequired",
+                state="failed",
+                cause="SourceMoved",
                 attempted_at=now,
                 success=False,
                 nonempty=False,
@@ -358,7 +258,7 @@ def test_repeated_health_quarantine_transition_updates_without_binding_error(
             HealthUpdate(
                 feed_id="feed",
                 job_kind="price",
-                state="quarantined",
+                state="failed",
                 cause="SourceMoved",
                 attempted_at=now + 1,
                 success=False,
@@ -373,92 +273,12 @@ def test_repeated_health_quarantine_transition_updates_without_binding_error(
         assert health.total_attempts == 2
 
 
-def test_oversized_manifest_is_rejected_before_database_write(tmp_path: Path) -> None:
-    def records() -> Iterator[PriceChangeRecord]:
-        for index in range(MAX_PRICE_MANIFEST_ITEMS + 1):
-            product_id = str(index)
-            yield PriceChangeRecord(
-                product_id,
-                PriceSnapshot("feed", product_id, Decimal(1), "1 EUR", "EUR"),
-                PriceSnapshot("feed", product_id, Decimal(2), "2 EUR", "EUR"),
-            )
-
-    with DeliveryStore(tmp_path / "state.db") as store:
-        items = records()
-        with pytest.raises(ValueError, match="manifest item limit"):
-            store.record_price_change_candidate(
-                feed_id="feed",
-                provider="test",
-                fingerprint="not-computed",
-                catalog_count=MAX_PRICE_MANIFEST_ITEMS + 1,
-                available_count=MAX_PRICE_MANIFEST_ITEMS + 1,
-                items=items,
-            )
-        assert store.list_price_change_batches("feed", include_terminal=True) == ()
-
-
-@pytest.mark.parametrize("provider", PROVIDERS)
-def test_inflight_success_is_acknowledged_after_revoke_and_next_send_is_blocked(
-    tmp_path: Path,
-    provider: str,
-) -> None:
-    path = tmp_path / "state.db"
-    with DeliveryStore(path) as store, DeliveryStore(path) as admin:
-
-        class RevokingSender(RecordingSender):
-            def send(
-                self,
-                message: WebhookMessage,
-                sleep: SleepCallback,
-            ) -> DiscordDeliveryResult:
-                active = admin.load_active_price_batch(provider)
-                assert active is not None
-                # Exactly this send has a claim; later selected IDs are not reserved.
-                assert sum(item.attempt_count for item in active.items) == 1
-                admin.revoke_price_change_batch(
-                    active.batch_id,
-                    active.fingerprint,
-                    "revoke during send",
-                )
-                return super().send(message, sleep)
-
-        sender = RevokingSender([DiscordDeliveryResult.DELIVERED])
-        monitor: Monitor = (
-            monitor_for(
-                provider,
-                [(100,) * 101, (90,) * 101, (90,) * 101],
-                store,
-                sender,
-            )
-            if provider in {"ddstore", "hivetec"}
-            else build(provider, 101, store, sender)
-        )
-        monitor.scan()
-        monitor.scan()
-        candidate = store.list_price_change_batches(provider)[0]
-        store.approve_price_change_batch(
-            feed_id=provider,
-            fingerprint=candidate.fingerprint,
-            reason="reviewed",
-        )
-        monitor.scan()
-        batch = store.load_price_batch(candidate.batch_id)
-        assert batch is not None
-        assert batch.status == "revoked"
-        assert batch.delivered_count == 1
-        assert batch.pending_count == 100
-        assert sum(item.attempt_count for item in batch.items) == 1
-        assert len(sender.messages) == 1
-        assert sum(s.amount == 90 for s in store.load_price_snapshots(provider)) == 1
-
-
 @pytest.mark.parametrize(
     "outcome",
     [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.INTERRUPTED, "exception"],
 )
-def test_unsuccessful_sender_releases_exact_claim(
+def test_unsuccessful_sender_keeps_outbox_rows_pending(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     outcome: DiscordDeliveryResult | str,
 ) -> None:
     class UnsuccessfulSender(RecordingSender):
@@ -472,19 +292,9 @@ def test_unsuccessful_sender_releases_exact_claim(
             return super().send(message, sleep)
 
     sender = UnsuccessfulSender(
-        [outcome] * 10 if isinstance(outcome, DiscordDeliveryResult) else [],
+        [outcome] if isinstance(outcome, DiscordDeliveryResult) else [],
     )
     with DeliveryStore(tmp_path / "state.db") as store:
-        claims: list[PriceDeliveryClaim] = []
-        claim_attempt = store.claim_price_delivery_attempt
-
-        def record_claim(batch_id: int, product_id: str) -> PriceDeliveryClaim | None:
-            claim = claim_attempt(batch_id, product_id)
-            if claim is not None:
-                claims.append(claim)
-            return claim
-
-        monkeypatch.setattr(store, "claim_price_delivery_attempt", record_claim)
         monitor = monitor_for(
             "ddstore",
             [(100,) * 101, (90,) * 101, (90,) * 101],
@@ -492,24 +302,16 @@ def test_unsuccessful_sender_releases_exact_claim(
             sender,
         )
         monitor.scan()
-        monitor.scan()
-        candidate = store.list_price_change_batches("ddstore")[0]
-        store.approve_price_change_batch(
-            feed_id="ddstore",
-            fingerprint=candidate.fingerprint,
-            reason="reviewed",
-        )
         if outcome == "exception":
             with pytest.raises(RuntimeError, match="fixture sender failed"):
                 monitor.scan()
         else:
             monitor.scan()
-        batch = store.load_price_batch(candidate.batch_id)
-        assert batch is not None
-        assert claims
-        assert all(not store.release_price_delivery_attempt(claim) for claim in claims)
-        assert sum(item.attempt_count for item in batch.items) == (
-            10 if outcome is DiscordDeliveryResult.FAILED else 1
+        pending = store.load_pending_price_group("ddstore")
+        assert pending is not None
+        assert len(pending[1]) == 101
+        assert all(
+            item.attempts == (1 if outcome is DiscordDeliveryResult.FAILED else 0)
+            for item in pending[1]
         )
-        assert batch.delivered_count == 0
-        assert all(s.amount == 100 for s in store.load_price_snapshots("ddstore"))
+        assert all(p.amount == 90 for p in store.load_price_snapshots("ddstore"))

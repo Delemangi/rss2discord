@@ -47,7 +47,7 @@ def test_both_missing_variant_ids_defer_without_snapshot_mutation_then_recover(
         assert setec.snapshots_by_product(store)["prod-1"].amount == 90
 
 
-def test_approved_batch_missing_variant_id_pauses_before_any_send(
+def test_approved_batch_missing_variant_id_is_excluded_from_digest(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(
@@ -61,27 +61,16 @@ def test_approved_batch_missing_variant_id_pauses_before_any_send(
         [baseline, changed, changed],
         display_overrides={changed[0].id: missing},
     )
-    sender = setec.RecordingSender([])
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = setec.make_monitor(setec.make_feed(), catalog, store, sender)
         monitor.scan()
         monitor.scan()
-        candidate = store.list_price_change_batches(feed_id="setec")[0]
-        store.approve_price_change_batch(
-            feed_id="setec",
-            fingerprint=candidate.fingerprint,
-            reason="fixture review",
-        )
 
-        monitor.scan()
-
-        batch = store.load_active_price_batch("setec")
-        assert batch is not None
-        assert batch.status == "paused"
-        assert batch.pending_count == 101
-        assert sum(item.attempt_count for item in batch.items) == 0
-        assert sender.messages == []
-        assert all(
-            snapshot.amount == 100 for snapshot in store.load_price_snapshots("setec")
-        )
+        assert len(sender.messages) == 1
+        assert len(sender.messages[0].files) == 2
+        assert store.count_pending_price_notifications("setec") == 0
+        snapshots = store.load_price_snapshots("setec")
+        assert sum(snapshot.amount == 90 for snapshot in snapshots) == 100
+        assert sum(snapshot.amount == 100 for snapshot in snapshots) == 1

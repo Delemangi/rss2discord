@@ -6,7 +6,7 @@ from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.price_amount import canonicalize_price_amount
-from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL, HIVETEC_WINDOW_SIZE
+from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.providers.hivetec.models import (
     HivetecDiscoveryProduct,
@@ -21,8 +21,6 @@ class HivetecStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch: bool = True
     require_entries_for_initialization: bool = True
-    max_new_entries_per_fetch: int | None = HIVETEC_WINDOW_SIZE
-    max_delivery_history: int | None = 10_000
 
     def __init__(
         self,

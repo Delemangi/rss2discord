@@ -1,127 +1,50 @@
-"""Normal confirmation selection progresses even when early details never agree."""
+"""Small scans send every confirmable change without legacy rotation starvation."""
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
-
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
+from rss2discord.recovery_models import PriceChangeRecord
 from tests import setec_price_monitor_helpers as setec
 from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
 from tests.test_cccenter_price_monitor import product
 
 
-def test_setec_deferred_first_ten_cannot_starve_eleventh_after_restart(
-    tmp_path: Path,
-) -> None:
+def test_setec_small_scan_never_starves_hidden_detail_ids(tmp_path: Path) -> None:
     ids = tuple(f"prod-{index:02}" for index in range(11))
     baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
     changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
     sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
     path = tmp_path / "state.db"
-    first = setec.CatalogStub([baseline, changed], hidden_ids=frozenset(ids[:10]))
+    first = setec.CatalogStub(
+        [baseline, changed],
+        hidden_ids=frozenset(ids[:10]),
+    )
     with DeliveryStore(path) as store:
         monitor = setec.make_monitor(setec.make_feed(), first, store, sender)
         monitor.scan()
         monitor.scan()
-        assert first.requested_id_batches == [ids[:10]]
-        assert not sender.messages
-    # Recreate both the store and monitor: progress must not live in memory.
-    second = setec.CatalogStub([changed, changed], hidden_ids=frozenset(ids[:10]))
-    with DeliveryStore(path) as store:
-        monitor = setec.make_monitor(setec.make_feed(), second, store, sender)
-        monitor.scan()
-        monitor.scan()
-        assert second.requested_id_batches[0][0] == ids[-1]
-        assert all(len(batch) <= 10 for batch in second.requested_id_batches)
+        assert len(first.requested_id_batches) == 1
+        assert first.requested_id_batches[0] == ids
         assert len(sender.messages) == 1
         snapshots = setec.snapshots_by_product(store)
         assert snapshots[ids[-1]].amount == 90
         assert all(snapshots[pid].amount == 100 for pid in ids[:10])
-
-
-@pytest.mark.parametrize("changed_count", [0, 1])
-@pytest.mark.parametrize("winner", ["normal", "approval"])
-def test_normal_plan_fences_stale_approval_before_silent_updates_and_sends(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    changed_count: int,
-    winner: str,
-) -> None:
-    baseline = tuple(
-        setec.make_product(f"p-{i:03}", calculated_amount=100) for i in range(101)
+    second = setec.CatalogStub(
+        [changed, changed],
+        hidden_ids=frozenset(ids[:10]),
     )
-    targets = tuple(setec.make_product(p.id, calculated_amount=90) for p in baseline)
-    live = (
-        *targets[:changed_count],
-        *baseline[changed_count:],
-        setec.make_product("fresh", calculated_amount=70),
-    )
-    catalog = setec.CatalogStub([baseline, targets, live])
-    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
-    path = tmp_path / "state.db"
-    with DeliveryStore(path) as store, DeliveryStore(path) as admin:
-        monitor = setec.make_monitor(setec.make_feed(), catalog, store, sender)
+    with DeliveryStore(path) as store:
+        monitor = setec.make_monitor(setec.make_feed(), second, store, sender)
         monitor.scan()
         monitor.scan()
-        candidate = store.list_price_change_batches("setec")[0]
-
-        def approve() -> None:
-            admin.approve_price_change_batch(
-                feed_id="setec",
-                fingerprint=candidate.fingerprint,
-                reason="stale approval",
-            )
-
-        if winner == "approval":
-            select = store.select_normal_price_deliveries
-
-            def approve_then_select(
-                *,
-                feed_id: str,
-                product_ids: Iterable[str],
-                limit: int = 10,
-            ) -> tuple[str, ...] | None:
-                approve()
-                return select(feed_id=feed_id, product_ids=product_ids, limit=limit)
-
-            monkeypatch.setattr(
-                store,
-                "select_normal_price_deliveries",
-                approve_then_select,
-            )
-        else:
-            upsert = store.upsert_price_snapshots
-
-            def try_stale_approval_before_silent_write(
-                snapshots: Iterable[PriceSnapshot],
-            ) -> None:
-                with pytest.raises(ValueError, match="not pending approval"):
-                    approve()
-                upsert(snapshots)
-
-            monkeypatch.setattr(
-                store,
-                "upsert_price_snapshots",
-                try_stale_approval_before_silent_write,
-            )
-        monitor.scan()
-        persisted = setec.snapshots_by_product(store)
-        batch = store.load_price_batch(candidate.batch_id)
-        assert batch is not None
-        if winner == "approval":
-            assert batch.status == "approved"
-            assert "fresh" not in persisted
-            assert not sender.messages
-            assert all(s.amount == 100 for s in persisted.values())
-        else:
-            assert batch.status == "revoked"
-            assert persisted["fresh"].amount == 70
-            assert len(sender.messages) == changed_count
+        assert second.requested_id_batches[0] == ids[:10]
+        assert len(sender.messages) == 1
+        assert store.list_health("setec")[0].cause == "PriceConfirmationDeferred"
 
 
 class MismatchedCCCatalog(DetailCatalog):
@@ -143,9 +66,7 @@ class MismatchedCCCatalog(DetailCatalog):
         )
 
 
-def test_cccenter_deferred_first_ten_cannot_starve_eleventh_after_restart(
-    tmp_path: Path,
-) -> None:
+def test_cccenter_small_scan_confirms_every_selected_id(tmp_path: Path) -> None:
     baseline = tuple(
         product("100", f"https://cccenter.mk/product/item-{i:02}/") for i in range(11)
     )
@@ -158,16 +79,40 @@ def test_cccenter_deferred_first_ten_cannot_starve_eleventh_after_restart(
         monitor = cc_monitor(store, first, sender)
         monitor.scan()
         monitor.scan()
-        assert first.calls == [ids[:10]]
-        assert not sender.messages
-    second = MismatchedCCCatalog([changed, changed])
-    with DeliveryStore(path) as store:
-        monitor = cc_monitor(store, second, sender)
-        monitor.scan()
-        monitor.scan()
-        assert second.calls[0][0] == ids[-1]
-        assert all(len(batch) <= 10 for batch in second.calls)
+        assert all(len(batch) <= 10 for batch in first.calls)
+        assert [len(batch) for batch in first.calls] == [10, 1]
         assert len(sender.messages) == 1
         snapshots = {s.product_id: s for s in store.load_price_snapshots("cccenter")}
         assert snapshots[ids[-1]].amount == 90
         assert all(snapshots[pid].amount == 100 for pid in ids[:10])
+
+
+def test_legacy_approval_or_pause_does_not_fence_small_scan(tmp_path: Path) -> None:
+    ids = tuple(f"p-{index:03}" for index in range(25))
+    items = tuple(
+        PriceChangeRecord(
+            pid,
+            setec.PriceSnapshot("setec", pid, Decimal(100), "100", "MKD"),
+            setec.PriceSnapshot("setec", pid, Decimal(90), "90", "MKD"),
+        )
+        for pid in ids
+    )
+    baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
+    changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
+    fresh = setec.make_product("fresh", calculated_amount=70)
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED] * 25)
+    path = tmp_path / "state.db"
+    with DeliveryStore(path) as store:
+        store.upsert_price_snapshots(item.previous for item in items)
+        monitor = setec.make_monitor(
+            setec.make_feed(),
+            setec.CatalogStub([(*baseline, fresh), (*changed, fresh)]),
+            store,
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        assert len(sender.messages) == 25
+        assert store.count_pending_price_notifications("setec") == 0
+        persisted = setec.snapshots_by_product(store)
+        assert persisted["fresh"].amount == 70

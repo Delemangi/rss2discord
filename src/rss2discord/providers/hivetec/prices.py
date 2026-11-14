@@ -1,6 +1,5 @@
 """Sequential Hivetec price comparison and Discord delivery for one feed."""
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -15,6 +14,7 @@ from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.models import HivetecProduct
 from rss2discord.providers.hivetec.strategy import hivetec_product_metrics
 from rss2discord.retries import (
+    FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
@@ -24,11 +24,10 @@ from rss2discord.transports.catalog_normalization import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_catalog_price_changes,
-    pause_price_fetch_failure,
-    prepare_price_scan,
     price_direction,
+    run_price_scan,
 )
 
 
@@ -61,13 +60,6 @@ class HivetecPriceMonitorDependencies:
     delivery: PriceAlertDelivery
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: HivetecProduct
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class HivetecPriceMonitor:
     def __init__(
         self,
@@ -78,96 +70,67 @@ class HivetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        self._scan()
 
     def _scan(self) -> None:
-        observation_started_at = time.monotonic()
-        products, persisted = prepare_price_scan(
-            fetch_products=lambda: self._dependencies.catalog.fetch_catalog(
-                self._feed.url,
-                retry_policy=self._dependencies.fetch_retry_policy,
-                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            ),
-            load_snapshots=lambda: self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.load_price_snapshots(
-                    self._feed.id,
-                    limit=MAX_HIVETEC_RETAINED_SNAPSHOTS + 1,
-                ),
-            ),
+        if self._dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+        products = self._dependencies.catalog.fetch_catalog(
+            self._feed.url,
+            retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
-            label=HIVETEC_LABEL,
         )
-        by_id = {snapshot.product_id: snapshot for snapshot in persisted}
-        observations = normalize_hivetec_catalog(
+        persisted = self._dependencies.sqlite_retry_policy.execute(
+            lambda: self._dependencies.snapshots.load_price_snapshots(
+                self._feed.id,
+                limit=MAX_HIVETEC_RETAINED_SNAPSHOTS + 1,
+            ),
+        )
+        if len(persisted) > MAX_HIVETEC_RETAINED_SNAPSHOTS:
+            raise FeedFetchError(HIVETEC_LABEL, "SnapshotLimitExceeded")
+        normalized = normalize_hivetec_catalog(
             self._feed.id,
             products,
             persisted,
             snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
         )
         products_by_id = {str(product.id): product for product in products}
-        origins_query = getattr(
-            self._dependencies.snapshots,
-            "availability_hold_origins",
-            None,
+        observations = tuple(
+            PriceObservation(products_by_id[item.product_id], item.snapshot)
+            for item in normalized
+            if item.snapshot is not None
         )
-        availability_ids = (
-            {str(row["product_id"]) for row in origins_query(self._feed.id)}
-            if origins_query is not None
-            else set()
-        )
-        availability_returns = {
-            item.product_id: (item.snapshot, item.context)
-            for item in observations
-            if item.snapshot is not None and item.product_id in availability_ids
-        }
-        deliver_catalog_price_changes(
-            self._dependencies,
-            self._message_for,
-            change_for=lambda previous, current: _PriceChange(
-                products_by_id[current.product_id],
-                previous,
-                current,
-            ),
-            feed_id=self._feed.id,
+        run_price_scan(
+            feed=self._feed,
+            dependencies=self._dependencies,
             provider=HIVETEC_LABEL,
-            current={
-                item.product_id: item.snapshot
-                for item in observations
-                if item.snapshot is not None
-            },
-            persisted=by_id,
-            catalog_count=len(products),
-            availability_returns=availability_returns,
-            operation_started_at=observation_started_at,
+            label=HIVETEC_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
+    def _message_for(
+        self,
+        product: HivetecProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
         return WebhookMessage(
             feed=self._feed,
             entry=EntryData(
-                title=change.product.name,
-                link=change.product.permalink,
+                title=product.name,
+                link=product.permalink,
                 description="",
                 author="",
                 timestamp=None,
-                image_url=change.product.image_url,
-                categories=tuple(
-                    category.name for category in change.product.categories
-                ),
+                image_url=product.image_url,
+                categories=tuple(category.name for category in product.categories),
                 source_metrics=hivetec_product_metrics(
-                    change.product,
-                    previous_price=change.previous.formatted,
+                    product,
+                    previous_price=previous.formatted,
                 ),
-                price_direction=price_direction(change.previous, change.current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or HIVETEC_LABEL,
         )

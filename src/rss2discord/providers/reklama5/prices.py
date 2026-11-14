@@ -7,26 +7,22 @@ from decimal import Decimal
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import SourceMetric
 from rss2discord.providers.reklama5.parser import Reklama5Listing
 from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
 from rss2discord.providers.reklama5.strategy import Reklama5Strategy
-from rss2discord.recovery_models import PriceChangeRecord
+from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_planned_price_changes,
-    prepare_price_delivery,
-    prepare_price_scan,
     price_direction,
     run_price_scan,
 )
@@ -69,13 +65,6 @@ class Reklama5PriceMonitorDependencies:
     delivery: PriceAlertDelivery
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    listing: Reklama5Listing
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class Reklama5PriceMonitor:
     def __init__(
         self,
@@ -86,75 +75,29 @@ class Reklama5PriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        run_price_scan(self._scan, self._dependencies.snapshots, self._feed.id)
+        self._scan()
 
     def _scan(self) -> None:
-        listings, persisted = prepare_price_scan(
-            fetch_products=lambda: self._dependencies.catalog.fetch_catalog(
-                self._feed.url,
-                retry_policy=self._dependencies.fetch_retry_policy,
-                is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            ),
-            load_snapshots=lambda: self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.load_price_snapshots(
-                    self._feed.id,
-                    limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS + 1,
-                ),
-            ),
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-            snapshot_limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS,
-            label=REKLAMA5_LABEL,
-        )
-        by_listing = {snapshot.product_id: snapshot for snapshot in persisted}
-        silent_updates: list[PriceSnapshot] = []
-        changes: list[_PriceChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        numeric_listing_ids: set[str] = set()
-        for listing in listings:
-            current = self._snapshot(listing)
-            if current is None:
-                continue
-            numeric_listing_ids.add(current.product_id)
-            current_snapshots[current.product_id] = current
-            previous = by_listing.get(current.product_id)
-            if previous is None:
-                silent_updates.append(current)
-            elif (
-                previous.amount != current.amount
-                or previous.currency != current.currency
-            ):
-                changes.append(_PriceChange(listing, previous, current))
-            elif previous.formatted != current.formatted:
-                silent_updates.append(current)
-        if len(set(by_listing) | numeric_listing_ids) > MAX_REKLAMA5_RETAINED_SNAPSHOTS:
-            raise FeedFetchError(REKLAMA5_LABEL, "SnapshotLimitExceeded")
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        store = self._dependencies.snapshots
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=store,
-                feed_id=self._feed.id,
-                provider="reklama5",
-                changes=tuple(
-                    PriceChangeRecord(c.current.product_id, c.previous, c.current)
-                    for c in changes
-                ),
-                current=current_snapshots,
-                persisted=by_listing,
-                catalog_count=len(listings),
-            ),
+        listings = self._dependencies.catalog.fetch_catalog(
+            self._feed.url,
+            retry_policy=self._dependencies.fetch_retry_policy,
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
-        if plan.blocked:
-            return
-        deliver_planned_price_changes(
-            self._dependencies,
-            self._message_for,
-            feed_id=self._feed.id,
-            plan=plan,
-            silent_updates=silent_updates,
-            changes=changes,
-            item_count=len(current_snapshots),
+        observations: list[PriceObservation[Reklama5Listing]] = []
+        for listing in listings:
+            current = self._snapshot(listing)
+            if current is not None:
+                observations.append(PriceObservation(listing, current))
+        run_price_scan(
+            feed=self._feed,
+            dependencies=self._dependencies,
+            provider="reklama5",
+            label=REKLAMA5_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS,
         )
 
     def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:
@@ -175,11 +118,16 @@ class Reklama5PriceMonitor:
             "MKD",
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        base_entry = Reklama5Strategy().get_entry_data(change.listing)
+    def _message_for(
+        self,
+        listing: Reklama5Listing,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
+        base_entry = Reklama5Strategy().get_entry_data(listing)
         metrics = (
-            SourceMetric("Price", change.current.formatted),
-            SourceMetric("Previous", change.previous.formatted, prior=True),
+            SourceMetric("Price", current.formatted),
+            SourceMetric("Previous", previous.formatted, prior=True),
             *(
                 metric
                 for metric in base_entry.source_metrics
@@ -192,7 +140,7 @@ class Reklama5PriceMonitor:
                 base_entry,
                 description="",
                 source_metrics=metrics,
-                price_direction=price_direction(change.previous, change.current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or REKLAMA5_LABEL,
         )

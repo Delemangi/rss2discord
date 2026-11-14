@@ -73,8 +73,9 @@ def main() -> int:
     except sqlite3.Error as error:
         logger.log(
             logging.ERROR,
-            "Storage initialization failed (%s)",
+            "Storage initialization failed (%s: %s)",
             type(error).__name__,
+            _sqlite_error_message(error),
         )
         return 1
     except OSError as error:
@@ -85,6 +86,12 @@ def main() -> int:
         )
         return 1
     return 0
+
+
+def _sqlite_error_message(error: sqlite3.Error) -> str:
+    """Keep one bounded diagnostic line; SQLite messages carry no credentials."""
+    message = " ".join(str(error).split())
+    return message[:200] if message else "no detail"
 
 
 def _format_error(error: ValidationError) -> str:

@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +22,7 @@ from rss2discord.retries import (
 )
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import scan as scan_module
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_pazar3_strategy import listing
 
@@ -180,7 +181,7 @@ def test_pazar3_price_monitor_retries_failed_delivery_without_advancing_snapshot
         assert store.load_price_snapshots("pazar3")[0].amount == Decimal(90)
 
 
-def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
+def test_pazar3_price_monitor_summarizes_bulk_changes(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(priced(str(i), "100 МКД") for i in range(101))
@@ -190,16 +191,15 @@ def test_pazar3_price_monitor_rejects_change_limit_without_mutation(
         price_monitor = monitor(
             CatalogStub([baseline, changed]),
             store,
-            RecordingSender([]),
+            RecordingSender([DiscordDeliveryResult.DELIVERED]),
         )
         price_monitor.scan()
 
         price_monitor.scan()
-        assert len(store.list_price_change_batches(feed_id="pazar3")) == 1
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("pazar3")
         } == {
-            Decimal(100),
+            Decimal(90),
         }
 
 
@@ -294,7 +294,6 @@ def test_pazar3_price_monitor_preserves_scan_shutdown_checkpoints(
         assert load_count == loads
         assert store.load_price_snapshots("pazar3") == ()
         assert store.list_health("pazar3") == ()
-        assert store.list_price_change_batches(feed_id="pazar3") == ()
 
 
 def test_pazar3_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
@@ -319,23 +318,19 @@ def test_pazar3_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
                 is_shutdown_requested=lambda: shutdown_requested,
             ),
         )
-        select = store.select_normal_price_deliveries
 
-        def select_then_shutdown(
-            *,
-            feed_id: str,
-            product_ids: Iterable[str],
-            limit: int = 10,
-        ) -> tuple[str, ...] | None:
+        prepare = scan_module.prepare_price_delivery
+
+        def prepare_then_shutdown(**kwargs: object) -> object:
             nonlocal shutdown_requested
-            selected = select(feed_id=feed_id, product_ids=product_ids, limit=limit)
+            plan = prepare(**kwargs)  # type: ignore[arg-type]
             shutdown_requested = True
-            return selected
+            return plan
 
         monkeypatch.setattr(
-            store,
-            "select_normal_price_deliveries",
-            select_then_shutdown,
+            scan_module,
+            "prepare_price_delivery",
+            prepare_then_shutdown,
         )
         price_monitor.scan()
 
@@ -346,4 +341,4 @@ def test_pazar3_shutdown_after_planning_keeps_silent_updates_but_skips_delivery(
         assert snapshots["1"].amount == Decimal(100)
         assert snapshots["2"].amount == Decimal(200)
         assert sender.messages == []
-        assert store.list_health("pazar3")[0].item_count == 2
+        assert store.list_health("pazar3")[0].item_count == 1

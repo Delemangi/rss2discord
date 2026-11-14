@@ -11,7 +11,7 @@ from tests.neksio_price_monitor_helpers import (
 )
 
 
-def test_scan_repeatedly_rejects_too_many_price_changes_without_mutation(
+def test_scan_summarizes_bulk_changes_then_initializes_new_products(
     tmp_path: Path,
 ) -> None:
     # Given
@@ -33,9 +33,7 @@ def test_scan_repeatedly_rejects_too_many_price_changes_without_mutation(
             sender,
         )
         monitor.scan()
-        baseline_snapshots = snapshots_by_product(store)
         for _ in range(2):
             monitor.scan()
-            assert len(store.list_price_change_batches(feed_id="neksio")) == 1
-        assert sender.messages == []
-        assert snapshots_by_product(store) == baseline_snapshots
+        assert len(sender.messages) == 1
+        assert sum(s.amount == 90 for s in snapshots_by_product(store).values()) == 101

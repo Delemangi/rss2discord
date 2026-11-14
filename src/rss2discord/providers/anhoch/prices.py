@@ -12,7 +12,6 @@ from rss2discord.discord.client import (
     DiscordSender,
     WebhookMessage,
 )
-from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
 from rss2discord.providers.anhoch.catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
 from rss2discord.providers.anhoch.models import AnhochProduct
@@ -22,14 +21,12 @@ from rss2discord.retries import (
     SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
+    NO_SNAPSHOT_LIMIT,
     PriceAlertDelivery,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_price_changes,
-    diff_price_snapshots,
-    finish_price_delivery,
-    pause_price_fetch_failure,
-    prepare_price_delivery,
     price_direction,
+    run_price_scan,
 )
 
 
@@ -57,13 +54,6 @@ class AnhochPriceMonitorDependencies:
     delivery: PriceAlertDelivery
 
 
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: AnhochProduct
-    previous: PriceSnapshot
-    current: PriceSnapshot
-
-
 class AnhochPriceMonitor:
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
@@ -76,15 +66,7 @@ class AnhochPriceMonitor:
         self._dependencies: AnhochPriceMonitorDependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        self._scan()
 
     def _scan(self) -> None:
         """Fetch, classify, persist silent updates, then deliver changed prices in order."""
@@ -95,63 +77,18 @@ class AnhochPriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted_snapshots = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(self._feed.id),
+        observations = tuple(
+            PriceObservation(product, self._snapshot(product)) for product in products
         )
-        snapshots_by_product = {
-            snapshot.product_id: snapshot for snapshot in persisted_snapshots
-        }
-        current_snapshots: dict[str, PriceSnapshot] = {}
-
-        for product in products:
-            current = self._snapshot(product)
-            current_snapshots[current.product_id] = current
-        silent_updates, changes = diff_price_snapshots(
-            current_snapshots.values(),
-            snapshots_by_product,
+        run_price_scan(
+            feed=self._feed,
+            dependencies=self._dependencies,
+            provider="anhoch",
+            label=ANHOCH_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=NO_SNAPSHOT_LIMIT,
         )
-
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        store = self._dependencies.snapshots
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=store,
-                feed_id=self._feed.id,
-                provider="anhoch",
-                changes=changes,
-                current=current_snapshots,
-                persisted=snapshots_by_product,
-                catalog_count=len(products),
-            ),
-        )
-        if plan.blocked:
-            return
-        if silent_updates and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: self._dependencies.snapshots.upsert_price_snapshots(
-                    silent_updates,
-                ),
-            )
-
-        products_by_id = {str(product.id): product for product in products}
-        by_id = {
-            change.product_id: _PriceChange(
-                products_by_id[change.product_id],
-                change.previous,
-                change.current,
-            )
-            for change in changes
-        }
-        deliver_price_changes(
-            (by_id[product_id] for product_id in plan.selected_ids),
-            self._dependencies,
-            self._message_for,
-            plan=plan,
-        )
-        finish_price_delivery(store, self._feed.id, plan, len(current_snapshots))
 
     def _snapshot(self, product: AnhochProduct) -> PriceSnapshot:
         return PriceSnapshot(
@@ -162,32 +99,38 @@ class AnhochPriceMonitor:
             currency=product.selling_price.currency,
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
+    def _message_for(
+        self,
+        product: AnhochProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
         return WebhookMessage(
             feed=self._feed,
             entry=EntryData(
-                title=change.product.name,
-                link=f"{ANHOCH_PRODUCT_BASE_URL}{change.product.slug}",
+                title=product.name,
+                link=f"{ANHOCH_PRODUCT_BASE_URL}{product.slug}",
                 description="",
                 author="",
                 timestamp=None,
                 image_url=(
-                    change.product.base_image.path
-                    if change.product.base_image is not None
-                    else None
+                    product.base_image.path if product.base_image is not None else None
                 ),
-                source_metrics=self._metrics_for(change),
-                price_direction=price_direction(change.previous, change.current),
+                source_metrics=self._metrics_for(product, previous, current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or ANHOCH_LABEL,
         )
 
     @staticmethod
-    def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
-        product = change.product
+    def _metrics_for(
+        product: AnhochProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> tuple[SourceMetric, ...]:
         metrics = [
-            SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
+            SourceMetric(label="Price", value=current.formatted),
+            SourceMetric(label="Previous", value=previous.formatted, prior=True),
         ]
         if product.price.formatted != product.selling_price.formatted:
             metrics.append(

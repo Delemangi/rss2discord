@@ -12,7 +12,6 @@ from rss2discord.providers.ddstore.models import DDStoreProduct, DDStoreStockSta
 from rss2discord.transports.base import ScraperStrategy
 
 DDSTORE_UNAVAILABLE_PRICE_LABEL: Final = "Ask for price"
-MAX_DDSTORE_DELIVERY_HISTORY: Final = 50_000
 
 
 @final
@@ -20,7 +19,6 @@ class DDStoreStrategy(ScraperStrategy):
     """Discover the latest DDStore products from its public GraphQL catalog."""
 
     seed_existing_on_first_fetch = True
-    max_delivery_history = MAX_DDSTORE_DELIVERY_HISTORY
 
     def __init__(
         self,

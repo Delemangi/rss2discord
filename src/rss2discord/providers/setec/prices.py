@@ -13,7 +13,6 @@ from rss2discord.discord.client import (
     DiscordSender,
     WebhookMessage,
 )
-from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, SourceMetric
 from rss2discord.providers.setec.catalog_bounds import SETEC_LABEL
 from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
@@ -21,23 +20,18 @@ from rss2discord.providers.setec.strategy import (
     SETEC_PRODUCT_BASE_URL,
     format_setec_mkd,
 )
-from rss2discord.recovery_models import PriceChangeRecord
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
+    NO_SNAPSHOT_LIMIT,
     PriceAlertDelivery,
-    PriceDeliveryPlan,
+    PriceObservation,
     PriceRecoveryStore,
-    deliver_price_changes,
-    finish_price_delivery,
-    pause_price_fetch_failure,
-    pause_price_recovery,
-    prepare_price_delivery,
     price_direction,
-    record_price_health,
+    run_price_scan,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,18 +71,9 @@ class SetecPriceMonitorDependencies:
 
 
 @dataclass(frozen=True, slots=True)
-class _PendingChange:
-    product_id: str
-    previous: PriceSnapshot
-    current: PriceSnapshot
-    variant_id: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class _PriceChange:
-    product: SetecProduct
-    previous: PriceSnapshot
-    current: PriceSnapshot
+class _SetecObservation:
+    index: SetecPriceEntry
+    detail: SetecProduct | None = None
 
 
 class SetecPriceMonitor:
@@ -103,15 +88,7 @@ class SetecPriceMonitor:
         self._dependencies = dependencies
 
     def scan(self) -> None:
-        try:
-            self._scan()
-        except FeedFetchError as error:
-            if not pause_price_fetch_failure(
-                self._dependencies.snapshots,
-                self._feed.id,
-                error,
-            ):
-                raise
+        self._scan()
 
     def _scan(self) -> None:
         """Compare prices, persist silent updates, then alert on changed products."""
@@ -122,20 +99,13 @@ class SetecPriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        persisted_snapshots = self._dependencies.sqlite_retry_policy.execute(
-            lambda: self._dependencies.snapshots.load_price_snapshots(self._feed.id),
-        )
-        snapshot_store = self._dependencies.snapshots
-        snapshots_by_product = {
-            snapshot.product_id: snapshot for snapshot in persisted_snapshots
-        }
-        silent_updates, pending_changes, current_snapshots = self._compare_prices(
-            price_entries,
-            snapshots_by_product,
-        )
-
+        observations: list[PriceObservation[_SetecObservation]] = []
+        for entry in price_entries:
+            current = self._snapshot(entry)
+            if current is not None:
+                observations.append(
+                    PriceObservation(_SetecObservation(entry), current),
+                )
         ambiguous_count = sum(len(entry.variants) > 1 for entry in price_entries)
         if ambiguous_count:
             logger.warning(
@@ -143,139 +113,54 @@ class SetecPriceMonitor:
                 ambiguous_count,
                 self._feed.id,
             )
-
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        plan = self._dependencies.sqlite_retry_policy.execute(
-            lambda: prepare_price_delivery(
-                store=snapshot_store,
-                feed_id=self._feed.id,
-                provider="setec",
-                changes=tuple(
-                    PriceChangeRecord(p.product_id, p.previous, p.current)
-                    for p in pending_changes
-                ),
-                current=current_snapshots,
-                persisted=snapshots_by_product,
-                catalog_count=len(price_entries),
-            ),
-        )
-        if plan.blocked:
-            return
-        if silent_updates and plan.allow_silent_updates:
-            self._dependencies.sqlite_retry_policy.execute(
-                lambda: snapshot_store.upsert_price_snapshots(silent_updates),
-            )
-
-        if not plan.selected_ids:
-            self._finish_scan(
-                plan,
-                len(current_snapshots),
-                deferred=bool(ambiguous_count),
-            )
-            return
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        by_id = {pending.product_id: pending for pending in pending_changes}
-        changes = self._resolve_changes(
-            [by_id[product_id] for product_id in plan.selected_ids],
-        )
-        unconfirmed = len(changes) != len(plan.selected_ids)
-        if unconfirmed and plan.batch_id is not None:
-            pause_price_recovery(
-                snapshot_store,
-                self._feed.id,
-                "PriceConfirmationMismatch",
-            )
-            return
-        deliver_price_changes(changes, self._dependencies, self._message_for, plan=plan)
-        self._finish_scan(
-            plan,
-            len(current_snapshots),
-            deferred=bool(unconfirmed or ambiguous_count),
+        run_price_scan(
+            feed=self._feed,
+            dependencies=self._dependencies,
+            provider="setec",
+            label=SETEC_LABEL,
+            observations=observations,
+            message_for=self._message_for,
+            snapshot_limit=NO_SNAPSHOT_LIMIT,
+            confirm=self._confirm_observations,
+            confirmation_limit=2000,
         )
 
-    def _finish_scan(
+    def _confirm_observations(
         self,
-        plan: PriceDeliveryPlan,
-        count: int,
-        *,
-        deferred: bool,
-    ) -> None:
-        snapshot_store = self._dependencies.snapshots
-        if deferred:
-            record_price_health(
-                snapshot_store,
-                self._feed.id,
-                "failed",
-                "PriceConfirmationDeferred",
-                count,
-            )
-        else:
-            finish_price_delivery(
-                snapshot_store,
-                self._feed.id,
-                plan,
-                count,
-            )
-
-    def _compare_prices(
-        self,
-        price_entries: Sequence[SetecPriceEntry],
-        snapshots_by_product: dict[str, PriceSnapshot],
-    ) -> tuple[list[PriceSnapshot], list[_PendingChange], dict[str, PriceSnapshot]]:
-        silent_updates: list[PriceSnapshot] = []
-        pending_changes: list[_PendingChange] = []
-        current_snapshots: dict[str, PriceSnapshot] = {}
-        for entry in price_entries:
-            current = self._snapshot(entry)
-            if current is None:
-                continue
-            current_snapshots[entry.id] = current
-            previous = snapshots_by_product.get(entry.id)
-            if previous is None:
-                silent_updates.append(current)
-                continue
-            if (
-                previous.amount == current.amount
-                and previous.currency == current.currency
-            ):
-                if previous.formatted != current.formatted:
-                    silent_updates.append(current)
-                continue
-            pending_changes.append(
-                _PendingChange(entry.id, previous, current, entry.variants[0].id),
-            )
-        return silent_updates, pending_changes, current_snapshots
-
-    def _resolve_changes(
-        self,
-        pending_changes: Sequence[_PendingChange],
-    ) -> list[_PriceChange]:
+        observations: Sequence[PriceObservation[_SetecObservation]],
+    ) -> list[PriceObservation[_SetecObservation]]:
         products = self._dependencies.catalog.fetch_products_by_ids(
             self._feed.url,
-            [pending.product_id for pending in pending_changes],
+            [observation.product.index.id for observation in observations],
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
         products_by_id = {product.id: product for product in products}
-        changes: list[_PriceChange] = []
-        for pending in pending_changes:
-            product = products_by_id.get(pending.product_id)
+        confirmed: list[PriceObservation[_SetecObservation]] = []
+        for observation in observations:
+            index = observation.product.index
+            product = products_by_id.get(index.id)
             if product is None or len(product.variants) != 1:
                 continue
             variant = product.variants[0]
+            index_variant_id = index.variants[0].id if index.variants else None
             if (
-                not pending.variant_id
+                not index_variant_id
                 or not variant.id
-                or variant.id != pending.variant_id
+                or variant.id != index_variant_id
                 or variant.calculated_price.currency_code.upper()
-                != pending.current.currency
-                or variant.calculated_price.calculated_amount != pending.current.amount
+                != observation.snapshot.currency
+                or variant.calculated_price.calculated_amount
+                != observation.snapshot.amount
             ):
                 continue
-            changes.append(_PriceChange(product, pending.previous, pending.current))
-        deferred_count = len(pending_changes) - len(changes)
+            confirmed.append(
+                PriceObservation(
+                    _SetecObservation(index, product),
+                    observation.snapshot,
+                ),
+            )
+        deferred_count = len(observations) - len(confirmed)
         if deferred_count:
             logger.warning(
                 "Deferred %d unconfirmed price changes for feed %s; "
@@ -283,7 +168,7 @@ class SetecPriceMonitor:
                 deferred_count,
                 self._feed.id,
             )
-        return changes
+        return confirmed
 
     def _snapshot(self, entry: SetecPriceEntry) -> PriceSnapshot | None:
         calculated_amount = entry.calculated_amount
@@ -297,8 +182,15 @@ class SetecPriceMonitor:
             currency="MKD",
         )
 
-    def _message_for(self, change: _PriceChange) -> WebhookMessage:
-        product = change.product
+    def _message_for(
+        self,
+        observation: _SetecObservation,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> WebhookMessage:
+        product = observation.detail
+        if product is None:
+            raise ValueError("confirmed Setec observation requires product details")
         return WebhookMessage(
             feed=self._feed,
             entry=EntryData(
@@ -309,22 +201,26 @@ class SetecPriceMonitor:
                 timestamp=None,
                 image_url=product.thumbnail,
                 categories=tuple(category.name for category in product.categories),
-                source_metrics=self._metrics_for(change),
-                price_direction=price_direction(change.previous, change.current),
+                source_metrics=self._metrics_for(product, previous, current),
+                price_direction=price_direction(previous, current),
             ),
             source_title=self._feed.name or SETEC_LABEL,
         )
 
     @staticmethod
-    def _metrics_for(change: _PriceChange) -> tuple[SourceMetric, ...]:
+    def _metrics_for(
+        product: SetecProduct,
+        previous: PriceSnapshot,
+        current: PriceSnapshot,
+    ) -> tuple[SourceMetric, ...]:
         metrics = [
-            SourceMetric(label="Price", value=change.current.formatted),
-            SourceMetric(label="Previous", value=change.previous.formatted, prior=True),
+            SourceMetric(label="Price", value=current.formatted),
+            SourceMetric(label="Previous", value=previous.formatted, prior=True),
         ]
-        if not change.product.variants:
+        if not product.variants:
             return tuple(metrics)
-        calculated_price = change.product.variants[0].calculated_price
-        if calculated_price.calculated_amount != change.current.amount:
+        calculated_price = product.variants[0].calculated_price
+        if calculated_price.calculated_amount != current.amount:
             # The display fetch saw a different price than the one being reported,
             # so its original amount does not belong beside this alert's price.
             return tuple(metrics)

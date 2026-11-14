@@ -19,7 +19,7 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceObservation
 from tests.setec_price_monitor_helpers import RecordingSender
 
 
@@ -111,43 +111,6 @@ def product(
     )
 
 
-def test_compare_prices_preserves_classification_order_and_duplicate_products() -> None:
-    feed = FeedConfig(
-        id="cccenter",
-        url="https://cccenter.mk/shop/",
-        webhook="https://discord.example.test/webhooks/id/token",
-        strategy="cccenter",
-    )
-    monitor = CCCenterPriceMonitor(feed, None)  # type: ignore[arg-type]
-    products = tuple(
-        product("100", f"https://cccenter.mk/product/{index}/") for index in range(5)
-    )
-    duplicate = replace(products[3], name="Duplicate", current_price=Decimal(120))
-    observed = (*products, duplicate)
-    current = tuple(monitor._snapshot(item) for item in products)
-    persisted = {
-        current[1].product_id: current[1],
-        current[2].product_id: replace(current[2], formatted="old formatting"),
-        current[3].product_id: replace(current[3], amount=Decimal(90)),
-        current[4].product_id: replace(current[4], currency="EUR"),
-    }
-
-    silent, changes, snapshots = monitor._compare_prices(observed, persisted)
-
-    assert silent == [current[0], current[2]]
-    assert [change.product for change in changes] == [
-        products[3],
-        products[4],
-        duplicate,
-    ]
-    assert [change.previous for change in changes] == [
-        persisted[products[3].product_id],
-        persisted[products[4].product_id],
-        persisted[products[3].product_id],
-    ]
-    assert snapshots[duplicate.product_id] == monitor._snapshot(duplicate)
-
-
 @pytest.mark.parametrize("detail_price", ["100", "101", None])
 def test_confirmation_requires_matching_scalar_detail_price(
     detail_price: str | None,
@@ -184,19 +147,15 @@ def test_confirmation_requires_matching_scalar_detail_price(
         is_shutdown_requested=lambda: False,
     )
     listing = product("100")
-    current = monitor._snapshot(listing)
-    _, changes, _ = monitor._compare_prices(
-        (listing,),
-        {listing.product_id: replace(current, amount=Decimal(90))},
+    snapshot = monitor._snapshot(listing)
+    confirmed = monitor._confirm_observations(
+        (PriceObservation(listing, snapshot),),
     )
-
-    confirmed = monitor._confirm_changes(changes)
 
     if detail_price == "100":
         assert len(confirmed) == 1
         assert confirmed[0].product == product(detail_price)
-        assert confirmed[0].current == current
-        assert confirmed[0].previous.amount == Decimal(90)
+        assert confirmed[0].snapshot == snapshot
     else:
         assert confirmed == []
 

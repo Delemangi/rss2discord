@@ -2,19 +2,18 @@
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 from rss2discord.discord.client import DiscordSender, SleepCallback
-from rss2discord.price_safety import (
-    HEALTH_REMINDER_SECONDS,
-    MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
+from rss2discord.price_notifications import (
+    PriceNotification,
+    PriceNotificationRecord,
 )
+from rss2discord.price_safety import HEALTH_REMINDER_SECONDS
 from rss2discord.recovery_models import (
     HealthNotice,
     HealthUpdate,
-    PriceBatch,
-    PriceChangeRecord,
-    PriceDeliveryClaim,
     PriceSnapshot,
 )
 from rss2discord.retries import SQLiteRetryPolicy
@@ -23,7 +22,12 @@ from rss2discord.retries import SQLiteRetryPolicy
 class PriceSnapshotStore(Protocol):
     """Persist source-neutral price snapshots for one feed."""
 
-    def load_price_snapshots(self, feed_id: str) -> tuple[PriceSnapshot, ...]: ...
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]: ...
 
     def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None: ...
 
@@ -31,46 +35,41 @@ class PriceSnapshotStore(Protocol):
 
 
 class PriceRecoveryStore(PriceSnapshotStore, Protocol):
-    def held_price_product_ids(self, feed_id: str) -> frozenset[str]: ...
-
-    def record_price_change_candidate(
+    def record_price_scan(
         self,
         *,
         feed_id: str,
-        provider: str,
-        fingerprint: str,
-        catalog_count: int,
-        available_count: int,
-        items: Iterable[PriceChangeRecord],
-    ) -> PriceBatch: ...
+        group_id: str,
+        observed_at: int,
+        baseline_updates: Iterable[PriceSnapshot],
+        notifications: Iterable[PriceNotification],
+    ) -> int: ...
 
-    def load_active_price_batch(self, feed_id: str) -> PriceBatch | None: ...
-
-    def pause_price_change_batch(self, batch_id: int, reason: str) -> PriceBatch: ...
-
-    def claim_price_delivery_attempt(
+    def load_pending_price_group(
         self,
-        batch_id: int,
-        product_id: str,
-    ) -> PriceDeliveryClaim | None: ...
+        feed_id: str,
+    ) -> tuple[str, tuple[PriceNotificationRecord, ...]] | None: ...
 
-    def release_price_delivery_attempt(self, claim: PriceDeliveryClaim) -> bool: ...
+    def mark_price_notifications_sent(
+        self,
+        notification_ids: Iterable[int],
+    ) -> None: ...
 
-    def select_normal_price_deliveries(
+    def record_price_notification_attempt(
+        self,
+        notification_ids: Iterable[int],
+        error: str | None,
+    ) -> None: ...
+
+    def count_pending_price_notifications(self, feed_id: str) -> int: ...
+
+    def select_price_confirmation_subset(
         self,
         *,
         feed_id: str,
         product_ids: Iterable[str],
-        limit: int = MAX_PRICE_DELIVERY_ATTEMPTS_PER_SCAN,
-    ) -> tuple[str, ...] | None: ...
-
-    def record_approved_price_delivery(
-        self,
-        claim: PriceDeliveryClaim,
-        snapshot: PriceSnapshot,
-    ) -> None: ...
-
-    def complete_price_change_batch_if_drained(self, batch_id: int) -> bool: ...
+        limit: int,
+    ) -> tuple[str, ...]: ...
 
     def record_health(
         self,
@@ -79,16 +78,28 @@ class PriceRecoveryStore(PriceSnapshotStore, Protocol):
         reminder_seconds: int = HEALTH_REMINDER_SECONDS,
     ) -> HealthNotice: ...
 
+    def list_price_notifications(
+        self,
+        feed_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> tuple[dict[str, object], ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class PriceDeliveryPlan:
     selected_ids: tuple[str, ...] = ()
-    batch_id: int | None = None
-    blocked: bool = False
+    bulk: bool = False
+    additional_pending: int = 0
+    item_count: int = 0
 
-    @property
-    def allow_silent_updates(self) -> bool:
-        return not self.blocked and self.batch_id is None
+
+class PriceDeliveryOutcome(StrEnum):
+    """Observable outcome of delivering one planned price change set."""
+
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +112,9 @@ class PriceAlertDelivery:
 
 
 class DeliverablePriceChange(Protocol):
+    @property
+    def previous(self) -> PriceSnapshot: ...
+
     @property
     def current(self) -> PriceSnapshot: ...
 
@@ -117,8 +131,3 @@ class PriceChangeDeliveryDependencies(Protocol):
 
     @property
     def delivery(self) -> PriceAlertDelivery: ...
-
-
-class CatalogPriceChange(DeliverablePriceChange, Protocol):
-    @property
-    def previous(self) -> PriceSnapshot: ...

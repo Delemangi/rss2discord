@@ -1,4 +1,3 @@
-from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -19,42 +18,42 @@ from tests.neksio_price_monitor_helpers import (
 )
 
 
-def test_compare_prices_preserves_classification_order_and_duplicate_products(
+def test_scan_classifies_new_formatting_and_changes_in_observation_order(
     tmp_path: Path,
 ) -> None:
-    products = tuple(
-        make_product(index, amount="100.00", formatted="100 MKD")
-        for index in range(1, 6)
-    )
-    duplicate = make_product(4, amount="120.25", formatted="120.25 MKD")
+    new = make_product(1, amount="100.00", formatted="100 MKD")
+    reformatted = make_product(2, amount="100.00", formatted="100.00 MKD")
+    decreased = make_product(3, amount="90.00", formatted="90 MKD")
+    increased = make_product(4, amount="110.00", formatted="110 MKD")
+    sender = RecordingSender([True, True])
     with DeliveryStore(tmp_path / "state.db") as store:
-        monitor = make_monitor(make_feed(), CatalogStub([]), store, RecordingSender([]))
-        current = tuple(monitor._snapshot(item) for item in products)
-        persisted = {
-            current[1].product_id: replace(current[1], amount=Decimal("100.0")),
-            current[2].product_id: replace(current[2], formatted="old formatting"),
-            current[3].product_id: replace(current[3], amount=Decimal(90)),
-            current[4].product_id: replace(current[4], currency="EUR"),
-        }
-
-        silent, changes, snapshots = monitor._compare_prices(
-            (*products, duplicate),
-            persisted,
+        monitor = make_monitor(
+            make_feed(),
+            CatalogStub([(new, reformatted, decreased, increased)]),
+            store,
+            sender,
         )
+        baseline_2 = monitor._snapshot(
+            make_product(2, amount="100.00", formatted="old formatting"),
+        )
+        baseline_3 = monitor._snapshot(
+            make_product(3, amount="100.00", formatted="100 MKD"),
+        )
+        baseline_4 = monitor._snapshot(
+            make_product(4, amount="100.00", formatted="100 MKD"),
+        )
+        store.upsert_price_snapshots((baseline_2, baseline_3, baseline_4))
+        monitor.scan()
+        snapshots = snapshots_by_product(store)
 
-    assert silent == [current[0], current[2]]
-    assert [change.product for change in changes] == [
-        products[3],
-        products[4],
-        duplicate,
+    assert [message.entry.title for message in sender.messages] == [
+        "Product 3",
+        "Product 4",
     ]
-    assert [change.previous for change in changes] == [
-        persisted["4"],
-        persisted["5"],
-        persisted["4"],
-    ]
-    assert snapshots["4"].amount == Decimal("120.25")
-    assert snapshots["4"].formatted == "120.25 MKD"
+    assert snapshots[1].amount == Decimal("100.0")
+    assert snapshots[2].formatted == "100.00 MKD"
+    assert snapshots[3].amount == Decimal("90.0")
+    assert snapshots[4].amount == Decimal("110.0")
 
 
 def test_scan_baselines_new_products_silently_and_keeps_removed_history(
@@ -149,19 +148,19 @@ def test_scan_delivers_in_persistent_cursor_id_order_with_neksio_metadata(
         monitor.scan()
 
     assert [message.entry.title for message in sender.messages] == [
-        "Product 10",
         "Product 30",
+        "Product 10",
     ]
     assert [message.entry.description for message in sender.messages] == ["", ""]
     assert [message.entry.price_direction for message in sender.messages] == [
-        PriceDirection.INCREASE,
         PriceDirection.DECREASE,
+        PriceDirection.INCREASE,
     ]
     # The deleted sentence used to carry both prices, so every alert must still
     # expose its own headline price and exactly one prior price.
     assert [message.entry.source_metrics[0] for message in sender.messages] == [
-        SourceMetric(label="Price", value="110 MKD"),
         SourceMetric(label="Price", value="90 MKD"),
+        SourceMetric(label="Price", value="110 MKD"),
     ]
     assert [
         [
@@ -174,7 +173,7 @@ def test_scan_delivers_in_persistent_cursor_id_order_with_neksio_metadata(
         [SourceMetric(label="Previous", value="100 MKD", prior=True)],
         [SourceMetric(label="Previous", value="100 MKD", prior=True)],
     ]
-    entry = sender.messages[1].entry
+    entry = sender.messages[0].entry
     assert entry.link == "https://g.store.neksio.mk/Product/Details/30"
     assert entry.image_url == "https://g.store.neksio.mk/images/30.jpg"
     assert entry.categories == ("Laptops", "Gaming")

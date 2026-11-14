@@ -45,8 +45,6 @@ def test_hivetec_strategy_fetches_latest_products_oldest_first(
     assert source_title == "Hivetec"
     assert strategy.seed_existing_on_first_fetch
     assert strategy.require_entries_for_initialization
-    assert strategy.max_new_entries_per_fetch == 30
-    assert strategy.max_delivery_history == 10_000
     assert [strategy.get_entry_id(entry) for entry in entries] == ["2", "3"]
     assert data.title == "Product 2 – Gaming"
     assert data.link == "https://hivetec.mk/product/product-2/"

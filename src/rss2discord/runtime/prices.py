@@ -158,9 +158,9 @@ def _scan_price_monitor(
             attempted_at,
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
-    # A successful return may mean quarantine, a background scan, or no work.
-    # Adapters own successful/domain health; scheduler timing is recorded
-    # separately and must never clear a quarantined or recovery-required state.
+    # A successful return may mean a background scan or no work. Adapters own
+    # successful/domain health; scheduler timing is recorded separately and
+    # must never clear a failed or blocked state.
 
 
 def _log_fetch_retry(feed_id: str, error: FeedFetchError, delay: float) -> None:

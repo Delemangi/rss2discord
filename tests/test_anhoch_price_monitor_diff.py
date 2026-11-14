@@ -1,5 +1,3 @@
-from dataclasses import replace
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,8 +9,6 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_safety import canonical_manifest_fingerprint
-from rss2discord.recovery_models import PriceChangeRecord
 from tests.anhoch_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -23,13 +19,12 @@ from tests.anhoch_price_monitor_helpers import (
 )
 
 
-def test_held_formatting_refresh_and_unfiltered_health_count_are_preserved(
+def test_formatting_refresh_and_change_are_both_applied(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     baseline = make_product(1, amount="100", formatted="100 den")
     changed = make_product(2, amount="90", formatted="90 den")
-    sender = RecordingSender([])
+    sender = RecordingSender([True])
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
             make_feed(),
@@ -46,22 +41,18 @@ def test_held_formatting_refresh_and_unfiltered_health_count_are_preserved(
             sender,
         )
         monitor.scan()
-        monkeypatch.setattr(
-            store,
-            "held_price_product_ids",
-            lambda _: frozenset({"1", "2"}),
-        )
         monitor.scan()
 
         snapshots = snapshots_by_product(store)
         assert snapshots["1"].formatted == "100.00 den"
-        assert snapshots["2"].amount == 100
+        assert snapshots["2"].amount == 90
         assert store.list_health("anhoch")[0].item_count == 2
-        assert sender.messages == []
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "Product 2"
 
 
 @pytest.mark.parametrize("invalid", [None, "missing", "currency", "formatting"])
-def test_approved_diff_defers_silent_updates_and_validates_full_target(
+def test_changed_diff_sends_or_raises_without_legacy_approval(
     tmp_path: Path,
     invalid: str | None,
 ) -> None:
@@ -78,7 +69,7 @@ def test_approved_diff_defers_silent_updates_and_validates_full_target(
     current = (
         (reformatted, fresh) if invalid == "missing" else (live, reformatted, fresh)
     )
-    sender = RecordingSender([True] if invalid is None else [])
+    sender = RecordingSender([True])
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
             make_feed(),
@@ -88,51 +79,31 @@ def test_approved_diff_defers_silent_updates_and_validates_full_target(
         )
         monitor.scan()
         previous = snapshots_by_product(store)["1"]
-        record = PriceChangeRecord(
-            "1",
-            previous,
-            replace(previous, amount=Decimal(90), formatted="90 den"),
-        )
-        fingerprint = canonical_manifest_fingerprint(
-            feed_id="anhoch",
-            provider="anhoch",
-            items=(record,),
-        )
-        store.record_price_change_candidate(
-            feed_id="anhoch",
-            provider="anhoch",
-            fingerprint=fingerprint,
-            catalog_count=2,
-            available_count=2,
-            items=(record,),
-        )
-        store.approve_price_change_batch(
-            feed_id="anhoch",
-            fingerprint=fingerprint,
-            reason="fixture review",
-        )
-
-        monitor.scan()
+        try:
+            monitor.scan()
+        except FeedFetchError:
+            assert invalid == "currency"
+            assert snapshots_by_product(store)["1"] == previous
+            assert sender.messages == []
+            return
 
         snapshots = snapshots_by_product(store)
-        assert snapshots["2"].formatted == "100 den"
-        assert "3" not in snapshots
-        if invalid is None:
+        if invalid in {None, "formatting"}:
             assert snapshots["1"].amount == 90
+            assert snapshots["3"].amount == 70
             assert len(sender.messages) == 1
-            assert store.load_active_price_batch("anhoch") is None
             monitor.scan()
             assert snapshots_by_product(store)["2"].formatted == "100.00 den"
             assert snapshots_by_product(store)["3"].amount == 70
+        elif invalid == "missing":
+            assert snapshots["1"] == previous
+            assert snapshots["3"].amount == 70
+            assert sender.messages == []
         else:
             assert snapshots["1"] == previous
+            assert snapshots["2"].formatted == "100.00 den"
+            assert snapshots["3"].amount == 70
             assert sender.messages == []
-            active = store.load_active_price_batch("anhoch")
-            assert active is not None
-            assert active.status == "paused"
-            assert active.items[0].attempt_count == 0
-            monitor.scan()
-            assert snapshots_by_product(store) == snapshots
 
 
 def test_normal_silent_writes_precede_send_and_changed_snapshot_follows_success(
