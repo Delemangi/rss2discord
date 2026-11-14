@@ -48,24 +48,39 @@ def test_parser_accepts_dot_grouped_mkd_price() -> None:
     assert page.products[0].price == Decimal("12968.50")
 
 
-def test_parser_rejects_price_below_mkd_cent_precision() -> None:
-    payload = catalog_payload(1, [(1, Decimal("1.50"))]).replace(b"1,50", b"1,505")
+def test_parser_skips_invalid_price_card_and_counts_it() -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b'data-productid=\\"2\\" data-discountedprice=\\"100,00\\"',
+        b'data-productid=\\"2\\" data-discountedprice=\\"1,505\\"',
+    )
 
-    observed_at = datetime.now(UTC)
-    with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+
+    assert [product.id for product in page.products] == [1]
+    assert page.skipped_products == 1
 
 
 @pytest.mark.parametrize("price", [b"12.34", b"1.2,50", b"1,2"])
-def test_parser_rejects_price_outside_provider_grammar(price: bytes) -> None:
-    payload = catalog_payload(1, [(1, Decimal("100.00"))]).replace(
-        b' data-discountedprice=\\"100,00\\"',
-        b' data-discountedprice=\\"' + price + b'\\"',
+def test_parser_skips_price_outside_provider_grammar(price: bytes) -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b'data-productid=\\"2\\" data-discountedprice=\\"100,00\\"',
+        b'data-productid=\\"2\\" data-discountedprice=\\"' + price + b'\\"',
     )
 
-    observed_at = datetime.now(UTC)
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+
+    assert [product.id for product in page.products] == [1]
+    assert page.skipped_products == 1
+
+
+def test_parser_rejects_page_when_every_card_is_invalid() -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b"100,00",
+        b"1,505",
+    )
+
     with pytest.raises(FeedFetchError, match="InvalidProduct"):
-        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
+        parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
 
 
 def test_parser_rejects_oversized_price_before_decimal_conversion(
@@ -88,41 +103,44 @@ def test_parser_rejects_oversized_price_before_decimal_conversion(
     parse_decimal.assert_not_called()
 
 
-def test_parser_rejects_product_url_with_credentials_or_explicit_port() -> None:
-    payload = catalog_payload(1, [(1, 100)]).replace(
-        b"/product-1",
-        b"https://user:pass@gjirafa50.mk:444/product-1",
+def test_parser_skips_product_url_with_credentials_or_explicit_port() -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b"/product-2",
+        b"https://user:pass@gjirafa50.mk:444/product-2",
     )
 
-    observed_at = datetime.now(UTC)
-    with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
-        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+
+    assert [product.id for product in page.products] == [1]
+    assert page.skipped_products == 1
 
 
-def test_parser_rejects_product_url_from_other_storefront() -> None:
-    payload = catalog_payload(1, [(1, 100)]).replace(
-        b"/product-1",
-        b"https://gjirafa50.mk/product-1",
+def test_parser_skips_product_url_from_other_storefront() -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b"/product-2",
+        b"https://gjirafa50.mk/product-2",
     )
 
-    observed_at = datetime.now(UTC)
-    with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
-        parse_gjirafa50_page(
-            payload,
-            observed_at,
-            "https://gjirafa50.com/",
-        )
-
-
-def test_parser_rejects_image_url_with_credentials_or_fragment() -> None:
-    payload = catalog_payload(1, [(1, 100)]).replace(
-        b"https://50cdn.gjirafamall.tech/1.jpg",
-        b"https://user:pass@50cdn.gjirafamall.tech/1.jpg#fragment",
+    page = parse_gjirafa50_page(
+        payload,
+        datetime.now(UTC),
+        "https://gjirafa50.com/",
     )
 
-    observed_at = datetime.now(UTC)
-    with pytest.raises(FeedFetchError, match="InvalidImageUrl"):
-        parse_gjirafa50_page(payload, observed_at, ROOT_URL)
+    assert [product.id for product in page.products] == [1]
+    assert page.skipped_products == 1
+
+
+def test_parser_skips_image_url_with_credentials_or_fragment() -> None:
+    payload = catalog_payload(2, [(1, 100), (2, 100)]).replace(
+        b"https://50cdn.gjirafamall.tech/2.jpg",
+        b"https://user:pass@50cdn.gjirafamall.tech/2.jpg#fragment",
+    )
+
+    page = parse_gjirafa50_page(payload, datetime.now(UTC), ROOT_URL)
+
+    assert [product.id for product in page.products] == [1]
+    assert page.skipped_products == 1
 
 
 def test_parser_derives_display_price_from_validated_numeric_price() -> None:

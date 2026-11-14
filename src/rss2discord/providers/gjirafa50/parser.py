@@ -22,6 +22,9 @@ from rss2discord.transports.base import FeedFetchError
 
 GJIRAFA50_LABEL: Final = "Gjirafa50"
 GJIRAFA50_IMAGE_HOST: Final = "50cdn.gjirafamall.tech"
+GJIRAFA50_SKIPPABLE_CARD_CAUSES: Final = frozenset(
+    {"InvalidProduct", "InvalidProductUrl", "InvalidImageUrl"},
+)
 MAX_GJIRAFA50_TEXT_LENGTH: Final = 500
 MAX_GJIRAFA50_URL_LENGTH: Final = 2_048
 MAX_GJIRAFA50_PAGE_PRODUCTS: Final = 24
@@ -62,8 +65,25 @@ def parse_gjirafa50_page(
     cards = soup.select(".product-item")
     if len(cards) != envelope.products_count:
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidCardinality")
-    products = tuple(_parse_product(card, observed_at, root_url) for card in cards)
-    return Gjirafa50CatalogPage(envelope.total_hits, envelope.total_pages, products)
+    products: list[Gjirafa50Product] = []
+    skipped_products = 0
+    for card in cards:
+        try:
+            products.append(_parse_product(card, observed_at, root_url))
+        except FeedFetchError as error:
+            if error.cause_type not in GJIRAFA50_SKIPPABLE_CARD_CAUSES:
+                raise
+            skipped_products += 1
+    if cards and not products:
+        # A non-empty page whose every card is unusable is page-wide corruption,
+        # not an empty result the caller may trust.
+        raise FeedFetchError(GJIRAFA50_LABEL, "InvalidProduct")
+    return Gjirafa50CatalogPage(
+        envelope.total_hits,
+        envelope.total_pages,
+        tuple(products),
+        skipped_products,
+    )
 
 
 def _parse_product(

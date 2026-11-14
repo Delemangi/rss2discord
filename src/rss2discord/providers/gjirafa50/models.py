@@ -39,3 +39,4 @@ class Gjirafa50CatalogPage:
     total_hits: int
     total_pages: int
     products: tuple[Gjirafa50Product, ...]
+    skipped_products: int = 0
