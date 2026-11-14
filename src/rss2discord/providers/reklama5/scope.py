@@ -56,9 +56,22 @@ class Reklama5SearchScope:
         return self._page_request(page, _MAX_DISCOVERY_PAGE)
 
     def catalog_page_request(self, page: int) -> Reklama5PageRequest:
-        return self._page_request(page, MAX_REKLAMA5_CATALOG_PAGES)
+        # The storefront's own numbered pagination uses /Search/Index.
+        # /Search stops responding after the discovery window, so the price
+        # catalog must use the index path to reach the terminal page.
+        return self._page_request(
+            page,
+            MAX_REKLAMA5_CATALOG_PAGES,
+            path="/Search/Index",
+        )
 
-    def _page_request(self, page: int, maximum_page: int) -> Reklama5PageRequest:
+    def _page_request(
+        self,
+        page: int,
+        maximum_page: int,
+        *,
+        path: str | None = None,
+    ) -> Reklama5PageRequest:
         if page not in range(1, maximum_page + 1):
             raise FeedFetchError(REKLAMA5_LABEL, "InvalidPage")
         query = (
@@ -71,7 +84,7 @@ class Reklama5SearchScope:
             (
                 self.scheme,
                 self.host,
-                self.configured_path,
+                path or self.configured_path,
                 urlencode(query, doseq=True),
                 "",
             ),
