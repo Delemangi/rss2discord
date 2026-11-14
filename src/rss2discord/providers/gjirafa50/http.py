@@ -129,6 +129,9 @@ class Gjirafa50HttpClient:
     def __enter__(self) -> Self:
         return self
 
+    def close(self) -> None:
+        self._session.close()
+
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
@@ -136,7 +139,7 @@ class Gjirafa50HttpClient:
         traceback: TracebackType | None,
     ) -> None:
         del exc_type, exc, traceback
-        self._session.close()
+        self.close()
 
     @staticmethod
     def normalize_root_url(url: str) -> str:

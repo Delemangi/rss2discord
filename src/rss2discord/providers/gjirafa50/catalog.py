@@ -4,8 +4,10 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 from math import ceil
+from threading import Lock, local
 from typing import Final
 
 from rss2discord.providers.gjirafa50.http import (
@@ -33,7 +35,29 @@ MAX_GJIRAFA50_PAGES: Final = 7_000
 MAX_GJIRAFA50_FETCHED_PRODUCTS: Final = MAX_GJIRAFA50_PAGES * GJIRAFA50_PAGE_SIZE
 MAX_GJIRAFA50_SHARDS: Final = 128
 MAX_GJIRAFA50_SCAN_BYTES: Final = 500 * 1024 * 1024
-MAX_GJIRAFA50_SCAN_SECONDS: Final = 1_800
+MAX_GJIRAFA50_SCAN_SECONDS: Final = 3_600
+# A best-effort scan is only usable if it observed nearly all priced products.
+# Skipped cards count toward coverage because they exist but cannot be monitored.
+GJIRAFA50_MIN_COVERAGE_RATIO: Final = 0.90
+# Page enumeration is network-latency bound. A small fixed worker pool raises
+# throughput while the global host pacer keeps the request rate unchanged.
+GJIRAFA50_SCAN_WORKERS: Final = 6
+# Small shards stay sequential so fake-session tests and tiny scans avoid the
+# executor and its per-thread HTTP sessions entirely.
+GJIRAFA50_PARALLEL_PAGE_THRESHOLD: Final = 20
+# Budget limits must abort the scan even while page-level fetch errors are
+# tolerated; these causes are never treated as skippable catalog drift.
+GJIRAFA50_TERMINAL_ERROR_CAUSES: Final = frozenset(
+    {
+        "PageLimitExceeded",
+        "PriceBucketLimitExceeded",
+        "ProductLimitExceeded",
+        "ProductWorkLimitExceeded",
+        "ScanResponseTooLarge",
+        "ScanTimeLimitExceeded",
+        "ShardLimitExceeded",
+    },
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +75,15 @@ class _OperationBudget:
         self.transfer_seconds = 0.0
         self.parse_seconds = 0.0
         self.deadline = time.monotonic() + MAX_GJIRAFA50_SCAN_SECONDS
+        self._lock = Lock()
 
     def before_request(self) -> None:
         self.check_active()
         # This counter tracks budget checks, including requests rejected below.
-        self.requests += 1
-        if self.requests > MAX_GJIRAFA50_PAGES:
-            raise FeedFetchError(GJIRAFA50_LABEL, "PageLimitExceeded")
+        with self._lock:
+            self.requests += 1
+            if self.requests > MAX_GJIRAFA50_PAGES:
+                raise FeedFetchError(GJIRAFA50_LABEL, "PageLimitExceeded")
 
     def check_active(self) -> None:
         if self.is_shutdown_requested():
@@ -66,26 +92,31 @@ class _OperationBudget:
             raise FeedFetchError(GJIRAFA50_LABEL, "ScanTimeLimitExceeded")
 
     def consume_bytes(self, response_bytes: int) -> None:
-        self.response_bytes += response_bytes
-        if self.response_bytes > MAX_GJIRAFA50_SCAN_BYTES:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ScanResponseTooLarge")
+        with self._lock:
+            self.response_bytes += response_bytes
+            if self.response_bytes > MAX_GJIRAFA50_SCAN_BYTES:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ScanResponseTooLarge")
 
     def consume_products(self, products: int) -> None:
         """Bound cumulative parsed cards, including probes and retry attempts."""
-        self.products += products
-        if self.products > MAX_GJIRAFA50_FETCHED_PRODUCTS:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ProductWorkLimitExceeded")
+        with self._lock:
+            self.products += products
+            if self.products > MAX_GJIRAFA50_FETCHED_PRODUCTS:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ProductWorkLimitExceeded")
 
     def consume_shard(self) -> None:
-        self.shards += 1
-        if self.shards > MAX_GJIRAFA50_SHARDS:
-            raise FeedFetchError(GJIRAFA50_LABEL, "ShardLimitExceeded")
+        with self._lock:
+            self.shards += 1
+            if self.shards > MAX_GJIRAFA50_SHARDS:
+                raise FeedFetchError(GJIRAFA50_LABEL, "ShardLimitExceeded")
 
     def record_transfer_seconds(self, elapsed_seconds: float) -> None:
-        self.transfer_seconds += max(elapsed_seconds, 0.0)
+        with self._lock:
+            self.transfer_seconds += max(elapsed_seconds, 0.0)
 
     def record_parse_seconds(self, elapsed_seconds: float) -> None:
-        self.parse_seconds += max(elapsed_seconds, 0.0)
+        with self._lock:
+            self.parse_seconds += max(elapsed_seconds, 0.0)
 
     def guard_retry(self, delay: float) -> None:
         if time.monotonic() + delay >= self.deadline:
@@ -100,11 +131,12 @@ class _CatalogScan:
         root_url: str,
         budget: _OperationBudget,
         http: Gjirafa50HttpClient,
+        observed_at: datetime | None = None,
     ) -> None:
         self.root_url = root_url
         self.budget = budget
         self.http = http
-        self.observed_at = datetime.now(UTC)
+        self.observed_at = datetime.now(UTC) if observed_at is None else observed_at
         self.phase = "initial"
         self.page_number = 1
         self.price_range: Gjirafa50PriceRange | None = None
@@ -128,8 +160,60 @@ class _CatalogScan:
             ),
             self.observed_at,
         )
-        self.budget.consume_products(len(fetched.page.products))
+        self.budget.consume_products(
+            len(fetched.page.products) + fetched.page.skipped_products,
+        )
         return fetched.page
+
+
+class _ScanWorkerPool:
+    """Own a bounded executor and one HTTP session per worker thread."""
+
+    def __init__(self, max_workers: int | None = None) -> None:
+        workers = GJIRAFA50_SCAN_WORKERS if max_workers is None else max_workers
+        self._executor = ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="gjirafa50-scan",
+        )
+        self._local = local()
+        self._clients: list[Gjirafa50HttpClient] = []
+        self._lock = Lock()
+
+    def submit(
+        self,
+        scan: _CatalogScan,
+        page: int,
+        price_range: Gjirafa50PriceRange,
+    ) -> Future[Gjirafa50CatalogPage]:
+        return self._executor.submit(self._fetch, scan, page, price_range)
+
+    def _fetch(
+        self,
+        scan: _CatalogScan,
+        page: int,
+        price_range: Gjirafa50PriceRange,
+    ) -> Gjirafa50CatalogPage:
+        client = getattr(self._local, "client", None)
+        if client is None:
+            client = Gjirafa50HttpClient()
+            self._local.client = client
+            with self._lock:
+                self._clients.append(client)
+        # Each task owns phase/page/price_range, so workers never share a scan.
+        worker_scan = _CatalogScan(
+            scan.root_url,
+            scan.budget,
+            client,
+            scan.observed_at,
+        )
+        return worker_scan.fetch(page, price_range, phase="enumeration")
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=True, cancel_futures=True)
+        with self._lock:
+            clients, self._clients = self._clients, []
+        for client in clients:
+            client.close()
 
 
 class Gjirafa50CatalogClient:
@@ -142,6 +226,7 @@ class Gjirafa50CatalogClient:
         observed_at = datetime.now(UTC)
         products: list[Gjirafa50Product] = []
         seen: set[int] = set()
+        seen_cards = 0
         expected_total: int | None = None
         budget = _OperationBudget(is_shutdown_requested)
         budget.deadline = time.monotonic() + 60
@@ -167,9 +252,10 @@ class Gjirafa50CatalogClient:
                     )
                 expected_count = min(
                     GJIRAFA50_PAGE_SIZE,
-                    max(page.total_hits - len(products), 0),
+                    max(page.total_hits - seen_cards, 0),
                 )
-                if len(page.products) != expected_count:
+                observed_count = len(page.products) + page.skipped_products
+                if observed_count != expected_count:
                     raise FeedFetchError(GJIRAFA50_LABEL, "InvalidCardinality")
                 self._append_unique(
                     products,
@@ -178,7 +264,8 @@ class Gjirafa50CatalogClient:
                     phase="discovery",
                     page_number=page_number,
                 )
-                if len(products) >= min(page.total_hits, GJIRAFA50_WINDOW_SIZE):
+                seen_cards += observed_count
+                if seen_cards >= min(page.total_hits, GJIRAFA50_WINDOW_SIZE):
                     break
         return tuple(reversed(products[:GJIRAFA50_WINDOW_SIZE]))
 
@@ -204,6 +291,7 @@ class Gjirafa50CatalogClient:
         http: Gjirafa50HttpClient,
     ) -> tuple[Gjirafa50Product, ...]:
         scan = _CatalogScan(root_url, budget, http)
+        worker_pool = _ScanWorkerPool()
         budget.attempts += 1
         attempt = budget.attempts
         started_at = time.monotonic()
@@ -214,6 +302,7 @@ class Gjirafa50CatalogClient:
         transfer_before = budget.transfer_seconds
         parse_before = budget.parse_seconds
         root_total: int | None = None
+        priced_total: int | None = None
         planned_leaves = 0
         completed_leaves = 0
         planned_enumeration_pages = 0
@@ -233,41 +322,113 @@ class Gjirafa50CatalogClient:
                     GJIRAFA50_LABEL,
                     "ProductLimitExceeded",
                 )
-            shards = self._build_shards(scan, root_total)
+            entire_range = Gjirafa50PriceRange(
+                0,
+                MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS,
+            )
+            priced_total = scan.fetch(
+                1,
+                entire_range,
+                phase="whole_range_probe",
+            ).total_hits
+            if priced_total > root_total:
+                logger.warning(
+                    "Gjirafa50 priced range exceeds root count: phase=whole_range "
+                    "range=%s parent_count=%d range_count=%d",
+                    entire_range,
+                    root_total,
+                    priced_total,
+                )
+                raise FeedFetchError(  # noqa: TRY301
+                    GJIRAFA50_LABEL,
+                    "IncompletePriceRange",
+                    retryable=True,
+                )
+            if priced_total > MAX_GJIRAFA50_PRODUCTS:
+                logger.warning(
+                    "Gjirafa50 priced catalog exceeds unique product capacity: "
+                    "reported=%d limit=%d",
+                    priced_total,
+                    MAX_GJIRAFA50_PRODUCTS,
+                )
+                raise FeedFetchError(  # noqa: TRY301
+                    GJIRAFA50_LABEL,
+                    "ProductLimitExceeded",
+                )
+            if priced_total < root_total:
+                logger.warning(
+                    "Gjirafa50 unpriced products excluded from scan: "
+                    "root_total=%d priced_total=%d excluded=%d",
+                    root_total,
+                    priced_total,
+                    root_total - priced_total,
+                )
+            shards = self._build_shards(scan, entire_range, priced_total)
             planned_leaves = len(shards)
             planned_enumeration_pages = sum(
                 ceil(total / GJIRAFA50_PAGE_SIZE) for _, total in shards
             )
+            skipped = 0
             for price_range, shard_total in shards:
-                self._scan_shard(scan, price_range, shard_total, root_total, products)
+                skipped += self._scan_shard(
+                    scan,
+                    price_range,
+                    shard_total,
+                    root_total,
+                    products,
+                    worker_pool=worker_pool,
+                )
                 completed_leaves += 1
             root_recount = scan.fetch(1, phase="root_recount").total_hits
             if root_recount != root_total:
                 logger.warning(
                     "Gjirafa50 catalog root count changed: phase=root_recount "
-                    "page=1 expected=%d actual=%d",
+                    "page=1 expected=%d actual=%d; continuing best-effort scan",
                     root_total,
                     root_recount,
                 )
-                raise FeedFetchError(  # noqa: TRY301
-                    GJIRAFA50_LABEL,
-                    "CatalogChanged",
-                    retryable=True,
-                )
-            post_counts = tuple(
-                scan.fetch(1, price_range, phase="leaf_recount").total_hits
-                for price_range, _ in shards
+            for price_range, shard_total in shards:
+                post_count = scan.fetch(
+                    1,
+                    price_range,
+                    phase="leaf_recount",
+                ).total_hits
+                if post_count != shard_total:
+                    logger.warning(
+                        "Gjirafa50 leaf count changed: phase=leaf_recount page=1 "
+                        "price_range=%s expected=%d actual=%d; continuing "
+                        "best-effort scan",
+                        price_range,
+                        shard_total,
+                        post_count,
+                    )
+            coverage = (
+                1.0 if priced_total == 0 else (len(products) + skipped) / priced_total
             )
-            expected_counts = tuple(total for _, total in shards)
-            # This proves coverage only if root_total counts unique IDs and filter
-            # results belong to the same stable root catalog; recounts catch some
-            # drift but cannot establish an atomic snapshot.
-            if post_counts != expected_counts or len(products) != root_total:
+            if coverage < GJIRAFA50_MIN_COVERAGE_RATIO:
+                logger.warning(
+                    "Gjirafa50 catalog coverage below minimum: priced_total=%d "
+                    "unique_ids=%d skipped=%d coverage=%.4f minimum=%.2f",
+                    priced_total,
+                    len(products),
+                    skipped,
+                    coverage,
+                    GJIRAFA50_MIN_COVERAGE_RATIO,
+                )
                 raise FeedFetchError(  # noqa: TRY301
                     GJIRAFA50_LABEL,
                     "IncompleteCatalog",
                     retryable=True,
                 )
+            logger.info(
+                "Gjirafa50 best-effort catalog coverage: root_total=%d "
+                "priced_total=%d unique_ids=%d skipped=%d coverage=%.4f",
+                root_total,
+                priced_total,
+                len(products),
+                skipped,
+                coverage,
+            )
             return tuple(products.values())
         except FeedFetchInterruptedError:
             outcome = "interrupted"
@@ -287,6 +448,10 @@ class Gjirafa50CatalogClient:
             cause_type = type(error).__name__
             raise
         finally:
+            try:
+                worker_pool.close()
+            except Exception as close_error:
+                del close_error
             elapsed = max(time.monotonic() - started_at, 0.0)
             details = (
                 f"attempt={attempt} outcome={outcome} cause={cause_type} "
@@ -316,29 +481,10 @@ class Gjirafa50CatalogClient:
     def _build_shards(
         self,
         scan: _CatalogScan,
-        root_total: int,
+        entire_range: Gjirafa50PriceRange,
+        priced_total: int,
     ) -> tuple[tuple[Gjirafa50PriceRange, int], ...]:
-        entire_range = Gjirafa50PriceRange(0, MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS)
-        entire_total = scan.fetch(
-            1,
-            entire_range,
-            phase="whole_range_probe",
-        ).total_hits
-        if entire_total != root_total:
-            logger.warning(
-                "Gjirafa50 catalog count mismatch: phase=whole_range "
-                "range=%s parent_count=%d range_count=%d; catalog completeness "
-                "is unverified",
-                entire_range,
-                root_total,
-                entire_total,
-            )
-            raise FeedFetchError(
-                GJIRAFA50_LABEL,
-                "IncompletePriceRange",
-                retryable=True,
-            )
-        queue = deque([(entire_range, entire_total)])
+        queue = deque([(entire_range, priced_total)])
         shards: list[tuple[Gjirafa50PriceRange, int]] = []
         while queue:
             price_range, total = queue.popleft()
@@ -372,73 +518,213 @@ class Gjirafa50CatalogClient:
         total: int,
         root_total: int,
         products: dict[int, Gjirafa50Product],
-    ) -> None:
+        *,
+        worker_pool: _ScanWorkerPool | None = None,
+    ) -> int:
         pages = ceil(total / GJIRAFA50_PAGE_SIZE)
-        for page_number in range(1, pages + 1):
-            page = scan.fetch(
-                page_number,
+        # Keep the attempt summary pointing at enumeration for this shard; each
+        # parallel worker owns its own scan for phase/page/price_range.
+        scan.phase = "enumeration"
+        scan.page_number = 1
+        scan.price_range = price_range
+        if worker_pool is not None and pages >= GJIRAFA50_PARALLEL_PAGE_THRESHOLD:
+            skipped = self._scan_shard_pages_parallel(
+                scan,
                 price_range,
-                phase="enumeration",
+                total=total,
+                pages=pages,
+                root_total=root_total,
+                products=products,
+                worker_pool=worker_pool,
             )
-            expected = min(
-                GJIRAFA50_PAGE_SIZE,
-                total - (page_number - 1) * GJIRAFA50_PAGE_SIZE,
+        else:
+            skipped = self._scan_shard_pages_sequential(
+                scan,
+                price_range,
+                total=total,
+                pages=pages,
+                root_total=root_total,
+                products=products,
             )
-            if page.total_hits != total or page.total_pages != pages:
-                logger.warning(
-                    "Gjirafa50 shard count changed: phase=enumeration page=%d "
-                    "price_range=%s expected_hits=%d actual_hits=%d "
-                    "expected_pages=%d actual_pages=%d",
-                    page_number,
-                    price_range,
-                    total,
-                    page.total_hits,
-                    pages,
-                    page.total_pages,
-                )
-                raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
-            if len(page.products) > expected:
-                logger.warning(
-                    "Gjirafa50 overfull shard page: page=%d price_range=%s "
-                    "expected=%d rendered=%d; catalog completeness is unverified",
-                    page_number,
-                    price_range,
-                    expected,
-                    len(page.products),
-                )
-                raise FeedFetchError(
-                    GJIRAFA50_LABEL,
-                    "IncompleteCatalog",
-                    retryable=True,
-                )
-            if len(page.products) < expected:
-                logger.warning(
-                    "Gjirafa50 underfilled shard page: page=%d price_range=%s "
-                    "expected=%d rendered=%d; global unique-ID reconciliation "
-                    "is still required to verify completeness",
-                    page_number,
-                    price_range,
-                    expected,
-                    len(page.products),
-                )
-            self._merge_shard_products(
-                page.products,
-                products,
-                root_total,
-                page_number,
+        try:
+            sentinel = scan.fetch(
+                pages + 1,
+                price_range,
+                phase="terminal_check",
+            )
+        except FeedFetchError as error:
+            self._log_shard_fetch_error(
+                "terminal_check",
+                error,
+                pages + 1,
                 price_range,
             )
-        sentinel = scan.fetch(
-            pages + 1,
-            price_range,
-            phase="terminal_check",
-        )
+            return skipped
         sentinel_count_reset = sentinel.total_hits == 0 and sentinel.total_pages == 0
         if sentinel.products or (
             not sentinel_count_reset
             and (sentinel.total_hits != total or sentinel.total_pages != pages)
         ):
-            raise FeedFetchError(GJIRAFA50_LABEL, "InvalidTerminalPage", retryable=True)
+            logger.warning(
+                "Gjirafa50 sentinel page mismatch: page=%d price_range=%s "
+                "expected_hits=%d actual_hits=%d expected_pages=%d actual_pages=%d "
+                "rendered=%d; continuing best-effort scan",
+                pages + 1,
+                price_range,
+                total,
+                sentinel.total_hits,
+                pages,
+                sentinel.total_pages,
+                len(sentinel.products),
+            )
+        return skipped
+
+    def _scan_shard_pages_sequential(
+        self,
+        scan: _CatalogScan,
+        price_range: Gjirafa50PriceRange,
+        *,
+        total: int,
+        pages: int,
+        root_total: int,
+        products: dict[int, Gjirafa50Product],
+    ) -> int:
+        skipped = 0
+        for page_number in range(1, pages + 1):
+            try:
+                page = scan.fetch(
+                    page_number,
+                    price_range,
+                    phase="enumeration",
+                )
+            except FeedFetchError as error:
+                self._log_shard_fetch_error(
+                    "enumeration",
+                    error,
+                    page_number,
+                    price_range,
+                )
+                continue
+            skipped += self._process_shard_page(
+                page,
+                page_number,
+                price_range,
+                total=total,
+                pages=pages,
+                root_total=root_total,
+                products=products,
+            )
+        return skipped
+
+    def _scan_shard_pages_parallel(
+        self,
+        scan: _CatalogScan,
+        price_range: Gjirafa50PriceRange,
+        *,
+        total: int,
+        pages: int,
+        root_total: int,
+        products: dict[int, Gjirafa50Product],
+        worker_pool: _ScanWorkerPool,
+    ) -> int:
+        futures = [
+            worker_pool.submit(scan, page_number, price_range)
+            for page_number in range(1, pages + 1)
+        ]
+        skipped = 0
+        try:
+            # Results are consumed in page order even when workers finish out of
+            # order, so duplicate/conflict handling stays deterministic.
+            for page_number, future in enumerate(futures, start=1):
+                try:
+                    page = future.result()
+                except FeedFetchError as error:
+                    self._log_shard_fetch_error(
+                        "enumeration",
+                        error,
+                        page_number,
+                        price_range,
+                    )
+                    continue
+                skipped += self._process_shard_page(
+                    page,
+                    page_number,
+                    price_range,
+                    total=total,
+                    pages=pages,
+                    root_total=root_total,
+                    products=products,
+                )
+        finally:
+            for future in futures:
+                future.cancel()
+        return skipped
+
+    def _process_shard_page(
+        self,
+        page: Gjirafa50CatalogPage,
+        page_number: int,
+        price_range: Gjirafa50PriceRange,
+        *,
+        total: int,
+        pages: int,
+        root_total: int,
+        products: dict[int, Gjirafa50Product],
+    ) -> int:
+        expected = min(
+            GJIRAFA50_PAGE_SIZE,
+            total - (page_number - 1) * GJIRAFA50_PAGE_SIZE,
+        )
+        if page.total_hits != total or page.total_pages != pages:
+            logger.warning(
+                "Gjirafa50 shard count changed: phase=enumeration page=%d "
+                "price_range=%s expected_hits=%d actual_hits=%d "
+                "expected_pages=%d actual_pages=%d; continuing best-effort scan",
+                page_number,
+                price_range,
+                total,
+                page.total_hits,
+                pages,
+                page.total_pages,
+            )
+        observed = len(page.products) + page.skipped_products
+        if observed != expected:
+            logger.warning(
+                "Gjirafa50 shard page cardinality changed: page=%d "
+                "price_range=%s expected=%d observed=%d skipped=%d; "
+                "continuing best-effort scan",
+                page_number,
+                price_range,
+                expected,
+                observed,
+                page.skipped_products,
+            )
+        self._merge_shard_products(
+            page.products,
+            products,
+            root_total,
+            page_number,
+            price_range,
+        )
+        return page.skipped_products
+
+    @staticmethod
+    def _log_shard_fetch_error(
+        phase: str,
+        error: FeedFetchError,
+        page_number: int,
+        price_range: Gjirafa50PriceRange,
+    ) -> None:
+        if error.cause_type in GJIRAFA50_TERMINAL_ERROR_CAUSES:
+            raise error
+        logger.warning(
+            "Gjirafa50 shard page fetch failed: phase=%s page=%d price_range=%s "
+            "cause=%s; continuing best-effort scan",
+            phase,
+            page_number,
+            price_range,
+            error.cause_type,
+        )
 
     @staticmethod
     def _merge_shard_products(
@@ -451,32 +737,26 @@ class Gjirafa50CatalogClient:
         for product in incoming:
             previous = products.get(product.id)
             if previous is not None:
-                if previous == product:
-                    continue
-                logger.warning(
-                    "Gjirafa50 conflicting duplicate product ID: "
-                    "phase=enumeration page=%d product_id=%d price_range=%s; "
-                    "catalog completeness is unverified",
-                    page_number,
-                    product.id,
-                    price_range,
-                )
-                raise FeedFetchError(
-                    GJIRAFA50_LABEL,
-                    "DuplicateProductId",
-                    retryable=True,
-                )
+                if previous != product:
+                    logger.warning(
+                        "Gjirafa50 conflicting duplicate product ID: "
+                        "phase=enumeration page=%d product_id=%d price_range=%s; "
+                        "keeping first observation",
+                        page_number,
+                        product.id,
+                        price_range,
+                    )
+                continue
             if len(products) >= root_total:
                 logger.warning(
                     "Gjirafa50 unique product count exceeds root count: "
                     "phase=enumeration page=%d price_range=%s "
-                    "root_total=%d unique_ids=%d",
+                    "root_total=%d unique_ids=%d; continuing best-effort scan",
                     page_number,
                     price_range,
                     root_total,
                     len(products) + 1,
                 )
-                raise FeedFetchError(GJIRAFA50_LABEL, "CatalogChanged", retryable=True)
             if len(products) >= MAX_GJIRAFA50_PRODUCTS:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
             products[product.id] = product
@@ -495,17 +775,13 @@ class Gjirafa50CatalogClient:
             if product.id in seen:
                 logger.warning(
                     "Gjirafa50 duplicate product ID: phase=%s page=%d "
-                    "product_id=%d price_range=%s; catalog completeness is unverified",
+                    "product_id=%d price_range=%s; keeping first observation",
                     phase,
                     page_number,
                     product.id,
                     price_range,
                 )
-                raise FeedFetchError(
-                    GJIRAFA50_LABEL,
-                    "DuplicateProductId",
-                    retryable=True,
-                )
+                continue
             if len(seen) >= MAX_GJIRAFA50_PRODUCTS:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
             seen.add(product.id)

@@ -221,49 +221,61 @@ def test_identical_cards_within_or_across_native_pages_do_not_invent_coverage(
 
 
 @pytest.mark.parametrize("field", ["price", "currency", "metadata"])
-def test_inconsistent_repeated_product_fails_retryably(
+def test_inconsistent_repeated_product_keeps_first_observation(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
     field: str,
 ) -> None:
     store = OverlappingStore(defect=field)
     store.install(monkeypatch)
 
-    with pytest.raises(FeedFetchError) as error:
-        fetch_catalog()
+    products = fetch_catalog()
 
-    assert error.value.retryable is True
-    assert sum(bounds is None for bounds, _ in store.calls) == 3
+    by_id = {product.id: product for product in products}
+    assert {product.id for product in products} == set(range(1, 6))
+    assert by_id[3].price == Decimal(128)
+    assert by_id[3].currency == "MKD"
+    assert by_id[3].title == "Product 3"
+    assert "conflicting duplicate product ID" in caplog.text
+    assert "keeping first observation" in caplog.text
     assert ((2, 4), 1) in store.calls
 
 
 @pytest.mark.parametrize(
-    "defect",
+    ("defect", "expected_success"),
     [
-        "missing",
-        "excess",
-        "root_changed",
-        "leaf_changed",
-        "wrong_pages",
-        "page_count_changed",
-        "nonempty_terminal",
+        ("excess", True),
+        ("root_changed", True),
+        ("leaf_changed", True),
+        ("wrong_pages", True),
+        ("page_count_changed", True),
+        ("nonempty_terminal", True),
+        ("missing", False),
     ],
 )
-def test_overlap_does_not_weaken_completeness_and_stability_guards(
+def test_overlap_drift_is_tolerated_but_missing_member_fails(
     monkeypatch: pytest.MonkeyPatch,
     defect: str,
+    *,
+    expected_success: bool,
 ) -> None:
     store = OverlappingStore(defect=defect)
     store.install(monkeypatch)
 
-    with pytest.raises(FeedFetchError) as error:
-        fetch_catalog()
-
-    assert error.value.retryable is True
-    # Failures must reach the injected evidence, not reject overlapping probes.
-    target = (None, 1) if defect == "root_changed" else ((0, 2), 1)
-    assert store.visits[target] >= (3 if defect == "leaf_changed" else 2)
-    if defect == "nonempty_terminal":
-        assert ((0, 2), 2) in store.calls
+    if expected_success:
+        products = fetch_catalog()
+        assert {product.id for product in products} == set(range(1, 6))
+        target = (None, 1) if defect == "root_changed" else ((0, 2), 1)
+        assert store.visits[target] >= 2
+        if defect == "leaf_changed":
+            assert store.visits[((0, 2), 1)] >= 3
+        if defect == "nonempty_terminal":
+            assert ((0, 2), 2) in store.calls
+    else:
+        with pytest.raises(FeedFetchError, match="IncompleteCatalog") as error:
+            fetch_catalog()
+        assert error.value.retryable is True
+        assert store.visits[((0, 2), 1)] >= 2
 
 
 def test_short_page_recovered_by_overlapping_shard_completes_catalog(
@@ -277,8 +289,8 @@ def test_short_page_recovered_by_overlapping_shard_completes_catalog(
 
     assert {product.id for product in products} == set(range(1, 6))
     assert len(products) == 5
-    assert "underfilled shard page" in caplog.text
-    assert "global unique-ID reconciliation is still required" in caplog.text
+    assert "shard page cardinality changed" in caplog.text
+    assert "continuing best-effort scan" in caplog.text
 
 
 def test_short_page_unrecovered_hole_fails_final_unique_reconciliation(
@@ -295,8 +307,9 @@ def test_short_page_unrecovered_hole_fails_final_unique_reconciliation(
     assert ((2, 4), 1) in store.calls
 
 
-def test_reaching_root_unique_count_does_not_skip_later_conflicting_page(
+def test_reaching_root_unique_count_still_processes_later_conflicting_page(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     store = OverlappingStore(49, defect="late_conflict")
     # Lower leaf supplies 1..25; upper page one supplies 25..48. To reach all
@@ -305,11 +318,12 @@ def test_reaching_root_unique_count_does_not_skip_later_conflicting_page(
     store.upper_cards = [*range(25, 49), 25]
     store.install(monkeypatch, cap=26)
 
-    with pytest.raises(FeedFetchError) as error:
-        fetch_catalog()
+    products = fetch_catalog()
 
-    assert error.value.retryable is True
+    assert len(products) == len({product.id for product in products}) == 49
     assert ((24, 48), 2) in store.calls
+    assert "conflicting duplicate product ID" in caplog.text
+    assert "keeping first observation" in caplog.text
 
 
 def test_recursive_overlapping_children_shrink_and_cover_every_boundary(

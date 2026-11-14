@@ -115,7 +115,7 @@ def test_root_over_unique_capacity_fails_before_enumeration(
     assert "reported=150001 limit=150000" in caplog.text
 
 
-def test_overfull_shard_page_fails_closed(
+def test_overfull_shard_page_is_logged_and_merged(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     get = RecordingGet(
@@ -127,6 +127,7 @@ def test_overfull_shard_page_fails_closed(
                     total_pages=1,
                 ),
             ),
+            StubResponse(catalog_payload(1, [], total_pages=1)),
         ],
     )
     collected: dict[int, Gjirafa50Product] = {}
@@ -138,17 +139,17 @@ def test_overfull_shard_page_fails_closed(
         )
         client = Gjirafa50CatalogClient()
         price_range = Gjirafa50PriceRange(1_000_000, 1_999_901)
-        with pytest.raises(FeedFetchError, match="IncompleteCatalog"):
-            client._scan_shard(
-                scan,
-                price_range,
-                1,
-                1,
-                collected,
-            )
+        client._scan_shard(
+            scan,
+            price_range,
+            1,
+            1,
+            collected,
+        )
 
-    assert collected == {}
-    assert "expected=1 rendered=2" in caplog.text
+    assert set(collected) == {1, 2}
+    assert "expected=1 observed=2" in caplog.text
+    assert "continuing best-effort scan" in caplog.text
     assert "https://" not in caplog.text
 
 
@@ -197,7 +198,6 @@ def test_overlapping_price_filter_counts_are_not_required_to_add_up(
     )
     monkeypatch.setattr(gjirafa50_catalog, "MAX_GJIRAFA50_SHARD_PRODUCTS", 40_000)
     responses = [
-        catalog_payload(65_616, []),
         catalog_payload(38_790, []),
         catalog_payload(26_828, []),
     ]
@@ -208,7 +208,11 @@ def test_overlapping_price_filter_counts_are_not_required_to_add_up(
             _OperationBudget(lambda: False),
             http,
         )
-        shards = Gjirafa50CatalogClient()._build_shards(scan, 65_616)
+        shards = Gjirafa50CatalogClient()._build_shards(
+            scan,
+            Gjirafa50PriceRange(0, 3_199),
+            65_616,
+        )
 
     assert [(str(price_range), total) for price_range, total in shards] == [
         ("0-15,99", 38_790),

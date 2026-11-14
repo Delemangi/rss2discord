@@ -143,8 +143,10 @@ feeds:
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:
   # https://gjirafa50.mk/ or https://gjirafa50.com/. Use a separate stable feed ID for
   # each storefront. Prices use MKD for .mk and EUR for .com. The independent price
-  # scan partitions the full catalog by cent-precise storefront-currency price and
-  # is expensive, so use a six-hour or longer interval.
+  # scan partitions the priced catalog by cent-precise storefront-currency price
+  # and is expensive, so use a six-hour or longer interval. The upstream search
+  # index is live; scans are best-effort and may miss products that move during
+  # the scan.
   - id: "gjirafa50-products"
     name: "Gjirafa50 Products"
     url: "https://gjirafa50.mk/"
