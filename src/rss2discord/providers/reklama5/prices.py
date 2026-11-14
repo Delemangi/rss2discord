@@ -25,8 +25,13 @@ from rss2discord.transports.price_monitor import (
 
 MAX_REKLAMA5_RETAINED_SNAPSHOTS: Final = 10_000
 _MAX_PRICE_DIGITS: Final = 10
+_PRICE_AMOUNT_PATTERN: Final = r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))"
 _MKD_PRICE_PATTERN: Final = re.compile(
-    r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))\s*(?:ден\.?|МКД)",
+    rf"{_PRICE_AMOUNT_PATTERN}\s*(?:ден\.?|МКД)",
+    re.IGNORECASE,
+)
+_EUR_PRICE_PATTERN: Final = re.compile(
+    rf"{_PRICE_AMOUNT_PATTERN}\s*(?:€|EUR)",
     re.IGNORECASE,
 )
 
@@ -77,22 +82,27 @@ class Reklama5PriceMonitor:
         )
 
     def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:
-        match = _MKD_PRICE_PATTERN.fullmatch(listing.price.strip())
-        if match is None:
-            return None
-        digits = re.sub(r"[ .,\u00a0]", "", match.group("amount"))
-        if len(digits) > _MAX_PRICE_DIGITS:
-            return None
-        amount = Decimal(digits)
-        if amount <= 0:
-            return None
-        return PriceSnapshot(
-            self._feed.id,
-            str(listing.entry_id),
-            amount,
-            listing.price,
-            "MKD",
-        )
+        for pattern, currency in (
+            (_MKD_PRICE_PATTERN, "MKD"),
+            (_EUR_PRICE_PATTERN, "EUR"),
+        ):
+            match = pattern.fullmatch(listing.price.strip())
+            if match is None:
+                continue
+            digits = re.sub(r"[ .,\u00a0]", "", match.group("amount"))
+            if len(digits) > _MAX_PRICE_DIGITS:
+                return None
+            amount = Decimal(digits)
+            if amount <= 0:
+                return None
+            return PriceSnapshot(
+                self._feed.id,
+                str(listing.entry_id),
+                amount,
+                listing.price,
+                currency,
+            )
+        return None
 
     def _message_for(
         self,
