@@ -37,6 +37,10 @@ docker compose up -d --build   # Build from this checkout.
 
 To use the published image instead, run `docker compose -f compose.prod.yaml up -d`. Follow logs with `docker compose logs -f rss2discord`; stop with `docker compose down`.
 
+## Automatic updates
+
+The compose services opt in to host-managed Watchtower updates of `ghcr.io/delemangi/rss2discord:latest`. Before replacing the container, Watchtower runs `python -m rss2discord.backup` inside it. The hook writes a verified SQLite backup to `data/backups/state-pre-update-<timestamp>.db`, keeps the newest N backups (default 10, set with `BACKUP_RETENTION`), and exits 75 on any failure; Watchtower then skips that update. The container healthcheck runs `python -m rss2discord.healthcheck`, which checks the read-only state database with `PRAGMA quick_check`. Watchtower has no rollback: a backup is the recovery point, and database history must not be deleted to undo a send.
+
 ## Configuration
 
 Start with this minimal RSS feed, then use the [annotated configuration](config/config.example.yaml) for all provider examples and options:

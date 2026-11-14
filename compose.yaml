@@ -11,6 +11,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.lifecycle.pre-update: "python -m rss2discord.backup"
+      com.centurylinklabs.watchtower.lifecycle.pre-update-timeout: "5"
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
