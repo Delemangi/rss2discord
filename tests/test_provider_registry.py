@@ -129,16 +129,20 @@ def test_strategy_names_match_configuration_literal() -> None:
 
 def test_build_discovery_strategies_covers_every_strategy() -> None:
     clock = FakeClock(maximum_sleeps=1)
+    pacer = Pazar3RequestPacer(clock.monotonic)
 
     strategies = build_discovery_strategies(
         is_shutdown_requested=lambda: False,
         sleep=clock.sleep,
-        pazar3_pacer=Pazar3RequestPacer(clock.monotonic),
+        pazar3_pacer=pacer,
     )
 
     assert {name: type(strategy) for name, strategy in strategies.items()} == (
         EXPECTED_DISCOVERY_TYPES
     )
+    pazar3 = strategies["pazar3"]
+    assert isinstance(pazar3, Pazar3Strategy)
+    assert pazar3._pacer is pacer
 
 
 @pytest.mark.parametrize("strategy", STRATEGY_NAMES)
