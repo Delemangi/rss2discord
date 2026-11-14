@@ -3,10 +3,7 @@ from decimal import Decimal
 
 from rss2discord.models import SourceMetric
 from rss2discord.providers.gjirafa50.models import Gjirafa50Product
-from rss2discord.providers.gjirafa50.strategy import (
-    Gjirafa50Strategy,
-    format_gjirafa50_mkd,
-)
+from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 
 
 def test_gjirafa50_strategy_maps_product_to_entry() -> None:
@@ -31,7 +28,3 @@ def test_gjirafa50_strategy_maps_product_to_entry() -> None:
     assert entry.link == "https://gjirafa50.mk/laptop"
     assert entry.timestamp == "2026-08-05T12:00:00+00:00"
     assert entry.source_metrics == (SourceMetric("Price", "13.990 MKD."),)
-
-
-def test_gjirafa50_mkd_format_matches_storefront() -> None:
-    assert format_gjirafa50_mkd(Decimal("1234567.50")) == "1.234.567,5 MKD."

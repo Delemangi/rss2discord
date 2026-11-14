@@ -1,11 +1,9 @@
 """Gjirafa50 newest-product strategy."""
 
 from collections.abc import Callable
-from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.providers.gjirafa50.catalog import (
     Gjirafa50CatalogClient,
 )
@@ -52,11 +50,3 @@ class Gjirafa50Strategy(ScraperStrategy):
             image_url=entry.image_url,
             source_metrics=(SourceMetric("Price", entry.formatted_price),),
         )
-
-
-def format_gjirafa50_mkd(amount: Decimal) -> str:
-    canonical_amount = canonicalize_price_amount(amount)
-    whole_digits, _, fractional_digits = canonical_amount.partition(".")
-    grouped = f"{int(whole_digits):,}".replace(",", ".")
-    fraction = fractional_digits.rstrip("0")
-    return f"{grouped},{fraction} MKD." if fraction else f"{grouped} MKD."

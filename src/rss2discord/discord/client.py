@@ -6,7 +6,6 @@ from typing import Final, Protocol
 
 import requests
 
-from rss2discord.discord.components import JSONValue, build_components_v2_payload
 from rss2discord.discord.image_retries import ImageDownloadInterruptedError
 from rss2discord.discord.image_urls import IMAGE_SOURCE_BY_STRATEGY
 from rss2discord.discord.images import ImageDownloader, ProductImageDownloader
@@ -239,14 +238,6 @@ class DiscordWebhookClient:
                 source=image_source or "anhoch",
             )
         return prepare_delivery(message, image_downloader, sleep)
-
-    @staticmethod
-    def _build_payload(message: WebhookMessage) -> dict[str, JSONValue]:
-        return build_components_v2_payload(
-            message.feed,
-            message.entry,
-            message.source_title,
-        )
 
     @staticmethod
     def _retry_after(response: requests.Response, attempt: int) -> float:

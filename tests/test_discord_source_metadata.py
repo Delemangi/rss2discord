@@ -4,10 +4,10 @@ from typing import Literal
 import pytest
 
 from rss2discord.configuration import FeedStrategyName
-from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.discord.components import METRICS_GAP
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
 from tests.discord_components_helpers import (
+    build_payload,
     get_metadata_content,
     get_metrics_content,
     make_message,
@@ -191,7 +191,7 @@ def test_price_change_is_labeled_without_product_age(
         ),
     )
 
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     contents = json.dumps(payload)
 
     assert "## [Price change: Headphones]" in contents
@@ -211,7 +211,7 @@ def test_ordinary_entry_keeps_relative_timestamp_and_unprefixed_title() -> None:
         ),
     )
 
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     contents = json.dumps(payload)
 
     assert "## [Headphones]" in contents
@@ -245,7 +245,7 @@ def test_components_v2_payload_omits_invalid_or_equal_discussion_link(
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then
     metadata = get_metadata_content(message)
@@ -271,7 +271,7 @@ def test_components_v2_payload_renders_escaped_categories_in_metadata() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     metadata = get_metadata_content(message)
 
     # Then
@@ -345,7 +345,7 @@ def test_components_v2_payload_prompt_injection_remains_escaped() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     metadata = get_metadata_content(message)
 
     # Then

@@ -1,7 +1,6 @@
 import json
 from dataclasses import replace
 
-from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.discord.components import (
     MAX_FOOTER_LINE_CHARACTERS,
     MAX_HEADING_CHARACTERS,
@@ -10,6 +9,7 @@ from rss2discord.discord.components import (
 )
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import (
+    build_payload,
     get_container_children,
     get_text_display_contents,
     make_message,
@@ -25,10 +25,10 @@ def test_components_v2_payload_baseline_top_level_contract() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     contents = get_text_display_contents(message)
     children = get_container_children(message)
-    unsafe_payload = DiscordWebhookClient._build_payload(unsafe_message)
+    unsafe_payload = build_payload(unsafe_message)
     unsafe_children = get_container_children(unsafe_message)
 
     # Then

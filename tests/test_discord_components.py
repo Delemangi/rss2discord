@@ -3,8 +3,8 @@ from dataclasses import replace
 
 import pytest
 
-from rss2discord.discord.client import DiscordWebhookClient
 from tests.discord_components_helpers import (
+    build_payload,
     get_container_children,
     get_metadata_content,
     get_text_display_contents,
@@ -19,7 +19,7 @@ def test_components_v2_payload_preserves_webhook_compatibility_fields() -> None:
     message = make_message(embed_color=0)
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then - flags, mentions, username, avatar, accent color
     assert payload["flags"] == 32768
@@ -42,7 +42,7 @@ def test_components_v2_payload_preserves_webhook_compatibility_fields() -> None:
     unsafe_children = get_container_children(unsafe_message)
     assert unsafe_children[0]["content"] == "## Entry"
     # Then - no javascript: anywhere in serialized payload
-    unsafe_payload = DiscordWebhookClient._build_payload(unsafe_message)
+    unsafe_payload = build_payload(unsafe_message)
     assert "javascript:" not in json.dumps(unsafe_payload)
 
 
@@ -51,7 +51,7 @@ def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
     message = make_message(embed_color=0)
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then
     assert payload == {
@@ -89,7 +89,7 @@ def test_components_v2_payload_omits_empty_optional_text() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then
     components = payload["components"]

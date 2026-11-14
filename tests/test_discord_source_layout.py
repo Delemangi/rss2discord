@@ -1,8 +1,11 @@
 import json
 
-from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.models import EntryData
-from tests.discord_components_helpers import get_container_children, make_message
+from tests.discord_components_helpers import (
+    build_payload,
+    get_container_children,
+    make_message,
+)
 
 
 def test_components_v2_payload_renders_safe_image_as_section_and_thumbnail() -> None:
@@ -76,7 +79,7 @@ def test_components_v2_payload_falls_back_for_unsafe_image_url() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then - no Section, no Thumbnail, direct Text Display
     children = get_container_children(message)
@@ -101,7 +104,7 @@ def test_components_v2_payload_rejects_untrusted_attachment_reference() -> None:
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
 
     # Then
     assert "attachment://" not in json.dumps(payload)
