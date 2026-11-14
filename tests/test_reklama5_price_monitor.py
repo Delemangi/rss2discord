@@ -151,6 +151,7 @@ def test_reklama5_price_monitor_ignores_unavailable_prices_and_retains_baseline(
 
         assert store.load_price_snapshots("reklama5") == (
             PriceSnapshot("reklama5", "1", Decimal(100), "100 ден.", "MKD"),
+            PriceSnapshot("reklama5", "2", Decimal(100), "100 EUR", "EUR"),
         )
         assert sender.messages == []
 
