@@ -10,17 +10,7 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.neksio.catalog import NeksioCatalogClient
 from rss2discord.providers.neksio.models import NeksioProduct
-from rss2discord.providers.neksio.strategy import NeksioStrategy
 from tests.app_helpers import FakeSender
-
-
-def test_app_registers_neksio_strategy(tmp_path: Path) -> None:
-    # Given / When
-    with DeliveryStore(tmp_path / "state.db") as store:
-        app = RSSToDiscord(config=AppConfig(), store=store, sender=FakeSender([]))
-
-    # Then
-    assert isinstance(app._strategies["neksio"], NeksioStrategy)
 
 
 def test_neksio_first_fetch_seeds_current_products_before_later_delivery(

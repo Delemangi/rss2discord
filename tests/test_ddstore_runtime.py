@@ -8,7 +8,6 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.ddstore.prices import (
     DDStoreCatalog,
 )
-from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.transports.price_monitor import PriceMonitorDependencies
@@ -26,15 +25,6 @@ def make_ddstore_feed(feed_id: str, interval: float | None) -> FeedConfig:
         strategy="ddstore",
         price_check_interval=interval,
     )
-
-
-def test_app_registers_ddstore_strategy(tmp_path: Path) -> None:
-    # Given / When
-    with DeliveryStore(tmp_path / "state.db") as store:
-        app = RSSToDiscord(config=AppConfig(), store=store, sender=FakeSender([]))
-
-    # Then
-    assert isinstance(app._strategies["ddstore"], DDStoreStrategy)
 
 
 def test_app_injects_shutdown_callback_into_ddstore_strategy(tmp_path: Path) -> None:

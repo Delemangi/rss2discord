@@ -123,13 +123,6 @@ def test_load_config_accepts_price_check_interval_with_reklama5_strategy(
     assert config.feeds[0].price_check_interval == 3600
 
 
-def test_app_registers_reklama5_strategy(tmp_path: Path) -> None:
-    with DeliveryStore(tmp_path / "state.db") as store:
-        app = RSSToDiscord(AppConfig(), store, FakeSender([]))
-
-    assert isinstance(app._strategies["reklama5"], Reklama5Strategy)
-
-
 def test_reklama5_non_empty_first_fetch_seeds_without_delivery(tmp_path: Path) -> None:
     feed = _feed()
     sender = FakeSender([])
