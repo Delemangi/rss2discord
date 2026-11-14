@@ -2,8 +2,8 @@
 
 import time as time
 
-from rss2discord.recovery_models import PriceChangeRecord as PriceChangeRecord
-from rss2discord.recovery_models import PriceSnapshot as PriceSnapshot
+from rss2discord.models import PriceChangeRecord as PriceChangeRecord
+from rss2discord.models import PriceSnapshot as PriceSnapshot
 
 from .comparison import diff_price_snapshots as diff_price_snapshots
 from .comparison import price_direction as price_direction
@@ -14,10 +14,10 @@ from .contracts import (
 )
 from .contracts import PriceDeliveryOutcome as PriceDeliveryOutcome
 from .contracts import PriceDeliveryPlan as PriceDeliveryPlan
+from .contracts import PriceMonitorDependencies as PriceMonitorDependencies
 from .contracts import PriceRecoveryStore as PriceRecoveryStore
 from .contracts import PriceSnapshotStore as PriceSnapshotStore
 from .delivery import deliver_price_changes as deliver_price_changes
-from .delivery import persist_price_delivery as persist_price_delivery
 from .planning import finish_price_delivery as finish_price_delivery
 from .planning import logger as logger
 from .planning import prepare_price_delivery as prepare_price_delivery

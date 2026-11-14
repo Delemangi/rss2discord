@@ -3,8 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.recovery_models import PriceChangeRecord
+from rss2discord.models import PriceChangeRecord, PriceSnapshot
 from rss2discord.transports.price_monitor import diff_price_snapshots
 
 

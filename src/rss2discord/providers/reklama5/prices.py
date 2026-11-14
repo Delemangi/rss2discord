@@ -2,33 +2,28 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from decimal import Decimal
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceSnapshot, SourceMetric
 from rss2discord.providers.reklama5.parser import Reklama5Listing
 from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
 from rss2discord.providers.reklama5.strategy import Reklama5Strategy
-from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
 
 MAX_REKLAMA5_RETAINED_SNAPSHOTS: Final = 10_000
-MAX_REKLAMA5_PRICE_CHANGES_PER_SCAN: Final = 100
 _MAX_PRICE_DIGITS: Final = 10
 _MKD_PRICE_PATTERN: Final = re.compile(
     r"(?P<amount>(?:\d{1,3}(?:[ .,\u00a0]\d{3})+|\d+))\s*(?:ден\.?|МКД)",
@@ -46,30 +41,11 @@ class Reklama5Catalog(Protocol):
     ) -> tuple[Reklama5Listing, ...]: ...
 
 
-class Reklama5PriceSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class Reklama5PriceMonitorDependencies:
-    catalog: Reklama5Catalog
-    snapshots: Reklama5PriceSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class Reklama5PriceMonitor:
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: Reklama5PriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[Reklama5Catalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

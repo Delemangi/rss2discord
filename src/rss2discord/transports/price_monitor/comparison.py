@@ -2,8 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 
-from rss2discord.models import PriceDirection
-from rss2discord.recovery_models import PriceChangeRecord, PriceSnapshot
+from rss2discord.models import PriceChangeRecord, PriceDirection, PriceSnapshot
 
 
 def price_direction(

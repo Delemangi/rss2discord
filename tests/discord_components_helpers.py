@@ -1,6 +1,6 @@
 from rss2discord.configuration import FeedAdapterName, FeedConfig, FeedStrategyName
-from rss2discord.discord.client import DiscordWebhookClient, WebhookMessage
-from rss2discord.discord.components import JSONValue
+from rss2discord.discord.client import WebhookMessage
+from rss2discord.discord.components import JSONValue, build_components_v2_payload
 from rss2discord.models import EntryData
 
 
@@ -39,6 +39,14 @@ def make_message(
     )
 
 
+def build_payload(message: WebhookMessage) -> dict[str, JSONValue]:
+    return build_components_v2_payload(
+        message.feed,
+        message.entry,
+        message.source_title,
+    )
+
+
 def get_text_display_contents(message: WebhookMessage) -> list[str]:
     contents: list[str] = []
     for component in get_all_components(message):
@@ -51,7 +59,7 @@ def get_text_display_contents(message: WebhookMessage) -> list[str]:
 
 
 def get_container(message: WebhookMessage) -> dict[str, JSONValue]:
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     components = payload["components"]
     assert isinstance(components, list)
     container = components[0]
@@ -71,7 +79,7 @@ def get_container_children(message: WebhookMessage) -> list[dict[str, JSONValue]
 
 
 def get_all_components(message: WebhookMessage) -> list[dict[str, JSONValue]]:
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     components = payload["components"]
     assert isinstance(components, list)
 

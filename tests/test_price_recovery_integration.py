@@ -13,9 +13,9 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.models import HealthUpdate
 from rss2discord.providers.ddstore.prices import DDStorePriceMonitor
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
-from rss2discord.recovery_models import HealthUpdate
 from rss2discord.retries import FeedFetchInterruptedError
 from tests import test_ddstore_price_monitor as dd
 from tests import test_hivetec_price_monitor as hive

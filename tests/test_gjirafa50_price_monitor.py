@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.models import PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.providers.gjirafa50.models import Gjirafa50Product
 from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitor,

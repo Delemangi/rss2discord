@@ -1,10 +1,11 @@
 from pathlib import Path
-from typing import Annotated, ClassVar, Final, Literal, Self, assert_never
+from typing import Annotated, ClassVar, Final, Literal, Self
 from urllib.parse import quote
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rss2discord.providers.names import PRICE_STRATEGIES
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
     normalize_remote_media_url,
@@ -92,30 +93,10 @@ class FeedConfig(BaseModel):
             ):
                 msg = "gjirafa50 price_check_interval must be at least 21600 seconds"
                 raise ValueError(msg)
-            match self.strategy:
-                case (
-                    "anhoch"
-                    | "ddstore"
-                    | "gjirafa50"
-                    | "hivetec"
-                    | "neksio"
-                    | "neptun"
-                    | "pazar3"
-                    | "reklama5"
-                    | "setec"
-                    | "cccenter"
-                    | "technomarket"
-                ):
-                    return self
-                case "rss" | "xenforo" | "itmk_oglasnik":
-                    msg = (
-                        "price_check_interval requires anhoch, ddstore, gjirafa50, "
-                        "hivetec, neksio, neptun, pazar3, reklama5, or setec strategy; "
-                        "cccenter and technomarket are also supported"
-                    )
-                    raise ValueError(msg)
-                case unreachable:
-                    assert_never(unreachable)
+            if self.strategy not in PRICE_STRATEGIES:
+                supported = ", ".join(sorted(PRICE_STRATEGIES))
+                msg = f"price_check_interval requires a price strategy: {supported}"
+                raise ValueError(msg)
         return self
 
 

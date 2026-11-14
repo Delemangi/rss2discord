@@ -9,9 +9,9 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     DiscordWebhookClient,
-    JSONValue,
     WebhookMessage,
 )
+from rss2discord.discord.components import JSONValue
 from rss2discord.discord.images import DownloadedImage
 from rss2discord.models import EntryData
 

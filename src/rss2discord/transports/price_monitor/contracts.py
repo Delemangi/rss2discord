@@ -6,17 +6,17 @@ from enum import StrEnum
 from typing import Protocol
 
 from rss2discord.discord.client import DiscordSender, SleepCallback
-from rss2discord.price_notifications import (
-    PriceNotification,
-    PriceNotificationRecord,
-)
-from rss2discord.price_safety import HEALTH_REMINDER_SECONDS
-from rss2discord.recovery_models import (
+from rss2discord.models import (
+    HEALTH_REMINDER_SECONDS,
     HealthNotice,
     HealthUpdate,
     PriceSnapshot,
 )
-from rss2discord.retries import SQLiteRetryPolicy
+from rss2discord.price_notifications import (
+    PriceNotification,
+    PriceNotificationRecord,
+)
+from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 
 
 class PriceSnapshotStore(Protocol):
@@ -109,6 +109,18 @@ class PriceAlertDelivery:
     sleep: SleepCallback
     delay_between_posts: float
     is_shutdown_requested: Callable[[], bool]
+
+
+@dataclass(frozen=True, slots=True)
+class PriceMonitorDependencies[CatalogT]:
+    """Collaborators shared by one provider price-monitor scan."""
+
+    catalog: CatalogT
+    snapshots: PriceRecoveryStore
+    sender: DiscordSender
+    fetch_retry_policy: FetchRetryPolicy
+    sqlite_retry_policy: SQLiteRetryPolicy
+    delivery: PriceAlertDelivery
 
 
 class DeliverablePriceChange(Protocol):

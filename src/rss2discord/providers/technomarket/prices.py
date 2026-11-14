@@ -1,14 +1,12 @@
 """Opt-in complete-category Technomarket effective-price monitoring."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceSnapshot, SourceMetric
 from rss2discord.providers.technomarket.bounds import (
     MAX_TECHNOMARKET_RETAINED_SNAPSHOTS,
     TECHNOMARKET_LABEL,
@@ -21,12 +19,10 @@ from rss2discord.providers.technomarket.strategy import (
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
@@ -42,32 +38,13 @@ class TechnomarketCatalog(Protocol):
     ) -> tuple[TechnomarketProduct, ...]: ...
 
 
-class TechnomarketSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class TechnomarketPriceMonitorDependencies:
-    catalog: TechnomarketCatalog
-    snapshots: TechnomarketSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class TechnomarketPriceMonitor:
     """Compare effective SMART-or-regular prices and persist delivered changes."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: TechnomarketPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[TechnomarketCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

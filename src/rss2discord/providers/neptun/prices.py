@@ -1,32 +1,27 @@
 """Delivery-safe actual-price monitoring for one Neptun category."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import SourceMetric
+from rss2discord.models import PriceSnapshot, SourceMetric
 from rss2discord.providers.neptun.http import NEPTUN_LABEL
 from rss2discord.providers.neptun.models import NeptunProduct
 from rss2discord.providers.neptun.strategy import NeptunStrategy, format_neptun_mkd
-from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
 
 MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
-MAX_NEPTUN_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
 class NeptunCatalog(Protocol):
@@ -39,32 +34,13 @@ class NeptunCatalog(Protocol):
     ) -> tuple[NeptunProduct, ...]: ...
 
 
-class NeptunPriceSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class NeptunPriceMonitorDependencies:
-    catalog: NeptunCatalog
-    snapshots: NeptunPriceSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class NeptunPriceMonitor:
     """Compare positive actual prices and persist changes after Discord delivery."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: NeptunPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[NeptunCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

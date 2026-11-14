@@ -5,8 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from rss2discord.delivery_store import PriceSnapshot
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.models import PriceSnapshot
 from rss2discord.transports import price_monitor
 from rss2discord.transports.price_monitor import (
     comparison,

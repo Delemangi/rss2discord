@@ -7,8 +7,8 @@ from pathlib import Path
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.models import PriceChangeRecord
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
-from rss2discord.recovery_models import PriceChangeRecord
 from tests import setec_price_monitor_helpers as setec
 from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
 from tests.test_cccenter_price_monitor import product

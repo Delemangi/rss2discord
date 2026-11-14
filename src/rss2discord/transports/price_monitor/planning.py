@@ -5,8 +5,8 @@ import time
 from collections.abc import Mapping, Sequence
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_safety import MAX_INLINE_PRICE_CHANGES
-from rss2discord.recovery_models import (
+from rss2discord.models import (
+    MAX_INLINE_PRICE_CHANGES,
     HealthUpdate,
     PriceChangeRecord,
     PriceSnapshot,
@@ -56,8 +56,6 @@ def validate_price_currencies(
 
 def prepare_price_delivery(
     *,
-    store: PriceRecoveryStore,
-    feed_id: str,
     provider: str,
     changes: Sequence[PriceChangeRecord],
     current: Mapping[str, PriceSnapshot],
@@ -67,7 +65,6 @@ def prepare_price_delivery(
     additional_pending: int = 0,
 ) -> PriceDeliveryPlan:
     """Validate currency stability and choose inline cards or one digest."""
-    del store, feed_id
     validate_price_currencies(
         provider=provider,
         current=current,
@@ -88,11 +85,9 @@ def prepare_price_delivery(
 def finish_price_delivery(
     store: PriceRecoveryStore,
     feed_id: str,
-    plan: PriceDeliveryPlan,
     item_count: int,
 ) -> None:
     """Record health only; pending outbox work remains a failure."""
-    del plan
     pending = store.count_pending_price_notifications(feed_id)
     if pending:
         record_price_health(

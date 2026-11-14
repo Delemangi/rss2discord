@@ -7,9 +7,7 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
-from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
-from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
+from rss2discord.providers.anhoch.prices import AnhochCatalog
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.runtime.scheduler import (
     RuntimeScheduler,
@@ -17,8 +15,11 @@ from rss2discord.runtime.scheduler import (
     SchedulerControl,
     SchedulerJobs,
 )
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
 
 class FailingMonitor:
@@ -29,33 +30,6 @@ class FailingMonitor:
         raise self._error
 
 
-def test_build_price_jobs_omits_reklama5_feed(tmp_path: Path) -> None:
-    config = AppConfig(
-        feeds=(
-            FeedConfig(
-                id="reklama5",
-                url="https://reklama5.mk/Search?cat=584",
-                webhook="https://discord.example.test/reklama5",
-                strategy="reklama5",
-            ),
-        ),
-    )
-
-    with DeliveryStore(tmp_path / "state.db") as store:
-        jobs = build_price_jobs(
-            config,
-            PriceJobDependencies(
-                store=store,
-                sender=FakeSender([]),
-                sleep=lambda _seconds: True,
-                delay_between_posts=0,
-                is_shutdown_requested=lambda: False,
-            ),
-        )
-
-    assert jobs == ()
-
-
 def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
@@ -64,165 +38,6 @@ def make_anhoch_feed(feed_id: str, interval: float | None) -> FeedConfig:
         strategy="anhoch",
         price_check_interval=interval,
     )
-
-
-def make_neksio_feed(feed_id: str, interval: float | None) -> FeedConfig:
-    return FeedConfig(
-        id=feed_id,
-        url=f"https://g.store.neksio.mk/{feed_id}",
-        webhook=f"https://discord.example.test/webhooks/{feed_id}/hidden",
-        strategy="neksio",
-        price_check_interval=interval,
-    )
-
-
-def make_setec_feed(feed_id: str, interval: float | None) -> FeedConfig:
-    return FeedConfig(
-        id=feed_id,
-        url=f"https://setec.example.test/e-prodazba/{feed_id}",
-        webhook=f"https://discord.example.test/webhooks/{feed_id}",
-        strategy="setec",
-        price_check_interval=interval,
-    )
-
-
-def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_intervals(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    clock = FakeClock(maximum_sleeps=1)
-    constructed_feed_ids: list[str] = []
-    constructed_dependencies: list[AnhochPriceMonitorDependencies] = []
-    config = AppConfig(
-        feeds=(
-            FeedConfig(
-                id="ordinary",
-                url="https://example.test/feed.xml",
-                webhook="https://discord.example.test/ordinary",
-            ),
-            make_anhoch_feed("first", 5),
-            make_anhoch_feed("second", 7),
-            make_anhoch_feed("disabled", None),
-        ),
-    )
-
-    def monitor_factory(
-        feed: FeedConfig,
-        dependencies: AnhochPriceMonitorDependencies,
-    ) -> RecordingMonitor:
-        constructed_dependencies.append(dependencies)
-        constructed_feed_ids.append(feed.id)
-        return RecordingMonitor(feed.id, [], clock)
-
-    with DeliveryStore(tmp_path / "state.db") as store:
-        dependencies = PriceJobDependencies(
-            store=store,
-            sender=FakeSender([]),
-            sleep=clock.sleep,
-            delay_between_posts=0,
-            is_shutdown_requested=lambda: True,
-        )
-
-        # When
-        monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
-            monitor_factory,
-        )
-        jobs = build_price_jobs(
-            config,
-            dependencies,
-        )
-
-    # Then
-    assert constructed_feed_ids == ["first", "second"]
-    assert [job.interval for job in jobs] == [5, 7]
-    assert all(
-        dependencies.delivery.is_shutdown_requested()
-        for dependencies in constructed_dependencies
-    )
-
-
-def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Given
-    clock = FakeClock(maximum_sleeps=1)
-    constructed_sources: list[str] = []
-    anhoch_dependencies: list[AnhochPriceMonitorDependencies] = []
-    neksio_dependencies: list[NeksioPriceMonitorDependencies] = []
-    setec_dependencies: list[SetecPriceMonitorDependencies] = []
-    config = AppConfig(
-        feeds=(
-            make_anhoch_feed("anhoch", 5),
-            FeedConfig(
-                id="ordinary",
-                url="https://example.test/feed.xml",
-                webhook="https://discord.example.test/ordinary",
-            ),
-            make_neksio_feed("neksio", 6),
-            make_setec_feed("setec", 7),
-        ),
-    )
-
-    def anhoch_monitor_factory(
-        feed: FeedConfig,
-        dependencies: AnhochPriceMonitorDependencies,
-    ) -> RecordingMonitor:
-        anhoch_dependencies.append(dependencies)
-        constructed_sources.append(f"anhoch:{feed.id}")
-        return RecordingMonitor(feed.id, [], clock)
-
-    def setec_monitor_factory(
-        feed: FeedConfig,
-        dependencies: SetecPriceMonitorDependencies,
-    ) -> RecordingMonitor:
-        setec_dependencies.append(dependencies)
-        constructed_sources.append(f"setec:{feed.id}")
-        return RecordingMonitor(feed.id, [], clock)
-
-    def neksio_monitor_factory(
-        feed: FeedConfig,
-        dependencies: NeksioPriceMonitorDependencies,
-    ) -> RecordingMonitor:
-        neksio_dependencies.append(dependencies)
-        constructed_sources.append(f"neksio:{feed.id}")
-        return RecordingMonitor(feed.id, [], clock)
-
-    with DeliveryStore(tmp_path / "state.db") as store:
-        dependencies = PriceJobDependencies(
-            store=store,
-            sender=FakeSender([]),
-            sleep=clock.sleep,
-            delay_between_posts=0,
-            is_shutdown_requested=lambda: True,
-        )
-
-        # When
-        monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
-            anhoch_monitor_factory,
-        )
-        monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.NeksioPriceMonitor",
-            neksio_monitor_factory,
-        )
-        monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.SetecPriceMonitor",
-            setec_monitor_factory,
-        )
-        jobs = build_price_jobs(
-            config,
-            dependencies,
-        )
-
-    # Then
-    assert constructed_sources == ["anhoch:anhoch", "neksio:neksio", "setec:setec"]
-    assert [job.interval for job in jobs] == [5, 6, 7]
-    assert len(anhoch_dependencies) == 1
-    assert len(neksio_dependencies) == 1
-    assert len(setec_dependencies) == 1
 
 
 @pytest.mark.parametrize(
@@ -266,7 +81,7 @@ def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
     caplog.set_level(logging.ERROR)
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             monitor_factory,
         )
         price_jobs = build_price_jobs(

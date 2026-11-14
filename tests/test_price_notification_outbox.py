@@ -11,12 +11,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord import report as report_module
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.components import TEXT_DISPLAY_COMPONENT
 from rss2discord.discord.message import ReportFile, prepare_delivery
-from rss2discord.models import EntryData, PriceDirection, SourceMetric
+from rss2discord.models import EntryData, PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationDeliveryResult,
@@ -26,10 +26,10 @@ from rss2discord.price_notifications import (
 )
 from rss2discord.retries import SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor.delivery import deliver_price_notifications
 from rss2discord.transports.price_monitor.digest import (
     build_digest_messages,
     build_report_files,
-    deliver_price_notifications,
 )
 from tests import setec_price_monitor_helpers as setec
 

@@ -1,7 +1,8 @@
 from decimal import Decimal
 from pathlib import Path
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import PriceSnapshot
 
 
 def test_price_snapshot_loading_stops_at_requested_limit(tmp_path: Path) -> None:

@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from rss2discord.discord.client import DiscordWebhookClient
 from rss2discord.models import EntryData
 from tests.discord_components_helpers import (
+    build_payload,
     get_all_components,
     get_text_display_contents,
     make_message,
@@ -40,7 +40,7 @@ def test_components_v2_payload_keeps_maximal_richer_cards_within_recursive_limit
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     components = get_all_components(message)
     text_displays = get_text_display_contents(message)
     thumbnail_descriptions = [
@@ -88,7 +88,7 @@ def test_components_v2_payload_omits_unsafe_optional_urls_from_serialized_json(
     )
 
     # When
-    payload = DiscordWebhookClient._build_payload(message)
+    payload = build_payload(message)
     serialized_payload = json.dumps(payload)
     components = get_all_components(message)
 

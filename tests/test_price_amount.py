@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import PriceSnapshot
 from rss2discord.price_amount import PriceAmountValidationError
 
 

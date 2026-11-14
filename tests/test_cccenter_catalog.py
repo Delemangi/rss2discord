@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.providers.cccenter import catalog as cccenter_catalog
 from rss2discord.providers.cccenter.catalog import (
+    CCCENTER_SCAN_LIMITS,
     CCCenterCatalogClient,
     parse_mkd_price,
     parse_product_detail,
@@ -17,6 +19,8 @@ from rss2discord.providers.cccenter.catalog import (
 from rss2discord.providers.cccenter.models import CCCenterProduct
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError
+from rss2discord.transports import scan_budget as scan_budget_module
+from rss2discord.transports.scan_budget import ScanBudget
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cccenter"
 
@@ -416,7 +420,7 @@ def test_cccenter_rejects_redirects_without_following_them(
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
 
-    budget = cccenter_catalog._ScanBudget.start(lambda: False)
+    budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, lambda: False)
     with pytest.raises(FeedFetchError, match="InvalidRedirect"):
         CCCenterCatalogClient._fetch_json(
             "https://cccenter.mk/?rest_route=/wc/store/v1/products",
@@ -444,7 +448,7 @@ def test_cccenter_reads_responses_as_bounded_streams(
         perform,
     )
 
-    budget = cccenter_catalog._ScanBudget.start(lambda: False)
+    budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, lambda: False)
     with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
         CCCenterCatalogClient._fetch_json(
             "https://cccenter.mk/?rest_route=/wc/store/v1/products",
@@ -467,6 +471,7 @@ def test_cccenter_propagates_typed_callback_abort(
     expected_cause: str,
     request_raises: bool,
 ) -> None:
+    limits = CCCENTER_SCAN_LIMITS
     if response_limit is not None:
         monkeypatch.setattr(
             cccenter_catalog,
@@ -474,7 +479,7 @@ def test_cccenter_propagates_typed_callback_abort(
             response_limit,
         )
     else:
-        monkeypatch.setattr(cccenter_catalog, "MAX_CCCENTER_SCAN_BYTES", 3)
+        limits = replace(CCCENTER_SCAN_LIMITS, max_bytes=3)
 
     def perform(url: str, **kwargs: object) -> _StreamResponse:
         del url
@@ -487,7 +492,7 @@ def test_cccenter_propagates_typed_callback_abort(
         return _StreamResponse([])
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
-    budget = cccenter_catalog._ScanBudget.start(lambda: False)
+    budget = ScanBudget.start(limits, lambda: False)
 
     with pytest.raises(FeedFetchError) as error:
         CCCenterCatalogClient._fetch_json(
@@ -516,7 +521,7 @@ def test_cccenter_propagates_shutdown_from_callback_abort(
         raise curl_requests.exceptions.RequestException("write aborted")
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
-    budget = cccenter_catalog._ScanBudget.start(is_shutdown_requested)
+    budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, is_shutdown_requested)
 
     with pytest.raises(FeedFetchInterruptedError):
         CCCenterCatalogClient._fetch_json(
@@ -529,7 +534,7 @@ def test_cccenter_checks_deadline_before_each_stream_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = iter((0.0, 0.0, 0.0, 0.0, 0.0, 301.0))
-    monkeypatch.setattr(cccenter_catalog, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(scan_budget_module, "monotonic", lambda: next(clock))
 
     calls: list[dict[str, object]] = []
     chunks = 0
@@ -551,7 +556,7 @@ def test_cccenter_checks_deadline_before_each_stream_read(
         return _StreamResponse([])
 
     monkeypatch.setattr(cccenter_catalog, "_perform_request", perform)
-    budget = cccenter_catalog._ScanBudget.start(lambda: False)
+    budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, lambda: False)
 
     with pytest.raises(FeedFetchError, match="ScanTimeLimitExceeded"):
         CCCenterCatalogClient._fetch_json(

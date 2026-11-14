@@ -11,7 +11,8 @@ from unittest.mock import Mock
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.gjirafa50 import catalog, http
 from rss2discord.providers.gjirafa50.catalog import Gjirafa50CatalogClient
 from rss2discord.providers.gjirafa50.http import (

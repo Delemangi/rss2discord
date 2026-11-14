@@ -6,10 +6,6 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
-from rss2discord.price_monitor_builders import (
-    SharedPriceMonitorDependencies,
-    build_provider_price_monitor,
-)
 from rss2discord.providers.gjirafa50 import (
     background_monitor as gjirafa50_background_monitor,
 )
@@ -20,11 +16,24 @@ from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitorDependencies,
 )
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.registry import (
+    SharedPriceMonitorDependencies,
+    build_provider_price_monitor,
+)
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock
-from tests.test_gjirafa50_wiring import make_feed
+
+
+def make_feed(*, interval: float | None = None) -> FeedConfig:
+    return FeedConfig(
+        id="gjirafa50-products",
+        url="https://gjirafa50.mk/",
+        webhook="https://discord.test/webhooks/id/token",
+        strategy="gjirafa50",
+        price_check_interval=interval,
+    )
 
 
 def test_background_monitor_deduplicates_and_joins_running_worker(

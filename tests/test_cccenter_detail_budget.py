@@ -8,9 +8,13 @@ import pytest
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.cccenter import catalog as cccenter_catalog
-from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
+from rss2discord.providers.cccenter.catalog import (
+    CCCENTER_SCAN_LIMITS,
+    CCCenterCatalogClient,
+)
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import scan_budget as scan_budget_module
 
 DETAIL_PRICE = "9000"
 
@@ -113,7 +117,7 @@ class DetailTransport:
 @pytest.fixture
 def transport(monkeypatch: pytest.MonkeyPatch) -> DetailTransport:
     result = DetailTransport()
-    monkeypatch.setattr(cccenter_catalog, "monotonic", lambda: result.now)
+    monkeypatch.setattr(scan_budget_module, "monotonic", lambda: result.now)
     monkeypatch.setattr(cccenter_catalog, "_perform_request", result.request)
     return result
 
@@ -318,7 +322,11 @@ def test_aggregate_request_cap_is_not_reset_between_products(
     monkeypatch: pytest.MonkeyPatch,
     transport: DetailTransport,
 ) -> None:
-    monkeypatch.setattr(cccenter_catalog, "MAX_CCCENTER_REQUESTS", 1)
+    monkeypatch.setattr(
+        cccenter_catalog,
+        "CCCENTER_SCAN_LIMITS",
+        replace(CCCENTER_SCAN_LIMITS, max_requests=1),
+    )
     client = CCCenterCatalogClient()
     listings = (listing(1), listing(2))
     with pytest.raises(FeedFetchError, match="RequestLimitExceeded"):
@@ -330,7 +338,11 @@ def test_aggregate_bytes_are_not_reset_between_products(
     monkeypatch: pytest.MonkeyPatch,
     transport: DetailTransport,
 ) -> None:
-    monkeypatch.setattr(cccenter_catalog, "MAX_CCCENTER_SCAN_BYTES", 400)
+    monkeypatch.setattr(
+        cccenter_catalog,
+        "CCCENTER_SCAN_LIMITS",
+        replace(CCCENTER_SCAN_LIMITS, max_bytes=400),
+    )
     client = CCCenterCatalogClient()
     listings = (listing(1), listing(2), listing(3))
     with pytest.raises(FeedFetchError, match="ScanResponseTooLarge"):

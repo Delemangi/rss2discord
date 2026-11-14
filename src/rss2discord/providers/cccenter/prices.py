@@ -1,15 +1,12 @@
 """Opt-in CCCenter catalog price monitoring."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.providers.cccenter.bounds import (
     CCCENTER_LABEL,
     MAX_CCCENTER_RETAINED_SNAPSHOTS,
@@ -20,12 +17,10 @@ from rss2discord.providers.cccenter.strategy import format_cccenter_mkd
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
@@ -48,30 +43,11 @@ class CCCenterCatalog(Protocol):
     ) -> tuple[CCCenterProduct, ...]: ...
 
 
-class CCCenterSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class CCCenterPriceMonitorDependencies:
-    catalog: CCCenterCatalog
-    snapshots: CCCenterSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class CCCenterPriceMonitor:
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: CCCenterPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[CCCenterCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

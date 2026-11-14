@@ -8,12 +8,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import (
-    DiscordSender,
-    WebhookMessage,
-)
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.discord.client import WebhookMessage
+from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.providers.setec.catalog_bounds import SETEC_LABEL
 from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
 from rss2discord.providers.setec.strategy import (
@@ -23,13 +19,11 @@ from rss2discord.providers.setec.strategy import (
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
     NO_SNAPSHOT_LIMIT,
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
@@ -59,18 +53,6 @@ class SetecCatalog(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class SetecPriceMonitorDependencies:
-    """Typed collaborators used by one Setec price-monitor scan."""
-
-    catalog: SetecCatalog
-    snapshots: PriceRecoveryStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
-@dataclass(frozen=True, slots=True)
 class _SetecObservation:
     index: SetecPriceEntry
     detail: SetecProduct | None = None
@@ -82,7 +64,7 @@ class SetecPriceMonitor:
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: SetecPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[SetecCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

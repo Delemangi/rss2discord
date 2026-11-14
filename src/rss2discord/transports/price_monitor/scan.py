@@ -9,15 +9,17 @@ from typing import Final
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_safety import MAX_INLINE_PRICE_CHANGES
-from rss2discord.recovery_models import PriceChangeRecord, PriceSnapshot
+from rss2discord.models import (
+    MAX_INLINE_PRICE_CHANGES,
+    PriceChangeRecord,
+    PriceSnapshot,
+)
 from rss2discord.retries import FeedFetchInterruptedError
 
 from .comparison import diff_price_snapshots
 from .contracts import (
     PriceChangeDeliveryDependencies,
     PriceDeliveryOutcome,
-    PriceDeliveryPlan,
 )
 from .delivery import deliver_price_changes, drain_pending_price_notifications
 from .planning import (
@@ -101,7 +103,6 @@ def run_price_scan[ProductT](
             finish_price_delivery(
                 dependencies.snapshots,
                 feed.id,
-                PriceDeliveryPlan(),
                 len(current),
             )
         return
@@ -176,8 +177,6 @@ def run_price_scan[ProductT](
     )
     plan = dependencies.sqlite_retry_policy.execute(
         lambda: prepare_price_delivery(
-            store=dependencies.snapshots,
-            feed_id=feed.id,
             provider=provider,
             changes=confirmed_records,
             current=current,
@@ -194,7 +193,6 @@ def run_price_scan[ProductT](
             lambda view: view.message,
             plan=plan,
             feed=feed,
-            source_title=feed.name or label,
             baseline_extra=silent,
         )
         return
@@ -204,7 +202,6 @@ def run_price_scan[ProductT](
         lambda view: view.message,
         plan=plan,
         feed=feed,
-        source_title=feed.name or label,
     )
     if outcome is PriceDeliveryOutcome.FAILED:
         pending = dependencies.sqlite_retry_policy.execute(
@@ -234,6 +231,5 @@ def run_price_scan[ProductT](
         finish_price_delivery(
             dependencies.snapshots,
             feed.id,
-            plan,
             len(current),
         )

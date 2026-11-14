@@ -18,7 +18,16 @@ from rss2discord.providers.gjirafa50.prices import (
 from rss2discord.retries import FetchRetryPolicy
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from tests.app_helpers import FakeSender
-from tests.test_gjirafa50_wiring import make_feed
+
+
+def make_feed(*, interval: float | None = None) -> FeedConfig:
+    return FeedConfig(
+        id="gjirafa50-products",
+        url="https://gjirafa50.mk/",
+        webhook="https://discord.test/webhooks/id/token",
+        strategy="gjirafa50",
+        price_check_interval=interval,
+    )
 
 
 def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
@@ -67,7 +76,7 @@ def test_queued_same_origin_worker_rechecks_peer_cooldown_before_fetch(
 
     monkeypatch.setattr(Gjirafa50CatalogClient, "fetch_catalog", fetch)
     monkeypatch.setattr(
-        "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+        "rss2discord.providers.registry.Gjirafa50BackgroundPriceMonitor",
         factory,
     )
     with DeliveryStore(tmp_path / "state.db") as store:

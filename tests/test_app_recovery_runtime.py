@@ -10,11 +10,12 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
-from rss2discord.recovery_models import HealthUpdate
+from rss2discord.models import HealthUpdate
+from rss2discord.providers.anhoch.prices import AnhochCatalog
 from rss2discord.runtime.application import _process_feed_safely, _record_job_timing
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.runtime.scheduler import JobTiming
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import (
     FakeEntry,
     FakeSender,
@@ -24,6 +25,8 @@ from tests.app_helpers import (
     make_feed,
 )
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
 
 class CompleteCatalogStrategy(FakeStrategy):
@@ -212,7 +215,7 @@ def test_blocked_origin_skips_peer_ordinary_and_price_jobs_across_restart(
             return RecordingMonitor(feed.id, events, FakeClock(1))
 
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             factory,
         )
         jobs = build_price_jobs(
@@ -314,7 +317,7 @@ def test_successful_price_return_and_timing_do_not_erase_failure(
             return RecordingMonitor(configured.id, [], FakeClock(1))
 
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             factory,
         )
         jobs = build_price_jobs(
@@ -362,7 +365,7 @@ def test_price_challenge_blocks_ordinary_before_fetch(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             factory,
         )
         jobs = build_price_jobs(

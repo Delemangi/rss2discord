@@ -9,12 +9,17 @@ from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.models import PriceDirection
 from rss2discord.providers.technomarket.models import TechnomarketProduct
 from rss2discord.providers.technomarket.prices import (
+    TechnomarketCatalog,
     TechnomarketPriceMonitor,
-    TechnomarketPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from tests.setec_price_monitor_helpers import RecordingSender
+
+TechnomarketPriceMonitorDependencies = PriceMonitorDependencies[TechnomarketCatalog]
 
 
 class CatalogStub:

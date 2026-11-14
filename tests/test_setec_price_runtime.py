@@ -5,10 +5,13 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.setec.catalog import SetecCatalogClient
-from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
+from rss2discord.providers.setec.prices import SetecCatalog
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+SetecPriceMonitorDependencies = PriceMonitorDependencies[SetecCatalog]
 
 
 def test_build_price_jobs_ignores_disabled_setec_feeds(tmp_path: Path) -> None:
@@ -80,7 +83,7 @@ def test_build_price_jobs_constructs_enabled_setec_job_with_its_interval(
 
         # When
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.SetecPriceMonitor",
+            "rss2discord.providers.registry.SetecPriceMonitor",
             setec_monitor_factory,
         )
         jobs = build_price_jobs(

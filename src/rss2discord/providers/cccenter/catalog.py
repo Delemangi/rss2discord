@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from html import unescape
-from time import monotonic
 from typing import Any, Final, Protocol
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
@@ -41,6 +39,7 @@ from rss2discord.providers.cccenter.models import (
 )
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports.catalog_http import BoundedContentCallback
+from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
 __all__ = [
     "CCCENTER_FEED_URL",
@@ -67,52 +66,12 @@ _PRODUCT_PATH_RE: Final = re.compile(
 )
 _STORE_API: Final = f"{CCCENTER_ORIGIN}/?rest_route=/wc/store/v1/products"
 
-
-@dataclass(slots=True)
-class _ScanBudget:
-    is_shutdown_requested: Callable[[], bool]
-    started_at: float
-    requests: int = 0
-    response_bytes: int = 0
-
-    @classmethod
-    def start(cls, is_shutdown_requested: Callable[[], bool]) -> _ScanBudget:
-        return cls(is_shutdown_requested=is_shutdown_requested, started_at=monotonic())
-
-    def before_request(self) -> None:
-        if self.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        if monotonic() - self.started_at >= MAX_CCCENTER_SCAN_SECONDS:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanTimeLimitExceeded")
-        self.requests += 1
-        if self.requests > MAX_CCCENTER_REQUESTS:
-            raise FeedFetchError(CCCENTER_LABEL, "RequestLimitExceeded")
-
-    def request_timeout(self) -> float:
-        remaining = MAX_CCCENTER_SCAN_SECONDS - (monotonic() - self.started_at)
-        if remaining <= 0:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanTimeLimitExceeded")
-        return remaining
-
-    def require_retry_delay(self, delay: float) -> None:
-        if monotonic() - self.started_at + delay > MAX_CCCENTER_SCAN_SECONDS:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanTimeLimitExceeded")
-
-    def add_bytes(self, amount: int) -> None:
-        self.response_bytes += amount
-        if self.response_bytes > MAX_CCCENTER_SCAN_BYTES:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanResponseTooLarge")
-        if monotonic() - self.started_at >= MAX_CCCENTER_SCAN_SECONDS:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanTimeLimitExceeded")
-
-    def before_chunk(self) -> None:
-        if self.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        if monotonic() - self.started_at >= MAX_CCCENTER_SCAN_SECONDS:
-            raise FeedFetchError(CCCENTER_LABEL, "ScanTimeLimitExceeded")
-
-    def after_request(self) -> None:
-        self.before_chunk()
+CCCENTER_SCAN_LIMITS: Final = ScanLimits(
+    label=CCCENTER_LABEL,
+    max_seconds=MAX_CCCENTER_SCAN_SECONDS,
+    max_requests=MAX_CCCENTER_REQUESTS,
+    max_bytes=MAX_CCCENTER_SCAN_BYTES,
+)
 
 
 class _HttpResponse(Protocol):
@@ -516,7 +475,7 @@ class CCCenterCatalogClient:
         internal retries or fresh per-product deadlines. Callers must still
         compare scalar status, currency and price with the selected listing.
         """
-        budget = _ScanBudget.start(is_shutdown_requested)
+        budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, is_shutdown_requested)
         budget.before_chunk()
         if len(listings) > MAX_CCCENTER_DETAIL_PRODUCTS:
             raise FeedFetchError(CCCENTER_LABEL, "DetailProductLimitExceeded")
@@ -565,7 +524,7 @@ class CCCenterCatalogClient:
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> tuple[CCCenterProduct, ...]:
         validate_cccenter_url(url)
-        budget = _ScanBudget.start(is_shutdown_requested)
+        budget = ScanBudget.start(CCCENTER_SCAN_LIMITS, is_shutdown_requested)
         if retry_policy is None:
             return self._scan_catalog(url, is_shutdown_requested, budget)
         return retry_policy.execute(
@@ -577,7 +536,7 @@ class CCCenterCatalogClient:
         self,
         url: str,
         is_shutdown_requested: Callable[[], bool],
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> tuple[CCCenterProduct, ...]:
         validate_cccenter_url(url)
         first, total, page_count = self._fetch_store_page(1, budget)
@@ -613,7 +572,7 @@ class CCCenterCatalogClient:
         self,
         total: int,
         page_count: int,
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> None:
         final_cards, final_total, final_pages = self._fetch_store_page(1, budget)
         if final_total != total or final_pages != page_count:
@@ -629,7 +588,7 @@ class CCCenterCatalogClient:
         cards: Sequence[Any],
         products: list[CCCenterProduct],
         seen_ids: set[tuple[str, str | int]],
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> None:
         for item in cards:
             budget.before_chunk()
@@ -681,7 +640,7 @@ class CCCenterCatalogClient:
         )
 
     @staticmethod
-    def _fetch_store_page(page: int, budget: _ScanBudget) -> tuple[list[Any], int, int]:
+    def _fetch_store_page(page: int, budget: ScanBudget) -> tuple[list[Any], int, int]:
         query = urlencode(
             {
                 "per_page": CCCENTER_PRODUCTS_PER_PAGE,
@@ -720,7 +679,7 @@ class CCCenterCatalogClient:
     def _fetch_store_product(
         url: str,
         listing: CCCenterListing | CCCenterProduct,
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> CCCenterProduct:
         query = urlencode({"include": listing.store_api_id, "per_page": 1, "page": 1})
         response, content = CCCenterCatalogClient._fetch_json(
@@ -755,7 +714,7 @@ class CCCenterCatalogClient:
         )
 
     @staticmethod
-    def _fetch_json(url: str, budget: _ScanBudget) -> tuple[Any, str]:
+    def _fetch_json(url: str, budget: ScanBudget) -> tuple[Any, str]:
         budget.before_request()
         callback = BoundedContentCallback.start(
             budget,
@@ -777,7 +736,7 @@ class CCCenterCatalogClient:
     def _fetch_html(
         url: str,
         *,
-        budget: _ScanBudget | None = None,
+        budget: ScanBudget | None = None,
     ) -> str:
         if budget is not None:
             budget.before_request()
@@ -796,7 +755,7 @@ class CCCenterCatalogClient:
     @staticmethod
     def _request_html(
         url: str,
-        budget: _ScanBudget | None,
+        budget: ScanBudget | None,
         callback_state: BoundedContentCallback,
     ) -> Any:  # noqa: ANN401
         try:
@@ -823,7 +782,7 @@ class CCCenterCatalogClient:
     @staticmethod
     def _request_json(
         url: str,
-        budget: _ScanBudget,
+        budget: ScanBudget,
         callback_state: BoundedContentCallback,
     ) -> Any:  # noqa: ANN401
         try:

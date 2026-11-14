@@ -10,10 +10,10 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig, load_config
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryId
-from rss2discord.providers.reklama5 import http as reklama5_http
 from rss2discord.providers.reklama5.parser import Reklama5Listing
 from rss2discord.providers.reklama5.strategy import Reklama5Strategy
 from rss2discord.retries import FeedFetchInterruptedError
+from rss2discord.transports import listing_http
 from tests.app_helpers import FakeSender
 from tests.configuration_helpers import write_config
 from tests.reklama5_helpers import (
@@ -123,13 +123,6 @@ def test_load_config_accepts_price_check_interval_with_reklama5_strategy(
     assert config.feeds[0].price_check_interval == 3600
 
 
-def test_app_registers_reklama5_strategy(tmp_path: Path) -> None:
-    with DeliveryStore(tmp_path / "state.db") as store:
-        app = RSSToDiscord(AppConfig(), store, FakeSender([]))
-
-    assert isinstance(app._strategies["reklama5"], Reklama5Strategy)
-
-
 def test_reklama5_non_empty_first_fetch_seeds_without_delivery(tmp_path: Path) -> None:
     feed = _feed()
     sender = FakeSender([])
@@ -170,7 +163,7 @@ def test_reklama5_malformed_listing_id_is_seeded_before_later_valid_parse(
             ),
         ],
     )
-    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
 
     with DeliveryStore(tmp_path / "state.db") as store:
         app = _app(store, sender, Reklama5Strategy(clock=lambda: FIXED_NOW))
@@ -201,7 +194,7 @@ def test_reklama5_shutdown_during_final_page_does_not_initialize_feed(
         ],
     )
     shutdown_checks = iter((False, True))
-    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: get)
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
     strategy = Reklama5Strategy(
         clock=lambda: FIXED_NOW,
         is_shutdown_requested=lambda: next(shutdown_checks),

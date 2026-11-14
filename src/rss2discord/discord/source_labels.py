@@ -1,68 +1,19 @@
-from typing import Final, assert_never
+from typing import Final
 from urllib.parse import parse_qs, urlsplit
 
 from rss2discord.configuration import FeedConfig
+from rss2discord.providers.names import ADAPTER_LABELS, STRATEGY_LABELS
 
-SOURCE_LABEL_FORUM: Final = "Forum"
 SOURCE_LABEL_GITHUB: Final = "GitHub"
 SOURCE_LABEL_GITLAB: Final = "GitLab"
-SOURCE_LABEL_ANHOCH: Final = "Anhoch"
-SOURCE_LABEL_CCCENTER: Final = "CCCenter"
-SOURCE_LABEL_TECHNOMARKET: Final = "Technomarket"
-SOURCE_LABEL_DDSTORE: Final = "DDStore"
-SOURCE_LABEL_HIVETEC: Final = "Hivetec"
-SOURCE_LABEL_GJIRAFA50: Final = "Gjirafa50"
-SOURCE_LABEL_SETEC: Final = "Setec"
-SOURCE_LABEL_NEKSIO: Final = "Neksio"
-SOURCE_LABEL_NEPTUN: Final = "Neptun"
-SOURCE_LABEL_PAZAR3: Final = "Pazar3"
-SOURCE_LABEL_REKLAMA5: Final = "Reklama5"
-SOURCE_LABEL_ITMK_OGLASNIK: Final = "IT.mk Oglasnik"
-SOURCE_LABEL_REDDIT: Final = "Reddit"
-SOURCE_LABEL_HACKER_NEWS: Final = "Hacker News"
-SOURCE_LABEL_RSS: Final = "RSS"
 
 
 def source_label(feed: FeedConfig) -> str:
     if feed.adapter is not None:
-        match feed.adapter:
-            case "hackernews":
-                return SOURCE_LABEL_HACKER_NEWS
-            case "reddit":
-                return SOURCE_LABEL_REDDIT
-            case unreachable:
-                assert_never(unreachable)
-    match feed.strategy:
-        case "anhoch":
-            return SOURCE_LABEL_ANHOCH
-        case "cccenter":
-            return SOURCE_LABEL_CCCENTER
-        case "technomarket":
-            return SOURCE_LABEL_TECHNOMARKET
-        case "ddstore":
-            return SOURCE_LABEL_DDSTORE
-        case "hivetec":
-            return SOURCE_LABEL_HIVETEC
-        case "gjirafa50":
-            return SOURCE_LABEL_GJIRAFA50
-        case "setec":
-            return SOURCE_LABEL_SETEC
-        case "neksio":
-            return SOURCE_LABEL_NEKSIO
-        case "neptun":
-            return SOURCE_LABEL_NEPTUN
-        case "pazar3":
-            return SOURCE_LABEL_PAZAR3
-        case "reklama5":
-            return SOURCE_LABEL_REKLAMA5
-        case "xenforo":
-            return SOURCE_LABEL_FORUM
-        case "itmk_oglasnik":
-            return SOURCE_LABEL_ITMK_OGLASNIK
-        case "rss":
-            return _rss_source_label(feed.url)
-        case unreachable_strategy:
-            assert_never(unreachable_strategy)
+        return ADAPTER_LABELS[feed.adapter]
+    if feed.strategy == "rss":
+        return _rss_source_label(feed.url)
+    return STRATEGY_LABELS[feed.strategy]
 
 
 def _rss_source_label(url: str) -> str:
@@ -70,9 +21,9 @@ def _rss_source_label(url: str) -> str:
         parsed_url = urlsplit(url)
         hostname = parsed_url.hostname
     except ValueError:
-        return SOURCE_LABEL_RSS
+        return STRATEGY_LABELS["rss"]
     if hostname is None:
-        return SOURCE_LABEL_RSS
+        return STRATEGY_LABELS["rss"]
     hostname_lower = hostname.lower()
     path_segments = tuple(segment for segment in parsed_url.path.split("/") if segment)
     if _is_gitlab_commit_feed(path_segments, parsed_url.query):
@@ -84,10 +35,10 @@ def _rss_source_label(url: str) -> str:
     ):
         return SOURCE_LABEL_GITHUB
     if hostname_lower == "news.ycombinator.com":
-        return SOURCE_LABEL_HACKER_NEWS
+        return ADAPTER_LABELS["hackernews"]
     if hostname_lower == "reddit.com" or hostname_lower.endswith(".reddit.com"):
-        return SOURCE_LABEL_REDDIT
-    return SOURCE_LABEL_RSS
+        return ADAPTER_LABELS["reddit"]
+    return STRATEGY_LABELS["rss"]
 
 
 def _is_gitlab_commit_feed(path_segments: tuple[str, ...], query: str = "") -> bool:

@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.models import PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.providers.pazar3 import prices as pazar3_price_monitor
 from rss2discord.providers.pazar3.models import Pazar3Listing
 from rss2discord.providers.pazar3.prices import (
+    Pazar3Catalog,
     Pazar3PriceMonitor,
-    Pazar3PriceMonitorDependencies,
 )
 from rss2discord.retries import (
     FeedFetchInterruptedError,
@@ -21,10 +21,15 @@ from rss2discord.retries import (
     SQLiteRetryPolicy,
 )
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from rss2discord.transports.price_monitor import scan as scan_module
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_pazar3_strategy import listing
+
+Pazar3PriceMonitorDependencies = PriceMonitorDependencies[Pazar3Catalog]
 
 
 class CatalogStub:

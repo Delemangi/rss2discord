@@ -8,9 +8,8 @@ import pytest
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.models import EntryData
+from rss2discord.models import EntryData, HealthUpdate, PriceSnapshot
 from rss2discord.price_notifications import PriceNotification, entry_to_json
-from rss2discord.recovery_models import HealthUpdate, PriceSnapshot
 from rss2discord.transports.price_monitor.digest import build_digest_messages
 
 

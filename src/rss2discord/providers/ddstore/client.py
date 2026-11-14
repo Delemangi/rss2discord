@@ -21,6 +21,10 @@ from rss2discord.providers.ddstore.session import (
 )
 from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_http import (
+    header_value,
+    validate_declared_content_length,
+)
 
 DDSTORE_ORIGIN: Final = "https://ddstore.mk"
 DDSTORE_GRAPHQL_URL: Final = f"{DDSTORE_ORIGIN}/graphql"
@@ -57,10 +61,9 @@ class CatalogPageRequest:
 
 @dataclass(frozen=True, slots=True)
 class FetchedDDStorePage:
-    """A validated GraphQL page with bytes consumed by its redirect chain."""
+    """A validated GraphQL page."""
 
     catalog_response: DDStoreCatalogResponse
-    page_response_bytes: int
 
 
 class _BoundedContent:
@@ -142,7 +145,6 @@ class DDStoreHttpClient:
             },
         }
         current_url = graphql_url
-        response_bytes = 0
         content = _BoundedContent(page_request, budget)
         try:
             for _ in range(MAX_DDSTORE_REDIRECTS + 1):
@@ -170,10 +172,14 @@ class DDStoreHttpClient:
                 if content.abort_error is not None:
                     raise content.abort_error
                 response_content = bytes(content.content)
-                _validate_declared_content_length(response, page_request)
-                response_bytes += len(response_content)
+                validate_declared_content_length(
+                    response,
+                    page_request.max_single_response_bytes,
+                    DDSTORE_LABEL,
+                    invalid_as_zero=False,
+                )
                 if 300 <= response.status_code < 400:
-                    location = _header(response.headers, "location")
+                    location = header_value(response.headers, "location")
                     current_url = _redirect_target(current_url, location)
                     continue
                 if response.status_code >= 400:
@@ -198,7 +204,7 @@ class DDStoreHttpClient:
             )
         except ValidationError:
             raise FeedFetchError(DDSTORE_LABEL, "InvalidResponse") from None
-        return FetchedDDStorePage(catalog_response, response_bytes)
+        return FetchedDDStorePage(catalog_response)
 
 
 def _check_failed_request(content: _BoundedContent, budget: DDStoreScanBudget) -> None:
@@ -207,21 +213,6 @@ def _check_failed_request(content: _BoundedContent, budget: DDStoreScanBudget) -
     if budget.is_shutdown_requested():
         raise FeedFetchInterruptedError from None
     budget.remaining_seconds()
-
-
-def _validate_declared_content_length(
-    response: DDStoreHttpResponse,
-    page_request: CatalogPageRequest,
-) -> None:
-    content_length = _header(response.headers, "content-length")
-    if content_length is None:
-        return
-    try:
-        declared_bytes = int(content_length)
-    except ValueError:
-        return
-    if declared_bytes > page_request.max_single_response_bytes:
-        raise FeedFetchError(DDSTORE_LABEL, "ResponseTooLarge")
 
 
 def _same_origin_redirect_url(current_url: str, location: str) -> str:
@@ -255,17 +246,11 @@ def _http_error(response: DDStoreHttpResponse) -> FeedFetchError:
         status_code=response.status_code,
         retryable=response.status_code in {408, 429}
         or 500 <= response.status_code < 600,
-        retry_after=parse_retry_after(_header(response.headers, "retry-after")),
+        retry_after=parse_retry_after(
+            header_value(response.headers, "retry-after"),
+        ),
     )
 
 
 def _too_many_redirects() -> FeedFetchError:
     return FeedFetchError(DDSTORE_LABEL, "TooManyRedirects")
-
-
-def _header(headers: Mapping[str, str], name: str) -> str | None:
-    folded_name = name.casefold()
-    return next(
-        (value for key, value in headers.items() if key.casefold() == folded_name),
-        None,
-    )

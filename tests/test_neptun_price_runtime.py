@@ -5,11 +5,23 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.neptun.catalog import NeptunCatalogClient
-from rss2discord.providers.neptun.prices import NeptunPriceMonitorDependencies
+from rss2discord.providers.neptun.prices import NeptunCatalog
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
-from tests.test_neptun_wiring import make_feed
+
+NeptunPriceMonitorDependencies = PriceMonitorDependencies[NeptunCatalog]
+
+
+def make_feed(*, interval: float | None = None) -> FeedConfig:
+    return FeedConfig(
+        id="neptun-computers",
+        url="https://www.neptun.mk/KOMPJUTERI.nspx",
+        webhook="https://discord.test/webhooks/id/token",
+        strategy="neptun",
+        price_check_interval=interval,
+    )
 
 
 def test_runtime_builds_enabled_neptun_monitor_with_category_catalog(
@@ -29,7 +41,7 @@ def test_runtime_builds_enabled_neptun_monitor_with_category_catalog(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.NeptunPriceMonitor",
+            "rss2discord.providers.registry.NeptunPriceMonitor",
             monitor_factory,
         )
         jobs = build_price_jobs(
