@@ -67,6 +67,7 @@ class ListingHttpConfig:
     max_response_bytes: int
     user_agent: str
     challenge_cause: str
+    extra_headers: tuple[tuple[str, str], ...] = ()
 
 
 class BoundedListingContent:
@@ -139,9 +140,14 @@ def _get_response(
 ) -> tuple[ListingHttpResponse, bytes]:
     content = BoundedListingContent(budget, config)
     try:
+        headers = {
+            "Accept": "text/html",
+            "User-Agent": config.user_agent,
+            **dict(config.extra_headers),
+        }
         response = session.get(
             url,
-            headers={"Accept": "text/html", "User-Agent": config.user_agent},
+            headers=headers,
             allow_redirects=False,
             content_callback=content.write,
             timeout_ms=max(1, math.ceil(budget.request_timeout() * 1000)),

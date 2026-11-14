@@ -22,6 +22,13 @@ def test_reklama5_fetch_sends_required_headers_and_stream_options(
         {
             "Accept": "text/html",
             "User-Agent": "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)",
+            "Accept-Language": "mk-MK,mk;q=0.9,en;q=0.8",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Referer": "https://reklama5.mk/",
         },
     ]
     assert get.allow_redirects == [False]
