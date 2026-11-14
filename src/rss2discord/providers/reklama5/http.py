@@ -26,11 +26,22 @@ MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
 MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES: Final = 500 * 1024 * 1024
 MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS: Final = 300.0
 
+REKLAMA5_BROWSER_HEADERS: Final = (
+    ("Accept-Language", "mk-MK,mk;q=0.9,en;q=0.8"),
+    ("Upgrade-Insecure-Requests", "1"),
+    ("Sec-Fetch-Dest", "document"),
+    ("Sec-Fetch-Mode", "navigate"),
+    ("Sec-Fetch-Site", "none"),
+    ("Sec-Fetch-User", "?1"),
+    ("Referer", "https://reklama5.mk/"),
+)
+
 REKLAMA5_LISTING_CONFIG: Final = ListingHttpConfig(
     label=REKLAMA5_LABEL,
     max_response_bytes=MAX_REKLAMA5_RESPONSE_BYTES,
     user_agent=REKLAMA5_USER_AGENT,
     challenge_cause="BotChallenge",
+    extra_headers=REKLAMA5_BROWSER_HEADERS,
 )
 
 
