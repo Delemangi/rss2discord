@@ -1,9 +1,9 @@
 from decimal import Decimal
 from pathlib import Path
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.models import PriceDirection, PriceSnapshot, SourceMetric
 from tests.setec_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,

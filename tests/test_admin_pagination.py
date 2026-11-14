@@ -6,9 +6,8 @@ import pytest
 
 from rss2discord.admin import main
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.models import EntryData
+from rss2discord.models import EntryData, PriceSnapshot
 from rss2discord.price_notifications import PriceNotification
-from rss2discord.recovery_models import PriceSnapshot
 
 
 def _seed_notifications(store: DeliveryStore, count: int = 3) -> None:

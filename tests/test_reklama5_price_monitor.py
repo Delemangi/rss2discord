@@ -8,20 +8,26 @@ from pathlib import Path
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import EntryId, PriceDirection, SourceMetric
+from rss2discord.models import EntryId, PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.providers.reklama5 import prices as reklama5_transport
 from rss2discord.providers.reklama5.parser import Reklama5Listing
+from rss2discord.providers.reklama5.prices import Reklama5Catalog
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from rss2discord.transports.price_monitor import scan as scan_module
 from tests.reklama5_helpers import FIXED_NOW, SEARCH_URL
 from tests.setec_price_monitor_helpers import RecordingSender
+
+Reklama5PriceMonitorDependencies = PriceMonitorDependencies[Reklama5Catalog]
 
 
 class CatalogStub:
@@ -70,7 +76,7 @@ def _monitor(
 ) -> reklama5_transport.Reklama5PriceMonitor:
     return reklama5_transport.Reklama5PriceMonitor(
         _feed(),
-        reklama5_transport.Reklama5PriceMonitorDependencies(
+        PriceMonitorDependencies[Reklama5Catalog](
             catalog=catalog,
             snapshots=store,
             sender=sender,

@@ -8,7 +8,7 @@ from rss2discord.providers.reklama5 import catalog as reklama5_catalog
 from rss2discord.providers.reklama5 import http as reklama5_http
 from rss2discord.providers.reklama5.catalog import Reklama5CatalogClient
 from rss2discord.retries import FetchRetryPolicy
-from rss2discord.transports import FeedFetchError
+from rss2discord.transports import FeedFetchError, listing_http
 from tests.reklama5_helpers import (
     FIXED_NOW,
     SEARCH_URL,
@@ -67,7 +67,7 @@ def test_reklama5_catalog_fetches_beyond_the_discovery_window(
             _response(4, "1", terminal=True, result_count=4),
         ],
     )
-    monkeypatch.setattr(reklama5_http, "create_listing_session", lambda: session)
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: session)
     client = Reklama5CatalogClient(clock=_clock)
 
     listings = client.fetch_catalog(
@@ -96,7 +96,7 @@ def test_reklama5_catalog_rejects_listing_capacity_before_returning_partial_data
         result_count=2,
     )
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet([StubResponse(html)]),
     )
@@ -124,7 +124,7 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
         result_count=2,
     )
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet(
             [StubResponse(html), StubResponse(html), StubResponse(html)],
@@ -172,7 +172,7 @@ def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
         result_count=2,
     )
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet([StubResponse(html) for _attempt in range(3)]),
     )
@@ -215,7 +215,7 @@ def test_reklama5_catalog_rejects_changed_advertised_result_count(
         for response in (StubResponse(first_html), StubResponse(second_html))
     ]
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet(responses),
     )
@@ -243,7 +243,7 @@ def test_reklama5_catalog_counts_duplicate_organic_rows_toward_completeness(
         result_count=2,
     )
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet([StubResponse(html)]),
     )
@@ -261,7 +261,7 @@ def test_reklama5_catalog_fails_when_page_bound_has_no_terminal_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        reklama5_http,
+        listing_http,
         "create_listing_session",
         lambda: RecordingGet([_response(1, "1", terminal=False)]),
     )

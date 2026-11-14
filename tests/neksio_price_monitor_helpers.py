@@ -3,21 +3,27 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     DiscordSender,
     SleepCallback,
     WebhookMessage,
 )
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.providers.neksio.prices import (
     NeksioCatalog,
     NeksioPriceMonitor,
-    NeksioPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+    PriceRecoveryStore,
+)
+
+NeksioPriceMonitorDependencies = PriceMonitorDependencies[NeksioCatalog]
 
 
 class CatalogStub:

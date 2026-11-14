@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 import requests
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError
 from tests.anhoch_helpers import (

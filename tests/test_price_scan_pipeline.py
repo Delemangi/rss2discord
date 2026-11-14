@@ -12,9 +12,8 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import EntryData
+from rss2discord.models import EntryData, PriceSnapshot
 from rss2discord.price_notifications import PriceNotification
-from rss2discord.recovery_models import PriceSnapshot
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,

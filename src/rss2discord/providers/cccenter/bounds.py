@@ -15,7 +15,6 @@ MAX_CCCENTER_SCAN_BYTES: Final = MAX_CCCENTER_PAGES * MAX_CCCENTER_RESPONSE_BYTE
 # retry overhead while retaining the shared byte and wall-clock budgets.
 MAX_CCCENTER_REQUESTS: Final = 3 * MAX_CCCENTER_PAGES
 MAX_CCCENTER_SCAN_SECONDS: Final = 300.0
-MAX_CCCENTER_PRICE_CHANGES_PER_SCAN: Final = 100
 MAX_CCCENTER_RETAINED_SNAPSHOTS: Final = 10_000
 CCCENTER_USER_AGENT: Final = (
     "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"

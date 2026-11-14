@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.recovery_models import HealthUpdate
+from rss2discord.models import HealthUpdate
 
 logger = logging.getLogger("rss2discord.price_runtime")
 

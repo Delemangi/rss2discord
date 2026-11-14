@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
 )
 
-from rss2discord.anhoch_money import (
+from rss2discord.price_amount import (
     MAX_ANHOCH_MONEY_DECIMAL_PLACES,
     MAX_ANHOCH_MONEY_DIGITS,
     canonicalize_anhoch_amount,

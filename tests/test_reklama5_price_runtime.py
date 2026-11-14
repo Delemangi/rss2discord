@@ -5,13 +5,14 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.reklama5.catalog import Reklama5CatalogClient
-from rss2discord.providers.reklama5.prices import (
-    Reklama5PriceMonitorDependencies,
-)
+from rss2discord.providers.reklama5.prices import Reklama5Catalog
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.reklama5_helpers import SEARCH_URL
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+Reklama5PriceMonitorDependencies = PriceMonitorDependencies[Reklama5Catalog]
 
 
 def test_build_price_jobs_wires_enabled_reklama5_category_monitor(
@@ -38,7 +39,7 @@ def test_build_price_jobs_wires_enabled_reklama5_category_monitor(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.Reklama5PriceMonitor",
+            "rss2discord.providers.registry.Reklama5PriceMonitor",
             monitor_factory,
         )
         jobs = build_price_jobs(

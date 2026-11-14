@@ -3,35 +3,27 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from decimal import Decimal
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import (
-    DiscordSender,
-    WebhookMessage,
-)
-from rss2discord.models import SourceMetric
+from rss2discord.discord.client import WebhookMessage
+from rss2discord.models import PriceSnapshot, SourceMetric
 from rss2discord.providers.neksio.client import NEKSIO_LABEL
 from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.providers.neksio.strategy import _entry_data
 from rss2discord.retries import (
     FeedFetchInterruptedError,
-    FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
 
 MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
-MAX_NEKSIO_PRICE_CHANGES_PER_SCAN: Final = 100
 
 
 class NeksioCatalog(Protocol):
@@ -45,28 +37,16 @@ class NeksioCatalog(Protocol):
     ) -> tuple[NeksioProduct, ...]: ...
 
 
-@dataclass(frozen=True, slots=True)
-class NeksioPriceMonitorDependencies:
-    """Typed collaborators used by one Neksio price-monitor scan."""
-
-    catalog: NeksioCatalog
-    snapshots: PriceRecoveryStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class NeksioPriceMonitor:
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: NeksioPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[NeksioCatalog],
     ) -> None:
         self._feed: FeedConfig = feed
-        self._dependencies: NeksioPriceMonitorDependencies = dependencies
+        self._dependencies: PriceMonitorDependencies[NeksioCatalog] = dependencies
 
     def scan(self) -> None:
         self._scan()

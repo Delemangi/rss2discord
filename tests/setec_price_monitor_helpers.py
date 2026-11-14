@@ -3,7 +3,7 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     DiscordSender,
@@ -11,14 +11,20 @@ from rss2discord.discord.client import (
     WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
 from rss2discord.providers.setec.prices import (
     SetecCatalog,
     SetecPriceMonitor,
-    SetecPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery, PriceRecoveryStore
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+    PriceRecoveryStore,
+)
+
+SetecPriceMonitorDependencies = PriceMonitorDependencies[SetecCatalog]
 
 
 def price_entry_for(product: SetecProduct) -> SetecPriceEntry:

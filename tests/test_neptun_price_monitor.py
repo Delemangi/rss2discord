@@ -6,21 +6,26 @@ from pathlib import Path
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.models import PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.providers.neptun import prices as neptun_price_monitor
 from rss2discord.providers.neptun.models import NeptunProduct
 from rss2discord.providers.neptun.prices import (
+    NeptunCatalog,
     NeptunPriceMonitor,
-    NeptunPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from rss2discord.transports.price_monitor import scan as scan_module
 from tests.neptun_helpers import product_payload
 from tests.setec_price_monitor_helpers import RecordingSender
+
+NeptunPriceMonitorDependencies = PriceMonitorDependencies[NeptunCatalog]
 
 
 class CatalogStub:

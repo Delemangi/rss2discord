@@ -12,8 +12,8 @@ confirmation. The shared stages are importable from
 | `comparison.py` | Pure snapshot classification and price direction |
 | `contracts.py` | Store protocols, dependency contracts, and delivery plans |
 | `planning.py` | Currency validation, inline/digest selection, and health |
-| `delivery.py` | Baseline/outbox persistence and inline card delivery |
-| `digest.py` | Digest message, report attachments, and outbox draining |
+| `delivery.py` | Baseline/outbox persistence, inline card delivery, and outbox draining |
+| `digest.py` | Digest message construction and report attachments |
 | `scan.py` | Shared bounded scan, confirmation, and delivery orchestration |
 | `__init__.py` | Stable public entry points used by provider monitors |
 

@@ -5,18 +5,22 @@ from pathlib import Path
 import pytest
 import requests
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.anhoch.prices import (
+    AnhochCatalog,
     AnhochPriceMonitor,
-    AnhochPriceMonitorDependencies,
-    PriceAlertDelivery,
 )
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
+)
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
 )
 from tests.anhoch_price_monitor_helpers import (
     CatalogStub,
@@ -29,6 +33,8 @@ from tests.anhoch_price_monitor_helpers import (
     make_product,
     snapshots_by_product,
 )
+
+AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
 
 def test_fetch_retry_interruption_stops_before_alerting_and_logs_no_secrets(

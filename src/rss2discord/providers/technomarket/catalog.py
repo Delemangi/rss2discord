@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import unescape
-from time import monotonic
 from typing import Any, Final, Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -40,6 +39,7 @@ from rss2discord.retries import (
     parse_retry_after,
 )
 from rss2discord.transports.catalog_http import BoundedContentCallback
+from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
 __all__ = [
     "TECHNOMARKET_FEED_URL",
@@ -65,51 +65,12 @@ _PRODUCT_RANGE_RE: Final = re.compile(
     re.IGNORECASE,
 )
 
-
-@dataclass(slots=True)
-class _ScanBudget:
-    is_shutdown_requested: Callable[[], bool]
-    started_at: float
-    requests: int = 0
-    response_bytes: int = 0
-
-    @classmethod
-    def start(cls, is_shutdown_requested: Callable[[], bool]) -> _ScanBudget:
-        return cls(is_shutdown_requested, monotonic())
-
-    def before_request(self) -> None:
-        self._check()
-        self.requests += 1
-        if self.requests > MAX_TECHNOMARKET_REQUESTS:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "RequestLimitExceeded")
-
-    def request_timeout(self) -> float:
-        remaining = MAX_TECHNOMARKET_SCAN_SECONDS - (monotonic() - self.started_at)
-        if remaining <= 0:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "ScanTimeLimitExceeded")
-        return remaining
-
-    def require_retry_delay(self, delay: float) -> None:
-        if monotonic() - self.started_at + delay > MAX_TECHNOMARKET_SCAN_SECONDS:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "ScanTimeLimitExceeded")
-
-    def add_bytes(self, amount: int) -> None:
-        self.response_bytes += amount
-        if self.response_bytes > MAX_TECHNOMARKET_SCAN_BYTES:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "ScanResponseTooLarge")
-        self._check()
-
-    def before_chunk(self) -> None:
-        self._check()
-
-    def after_request(self) -> None:
-        self.before_chunk()
-
-    def _check(self) -> None:
-        if self.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        if monotonic() - self.started_at >= MAX_TECHNOMARKET_SCAN_SECONDS:
-            raise FeedFetchError(TECHNOMARKET_LABEL, "ScanTimeLimitExceeded")
+TECHNOMARKET_SCAN_LIMITS: Final = ScanLimits(
+    label=TECHNOMARKET_LABEL,
+    max_seconds=MAX_TECHNOMARKET_SCAN_SECONDS,
+    max_requests=MAX_TECHNOMARKET_REQUESTS,
+    max_bytes=MAX_TECHNOMARKET_SCAN_BYTES,
+)
 
 
 class _HttpResponse(Protocol):
@@ -458,7 +419,7 @@ class TechnomarketCatalogClient:
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> tuple[TechnomarketProduct, ...]:
         root = validate_technomarket_url(url)
-        budget = _ScanBudget.start(is_shutdown_requested)
+        budget = ScanBudget.start(TECHNOMARKET_SCAN_LIMITS, is_shutdown_requested)
 
         def operation() -> tuple[TechnomarketProduct, ...]:
             return self._scan_catalog(root, budget)
@@ -473,7 +434,7 @@ class TechnomarketCatalogClient:
     def _scan_catalog(
         self,
         root: str,
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> tuple[TechnomarketProduct, ...]:
         first = BeautifulSoup(self._fetch_html(root, budget=budget), _HTML_PARSER)
         expected_pages = _page_count(first)
@@ -508,7 +469,7 @@ class TechnomarketCatalogClient:
         root: str,
         page: int,
         first: BeautifulSoup,
-        budget: _ScanBudget,
+        budget: ScanBudget,
     ) -> BeautifulSoup:
         if page == 1:
             return first
@@ -584,7 +545,7 @@ class TechnomarketCatalogClient:
         return f"{root}?page={page}"
 
     @staticmethod
-    def _fetch_html(url: str, *, budget: _ScanBudget | None = None) -> str:
+    def _fetch_html(url: str, *, budget: ScanBudget | None = None) -> str:
         if budget is not None:
             budget.before_request()
         state = BoundedContentCallback.start(
@@ -602,7 +563,7 @@ class TechnomarketCatalogClient:
     @staticmethod
     def _request_html(
         url: str,
-        budget: _ScanBudget | None,
+        budget: ScanBudget | None,
         state: BoundedContentCallback,
     ) -> Any:  # noqa: ANN401
         try:

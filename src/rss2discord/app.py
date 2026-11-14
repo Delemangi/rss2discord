@@ -9,9 +9,8 @@ from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordDeliveryResult, DiscordSender, WebhookMessage
 from .discord.discovery_digest import INLINE_ENTRY_LIMIT, build_discovery_digest
-from .discovery_builders import build_discovery_strategies
-from .models import EntryData, EntryId
-from .recovery_models import HealthUpdate
+from .models import EntryData, EntryId, HealthUpdate
+from .providers.registry import build_discovery_strategies
 from .retries import (
     FetchRetryPolicy,
     SQLiteRetryInterruptedError,

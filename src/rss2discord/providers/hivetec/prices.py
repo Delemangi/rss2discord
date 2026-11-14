@@ -1,34 +1,70 @@
 """Sequential Hivetec price comparison and Discord delivery for one feed."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import EntryData
+from rss2discord.models import EntryData, PriceSnapshot
 from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.models import HivetecProduct
-from rss2discord.providers.hivetec.strategy import hivetec_product_metrics
+from rss2discord.providers.hivetec.strategy import (
+    format_hivetec_mkd,
+    hivetec_product_metrics,
+)
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.catalog_normalization import (
-    MAX_HIVETEC_RETAINED_SNAPSHOTS,
-    normalize_hivetec_catalog,
+    CatalogObservation,
+    validate_catalog_observations,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
+
+MAX_HIVETEC_RETAINED_SNAPSHOTS = 10_000
+
+
+def hivetec_snapshot(feed_id: str, product: HivetecProduct) -> PriceSnapshot:
+    price = product.prices
+    return PriceSnapshot(
+        feed_id,
+        str(product.id),
+        price.current_amount,
+        format_hivetec_mkd(price.current_amount),
+        price.currency_code,
+    )
+
+
+def normalize_hivetec_catalog(
+    feed_id: str,
+    products: tuple[HivetecProduct, ...],
+    persisted: tuple[PriceSnapshot, ...],
+    *,
+    snapshot_limit: int = MAX_HIVETEC_RETAINED_SNAPSHOTS,
+) -> tuple[CatalogObservation, ...]:
+    observations = tuple(
+        CatalogObservation(
+            str(product.id),
+            hivetec_snapshot(feed_id, product)
+            if product.prices.current_amount > 0
+            else None,
+        )
+        for product in products
+    )
+    validate_catalog_observations(
+        observations,
+        persisted,
+        snapshot_limit,
+        HIVETEC_LABEL,
+    )
+    return observations
 
 
 class HivetecCatalog(Protocol):
@@ -41,30 +77,11 @@ class HivetecCatalog(Protocol):
     ) -> tuple[HivetecProduct, ...]: ...
 
 
-class HivetecSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class HivetecPriceMonitorDependencies:
-    catalog: HivetecCatalog
-    snapshots: HivetecSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class HivetecPriceMonitor:
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: HivetecPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[HivetecCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

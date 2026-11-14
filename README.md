@@ -19,10 +19,6 @@ Historical identities and price snapshots remain preserved, including products n
 
 Search configuration is discovered afresh per operation from explicitly advertised same-origin public JavaScript, without a legacy-key fallback. Discovery is limited to 40 unique assets, 48 physical requests, 2 MiB per response, 16 MiB total decoded bytes, and 120 seconds. These are sublimits within full-catalog operations' existing 1,000-request/500-MiB caps and new 300-second deadline. Latest operations have a 150-second deadline and an enclosing discovery-plus-search byte allowance; their existing 1-MiB single-search-response and redirect-chain byte limits are unchanged. Full indexes are accepted only after a final root count/bounds recheck agrees with the initial summary; incomplete or drifting evidence fails closed.
 
-## Gjirafa50 observation-only rolling mode
-
-An opt-in [rolling observation CLI](docs/gjirafa-observations.md) checks an explicitly supplied known-product manifest without requiring a stable full-catalog scan. It uses separate durable state, reports unknown coverage, and never creates production price baselines or sends alerts. Full-catalog Gjirafa50 pricing remains unchanged and disabled unless separately configured; observation results do not authorize enabling it.
-
 ## Docker quick start
 
 ```sh
@@ -36,10 +32,6 @@ docker compose up -d --build   # Build from this checkout.
 ```
 
 To use the published image instead, run `docker compose -f compose.prod.yaml up -d`. Follow logs with `docker compose logs -f rss2discord`; stop with `docker compose down`.
-
-## Automatic updates
-
-The compose services opt in to host-managed Watchtower updates of `ghcr.io/delemangi/rss2discord:latest`. Before replacing the container, Watchtower runs `python -m rss2discord.backup` inside it. The hook writes a verified SQLite backup to `data/backups/state-pre-update-<timestamp>.db`, keeps the newest N backups (default 10, set with `BACKUP_RETENTION`), and exits 75 on any failure; Watchtower then skips that update. The container healthcheck runs `python -m rss2discord.healthcheck`, which checks the read-only state database with `PRAGMA quick_check`. Watchtower has no rollback: a backup is the recovery point, and database history must not be deleted to undo a send.
 
 ## Configuration
 
@@ -62,7 +54,7 @@ feeds:
 
 ## Code boundaries
 
-Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics. Price-monitor builders compose provider monitors and dependencies, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
+Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics, including the shared listing HTTP path. The provider registry composes discovery strategies and price monitors from one set of provider names and labels, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
 
 See [price-monitoring flow](docs/price-monitoring-flow.md) for the comparison, planning, and delivery boundaries and their regression tests.
 

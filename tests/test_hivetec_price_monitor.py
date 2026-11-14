@@ -10,14 +10,19 @@ from rss2discord.models import PriceDirection, SourceMetric
 from rss2discord.providers.hivetec import prices as hivetec_price_monitor
 from rss2discord.providers.hivetec.models import HivetecProduct
 from rss2discord.providers.hivetec.prices import (
+    HivetecCatalog,
     HivetecPriceMonitor,
-    HivetecPriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import FeedFetchError
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from tests.hivetec_helpers import SHOP_URL, product_payload
 from tests.setec_price_monitor_helpers import RecordingSender
+
+HivetecPriceMonitorDependencies = PriceMonitorDependencies[HivetecCatalog]
 
 
 class CatalogStub:

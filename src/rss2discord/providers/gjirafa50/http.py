@@ -27,6 +27,7 @@ from rss2discord.providers.gjirafa50.session import (
 )
 from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.listing_http import header_value
 
 GJIRAFA50_HOSTS: Final = frozenset({"gjirafa50.com", "gjirafa50.mk"})
 GJIRAFA50_RESPONSE_BYTES: Final = 5 * 1024 * 1024
@@ -243,7 +244,7 @@ class Gjirafa50HttpClient:
             consumed_bytes += content.response_bytes
             budget.check_active()
             if 300 <= response.status_code < 400:
-                location = _header(response, "location")
+                location = header_value(response.headers, "location")
                 if location is None:
                     raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
                 current_url = _same_origin_redirect(current_url, location)
@@ -261,7 +262,9 @@ def _check_response_status(response: Gjirafa50HttpResponse) -> None:
             "HTTPError",
             status_code=status,
             retryable=status in {408, 429} or 500 <= status < 600,
-            retry_after=parse_retry_after(_header(response, "retry-after")),
+            retry_after=parse_retry_after(
+                header_value(response.headers, "retry-after"),
+            ),
         )
 
 
@@ -285,15 +288,3 @@ def _same_origin_redirect(current_url: str, location: str) -> str:
     ):
         raise FeedFetchError(GJIRAFA50_LABEL, "InvalidRedirect")
     return redirected_url
-
-
-def _header(response: Gjirafa50HttpResponse, name: str) -> str | None:
-    expected = name.casefold()
-    return next(
-        (
-            value
-            for key, value in response.headers.items()
-            if key.casefold() == expected
-        ),
-        None,
-    )

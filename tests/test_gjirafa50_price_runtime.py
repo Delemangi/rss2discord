@@ -4,10 +4,6 @@ import pytest
 
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.price_monitor_builders import (
-    SharedPriceMonitorDependencies,
-    build_provider_price_monitor,
-)
 from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
@@ -16,12 +12,25 @@ from rss2discord.providers.gjirafa50.prices import (
     Gjirafa50PriceMonitorDependencies,
 )
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.registry import (
+    SharedPriceMonitorDependencies,
+    build_provider_price_monitor,
+)
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.transports.price_monitor import PriceAlertDelivery
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
-from tests.test_gjirafa50_wiring import make_feed
+
+
+def make_feed(*, interval: float | None = None) -> FeedConfig:
+    return FeedConfig(
+        id="gjirafa50-products",
+        url="https://gjirafa50.mk/",
+        webhook="https://discord.test/webhooks/id/token",
+        strategy="gjirafa50",
+        price_check_interval=interval,
+    )
 
 
 def test_runtime_builds_enabled_gjirafa50_monitor(
@@ -43,7 +52,7 @@ def test_runtime_builds_enabled_gjirafa50_monitor(
     # When
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+            "rss2discord.providers.registry.Gjirafa50BackgroundPriceMonitor",
             monitor_factory,
         )
         jobs = build_price_jobs(
@@ -85,7 +94,7 @@ def test_runtime_wires_gjirafa50_monitor_shutdown(
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.Gjirafa50BackgroundPriceMonitor",
+            "rss2discord.providers.registry.Gjirafa50BackgroundPriceMonitor",
             monitor_factory,
         )
         jobs = build_price_jobs(

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.recovery_models import HealthUpdate
+from rss2discord.models import HealthUpdate
 from rss2discord.runtime.application import _process_feed_safely
 from rss2discord.runtime.scheduler import JobOutcome, SchedulerJobs
 from tests.app_helpers import FakeSender, FakeStrategy, make_feed

@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.recovery_models import HealthUpdate
+from rss2discord.models import HealthUpdate
 
 
 def _update(

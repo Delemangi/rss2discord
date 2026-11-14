@@ -10,19 +10,19 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from rss2discord.models import (
+    HEALTH_REMINDER_SECONDS,
+    HealthNotice,
+    HealthRecord,
+    HealthUpdate,
+    PriceSnapshot,
+)
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationRecord,
     entry_from_json,
     entry_to_json,
-)
-from rss2discord.price_safety import HEALTH_REMINDER_SECONDS
-from rss2discord.recovery_models import (
-    HealthNotice,
-    HealthRecord,
-    HealthUpdate,
-    PriceSnapshot,
 )
 
 BEGIN_IMMEDIATE = "BEGIN IMMEDIATE"
@@ -70,7 +70,6 @@ class DeliveryStore:
         initialize: bool = True,
     ) -> None:
         self._database_path = database_path
-        self._read_only = read_only
         if read_only:
             self._connection = sqlite3.connect(
                 database_path.resolve().as_uri() + "?mode=ro",

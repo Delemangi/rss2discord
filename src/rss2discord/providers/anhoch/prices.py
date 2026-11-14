@@ -3,28 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import (
-    DiscordSender,
-    WebhookMessage,
-)
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.discord.client import WebhookMessage
+from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.providers.anhoch.catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
 from rss2discord.providers.anhoch.models import AnhochProduct
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.price_monitor import (
     NO_SNAPSHOT_LIMIT,
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
@@ -42,28 +35,16 @@ class AnhochCatalog(Protocol):
     ) -> tuple[AnhochProduct, ...]: ...
 
 
-@dataclass(frozen=True, slots=True)
-class AnhochPriceMonitorDependencies:
-    """Typed collaborators used by one price-monitor scan."""
-
-    catalog: AnhochCatalog
-    snapshots: PriceRecoveryStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class AnhochPriceMonitor:
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: AnhochPriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[AnhochCatalog],
     ) -> None:
         self._feed: FeedConfig = feed
-        self._dependencies: AnhochPriceMonitorDependencies = dependencies
+        self._dependencies: PriceMonitorDependencies[AnhochCatalog] = dependencies
 
     def scan(self) -> None:
         self._scan()

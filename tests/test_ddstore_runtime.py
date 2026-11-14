@@ -6,13 +6,16 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.ddstore.prices import (
-    DDStorePriceMonitorDependencies,
+    DDStoreCatalog,
 )
 from rss2discord.providers.ddstore.strategy import DDStoreStrategy
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+DDStorePriceMonitorDependencies = PriceMonitorDependencies[DDStoreCatalog]
 
 
 def make_ddstore_feed(feed_id: str, interval: float | None) -> FeedConfig:
@@ -80,7 +83,7 @@ def test_build_price_jobs_dispatches_only_enabled_ddstore_feeds(
 
         # When
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.DDStorePriceMonitor",
+            "rss2discord.providers.registry.DDStorePriceMonitor",
             ddstore_monitor_factory,
         )
         jobs = build_price_jobs(

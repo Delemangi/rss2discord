@@ -14,12 +14,12 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordSender, SleepCallback
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.price_monitor_builders import (
+from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.registry import (
     PriceMonitor,
     SharedPriceMonitorDependencies,
     build_provider_price_monitor,
 )
-from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,

@@ -1,37 +1,73 @@
 """Sequential DDStore price comparison and Discord delivery for one feed."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Protocol
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import PriceSnapshot
-from rss2discord.discord.client import DiscordSender
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.providers.ddstore.client import DDSTORE_LABEL
 from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.providers.ddstore.strategy import (
     format_ddstore_mkd,
     format_ddstore_stock,
+    is_ddstore_price_available,
 )
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     FetchRetryPolicy,
-    SQLiteRetryPolicy,
 )
 from rss2discord.transports.catalog_normalization import (
-    MAX_DDSTORE_RETAINED_SNAPSHOTS,
-    normalize_ddstore_catalog,
+    CatalogObservation,
+    validate_catalog_observations,
 )
 from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
+    PriceMonitorDependencies,
     PriceObservation,
-    PriceRecoveryStore,
     price_direction,
     run_price_scan,
 )
+
+MAX_DDSTORE_RETAINED_SNAPSHOTS = 50_000
+
+
+def ddstore_snapshot(feed_id: str, product: DDStoreProduct) -> PriceSnapshot:
+    price = product.price_range.minimum_price.final_price
+    return PriceSnapshot(
+        feed_id,
+        product.uid,
+        price.value,
+        format_ddstore_mkd(price.value),
+        price.currency,
+    )
+
+
+def normalize_ddstore_catalog(
+    feed_id: str,
+    products: tuple[DDStoreProduct, ...],
+    persisted: tuple[PriceSnapshot, ...],
+    *,
+    snapshot_limit: int = MAX_DDSTORE_RETAINED_SNAPSHOTS,
+) -> tuple[CatalogObservation, ...]:
+    observations = tuple(
+        CatalogObservation(
+            product.uid,
+            ddstore_snapshot(feed_id, product)
+            if is_ddstore_price_available(
+                product.price_range.minimum_price.final_price.value,
+            )
+            else None,
+        )
+        for product in products
+    )
+    validate_catalog_observations(
+        observations,
+        persisted,
+        snapshot_limit,
+        DDSTORE_LABEL,
+    )
+    return observations
 
 
 class DDStoreCatalog(Protocol):
@@ -46,34 +82,13 @@ class DDStoreCatalog(Protocol):
     ) -> tuple[DDStoreProduct, ...]: ...
 
 
-class DDStorePriceSnapshotStore(PriceRecoveryStore, Protocol):
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class DDStorePriceMonitorDependencies:
-    """Typed collaborators used by one DDStore price-monitor scan."""
-
-    catalog: DDStoreCatalog
-    snapshots: DDStorePriceSnapshotStore
-    sender: DiscordSender
-    fetch_retry_policy: FetchRetryPolicy
-    sqlite_retry_policy: SQLiteRetryPolicy
-    delivery: PriceAlertDelivery
-
-
 class DDStorePriceMonitor:
     """Compare one full DDStore catalog against persisted price snapshots."""
 
     def __init__(
         self,
         feed: FeedConfig,
-        dependencies: DDStorePriceMonitorDependencies,
+        dependencies: PriceMonitorDependencies[DDStoreCatalog],
     ) -> None:
         self._feed = feed
         self._dependencies = dependencies

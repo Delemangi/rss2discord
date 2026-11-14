@@ -7,9 +7,9 @@ import pytest
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.providers.anhoch.prices import AnhochPriceMonitorDependencies
-from rss2discord.providers.neksio.prices import NeksioPriceMonitorDependencies
-from rss2discord.providers.setec.prices import SetecPriceMonitorDependencies
+from rss2discord.providers.anhoch.prices import AnhochCatalog
+from rss2discord.providers.neksio.prices import NeksioCatalog
+from rss2discord.providers.setec.prices import SetecCatalog
 from rss2discord.runtime.prices import PriceJobDependencies, build_price_jobs
 from rss2discord.runtime.scheduler import (
     RuntimeScheduler,
@@ -17,8 +17,13 @@ from rss2discord.runtime.scheduler import (
     SchedulerControl,
     SchedulerJobs,
 )
+from rss2discord.transports.price_monitor import PriceMonitorDependencies
 from tests.app_helpers import FakeSender
 from tests.runtime_helpers import FakeClock, RecordingMonitor
+
+AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
+NeksioPriceMonitorDependencies = PriceMonitorDependencies[NeksioCatalog]
+SetecPriceMonitorDependencies = PriceMonitorDependencies[SetecCatalog]
 
 
 class FailingMonitor:
@@ -126,7 +131,7 @@ def test_build_price_jobs_includes_only_enabled_anhoch_feeds_with_their_interval
 
         # When
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             monitor_factory,
         )
         jobs = build_price_jobs(
@@ -201,15 +206,15 @@ def test_build_price_jobs_dispatches_mixed_sources_in_feed_order(
 
         # When
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             anhoch_monitor_factory,
         )
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.NeksioPriceMonitor",
+            "rss2discord.providers.registry.NeksioPriceMonitor",
             neksio_monitor_factory,
         )
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.SetecPriceMonitor",
+            "rss2discord.providers.registry.SetecPriceMonitor",
             setec_monitor_factory,
         )
         jobs = build_price_jobs(
@@ -266,7 +271,7 @@ def test_price_job_failure_is_sanitized_and_does_not_stop_later_jobs(
     caplog.set_level(logging.ERROR)
     with DeliveryStore(tmp_path / "state.db") as store:
         monkeypatch.setattr(
-            "rss2discord.price_monitor_builders.AnhochPriceMonitor",
+            "rss2discord.providers.registry.AnhochPriceMonitor",
             monitor_factory,
         )
         price_jobs = build_price_jobs(

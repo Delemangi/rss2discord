@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
+from rss2discord.models import PriceSnapshot
 from rss2discord.retries import (
     FeedFetchInterruptedError,
     SQLiteRetryInterruptedError,

@@ -6,17 +6,22 @@ from pathlib import Path
 import pytest
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore, PriceSnapshot
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, SourceMetric
+from rss2discord.models import PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.providers.ddstore.prices import (
+    DDStoreCatalog,
     DDStorePriceMonitor,
-    DDStorePriceMonitorDependencies,
 )
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    PriceMonitorDependencies,
+)
 from tests.setec_price_monitor_helpers import RecordingSender
+
+DDStorePriceMonitorDependencies = PriceMonitorDependencies[DDStoreCatalog]
 
 
 class CatalogStub:

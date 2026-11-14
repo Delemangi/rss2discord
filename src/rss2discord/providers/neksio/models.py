@@ -9,7 +9,7 @@ from typing import Annotated, ClassVar, Final
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
-from rss2discord.anhoch_money import (
+from rss2discord.price_amount import (
     MAX_ANHOCH_MONEY_DECIMAL_PLACES,
     MAX_ANHOCH_MONEY_DIGITS,
 )
