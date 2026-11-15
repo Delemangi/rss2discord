@@ -11,7 +11,7 @@ from rss2discord.transports import FeedFetchError, RSSStrategy
 from rss2discord.transports import rss as rss_transport
 
 RSS_FEED_LIMIT_BYTES = 1_048_576
-GITHUB_RELEASE_LIMIT_BYTES = 2_097_152
+GITHUB_RELEASE_LIMIT_BYTES = 4_194_304
 GITHUB_RELEASE_URL = "https://github.com/example/project/releases.atom"
 VALID_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -222,6 +222,18 @@ def test_release_feed_accepts_large_valid_xml_with_existing_entry_metadata(
     assert title == "Example Feed"
     assert len(entries) == 1
     assert RSSStrategy().get_entry_id(entries[0]) == "entry-1"
+
+
+def test_release_feed_accepts_feed_above_previous_two_megabyte_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: the openagent release feed grew past the old 2 MiB cap.
+    response = FakeResponse(200, [sized_valid_feed(2_124_278)])
+    install_response(monkeypatch, response)
+
+    entries, _ = RSSStrategy().fetch_entries(GITHUB_RELEASE_URL)
+
+    assert len(entries) == 1
 
 
 @pytest.mark.parametrize("declared", [False, True])
