@@ -1,4 +1,4 @@
-"""Canonical provider strategy names and display labels."""
+"""Canonical provider strategy metadata and display labels."""
 
 from typing import Final
 

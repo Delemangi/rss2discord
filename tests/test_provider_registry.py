@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from rss2discord.configuration import AppConfig, FeedConfig, FeedStrategyName
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
+from rss2discord.provider_metadata import PRICE_STRATEGIES, STRATEGY_LABELS
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
 from rss2discord.providers.anhoch.strategy import AnhochStrategy
 from rss2discord.providers.cccenter.prices import CCCenterPriceMonitor
@@ -23,7 +24,6 @@ from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
-from rss2discord.providers.names import PRICE_STRATEGIES, STRATEGY_LABELS
 from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor

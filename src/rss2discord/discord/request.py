@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import requests
 
+from rss2discord.discord.attachments import ReportFile
 from rss2discord.discord.components import JSONValue
 from rss2discord.discord.images import DownloadedImage
-
-if TYPE_CHECKING:
-    from rss2discord.discord.message import ReportFile
 
 
 @dataclass(frozen=True, slots=True)

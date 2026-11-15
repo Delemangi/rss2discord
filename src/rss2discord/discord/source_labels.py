@@ -2,7 +2,7 @@ from typing import Final
 from urllib.parse import parse_qs, urlsplit
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.providers.names import ADAPTER_LABELS, STRATEGY_LABELS
+from rss2discord.provider_metadata import ADAPTER_LABELS, STRATEGY_LABELS
 
 SOURCE_LABEL_GITHUB: Final = "GitHub"
 SOURCE_LABEL_GITLAB: Final = "GitLab"
