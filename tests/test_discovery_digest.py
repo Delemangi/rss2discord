@@ -23,6 +23,7 @@ from tests.app_helpers import (
     make_entry,
     make_feed,
 )
+from tests.delivery_helpers import count_delivered
 
 
 def _entries(count: int) -> list[FakeEntry]:
@@ -36,7 +37,7 @@ def test_twenty_five_new_entries_send_cards_and_mark_all(tmp_path: Path) -> None
         app = make_app(store, sender, FakeStrategy(_entries(25)), (feed,))
         app.process_feed(feed)
         assert len(sender.messages) == 25
-        assert store.count_delivered(feed.id) == 25
+        assert count_delivered(store, feed.id) == 25
         assert all(store.has_delivered(feed.id, str(index)) for index in range(25))
 
 
@@ -51,7 +52,7 @@ def test_twenty_six_new_entries_send_one_digest_and_mark_all(tmp_path: Path) -> 
         assert message.entry.title == "New items"
         assert len(message.files) == 2
         assert len(message.components or ()) == 4
-        assert store.count_delivered(feed.id) == 26
+        assert count_delivered(store, feed.id) == 26
 
 
 def test_digest_html_and_csv_contain_every_entry_with_escaping(
@@ -138,12 +139,12 @@ def test_failed_digest_leaves_entries_unmarked_then_retries(tmp_path: Path) -> N
         app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))
         app.process_feed(feed)
         assert len(sender.messages) == 1
-        assert store.count_delivered(feed.id) == 0
+        assert count_delivered(store, feed.id) == 0
         health = store.list_health(feed.id)[0]
         assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
         app.process_feed(feed)
         assert len(sender.messages) == 2
-        assert store.count_delivered(feed.id) == 26
+        assert count_delivered(store, feed.id) == 26
         assert store.list_health(feed.id)[0].state == "healthy"
 
 
@@ -166,7 +167,7 @@ def test_failed_single_card_records_failure_and_retries(tmp_path: Path) -> None:
         app.process_feed(feed)
         health = store.list_health(feed.id)[0]
         assert (health.state, health.cause) == ("failed", "DeliveryRetryPending")
-        assert store.count_delivered(feed.id) == 0
+        assert count_delivered(store, feed.id) == 0
         app.process_feed(feed)
         assert store.has_delivered(feed.id, "0")
         assert store.list_health(feed.id)[0].state == "healthy"
@@ -179,7 +180,7 @@ def test_interrupted_digest_leaves_entries_unmarked(tmp_path: Path) -> None:
         app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))
         assert app.process_feed(feed) is JobOutcome.ATTEMPTED
         assert len(sender.messages) == 1
-        assert store.count_delivered(feed.id) == 0
+        assert count_delivered(store, feed.id) == 0
         assert store.list_health(feed.id) == ()
 
 
@@ -190,7 +191,7 @@ def test_large_batch_has_no_cap_error(tmp_path: Path) -> None:
         app = make_app(store, sender, FakeStrategy(_entries(500)), (feed,))
         app.process_feed(feed)
         assert len(sender.messages) == 1
-        assert store.count_delivered(feed.id) == 500
+        assert count_delivered(store, feed.id) == 500
 
 
 def test_missing_and_too_old_timestamps_are_still_skipped(tmp_path: Path) -> None:
@@ -241,6 +242,6 @@ def test_mark_delivered_many_is_idempotent(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         store.mark_delivered_many("feed", ("a", "b"))
         store.mark_delivered_many("feed", ("a", "b"))
-        assert store.count_delivered("feed") == 2
+        assert count_delivered(store, "feed") == 2
         assert store.has_delivered("feed", "a")
         assert store.has_delivered("feed", "b")

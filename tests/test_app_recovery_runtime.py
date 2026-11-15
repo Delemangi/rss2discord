@@ -24,6 +24,7 @@ from tests.app_helpers import (
     make_entry,
     make_feed,
 )
+from tests.delivery_helpers import count_delivered
 from tests.runtime_helpers import FakeClock, RecordingMonitor
 
 AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
@@ -92,12 +93,12 @@ def test_fresh_catalog_baseline_is_not_delivery_and_allows_only_new_undated_ids(
             1,
         )
         assert store.has_delivered(feed.id, "0")
-        assert store.count_delivered(feed.id) == 5
+        assert count_delivered(store, feed.id) == 5
         assert sender.messages == []
         strategy.entries.append(_undated("new"))
         app.process_feed(feed)
         app.process_feed(feed)
-        assert store.count_delivered(feed.id) == 6
+        assert count_delivered(store, feed.id) == 6
         assert store.has_delivered(feed.id, "new")
         assert store.has_delivered(feed.id, "0")
         assert len(sender.messages) == 1
@@ -166,7 +167,7 @@ def test_failed_catalog_does_not_create_baseline_candidate(tmp_path: Path) -> No
             FeedFetchError("CCCenter", "IncompletePage"),
         )
         _process_feed_safely(feed, app.process_feed, app._store)
-        assert store.count_delivered(feed.id) == 1
+        assert count_delivered(store, feed.id) == 1
         assert store.list_health(feed.id)[0].state == "failed"
 
 
