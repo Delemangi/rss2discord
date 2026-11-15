@@ -13,6 +13,9 @@ from rss2discord.providers.technomarket.catalog import (
     TECHNOMARKET_FEED_URL,
     TechnomarketCatalogClient,
     _decode_html,
+    validate_technomarket_url,
+)
+from rss2discord.providers.technomarket.parser import (
     _page_count,
     _page_info,
     _page_number,
@@ -20,7 +23,6 @@ from rss2discord.providers.technomarket.catalog import (
     _safe_product_url,
     parse_mkd_price,
     parse_product_card,
-    validate_technomarket_url,
 )
 from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.scan_budget import ScanBudget
