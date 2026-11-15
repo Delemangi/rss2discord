@@ -168,15 +168,16 @@ def _price(node: Tag | None) -> Decimal | None:
 
 
 def _safe_product_url(value: str) -> tuple[str, str]:
-    absolute = urljoin(TECHNOMARKET_ORIGIN + "/", value.strip())
     try:
+        absolute = urljoin(TECHNOMARKET_ORIGIN + "/", value.strip())
         parsed = urlsplit(absolute)
+        port = parsed.port
     except ValueError:
         raise FeedFetchError(TECHNOMARKET_LABEL, "InvalidProductUrl") from None
     if (
         parsed.scheme != "https"
         or parsed.hostname != TECHNOMARKET_HOST
-        or parsed.port is not None
+        or port is not None
         or parsed.username is not None
         or parsed.password is not None
         or not _PRODUCT_PATH_RE.fullmatch(parsed.path)
@@ -200,12 +201,13 @@ def _safe_product_url(value: str) -> tuple[str, str]:
 def _safe_image_url(value: str | None) -> str | None:
     if not value:
         return None
-    absolute = urljoin(TECHNOMARKET_ORIGIN + "/", value.split(",", 1)[0].strip())
     try:
+        absolute = urljoin(TECHNOMARKET_ORIGIN + "/", value.split(",", 1)[0].strip())
         parsed = urlsplit(absolute)
+        port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port:
+    if parsed.scheme != "https" or parsed.username or parsed.password or port:
         return None
     return urlunsplit(("https", parsed.hostname or "", parsed.path, parsed.query, ""))
 
@@ -376,6 +378,7 @@ def _page_number(value: object) -> int | None:
         return None
     try:
         parsed = urlsplit(urljoin(TECHNOMARKET_ORIGIN + "/", href))
+        port = parsed.port
     except ValueError:
         raise FeedFetchError(TECHNOMARKET_LABEL, "MalformedPagination") from None
     match = _CATEGORY_PAGE_RE.fullmatch(parsed.path)
@@ -386,7 +389,7 @@ def _page_number(value: object) -> int | None:
     if (
         parsed.scheme != "https"
         or parsed.hostname != TECHNOMARKET_HOST
-        or parsed.port is not None
+        or port is not None
         or parsed.query
         or parsed.fragment
     ):
