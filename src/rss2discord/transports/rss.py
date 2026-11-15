@@ -16,7 +16,7 @@ from rss2discord.transports.rss_timestamp import get_rss_timestamp
 from rss2discord.url_normalization import normalize_http_url
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
-GITHUB_RELEASE_ATOM_MAX_BYTES: Final = 2_097_152
+GITHUB_RELEASE_ATOM_MAX_BYTES: Final = 4_194_304
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
 MAX_RSS_CATEGORIES: Final = 3
 MAX_RSS_CATEGORY_LENGTH: Final = 64

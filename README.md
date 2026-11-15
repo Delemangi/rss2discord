@@ -58,7 +58,7 @@ Provider packages own source strategies, catalog access, parsing, and price moni
 
 See [price-monitoring flow](docs/price-monitoring-flow.md) for the comparison, planning, and delivery boundaries and their regression tests.
 
-RSS/Atom responses are bounded to 1 MiB by default. A 2 MiB allowance applies only when both the requested URL and final response URL are exact public GitHub release Atom addresses (`https://github.com/<owner>/<repo>/releases.atom`); the same decoded-response size checks still apply.
+RSS/Atom responses are bounded to 1 MiB by default. A 4 MiB allowance applies only when both the requested URL and final response URL are exact public GitHub release Atom addresses (`https://github.com/<owner>/<repo>/releases.atom`); the same decoded-response size checks still apply.
 
 ## Price notifications
 
