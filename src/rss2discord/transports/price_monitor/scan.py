@@ -60,6 +60,7 @@ def run_price_scan[ProductT](
     ]
     | None = None,
     confirmation_limit: int | None = None,
+    allow_currency_changes: bool = False,
 ) -> None:
     """Load baselines, diff observations, confirm, and deliver one provider scan."""
     if snapshot_limit < 1:
@@ -83,11 +84,12 @@ def run_price_scan[ProductT](
         observation_by_id[observation.snapshot.product_id] = observation
     if len(set(by_id) | set(current)) > snapshot_limit:
         raise FeedFetchError(label, "SnapshotLimitExceeded")
-    validate_price_currencies(
-        provider=provider,
-        current=current,
-        persisted=by_id,
-    )
+    if not allow_currency_changes:
+        validate_price_currencies(
+            provider=provider,
+            current=current,
+            persisted=by_id,
+        )
 
     silent, records = diff_price_snapshots(current.values(), by_id)
     if dependencies.delivery.is_shutdown_requested():
@@ -184,6 +186,7 @@ def run_price_scan[ProductT](
             catalog_count=len(observations),
             force_summary=bulk,
             additional_pending=additional_pending,
+            allow_currency_changes=allow_currency_changes,
         ),
     )
     if plan.bulk:

@@ -128,6 +128,34 @@ def test_reklama5_price_monitor_silently_baselines_then_delivers_change(
         )
 
 
+def test_reklama5_price_monitor_delivers_currency_change_without_direction(
+    tmp_path: Path,
+) -> None:
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+    catalog = CatalogStub(
+        [
+            (_listing("1", "950 МКД"),),
+            (_listing("1", "20 €"),),
+        ],
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = _monitor(catalog, store, sender)
+        monitor.scan()
+        monitor.scan()
+
+        assert len(sender.messages) == 1
+        entry = sender.messages[0].entry
+        assert entry.price_direction is None
+        assert entry.source_metrics[:2] == (
+            SourceMetric("Price", "20 €"),
+            SourceMetric("Previous", "950 МКД", prior=True),
+        )
+        assert store.load_price_snapshots("reklama5") == (
+            PriceSnapshot("reklama5", "1", Decimal(20), "20 €", "EUR"),
+        )
+
+
 def test_reklama5_price_monitor_ignores_unavailable_prices_and_retains_baseline(
     tmp_path: Path,
 ) -> None:
