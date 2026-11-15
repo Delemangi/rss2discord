@@ -16,6 +16,7 @@ from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import listing_http
 from tests.app_helpers import FakeSender
 from tests.configuration_helpers import write_config
+from tests.delivery_helpers import count_delivered
 from tests.reklama5_helpers import (
     FIXED_NOW,
     SEARCH_URL,
@@ -265,7 +266,7 @@ def test_reklama5_same_id_changes_remain_silent(
 
         app.process_feed(feed)
 
-        assert store.count_delivered(feed.id) == 1
+        assert count_delivered(store, feed.id) == 1
     assert sender.messages == []
     assert mark_calls == (
         [] if existing_state == "seeded" else [(feed.id, EntryId("123"))]

@@ -142,13 +142,6 @@ class DeliveryStore:
                 ((feed_id, entry_id) for entry_id in entry_ids),
             )
 
-    def count_delivered(self, feed_id: str) -> int:
-        row = self._connection.execute(
-            "SELECT COUNT(*) FROM delivered_entries WHERE feed_id = ?",
-            (feed_id,),
-        ).fetchone()
-        return 0 if row is None else int(row[0])
-
     def is_feed_initialized(self, feed_id: str) -> bool:
         row = self._connection.execute(
             "SELECT 1 FROM initialized_feeds WHERE feed_id = ?",

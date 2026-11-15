@@ -139,15 +139,6 @@ def test_selected_details_preserve_identity_and_order(
     assert all(item.price_status == "scalar" for item in details)
 
 
-def test_single_product_interface_uses_the_same_bounded_path(
-    transport: DetailTransport,
-) -> None:
-    product = CCCenterCatalogClient().fetch_product_detail(listing(1))
-    assert product.product_id == listing(1).product_id
-    assert len(transport.urls) == 1
-    assert "include=101" in transport.urls[0]
-
-
 def test_batch_accepts_selected_catalog_products(transport: DetailTransport) -> None:
     selected = listing(1)
     product = CCCenterProduct(
@@ -191,14 +182,14 @@ def test_detail_requires_one_well_formed_exact_url_match(
     client = CCCenterCatalogClient()
     selected_listing = listing(1)
     with pytest.raises(FeedFetchError, match=error):
-        client.fetch_product_detail(selected_listing)
+        client.fetch_product_details((selected_listing,))
 
 
 def test_detail_accepts_zero_as_unpriced_scalar_and_encodes_unicode_slug(
     transport: DetailTransport,
 ) -> None:
     transport.detail_price = "0"
-    result = CCCenterCatalogClient().fetch_product_detail(listing(1))
+    result = CCCenterCatalogClient().fetch_product_details((listing(1),))[0]
     assert result.current_price == Decimal(0)
 
     encoded_url = "https://cccenter.mk/product/ssd-2-5%e2%80%b3-500gb/"
@@ -213,7 +204,7 @@ def test_detail_accepts_zero_as_unpriced_scalar_and_encodes_unicode_slug(
         None,
         store_api_id=501,
     )
-    product = CCCenterCatalogClient().fetch_product_detail(selected)
+    product = CCCenterCatalogClient().fetch_product_details((selected,))[0]
     assert product.product_id == encoded_url
     query = parse_qs(urlsplit(transport.urls[-1]).query)
     assert query["include"] == ["501"]
@@ -225,7 +216,7 @@ def test_detail_response_price_and_locator_remain_available_for_confirmation(
 ) -> None:
     transport.detail_price = "9012"
     selected = listing(1)
-    detail = CCCenterCatalogClient().fetch_product_detail(selected)
+    detail = CCCenterCatalogClient().fetch_product_details((selected,))[0]
     assert detail.product_id == selected.url
     assert detail.store_api_id == selected.store_api_id
     assert detail.current_price == Decimal("90.12")

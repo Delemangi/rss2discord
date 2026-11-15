@@ -52,12 +52,6 @@ class DatabaseOwnership:
         self._file = handle
         return self
 
-    def require(self, database_path: Path) -> None:
-        if self._file is None or database_path.resolve() != self.database_path:
-            raise DatabaseOwnershipError(
-                "offline operation requires database ownership",
-            )
-
     def __exit__(
         self,
         exc_type: type[BaseException] | None,

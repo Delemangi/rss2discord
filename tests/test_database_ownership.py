@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from rss2discord.admin import main
-from rss2discord.database_ownership import DatabaseOwnership, DatabaseOwnershipError
+from rss2discord.database_ownership import DatabaseOwnership
 from rss2discord.delivery_store import DeliveryStore
 
 
@@ -58,14 +58,13 @@ def test_readers_work_while_application_owns_database(
         assert capsys.readouterr().out.strip() == "[]"
 
 
-def test_ownership_requires_same_database_and_thread_binding_unchanged(
-    tmp_path: Path,
-) -> None:
+def test_thread_binding_unchanged_while_ownership_held(tmp_path: Path) -> None:
     database = tmp_path / "state.db"
-    with DatabaseOwnership(database) as owner, DeliveryStore(database) as store:
-        with pytest.raises(DatabaseOwnershipError):
-            owner.require(tmp_path / "other.db")
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(store.load_price_snapshots, "feed")
-            with pytest.raises(sqlite3.ProgrammingError, match="same thread"):
-                future.result(timeout=10)
+    with (
+        DatabaseOwnership(database),
+        DeliveryStore(database) as store,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        future = executor.submit(store.load_price_snapshots, "feed")
+        with pytest.raises(sqlite3.ProgrammingError, match="same thread"):
+            future.result(timeout=10)

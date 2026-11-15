@@ -450,18 +450,6 @@ def _is_in_stock(stock: Tag | None) -> bool:
 class CCCenterCatalogClient:
     """Enumerate the complete bounded listing index without N+1 detail fetches."""
 
-    def fetch_product_detail(
-        self,
-        listing: CCCenterListing | CCCenterProduct,
-        *,
-        is_shutdown_requested: Callable[[], bool] = lambda: False,
-    ) -> CCCenterProduct:
-        """Optional single-product enrichment, separate from catalog enumeration."""
-        return self.fetch_product_details(
-            (listing,),
-            is_shutdown_requested=is_shutdown_requested,
-        )[0]
-
     def fetch_product_details(
         self,
         listings: Sequence[CCCenterListing | CCCenterProduct],
