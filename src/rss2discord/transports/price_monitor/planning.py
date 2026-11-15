@@ -63,13 +63,15 @@ def prepare_price_delivery(
     catalog_count: int,
     force_summary: bool = False,
     additional_pending: int = 0,
+    allow_currency_changes: bool = False,
 ) -> PriceDeliveryPlan:
     """Validate currency stability and choose inline cards or one digest."""
-    validate_price_currencies(
-        provider=provider,
-        current=current,
-        persisted=persisted,
-    )
+    if not allow_currency_changes:
+        validate_price_currencies(
+            provider=provider,
+            current=current,
+            persisted=persisted,
+        )
     if force_summary or len(changes) > MAX_INLINE_PRICE_CHANGES:
         return PriceDeliveryPlan(
             bulk=True,

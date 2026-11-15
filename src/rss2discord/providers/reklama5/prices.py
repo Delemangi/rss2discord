@@ -79,6 +79,7 @@ class Reklama5PriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS,
+            allow_currency_changes=True,
         )
 
     def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:
