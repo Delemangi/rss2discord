@@ -2,22 +2,6 @@
 
 from typing import Final
 
-STRATEGY_NAMES: Final = (
-    "anhoch",
-    "cccenter",
-    "ddstore",
-    "gjirafa50",
-    "hivetec",
-    "itmk_oglasnik",
-    "neksio",
-    "neptun",
-    "pazar3",
-    "reklama5",
-    "rss",
-    "setec",
-    "technomarket",
-    "xenforo",
-)
 PRICE_STRATEGIES: Final = frozenset(
     {
         "anhoch",
