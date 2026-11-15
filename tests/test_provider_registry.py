@@ -23,11 +23,7 @@ from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
-from rss2discord.providers.names import (
-    PRICE_STRATEGIES,
-    STRATEGY_LABELS,
-    STRATEGY_NAMES,
-)
+from rss2discord.providers.names import PRICE_STRATEGIES, STRATEGY_LABELS
 from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
@@ -122,9 +118,8 @@ def make_shared_dependencies(
     )
 
 
-def test_strategy_names_match_configuration_literal() -> None:
-    assert set(get_args(FeedStrategyName)) == set(STRATEGY_NAMES)
-    assert set(STRATEGY_LABELS) == set(STRATEGY_NAMES)
+def test_strategy_labels_match_configuration_literal() -> None:
+    assert set(STRATEGY_LABELS) == set(get_args(FeedStrategyName))
 
 
 def test_build_discovery_strategies_covers_every_strategy() -> None:
@@ -145,7 +140,7 @@ def test_build_discovery_strategies_covers_every_strategy() -> None:
     assert pazar3._pacer is pacer
 
 
-@pytest.mark.parametrize("strategy", STRATEGY_NAMES)
+@pytest.mark.parametrize("strategy", get_args(FeedStrategyName))
 def test_source_label_uses_registry_label(strategy: FeedStrategyName) -> None:
     assert source_label(make_feed(strategy)) == STRATEGY_LABELS[strategy]
 
@@ -169,7 +164,10 @@ def test_price_strategy_builds_monitor(
     assert type(monitor) is EXPECTED_MONITOR_TYPES[strategy]
 
 
-@pytest.mark.parametrize("strategy", sorted(set(STRATEGY_NAMES) - PRICE_STRATEGIES))
+@pytest.mark.parametrize(
+    "strategy",
+    sorted(set(get_args(FeedStrategyName)) - PRICE_STRATEGIES),
+)
 def test_non_price_strategy_rejects_price_interval(
     strategy: FeedStrategyName,
 ) -> None:
