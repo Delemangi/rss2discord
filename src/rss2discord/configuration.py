@@ -5,7 +5,7 @@ from urllib.parse import quote
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from rss2discord.providers.names import PRICE_STRATEGIES
+from rss2discord.provider_metadata import PRICE_STRATEGIES
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
     normalize_remote_media_url,

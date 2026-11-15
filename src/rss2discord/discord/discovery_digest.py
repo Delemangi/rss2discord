@@ -12,13 +12,14 @@ from html import escape
 from typing import Final
 
 from rss2discord.configuration import FeedConfig
+from rss2discord.discord.attachments import ReportFile
 from rss2discord.discord.components import (
     MAX_TEXT_DISPLAY_CHARACTERS,
     TEXT_DISPLAY_COMPONENT,
     JSONValue,
     build_components_v2_payload,
 )
-from rss2discord.discord.message import ReportFile, WebhookMessage
+from rss2discord.discord.message import WebhookMessage
 from rss2discord.discord.report import (
     csv_safe,
     html_shell,

@@ -13,9 +13,10 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord import report as report_module
+from rss2discord.discord.attachments import ReportFile
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.components import TEXT_DISPLAY_COMPONENT
-from rss2discord.discord.message import ReportFile, prepare_delivery
+from rss2discord.discord.message import prepare_delivery
 from rss2discord.models import EntryData, PriceDirection, PriceSnapshot, SourceMetric
 from rss2discord.price_notifications import (
     PriceNotification,

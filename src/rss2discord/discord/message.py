@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass, replace
 
 from rss2discord.configuration import FeedConfig
+from rss2discord.discord.attachments import ReportFile
 from rss2discord.discord.components import (
     IS_COMPONENTS_V2,
     JSONValue,
@@ -17,15 +18,6 @@ logger = logging.getLogger(__name__)
 
 FILE_COMPONENT: int = 13
 ATTACHMENT_URL_PREFIX = "attachment://"
-
-
-@dataclass(frozen=True, slots=True)
-class ReportFile:
-    """One uploaded report attachment referenced from the message payload."""
-
-    filename: str
-    content: bytes
-    content_type: str
 
 
 @dataclass(frozen=True, slots=True)
