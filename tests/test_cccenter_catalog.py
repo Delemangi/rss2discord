@@ -8,15 +8,18 @@ from curl_cffi import requests as curl_requests
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.providers.cccenter import catalog as cccenter_catalog
+from rss2discord.providers.cccenter import parser as cccenter_parser
 from rss2discord.providers.cccenter.catalog import (
     CCCENTER_SCAN_LIMITS,
     CCCenterCatalogClient,
-    parse_mkd_price,
-    parse_product_detail,
-    parse_product_listing,
     validate_cccenter_url,
 )
 from rss2discord.providers.cccenter.models import CCCenterProduct
+from rss2discord.providers.cccenter.parser import (
+    parse_mkd_price,
+    parse_product_detail,
+    parse_product_listing,
+)
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError
 from rss2discord.transports import scan_budget as scan_budget_module
@@ -239,21 +242,21 @@ def test_store_api_encoded_permalink_identity_is_not_reconstructed() -> None:
 @pytest.mark.parametrize("price", ["-1", "1.2", "1e3", 1, True])
 def test_store_api_rejects_noncanonical_minor_price(price: object) -> None:
     with pytest.raises(FeedFetchError, match="MalformedPrice"):
-        cccenter_catalog._minor_amount(price)
+        cccenter_parser._minor_amount(price)
 
 
 def test_store_api_rejects_huge_minor_amount_as_typed_error() -> None:
     with pytest.raises(FeedFetchError, match="MalformedPrice"):
-        cccenter_catalog._minor_amount("9" * 5000)
+        cccenter_parser._minor_amount("9" * 5000)
 
 
 def test_store_api_preserves_range_and_zero_amount_status() -> None:
     assert (
-        cccenter_catalog._store_price(_store_item(price_range={"min_price": "1"}))[2]
+        cccenter_parser._store_price(_store_item(price_range={"min_price": "1"}))[2]
         == "range"
     )
-    assert cccenter_catalog._minor_amount("0") == 0
-    assert cccenter_catalog._minor_amount("1") == Decimal("0.01")
+    assert cccenter_parser._minor_amount("0") == 0
+    assert cccenter_parser._minor_amount("1") == Decimal("0.01")
 
 
 def test_store_api_rejects_bad_currency_even_when_product_is_variable() -> None:
@@ -263,7 +266,7 @@ def test_store_api_rejects_bad_currency_even_when_product_is_variable() -> None:
     assert isinstance(prices, dict)
     prices["currency_code"] = "USD"
     with pytest.raises(FeedFetchError, match="InvalidCurrency"):
-        cccenter_catalog._store_price(item)
+        cccenter_parser._store_price(item)
 
 
 def test_store_api_defers_observed_woosb_bundle_price_without_losing_identity() -> None:
@@ -325,7 +328,7 @@ def test_store_api_rejects_non_boolean_stock_and_permalink_slug_conflict() -> No
 )
 def test_cccenter_rejects_unsafe_raw_product_paths(product_url: str) -> None:
     with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
-        cccenter_catalog._safe_product_url(product_url)
+        cccenter_parser._safe_product_url(product_url)
 
 
 def test_cccenter_marks_variable_and_range_prices_unavailable() -> None:

@@ -4,6 +4,7 @@ from typing import Final
 
 CCCENTER_LABEL: Final = "CCCenter"
 CCCENTER_ORIGIN: Final = "https://cccenter.mk"
+CCCENTER_HOST: Final = "cccenter.mk"
 CCCENTER_FEED_URL: Final = f"{CCCENTER_ORIGIN}/shop/?orderby=date"
 CCCENTER_SHOP_PATH: Final = "/shop/"
 CCCENTER_PRODUCTS_PER_PAGE: Final = 24

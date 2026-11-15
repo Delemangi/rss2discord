@@ -8,9 +8,11 @@ from rss2discord.providers.technomarket import catalog as technomarket_catalog
 from rss2discord.providers.technomarket.catalog import (
     TECHNOMARKET_FEED_URL,
     TechnomarketCatalogClient,
+    validate_technomarket_url,
+)
+from rss2discord.providers.technomarket.parser import (
     parse_mkd_price,
     parse_product_card,
-    validate_technomarket_url,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "technomarket"

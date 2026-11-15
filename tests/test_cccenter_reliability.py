@@ -11,13 +11,16 @@ from bs4 import BeautifulSoup
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.cccenter import catalog as cccenter_catalog
+from rss2discord.providers.cccenter import parser as cccenter_parser
 from rss2discord.providers.cccenter.catalog import (
     CCCENTER_FEED_URL,
     CCCenterCatalogClient,
+)
+from rss2discord.providers.cccenter.models import CCCenterListing
+from rss2discord.providers.cccenter.parser import (
     parse_product_detail,
     parse_product_listing,
 )
-from rss2discord.providers.cccenter.models import CCCenterListing
 from rss2discord.retries import FeedFetchInterruptedError
 
 
@@ -212,7 +215,7 @@ def test_html_detail_helper_still_rejects_unrelated_prices() -> None:
         "html.parser",
     )
     with pytest.raises(FeedFetchError, match="MalformedProduct"):
-        cccenter_catalog.parse_product_detail(document, listing)
+        cccenter_parser.parse_product_detail(document, listing)
 
 
 def _html_listing(number: int = 1) -> CCCenterListing:
