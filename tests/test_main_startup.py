@@ -35,6 +35,7 @@ def test_main_runs_application_with_environment_paths(
     database_path = tmp_path / "state.db"
     config = object()
     store = object()
+    sender = object()
     application = _Application()
     seen: dict[str, object] = {}
 
@@ -59,7 +60,7 @@ def test_main_runs_application_with_environment_paths(
     monkeypatch.setattr(main_module, "load_config", load)
     monkeypatch.setattr(main_module, "DatabaseOwnership", own)
     monkeypatch.setattr(main_module, "DeliveryStore", deliver)
-    monkeypatch.setattr(main_module, "DiscordWebhookClient", object)
+    monkeypatch.setattr(main_module, "DiscordWebhookClient", lambda: sender)
     monkeypatch.setattr(main_module, "RSSToDiscord", build_application)
     monkeypatch.setattr(
         main_module,
@@ -77,6 +78,7 @@ def test_main_runs_application_with_environment_paths(
     assert isinstance(kwargs, dict)
     assert kwargs["config"] is config
     assert kwargs["store"] is store
+    assert kwargs["sender"] is sender
 
 
 def test_main_returns_one_when_database_is_owned(

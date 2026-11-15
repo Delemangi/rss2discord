@@ -14,6 +14,7 @@ from rss2discord.providers.technomarket.catalog import (
     TechnomarketCatalogClient,
     _decode_html,
     _page_count,
+    _page_info,
     _page_number,
     _safe_image_url,
     _safe_product_url,
@@ -209,7 +210,7 @@ def test_technomarket_page_info_requires_a_range() -> None:
     document = BeautifulSoup("<html></html>", "html.parser")
 
     with pytest.raises(FeedFetchError, match="MalformedCount"):
-        TechnomarketCatalogClient._parse_products(document)
+        _page_info(document)
 
 
 @pytest.mark.parametrize(
@@ -227,7 +228,7 @@ def test_technomarket_page_info_rejects_invalid_ranges(count: str) -> None:
     )
 
     with pytest.raises(FeedFetchError, match="MalformedCount"):
-        TechnomarketCatalogClient._parse_products(document)
+        _page_info(document)
 
 
 def test_technomarket_page_count_rejects_zero_page() -> None:
@@ -256,14 +257,19 @@ def test_technomarket_page_number_rejects_malformed_hrefs(href: str) -> None:
         _page_number(href)
 
 
-def test_technomarket_catalog_uses_retry_policy(
+def test_technomarket_catalog_retries_retryable_catalog_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    page = _page(count="1 - 1 од 1 производи", cards=_card())
+    incomplete = _page(
+        count="1 - 2 од 3 производи",
+        cards=_card() + _card(data_id="2", href="/product/2/item"),
+    )
+    complete = _page(count="1 - 1 од 1 производи", cards=_card())
+    pages = iter((incomplete, complete))
     monkeypatch.setattr(
         TechnomarketCatalogClient,
         "_fetch_html",
-        staticmethod(lambda url, **kwargs: page),
+        staticmethod(lambda url, **kwargs: next(pages)),
     )
     sleeps: list[float] = []
 
@@ -282,7 +288,7 @@ def test_technomarket_catalog_uses_retry_policy(
     )
 
     assert [product.product_id for product in products] == ["1"]
-    assert sleeps == []
+    assert len(sleeps) == 1
 
 
 def test_technomarket_catalog_rejects_total_above_limit(
@@ -367,6 +373,14 @@ def test_technomarket_fetch_html_tracks_budget(
         technomarket_catalog.TECHNOMARKET_SCAN_LIMITS,
         lambda: False,
     )
+    after_calls: list[bool] = []
+    original_after = ScanBudget.after_request
+
+    def after_request(self: ScanBudget) -> None:
+        after_calls.append(True)
+        original_after(self)
+
+    monkeypatch.setattr(ScanBudget, "after_request", after_request)
 
     html = TechnomarketCatalogClient._fetch_html(
         TECHNOMARKET_FEED_URL,
@@ -375,6 +389,7 @@ def test_technomarket_fetch_html_tracks_budget(
 
     assert html == ""
     assert budget.requests == 1
+    assert after_calls == [True]
 
 
 def test_technomarket_request_html_reraises_feed_errors(
