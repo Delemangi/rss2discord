@@ -7,9 +7,9 @@ Monitor feeds, forums, marketplaces, and product catalogs; send new-item and opt
 - RSS/Atom (including GitHub releases and GitLab commits), Hacker News and Reddit adapters
 - XenForo and IT.mk Oglasnik
 - Pazar3 and Reklama5 listings
-- Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, and Technomarket products
+- Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, and Technomarket products
 
-See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges.
+See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges. Ananas uses a public Algolia proxy, requires `ANANAS_ALGOLIA_SEARCH_KEY` in the environment, and supports only its computers category URL.
 
 ## Setec public-webstore scope
 

@@ -22,6 +22,7 @@ FeedStrategyName = Literal[
     "rss",
     "xenforo",
     "itmk_oglasnik",
+    "ananas",
     "anhoch",
     "ddstore",
     "gjirafa50",

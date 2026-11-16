@@ -313,3 +313,25 @@ def test_load_config_parses_gjirafa50_strategy_with_price_monitor(
     # Then
     assert config.feeds[0].strategy == "gjirafa50"
     assert config.feeds[0].price_check_interval == 21600
+
+
+def test_load_config_parses_ananas_strategy_with_price_monitor(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: ananas-computers\n"
+        "    url: https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: ananas\n"
+        "    price_check_interval: 3600\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].strategy == "ananas"
+    assert config.feeds[0].price_check_interval == 3600
