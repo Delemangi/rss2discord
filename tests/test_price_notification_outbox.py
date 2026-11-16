@@ -339,7 +339,7 @@ def test_digest_payload_aligns_attachments_files_and_file_components() -> None:
         def download(self, url: str) -> None:
             raise AssertionError(f"digest must not download {url}")
 
-    prepared = prepare_delivery(message, NoDownload(), lambda _: True)  # type: ignore[arg-type]
+    prepared = prepare_delivery(message, NoDownload(), lambda _: True)
     payload = prepared.request.payload
     attachments = payload["attachments"]
     assert isinstance(attachments, list)
@@ -407,7 +407,7 @@ def test_digest_respects_component_and_text_limits_and_has_no_images() -> None:
         def download(self, url: str) -> None:
             raise AssertionError(f"digest must not download {url}")
 
-    payload = prepare_delivery(message, NoDownload(), lambda _: True).request.payload  # type: ignore[arg-type]
+    payload = prepare_delivery(message, NoDownload(), lambda _: True).request.payload
     components = payload["components"]
     assert isinstance(components, list)
     assert len(components) <= 40

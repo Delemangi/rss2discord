@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import replace
 from decimal import Decimal
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import PriceSnapshot, SourceMetric
+from rss2discord.models import PriceSnapshot
 from rss2discord.providers.pazar3.models import Pazar3Listing
 from rss2discord.providers.pazar3.scope import PAZAR3_LABEL
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
@@ -19,7 +18,7 @@ from rss2discord.retries import (
 from rss2discord.transports.price_monitor import (
     PriceMonitorDependencies,
     PriceObservation,
-    price_direction,
+    build_price_change_message,
     run_price_scan,
 )
 
@@ -103,23 +102,10 @@ class Pazar3PriceMonitor:
         previous: PriceSnapshot,
         current: PriceSnapshot,
     ) -> WebhookMessage:
-        base_entry = Pazar3Strategy().get_entry_data(listing)
-        metrics = (
-            SourceMetric("Price", current.formatted),
-            SourceMetric("Previous", previous.formatted, prior=True),
-            *(
-                metric
-                for metric in base_entry.source_metrics
-                if metric.label != "Price"
-            ),
-        )
-        return WebhookMessage(
+        return build_price_change_message(
             feed=self._feed,
-            entry=replace(
-                base_entry,
-                description="",
-                source_metrics=metrics,
-                price_direction=price_direction(previous, current),
-            ),
+            base_entry=Pazar3Strategy().get_entry_data(listing),
+            previous=previous,
+            current=current,
             source_title=self._feed.name or PAZAR3_LABEL,
         )

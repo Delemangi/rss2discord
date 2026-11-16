@@ -6,8 +6,8 @@ from collections.abc import Callable
 from typing import Final, final
 
 from curl_cffi import requests as curl_requests
-from curl_cffi.const import CurlECode
 
+from rss2discord.curl_errors import TRANSIENT_CURL_ERRORS
 from rss2discord.retries import parse_retry_after
 
 __all__ = (
@@ -22,23 +22,6 @@ MAX_IMAGE_TRANSFER_MS: Final = 30_000
 MAX_IMAGE_RETRIES: Final = 2
 IMAGE_RETRY_BASE_DELAY_SECONDS: Final = 1.0
 type RetrySleep = Callable[[float], bool]
-TRANSIENT_IMAGE_CURL_ERRORS: Final = frozenset(
-    {
-        CurlECode.COULDNT_RESOLVE_HOST,
-        CurlECode.COULDNT_CONNECT,
-        CurlECode.PARTIAL_FILE,
-        CurlECode.OPERATION_TIMEDOUT,
-        CurlECode.GOT_NOTHING,
-        CurlECode.SEND_ERROR,
-        CurlECode.RECV_ERROR,
-        CurlECode.AGAIN,
-        CurlECode.NO_CONNECTION_AVAILABLE,
-        CurlECode.HTTP2,
-        CurlECode.HTTP2_STREAM,
-        CurlECode.HTTP3,
-        CurlECode.QUIC_CONNECT_ERROR,
-    },
-)
 
 
 class ImageDownloadInterruptedError(Exception):
@@ -47,7 +30,7 @@ class ImageDownloadInterruptedError(Exception):
 
 def is_retryable_image_request_error(error: curl_requests.RequestsError) -> bool:
     """Return whether curl reported a transient transport failure."""
-    return error.code in TRANSIENT_IMAGE_CURL_ERRORS
+    return error.code in TRANSIENT_CURL_ERRORS
 
 
 @final
