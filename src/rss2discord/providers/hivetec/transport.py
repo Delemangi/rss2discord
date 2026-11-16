@@ -7,6 +7,7 @@ from curl_cffi import Curl, CurlError, CurlInfo, CurlOpt
 from curl_cffi.const import CurlECode
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
+from rss2discord.curl_errors import TRANSIENT_CURL_ERRORS
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.hivetec.bounds import (
     HIVETEC_LABEL,
@@ -16,23 +17,6 @@ from rss2discord.providers.hivetec.bounds import (
 from rss2discord.providers.hivetec.budget import HivetecScanBudget
 from rss2discord.retries import FeedFetchInterruptedError
 
-TRANSIENT_HIVETEC_CURL_ERRORS = frozenset(
-    {
-        CurlECode.COULDNT_RESOLVE_HOST,
-        CurlECode.COULDNT_CONNECT,
-        CurlECode.PARTIAL_FILE,
-        CurlECode.OPERATION_TIMEDOUT,
-        CurlECode.GOT_NOTHING,
-        CurlECode.SEND_ERROR,
-        CurlECode.RECV_ERROR,
-        CurlECode.AGAIN,
-        CurlECode.NO_CONNECTION_AVAILABLE,
-        CurlECode.HTTP2,
-        CurlECode.HTTP2_STREAM,
-        CurlECode.HTTP3,
-        CurlECode.QUIC_CONNECT_ERROR,
-    },
-)
 type TransferCallback = Callable[[bytes], int]
 
 
@@ -148,7 +132,7 @@ class HivetecTransport:
             raise FeedFetchError(
                 HIVETEC_LABEL,
                 type(error).__name__,
-                retryable=error.code in TRANSIENT_HIVETEC_CURL_ERRORS,
+                retryable=error.code in TRANSIENT_CURL_ERRORS,
             ) from None
         if collected.failure is not None:
             raise collected.failure

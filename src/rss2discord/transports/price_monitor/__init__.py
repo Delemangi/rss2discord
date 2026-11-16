@@ -22,6 +22,7 @@ from .planning import finish_price_delivery as finish_price_delivery
 from .planning import logger as logger
 from .planning import prepare_price_delivery as prepare_price_delivery
 from .planning import record_price_health as record_price_health
+from .presentation import build_price_change_message as build_price_change_message
 from .scan import NO_SNAPSHOT_LIMIT as NO_SNAPSHOT_LIMIT
 from .scan import PriceChangeView as PriceChangeView
 from .scan import PriceObservation as PriceObservation
