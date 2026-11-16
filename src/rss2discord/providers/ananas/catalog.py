@@ -34,7 +34,6 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_ORIGIN,
     ANANAS_PAGE_SIZE,
     ANANAS_USER_AGENT,
-    MAX_ANANAS_LATEST_PAGES,
     MAX_ANANAS_PAGES,
     MAX_ANANAS_PRODUCTS,
     MAX_ANANAS_REQUESTS,
@@ -197,7 +196,7 @@ class AnanasCatalogClient:
             numeric_filters,
             budget,
         )
-        self._validate_scan_limits(total, page_count, latest)
+        self._validate_scan_limits(total, page_count)
         if total == 0:
             budget.after_request()
             return ()
@@ -209,7 +208,6 @@ class AnanasCatalogClient:
             numeric_filters=numeric_filters,
             budget=budget,
             is_shutdown_requested=is_shutdown_requested,
-            latest=latest,
         )
         if not latest:
             self._check_final_page(
@@ -223,10 +221,10 @@ class AnanasCatalogClient:
         return tuple(grouped.values())
 
     @staticmethod
-    def _validate_scan_limits(total: int, page_count: int, latest: bool) -> None:
+    def _validate_scan_limits(total: int, page_count: int) -> None:
         if total > MAX_ANANAS_PRODUCTS:
             raise FeedFetchError(ANANAS_LABEL, "ProductLimitExceeded")
-        if not latest and page_count > MAX_ANANAS_PAGES:
+        if page_count > MAX_ANANAS_PAGES:
             raise FeedFetchError(ANANAS_LABEL, "PageLimitExceeded")
 
     def _collect_pages(
@@ -239,11 +237,8 @@ class AnanasCatalogClient:
         numeric_filters: tuple[str, ...],
         budget: ScanBudget,
         is_shutdown_requested: Callable[[], bool],
-        latest: bool,
     ) -> tuple[dict[str, AnanasProduct], set[str]]:
-        pages_to_fetch = (
-            min(page_count, MAX_ANANAS_LATEST_PAGES) if latest else page_count
-        )
+        pages_to_fetch = page_count
         grouped: dict[str, AnanasProduct] = {}
         seen_inventory: set[str] = set()
         for page in range(pages_to_fetch):
@@ -356,9 +351,7 @@ class AnanasCatalogClient:
         has_variations = product.get("hasVariations", False)
         if not isinstance(has_variations, bool):
             raise FeedFetchError(ANANAS_LABEL, "MalformedProduct")
-        image_url = _image_url(product.get("coverImageUrl")) or _image_url(
-            product.get("thumbnailUrl"),
-        )
+        image_url = _image_url(product.get("coverImageUrl"))
         return AnanasProduct(
             inventory_id=inventory_id,
             product_id=slug,

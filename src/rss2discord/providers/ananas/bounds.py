@@ -41,14 +41,12 @@ ANANAS_ATTRIBUTES_TO_RETRIEVE: Final = (
     "product.name",
     "product.slug",
     "product.brand",
-    "product.thumbnailUrl",
     "product.coverImageUrl",
     "product.categoryNames",
     "product.hasVariations",
     "product.newProduct",
 )
 ANANAS_LATEST_LOOKBACK_MS: Final = 7 * 24 * 60 * 60 * 1000
-MAX_ANANAS_LATEST_PAGES: Final = 5
 MAX_ANANAS_PAGES: Final = 100
 MAX_ANANAS_PRODUCTS: Final = 10_000
 MAX_ANANAS_RESPONSE_BYTES: Final = 2 * 1024 * 1024

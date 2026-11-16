@@ -436,7 +436,7 @@ def test_ananas_enforces_product_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         AnanasCatalogClient().fetch_catalog(ANANAS_FEED_URL)
 
 
-def test_ananas_latest_scan_uses_numeric_filter_and_caps_pages(
+def test_ananas_latest_scan_uses_numeric_filter_and_fetches_all_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -461,8 +461,8 @@ def test_ananas_latest_scan_uses_numeric_filter_and_caps_pages(
 
     products = AnanasCatalogClient().fetch_latest_products(ANANAS_FEED_URL)
 
-    assert len(products) == 5 * ANANAS_PAGE_SIZE
-    assert [call["body"]["page"] for call in fake.calls] == [0, 1, 2, 3, 4]
+    assert len(products) == 10 * ANANAS_PAGE_SIZE
+    assert [call["body"]["page"] for call in fake.calls] == list(range(10))
     for call in fake.calls:
         assert call["body"]["numericFilters"] == [
             "firstPublishedTimestamp > 1700000000000",
