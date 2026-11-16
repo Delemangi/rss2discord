@@ -65,7 +65,7 @@ RSS/Atom responses are bounded to 1 MiB by default. A 4 MiB allowance applies on
 Each price scan compares the validated catalog with the stored baseline.
 
 - Up to 25 changed products in one scan send one price-change card per product.
-- A larger scan sends one or two compact briefs: up to 20 largest drops and 20 largest rises with links and percentages, category bars, and the complete searchable/sortable HTML report plus CSV on the final message.
+- A larger scan sends one compact brief: direction totals, up to five largest drops and five largest rises with links and percentages, and the complete searchable/sortable HTML report plus CSV attached.
 - The baseline and the pending notification rows are written in one transaction before delivery. A failed or interrupted Discord send leaves the notification pending and retries on a later scan; changes are not lost.
 - Delivery is at-least-once. An ambiguous timeout or crash after Discord accepts a message can produce a duplicate.
 - There is no approval, quarantine, or pause step for price changes. Invalid or incomplete catalog evidence is rejected and retried; it never overwrites a valid price.

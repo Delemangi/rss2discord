@@ -26,11 +26,13 @@ from rss2discord.discord.report import (
 from rss2discord.models import EntryData
 from rss2discord.price_notifications import PriceNotificationRecord
 
+MAX_TOP_DROPS: Final = 5
+MAX_TOP_RISES: Final = 5
 MAX_DIGEST_CATEGORIES: Final = 5
-MAX_TOP_MOVES_PER_DIRECTION: Final = 20
+MAX_CATEGORY_NAME_CHARACTERS: Final = 40
 MAX_BRIEF_CHARACTERS: Final = 3_900
-CATEGORY_LABEL_WIDTH: Final = 22
-CATEGORY_BAR_WIDTH: Final = 14
+
+type _Section = tuple[str, int, list[str]]
 PLAUSIBLE_RATIO_MIN: Final = Decimal("0.1")
 PLAUSIBLE_RATIO_MAX: Final = Decimal(10)
 ATTACHMENT_NOTE: Final = "The complete searchable list is attached (HTML and CSV)."
@@ -60,76 +62,90 @@ def build_digest_messages(
     *,
     additional_pending: int = 0,
 ) -> tuple[WebhookMessage, ...]:
-    """Build one or two dense brief messages plus the complete reports."""
+    """Build a single brief digest message plus the complete reports."""
     if not records:
         raise ValueError("digest requires at least one notification")
     source_title = _single_line(records[0].source_title, 160)
-    header = _digest_header(records, source_title)
-    drops, rises, extremes = _top_moves(records)
+    drop_items, rise_items, drops, rises, extremes, unchanged, new = _split_changes(
+        records,
+    )
     files = build_report_files(
         records[0].feed_id,
         records[0].group_id,
         records,
     )
-    extreme_note = (
-        f"{extremes:,} extreme moves (over 10× either way) are in the report."
-        if extremes
-        else None
-    )
+
+    extreme_note = _extreme_note(extremes)
     pending_note = (
         f"{additional_pending:,} additional changes are pending confirmation "
         "and will follow in later scans."
         if additional_pending
         else None
     )
-    final_suffix = [
+    suffix = [
         *_optional(extreme_note),
         *_optional(pending_note),
         ATTACHMENT_NOTE,
     ]
-    drop_rows = [_move_line(item) for item in drops]
-    rise_rows = [_move_line(item) for item in rises]
-    if drops:
-        suffix = [] if rises else final_suffix
-        messages = [
-            _brief_message(
-                feed,
-                source_title=source_title,
-                prefix=header,
-                heading="**Largest drops**",
-                rows=drop_rows,
-                suffix=suffix,
-                files=files if not rises else (),
-            ),
+
+    summary_parts = [
+        f"{count:,} {label}"
+        for count, label in [
+            (drops, "dropped"),
+            (rises, "rose"),
+            (unchanged, "unchanged"),
+            (new, "new"),
         ]
-        if rises:
-            messages.append(
-                _brief_message(
-                    feed,
-                    source_title=source_title,
-                    prefix=f"**Largest rises** — {source_title}",
-                    heading=None,
-                    rows=rise_rows,
-                    suffix=final_suffix,
-                    files=files,
-                ),
-            )
-        return tuple(messages)
-    return (
-        _brief_message(
-            feed,
-            source_title=source_title,
-            prefix=header,
-            heading="**Largest rises**" if rises else None,
-            rows=rise_rows,
-            suffix=final_suffix,
-            files=files,
-        ),
+        if count
+    ]
+    change_label = "change" if len(records) == 1 else "changes"
+    prefix_lines = [
+        f"## Price changes — {source_title}",
+        f"**{len(records):,}** {change_label}: {', '.join(summary_parts)}.",
+        f"Prices observed <t:{records[0].observed_at}:f>",
+    ]
+    category_line = _category_line(records)
+    if category_line is not None:
+        prefix_lines.append(category_line)
+    prefix = "\n".join(prefix_lines)
+
+    sections: list[_Section] = []
+    if drop_items:
+        sections.append(
+            ("Largest drops", drops, [_move_line(item) for item in drop_items]),
+        )
+    if rise_items:
+        sections.append(
+            ("Largest rises", rises, [_move_line(item) for item in rise_items]),
+        )
+
+    message = _brief_message(
+        feed,
+        source_title=source_title,
+        prefix=prefix,
+        sections=sections,
+        suffix=suffix,
+        files=files,
     )
+    return (message,)
 
 
 def _optional(value: str | None) -> list[str]:
     return [] if value is None else [value]
+
+
+def _section_heading(label: str, shown: int, total: int) -> str:
+    if shown >= total:
+        return f"**{label}**"
+    return f"**{label}** — top {shown} of {total:,}"
+
+
+def _extreme_note(extremes: int) -> str | None:
+    if not extremes:
+        return None
+    if extremes == 1:
+        return "1 extreme move (over 10× either way) is in the report."
+    return f"{extremes:,} extreme moves (over 10× either way) are in the report."
 
 
 def _brief_message(
@@ -137,12 +153,11 @@ def _brief_message(
     *,
     source_title: str,
     prefix: str,
-    heading: str | None,
-    rows: list[str],
+    sections: list[_Section],
     suffix: list[str],
     files: tuple[ReportFile, ...],
 ) -> WebhookMessage:
-    text = _brief_text(prefix, heading, rows, suffix)
+    text = _brief_text(prefix, sections, suffix)
     return WebhookMessage(
         feed=feed,
         entry=EntryData(
@@ -160,20 +175,35 @@ def _brief_message(
 
 def _brief_text(
     prefix: str,
-    heading: str | None,
-    rows: list[str],
+    sections: list[_Section],
     suffix: list[str],
 ) -> str:
     while True:
-        parts = [prefix]
-        if heading is not None:
-            parts.append(heading)
-        parts.extend(rows)
-        parts.extend(suffix)
-        text = "\n".join(parts)
-        if len(text) <= MAX_BRIEF_CHARACTERS or not rows:
+        text = "\n".join([prefix, *_section_lines(sections), *suffix])
+        if len(text) <= MAX_BRIEF_CHARACTERS or not _trim_last_section(sections):
             return _bounded(text, MAX_TEXT_DISPLAY_CHARACTERS)
+
+
+def _section_lines(sections: list[_Section]) -> list[str]:
+    lines: list[str] = []
+    for label, total, rows in sections:
+        if not rows:
+            continue
+        lines.append(_section_heading(label, len(rows), total))
+        lines.extend(rows)
+    return lines
+
+
+def _trim_last_section(sections: list[_Section]) -> bool:
+    for index in range(len(sections) - 1, -1, -1):
+        _label, _total, rows = sections[index]
+        if not rows:
+            continue
         rows.pop()
+        if not rows:
+            sections.pop(index)
+        return True
+    return False
 
 
 def build_report_files(
@@ -197,46 +227,31 @@ def build_report_files(
     )
 
 
-def _digest_header(
-    records: Sequence[PriceNotificationRecord],
-    source_title: str,
-) -> str:
-    increases, decreases, unchanged = _direction_counts(records)
-    lines = [
-        f"## Price changes — {source_title}",
-        (
-            f"**{len(records):,}** changes · {increases:,} ↑ · "
-            f"{decreases:,} ↓ · {unchanged:,} ="
-        ),
-        f"Observed <t:{records[0].observed_at}:f>",
-    ]
-    lines.extend(_category_bars(records))
-    return _bounded("\n".join(lines), MAX_TEXT_DISPLAY_CHARACTERS)
-
-
-def _category_bars(
-    records: Sequence[PriceNotificationRecord],
-) -> list[str]:
-    categories = _category_counts(records)
-    if not categories:
-        return []
-    maximum = max(count for _name, count in categories)
-    bars: list[str] = []
-    for name, count in categories:
-        label = _single_line(name, CATEGORY_LABEL_WIDTH)
-        if len(name) > CATEGORY_LABEL_WIDTH:
-            label = label[:-1] + "…"
-        width = max(1, round(count * CATEGORY_BAR_WIDTH / maximum))
-        bars.append(f"{label:<{CATEGORY_LABEL_WIDTH}} {'█' * width} {count:,}")
-    return bars
+def _category_line(records: Sequence[PriceNotificationRecord]) -> str | None:
+    counts: Counter[str] = Counter()
+    for record in records:
+        categories = record.entry.categories
+        category = _single_line(categories[0], 200) if categories else ""
+        if not category:
+            category = "Uncategorized"
+        counts[category] += 1
+    if not counts or set(counts) <= {"Uncategorized"}:
+        return None
+    items = counts.most_common(MAX_DIGEST_CATEGORIES)
+    return "Categories: " + ", ".join(
+        f"{_truncate_words(name, MAX_CATEGORY_NAME_CHARACTERS)} ({count:,})"
+        for name, count in items
+    )
 
 
 def _move_line(
     item: tuple[PriceNotificationRecord, Decimal, Decimal, Decimal],
 ) -> str:
-    record, previous, current, ratio = item
+    record, _previous, _current, ratio = item
     percent = (ratio - 1) * 100
-    title = _single_line(record.title, 46).replace("[", "\\[").replace("]", "\\]")
+    previous_price = record.previous_price or "—"
+    title = _truncate_words(_single_line(record.title, 200), 70)
+    title = title.replace("[", "\\[").replace("]", "\\]")
     link = (
         record.link.replace(")", "%29")
         .replace(" ", "%20")
@@ -244,78 +259,58 @@ def _move_line(
         .replace("\r", "")
     )
     return (
-        f"{_format_amount(previous):>8} → {_format_amount(current):>8}  "
-        f"{percent:+7.1f}%  [{title}]({link})"
+        f"{previous_price} → {record.current_price} ({percent:+.1f}%) [{title}]({link})"
     )
 
 
-def _format_amount(value: Decimal) -> str:
-    """Render up to two decimals with thousands separators and no trailing zeros."""
-    text = f"{value:,.2f}"
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text
-
-
-def _direction_counts(
-    records: Sequence[PriceNotificationRecord],
-) -> tuple[int, int, int]:
-    increases = decreases = unchanged = 0
-    for record in records:
-        previous = record.previous_amount
-        current = record.current_amount
-        if previous is None or previous <= 0:
-            unchanged += 1
-        elif current > previous:
-            increases += 1
-        elif current < previous:
-            decreases += 1
-        else:
-            unchanged += 1
-    return increases, decreases, unchanged
-
-
-def _category_counts(
-    records: Sequence[PriceNotificationRecord],
-) -> list[tuple[str, int]]:
-    counter: Counter[str] = Counter()
-    for record in records:
-        category = (
-            record.entry.categories[0] if record.entry.categories else "Uncategorized"
-        )
-        counter[category] += 1
-    return counter.most_common(MAX_DIGEST_CATEGORIES)
-
-
-def _top_moves(
+def _split_changes(
     records: Sequence[PriceNotificationRecord],
 ) -> tuple[
     list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]],
     list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]],
     int,
+    int,
+    int,
+    int,
+    int,
 ]:
+    """Return top drops, top rises, and counts for summary."""
+    drop_count = rise_count = unchanged_count = new_count = extreme_count = 0
     drops: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
     rises: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
-    extremes = 0
+
     for record in records:
         previous = record.previous_amount
         current = record.current_amount
         if previous is None or previous <= 0:
+            new_count += 1
+            continue
+        if current == previous:
+            unchanged_count += 1
             continue
         ratio = current / previous
-        if ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX:
-            extremes += 1
-            continue
+        extreme = ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX
+        if extreme:
+            extreme_count += 1
         if ratio < 1:
-            drops.append((record, previous, current, ratio))
-        elif ratio > 1:
-            rises.append((record, previous, current, ratio))
-    drops.sort(key=lambda item: item[3])
-    rises.sort(key=lambda item: item[3], reverse=True)
+            drop_count += 1
+            if not extreme:
+                drops.append((record, previous, current, ratio))
+        else:
+            rise_count += 1
+            if not extreme:
+                rises.append((record, previous, current, ratio))
+
+    drops.sort(key=lambda item: (item[3], -(item[2] - item[1]).copy_abs()))
+    rises.sort(key=lambda item: (-item[3], -(item[2] - item[1]).copy_abs()))
     return (
-        drops[:MAX_TOP_MOVES_PER_DIRECTION],
-        rises[:MAX_TOP_MOVES_PER_DIRECTION],
-        extremes,
+        drops[:MAX_TOP_DROPS],
+        rises[:MAX_TOP_RISES],
+        drop_count,
+        rise_count,
+        extreme_count,
+        unchanged_count,
+        new_count,
     )
 
 
@@ -404,6 +399,17 @@ def _single_line(value: str, limit: int) -> str:
     return " ".join(value.split())[:limit]
 
 
+def _truncate_words(value: str, limit: int) -> str:
+    """Truncate at a word boundary, falling back to a hard limit."""
+    if len(value) <= limit:
+        return value
+    truncated = value[:limit]
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        return truncated[:last_space] + "…"
+    return truncated[:-1] + "…"
+
+
 def _bounded(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
@@ -412,7 +418,7 @@ def _bounded(value: str, limit: int) -> str:
 
 def _safe_filename_part(value: str) -> str:
     cleaned = "".join(
-        character if character.isalnum() or character in "._-" else "-"
+        character if character.isalnum() or character in ".-_" else "-"
         for character in value
     )
     return cleaned or "feed"
