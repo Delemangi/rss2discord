@@ -67,7 +67,9 @@ def test_load_config_rejects_price_check_interval_for_rss_with_ddstore_in_error(
     # When / Then
     with pytest.raises(
         ValidationError,
-        match="price_check_interval requires a price strategy: anhoch, cccenter",
+        match=(
+            "price_check_interval requires a price strategy: ananas, anhoch, cccenter"
+        ),
     ):
         _ = load_config(config_path)
 

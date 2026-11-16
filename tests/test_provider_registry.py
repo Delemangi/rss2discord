@@ -11,6 +11,8 @@ from rss2discord.configuration import AppConfig, FeedConfig, FeedStrategyName
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
 from rss2discord.provider_metadata import PRICE_STRATEGIES, STRATEGY_LABELS
+from rss2discord.providers.ananas.prices import AnanasPriceMonitor
+from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
 from rss2discord.providers.anhoch.strategy import AnhochStrategy
 from rss2discord.providers.cccenter.prices import CCCenterPriceMonitor
@@ -53,6 +55,7 @@ from tests.runtime_helpers import FakeClock
 DEFAULT_PRICE_INTERVAL = 3_600
 PRICE_INTERVAL_FOR: dict[str, int] = {"gjirafa50": 21_600}
 EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
+    "ananas": AnanasStrategy,
     "anhoch": AnhochStrategy,
     "cccenter": CCCenterStrategy,
     "ddstore": DDStoreStrategy,
@@ -69,6 +72,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "xenforo": XenForoStrategy,
 }
 EXPECTED_MONITOR_TYPES: dict[str, type[object]] = {
+    "ananas": AnanasPriceMonitor,
     "anhoch": AnhochPriceMonitor,
     "cccenter": CCCenterPriceMonitor,
     "ddstore": DDStorePriceMonitor,

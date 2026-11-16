@@ -2,16 +2,23 @@ from collections.abc import Mapping
 from typing import Final, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
+ANANAS_IMAGE_HOST: Final = "ananas.mk"
+ANANAS_IMAGE_PATH_PREFIXES: Final = (
+    "/tmp/image-thumbnails/",  # noqa: S108 - URL path, not a temp dir
+    "/assets/",
+)
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 DDSTORE_IMAGE_HOST: Final = "ddstore.mk"
 DDSTORE_IMAGE_PATH_PREFIXES: Final = ("/media/",)
-type ImageSource = Literal["anhoch", "ddstore"]
+type ImageSource = Literal["ananas", "anhoch", "ddstore"]
 IMAGE_POLICY_BY_SOURCE: Final[Mapping[ImageSource, tuple[str, tuple[str, ...]]]] = {
+    "ananas": (ANANAS_IMAGE_HOST, ANANAS_IMAGE_PATH_PREFIXES),
     "anhoch": (ANHOCH_IMAGE_HOST, ANHOCH_IMAGE_PATH_PREFIXES),
     "ddstore": (DDSTORE_IMAGE_HOST, DDSTORE_IMAGE_PATH_PREFIXES),
 }
 IMAGE_SOURCE_BY_STRATEGY: Final[Mapping[str, ImageSource]] = {
+    "ananas": "ananas",
     "anhoch": "anhoch",
     "ddstore": "ddstore",
 }

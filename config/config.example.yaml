@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', or 'technomarket'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', or 'technomarket'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -112,10 +112,23 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
+
+  # Ananas new products and opt-in price monitoring for the computers category.
+  # Requires the ANANAS_ALGOLIA_SEARCH_KEY environment variable; no search key is
+  # committed. Only this exact category URL is supported:
+  # https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema
+  # Uncomment the block below and add a real webhook to enable it.
+  # - id: "ananas-computers"
+  #   name: "Ananas Computers"
+  #   url: "https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema"
+  #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  #   strategy: "ananas"
+  #   price_check_interval: 3600
+  #   webhook_name: "Ananas Bot"
 
   # Neksio new products plus opt-in selling-price monitoring
   - id: "neksio-products"
@@ -164,7 +177,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -175,7 +188,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -240,6 +253,7 @@ feeds:
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
+#   - 'ananas': For new products and optional price monitoring from the Ananas computers category
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
 #   - 'hivetec': For new products from Hivetec's public WooCommerce catalog
@@ -259,10 +273,16 @@ feeds:
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
-# - price_check_interval: Optional seconds between Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket
+# - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
-#   silently creates a baseline snapshot. Anhoch scans use 500 products per
+#   silently creates a baseline snapshot. Ananas uses the public Algolia proxy at
+#   api.ananas.rs and requires ANANAS_ALGOLIA_SEARCH_KEY in the environment.
+#   Only https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema is
+#   supported. Discovery requests at most 5 pages from a 7-day first-published
+#   window. Full scans allow at most 100 pages / 10,000 hits, use 48 hits per
+#   page, cap each response at 2 MiB and each scan at 202 MiB / 300 seconds, and
+#   re-read page zero to detect index drift. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;
 #   a scan fails above 100 categories, 100 pages per category, or 10,000 products.

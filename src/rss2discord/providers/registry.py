@@ -7,6 +7,9 @@ from typing import Protocol, assert_never
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordSender, SleepCallback
+from rss2discord.providers.ananas.catalog import AnanasCatalogClient
+from rss2discord.providers.ananas.prices import AnanasCatalog, AnanasPriceMonitor
+from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.providers.anhoch.prices import AnhochCatalog, AnhochPriceMonitor
 from rss2discord.providers.anhoch.strategy import AnhochStrategy
@@ -73,6 +76,7 @@ def build_discovery_strategies(
     pazar3_pacer: Pazar3RequestPacer,
 ) -> dict[str, ScraperStrategy]:
     return {
+        "ananas": AnanasStrategy(is_shutdown_requested),
         "anhoch": AnhochStrategy(),
         "cccenter": CCCenterStrategy(is_shutdown_requested),
         "ddstore": DDStoreStrategy(is_shutdown_requested),
@@ -110,6 +114,18 @@ def build_provider_price_monitor(
     dependencies: SharedPriceMonitorDependencies,
 ) -> PriceMonitor | None:
     match feed.strategy:
+        case "ananas":
+            return AnanasPriceMonitor(
+                feed,
+                PriceMonitorDependencies[AnanasCatalog](
+                    catalog=AnanasCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
         case "anhoch":
             return AnhochPriceMonitor(
                 feed,

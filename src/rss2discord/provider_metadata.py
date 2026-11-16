@@ -4,6 +4,7 @@ from typing import Final
 
 PRICE_STRATEGIES: Final = frozenset(
     {
+        "ananas",
         "anhoch",
         "cccenter",
         "ddstore",
@@ -18,6 +19,7 @@ PRICE_STRATEGIES: Final = frozenset(
     },
 )
 STRATEGY_LABELS: Final = {
+    "ananas": "Ananas",
     "anhoch": "Anhoch",
     "cccenter": "CCCenter",
     "ddstore": "DDStore",
