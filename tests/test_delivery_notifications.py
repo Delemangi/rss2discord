@@ -130,10 +130,27 @@ def test_record_price_scan_rejects_product_mismatch(store: DeliveryStore) -> Non
 
 
 def test_empty_notification_id_batches_are_noops(store: DeliveryStore) -> None:
+    store.record_price_scan(
+        feed_id="feed",
+        group_id="group",
+        observed_at=1,
+        baseline_updates=(_snapshot(),),
+        notifications=(_notification(),),
+    )
+
     store.mark_price_notifications_sent(())
     store.record_price_notification_attempt((), None)
 
-    assert store.count_pending_price_notifications("feed") == 0
+    assert store.count_pending_price_notifications("feed") == 1
+    group = store.load_pending_price_group("feed")
+    assert group is not None
+    _, records = group
+    assert records[0].attempts == 0
+    rows = store.list_price_notifications(feed_id="feed", status="pending")
+    assert len(rows) == 1
+    assert rows[0]["status"] == "pending"
+    assert rows[0]["attempts"] == 0
+    assert rows[0]["last_error"] is None
 
 
 def test_list_price_notifications_rejects_unknown_status(
