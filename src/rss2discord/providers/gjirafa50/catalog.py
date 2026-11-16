@@ -34,7 +34,7 @@ MAX_GJIRAFA50_PRODUCTS: Final = 150_000
 MAX_GJIRAFA50_PAGES: Final = 7_000
 MAX_GJIRAFA50_FETCHED_PRODUCTS: Final = MAX_GJIRAFA50_PAGES * GJIRAFA50_PAGE_SIZE
 MAX_GJIRAFA50_SHARDS: Final = 128
-MAX_GJIRAFA50_SCAN_BYTES: Final = 500 * 1024 * 1024
+MAX_GJIRAFA50_SCAN_BYTES: Final = 2 * 1024 * 1024 * 1024
 MAX_GJIRAFA50_SCAN_SECONDS: Final = 3_600
 # A best-effort scan is only usable if it observed nearly all priced products.
 # Skipped cards count toward coverage because they exist but cannot be monitored.
