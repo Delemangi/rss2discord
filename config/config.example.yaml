@@ -274,7 +274,7 @@ feeds:
 #   Gjirafa50 scans accept only https://gjirafa50.mk/ or https://gjirafa50.com/,
 #   use MKD for .mk and EUR for .com, process 24 products per page, recursively
 #   split cent-precise storefront-currency ranges below 9,000 products, and allow at
-#   most 5,000 requests / 100,000 products / 128 shards / 500 MiB / 30 minutes
+#   most 7,000 requests / 150,000 products / 128 shards / 2 GiB / 60 minutes
 #   per operation, including retries.
 #   Counts, identities, prices, terminal pages, and post-scan totals must reconcile.
 #   Setec queries the storefront's own search index rather than its product API.
