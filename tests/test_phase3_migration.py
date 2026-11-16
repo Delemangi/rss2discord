@@ -402,3 +402,38 @@ def test_pending_notification_without_amount_columns_loads_after_upgrade(
         )
         assert len(messages) == 1
         assert len(messages[0].files) == 2
+
+
+def test_legacy_anhoch_snapshot_table_migrates(tmp_path: Path) -> None:
+    path = tmp_path / "state.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE anhoch_price_snapshots (feed_id TEXT NOT NULL, "
+            "product_id INTEGER NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
+            "currency TEXT NOT NULL, updated_at INTEGER NOT NULL, "
+            "PRIMARY KEY(feed_id, product_id)) WITHOUT ROWID",
+        )
+        connection.execute(
+            "INSERT INTO anhoch_price_snapshots "
+            "(feed_id, product_id, amount, formatted, currency, updated_at) "
+            "VALUES ('anhoch', 42, '10', '10 MKD', 'MKD', 1)",
+        )
+
+    with DeliveryStore(path) as store:
+        snapshots = store.load_price_snapshots("anhoch")
+        assert snapshots == (
+            PriceSnapshot(
+                feed_id="anhoch",
+                product_id="42",
+                amount=Decimal(10),
+                formatted="10 MKD",
+                currency="MKD",
+            ),
+        )
+        tables = {
+            str(row[0])
+            for row in store._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            )
+        }
+        assert "anhoch_price_snapshots" not in tables

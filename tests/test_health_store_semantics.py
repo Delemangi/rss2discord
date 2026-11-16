@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import HealthUpdate
 
@@ -146,3 +148,22 @@ def test_existing_health_schema_gets_timestamp_columns_additively(
             )
         }
         assert {"last_success_at", "last_nonempty_at"} <= columns
+
+
+def test_negative_health_reminder_is_rejected(tmp_path: Path) -> None:
+    with (
+        DeliveryStore(tmp_path / "state.db") as store,
+        pytest.raises(
+            ValueError,
+            match="reminder_seconds must be non-negative",
+        ),
+    ):
+        store.record_health(
+            _update(
+                state="healthy",
+                attempted_at=1,
+                success=True,
+                nonempty=True,
+            ),
+            reminder_seconds=-1,
+        )
