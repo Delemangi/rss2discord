@@ -494,7 +494,7 @@ def test_report_count_placeholder_in_title_survives() -> None:
     assert '<span class="note">1 rows</span>' in html_text
 
 
-def test_mixed_drops_and_rises_send_two_brief_messages() -> None:
+def test_mixed_drops_and_rises_send_one_brief_message() -> None:
     records = (
         *(
             record(
@@ -524,24 +524,31 @@ def test_mixed_drops_and_rises_send_two_brief_messages() -> None:
         ),
     )
     messages = build_digest_messages(setec.make_feed(), records)
-    assert len(messages) == 2
-    drops, rises = messages
-    assert drops.files == ()
-    assert "**Largest drops**" in drops.entry.description
-    assert "**Largest rises**" not in drops.entry.description
-    assert "████" in drops.entry.description
-    assert "-10.0%" in drops.entry.description
-    assert "+10.0%" in rises.entry.description
-    assert rises.files
-    assert len(rises.files) == 2
-    assert "**Largest rises**" in rises.entry.description
-    assert "extreme moves" in rises.entry.description
+    assert len(messages) == 1
+    message = messages[0]
+    assert len(message.files) == 2
+    assert "**Largest drops**" in message.entry.description
+    assert "**Largest rises**" in message.entry.description
+    assert "Categories:" in message.entry.description
+    assert "-10.0%" in message.entry.description
+    assert "+10.0%" in message.entry.description
+    assert "1 extreme move" in message.entry.description
+    assert "is in the report" in message.entry.description
     assert "The complete searchable list is attached (HTML and CSV)." in (
-        rises.entry.description
+        message.entry.description
     )
-    assert all(len(message.entry.description) <= 4000 for message in messages)
-    assert drops.entry.description.count("→") == 20
-    assert rises.entry.description.count("→") == 10
+    assert len(message.entry.description) <= 4000
+    assert message.entry.description.count("→") <= 10
+
+
+def test_digest_pluralizes_multiple_extreme_moves() -> None:
+    records = (
+        record("high", notification_id=1, previous_price="100", current_price="1100"),
+        record("low", notification_id=2, previous_price="100", current_price="5"),
+    )
+    description = build_digest_messages(setec.make_feed(), records)[0].entry.description
+    assert "2 extreme moves" in description
+    assert "are in the report" in description
 
 
 def test_all_drops_attach_reports_to_single_message() -> None:
@@ -608,35 +615,31 @@ def _mixed_scan(store: DeliveryStore) -> None:
     )
 
 
-def test_two_message_digest_marks_all_rows_after_both_sends(tmp_path: Path) -> None:
+def test_digest_marks_all_rows_after_successful_send(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         _mixed_scan(store)
-        sender = setec.RecordingSender(
-            [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.DELIVERED],
-        )
+        sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
         result = deliver_price_notifications(
             _digest_dependencies(store, sender),
             setec.make_feed(),
             "feed",
         )
         assert result is PriceNotificationDeliveryResult.DRAINED
-        assert len(sender.messages) == 2
+        assert len(sender.messages) == 1
         assert store.count_pending_price_notifications("feed") == 0
 
 
-def test_failed_second_digest_message_leaves_all_rows_pending(tmp_path: Path) -> None:
+def test_failed_digest_message_leaves_all_rows_pending(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         _mixed_scan(store)
-        sender = setec.RecordingSender(
-            [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.FAILED],
-        )
+        sender = setec.RecordingSender([DiscordDeliveryResult.FAILED])
         result = deliver_price_notifications(
             _digest_dependencies(store, sender),
             setec.make_feed(),
             "feed",
         )
         assert result is PriceNotificationDeliveryResult.FAILED
-        assert len(sender.messages) == 2
+        assert len(sender.messages) == 1
         pending = store.load_pending_price_group("feed")
         assert pending is not None
         assert len(pending[1]) == 26
