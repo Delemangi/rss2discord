@@ -27,6 +27,8 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_CATEGORY_FILTERS,
     ANANAS_FEED_URL,
     ANANAS_HOST,
+    ANANAS_IMAGE_HOST,
+    ANANAS_JSON_CONTENT_TYPE,
     ANANAS_LABEL,
     ANANAS_LATEST_LOOKBACK_MS,
     ANANAS_ORIGIN,
@@ -195,36 +197,20 @@ class AnanasCatalogClient:
             numeric_filters,
             budget,
         )
-        if total > MAX_ANANAS_PRODUCTS:
-            raise FeedFetchError(ANANAS_LABEL, "ProductLimitExceeded")
-        if not latest and page_count > MAX_ANANAS_PAGES:
-            raise FeedFetchError(ANANAS_LABEL, "PageLimitExceeded")
+        self._validate_scan_limits(total, page_count, latest)
         if total == 0:
             budget.after_request()
             return ()
-        pages_to_fetch = (
-            min(page_count, MAX_ANANAS_LATEST_PAGES) if latest else page_count
+        grouped, _seen_inventory = self._collect_pages(
+            first_hits=first_hits,
+            total=total,
+            page_count=page_count,
+            filter_expression=filter_expression,
+            numeric_filters=numeric_filters,
+            budget=budget,
+            is_shutdown_requested=is_shutdown_requested,
+            latest=latest,
         )
-        grouped: dict[str, AnanasProduct] = {}
-        seen_inventory: set[str] = set()
-        for page in range(pages_to_fetch):
-            if is_shutdown_requested():
-                raise FeedFetchInterruptedError
-            if page == 0:
-                page_hits = first_hits
-            else:
-                page_hits, page_total, page_pages = self._fetch_page(
-                    page,
-                    filter_expression,
-                    numeric_filters,
-                    budget,
-                )
-                if page_total != total or page_pages != page_count:
-                    raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
-            expected = min(ANANAS_PAGE_SIZE, total - page * ANANAS_PAGE_SIZE)
-            if len(page_hits) != expected:
-                raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
-            self._append_page(page_hits, grouped, seen_inventory, budget)
         if not latest:
             self._check_final_page(
                 filter_expression,
@@ -235,6 +221,71 @@ class AnanasCatalogClient:
             )
         budget.after_request()
         return tuple(grouped.values())
+
+    @staticmethod
+    def _validate_scan_limits(total: int, page_count: int, latest: bool) -> None:
+        if total > MAX_ANANAS_PRODUCTS:
+            raise FeedFetchError(ANANAS_LABEL, "ProductLimitExceeded")
+        if not latest and page_count > MAX_ANANAS_PAGES:
+            raise FeedFetchError(ANANAS_LABEL, "PageLimitExceeded")
+
+    def _collect_pages(
+        self,
+        *,
+        first_hits: list[Any],
+        total: int,
+        page_count: int,
+        filter_expression: str,
+        numeric_filters: tuple[str, ...],
+        budget: ScanBudget,
+        is_shutdown_requested: Callable[[], bool],
+        latest: bool,
+    ) -> tuple[dict[str, AnanasProduct], set[str]]:
+        pages_to_fetch = (
+            min(page_count, MAX_ANANAS_LATEST_PAGES) if latest else page_count
+        )
+        grouped: dict[str, AnanasProduct] = {}
+        seen_inventory: set[str] = set()
+        for page in range(pages_to_fetch):
+            if is_shutdown_requested():
+                raise FeedFetchInterruptedError
+            page_hits = self._page_hits(
+                page=page,
+                first_hits=first_hits,
+                total=total,
+                page_count=page_count,
+                filter_expression=filter_expression,
+                numeric_filters=numeric_filters,
+                budget=budget,
+            )
+            expected = min(ANANAS_PAGE_SIZE, total - page * ANANAS_PAGE_SIZE)
+            if len(page_hits) != expected:
+                raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
+            self._append_page(page_hits, grouped, seen_inventory, budget)
+        return grouped, seen_inventory
+
+    def _page_hits(
+        self,
+        *,
+        page: int,
+        first_hits: list[Any],
+        total: int,
+        page_count: int,
+        filter_expression: str,
+        numeric_filters: tuple[str, ...],
+        budget: ScanBudget,
+    ) -> list[Any]:
+        if page == 0:
+            return first_hits
+        page_hits, page_total, page_pages = self._fetch_page(
+            page,
+            filter_expression,
+            numeric_filters,
+            budget,
+        )
+        if page_total != total or page_pages != page_count:
+            raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
+        return page_hits
 
     @staticmethod
     def _append_page(
@@ -305,8 +356,8 @@ class AnanasCatalogClient:
         has_variations = product.get("hasVariations", False)
         if not isinstance(has_variations, bool):
             raise FeedFetchError(ANANAS_LABEL, "MalformedProduct")
-        image_url = _image_url(product.get("thumbnailUrl")) or _image_url(
-            product.get("coverImageUrl"),
+        image_url = _image_url(product.get("coverImageUrl")) or _image_url(
+            product.get("thumbnailUrl"),
         )
         return AnanasProduct(
             inventory_id=inventory_id,
@@ -355,7 +406,7 @@ class AnanasCatalogClient:
         content_type = (
             response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
         )
-        if content_type != "application/json":
+        if content_type != ANANAS_JSON_CONTENT_TYPE:
             raise FeedFetchError(ANANAS_LABEL, "InvalidResponse")
         payload = _decode_json(callback.content)
         return _parse_page(payload, page)
@@ -399,8 +450,8 @@ def _request_headers() -> Mapping[str, str]:
     if not api_key:
         raise FeedFetchError(ANANAS_LABEL, "MissingSearchKey")
     return {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
+        "Accept": ANANAS_JSON_CONTENT_TYPE,
+        "Content-Type": ANANAS_JSON_CONTENT_TYPE,
         "User-Agent": ANANAS_USER_AGENT,
         "x-algolia-application-id": ANANAS_ALGOLIA_APPLICATION_ID,
         "x-algolia-api-key": api_key,
@@ -603,7 +654,7 @@ def _image_url(value: object) -> str | None:
     if parsed.scheme:
         if (
             parsed.scheme != "https"
-            or parsed.hostname != ANANAS_HOST
+            or parsed.hostname != ANANAS_IMAGE_HOST
             or port not in {None, 443}
             or parsed.username is not None
             or parsed.password is not None
@@ -622,7 +673,7 @@ def _image_url(value: object) -> str | None:
     return urlunsplit(
         (
             "https",
-            ANANAS_HOST,
+            ANANAS_IMAGE_HOST,
             quote(decoded_path, safe="/-._~"),
             parsed.query,
             "",

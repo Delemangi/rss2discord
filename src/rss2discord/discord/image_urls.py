@@ -2,11 +2,8 @@ from collections.abc import Mapping
 from typing import Final, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-ANANAS_IMAGE_HOST: Final = "ananas.mk"
-ANANAS_IMAGE_PATH_PREFIXES: Final = (
-    "/tmp/image-thumbnails/",  # noqa: S108 - URL path, not a temp dir
-    "/assets/",
-)
+ANANAS_IMAGE_HOST: Final = "static.ananas.rs"
+ANANAS_IMAGE_PATH_PREFIXES: Final = ("/assets/",)
 ANHOCH_IMAGE_HOST: Final = "www.anhoch.com"
 ANHOCH_IMAGE_PATH_PREFIXES: Final = ("/images/", "/storage/media/")
 DDSTORE_IMAGE_HOST: Final = "ddstore.mk"

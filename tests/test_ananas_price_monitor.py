@@ -51,7 +51,7 @@ def make_product(
         product_id=product_id,
         name=f"Product {product_id}",
         url=f"https://ananas.mk/proizvod/{product_id}/{inventory_id}",
-        image_url="https://ananas.mk/tmp/image-thumbnails/item.jpg",
+        image_url="https://static.ananas.rs/assets/item.jpg",
         brand="Brand",
         categories=("IT Shop", "Computers"),
         price=Decimal(price),
@@ -144,9 +144,7 @@ def test_price_monitor_delivers_price_change_message(
         message = sender.messages[0]
         assert message.entry.title == "Product alpha"
         assert message.entry.link == "https://ananas.mk/proizvod/alpha/1"
-        assert message.entry.image_url == (
-            "https://ananas.mk/tmp/image-thumbnails/item.jpg"
-        )
+        assert message.entry.image_url == ("https://static.ananas.rs/assets/item.jpg")
         assert message.entry.categories == ("IT Shop", "Computers")
         assert message.entry.timestamp == "2024-03-15T13:59:19.942000+00:00"
         assert message.entry.price_direction is PriceDirection.DECREASE

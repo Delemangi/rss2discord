@@ -211,7 +211,7 @@ def test_ananas_parses_hit_fields_and_builds_product_url(
     assert product.product_id == "asus-gaming-monitor"
     assert product.name == "ASUS Gaming Монитор & Stand"
     assert product.url == ("https://ananas.mk/proizvod/asus-gaming-monitor/1462229")
-    assert product.image_url == ("https://ananas.mk/tmp/image-thumbnails/item.jpg")
+    assert product.image_url == ("https://static.ananas.rs/assets/cover.jpg")
     assert product.brand == "Brand"
     assert product.categories == ("IT Shop", "Computers")
     assert product.price == 7403

@@ -6,6 +6,7 @@ from typing import Final
 ANANAS_LABEL: Final = "Ananas"
 ANANAS_ORIGIN: Final = "https://ananas.mk"
 ANANAS_HOST: Final = "ananas.mk"
+ANANAS_IMAGE_HOST: Final = "static.ananas.rs"
 ANANAS_FEED_URL: Final = (
     f"{ANANAS_ORIGIN}/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema"
 )
@@ -26,6 +27,7 @@ ANANAS_ALGOLIA_ENDPOINT: Final = (
 ANANAS_ALGOLIA_APPLICATION_ID: Final = "Y1BSBVJ7AC"
 ANANAS_ALGOLIA_INDEX: Final = "prod_merchant_inventories_mk_mk"
 ANANAS_ALGOLIA_SEARCH_KEY_ENV: Final = "ANANAS_ALGOLIA_SEARCH_KEY"
+ANANAS_JSON_CONTENT_TYPE: Final = "application/json"
 ANANAS_ATTRIBUTES_TO_RETRIEVE: Final = (
     "objectID",
     "price",
