@@ -10,6 +10,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from rss2discord.delivery_health import HealthRepository
+from rss2discord.delivery_schema import initialize_schema
 from rss2discord.models import (
     HEALTH_REMINDER_SECONDS,
     HealthNotice,
@@ -26,22 +28,7 @@ from rss2discord.price_notifications import (
 )
 
 BEGIN_IMMEDIATE = "BEGIN IMMEDIATE"
-FEED_WHERE_CLAUSE = " WHERE feed_id = ?"
 MAX_PRICE_NOTIFICATION_ERROR_CHARACTERS = 200
-# Children before parents: SQLite enforces the legacy foreign keys during DROP.
-LEGACY_TABLES = (
-    "price_reconciliation_items",
-    "price_hold_releases",
-    "price_product_holds",
-    "price_reconciliations",
-    "price_change_batch_items",
-    "price_change_batches",
-    "baseline_candidate_entries",
-    "baseline_candidates",
-    "baselined_entries",
-    "baseline_states",
-)
-HEALTH_STATES = frozenset({"healthy", "empty", "failed", "blocked"})
 
 
 def sanitize_price_notification_error(error: str | None) -> str | None:
@@ -86,6 +73,7 @@ class DeliveryStore:
         except sqlite3.Error:
             self._connection.close()
             raise
+        self._health = HealthRepository(self._connection)
 
     def _initialize_with_retry(self) -> None:
         """Retry a transient lock; a real schema or I/O failure still escapes."""
@@ -517,149 +505,13 @@ class DeliveryStore:
         *,
         reminder_seconds: int = HEALTH_REMINDER_SECONDS,
     ) -> HealthNotice:
-        if update.state not in HEALTH_STATES:
-            raise ValueError("unsupported health state")
-        if reminder_seconds < 0:
-            raise ValueError("reminder_seconds must be non-negative")
-        with self._connection:
-            row = self._connection.execute(
-                "SELECT state, last_notified_at, blocked_until "
-                "FROM health_state WHERE feed_id = ? AND job_kind = ?",
-                (update.feed_id, update.job_kind),
-            ).fetchone()
-            previous_state = None if row is None else str(row[0])
-            previous_notified = None if row is None else row[1]
-            previous_blocked_until = None if row is None else row[2]
-            changed = previous_state != update.state
-            recovered = previous_state in {
-                "failed",
-                "blocked",
-            } and update.state not in {
-                "failed",
-                "blocked",
-            }
-            should_log = self._should_log_health(
-                update,
-                changed,
-                recovered,
-                previous_notified,
-                reminder_seconds,
-            )
-            blocked_until = previous_blocked_until
-            if update.state == "blocked" and (
-                previous_state != "blocked"
-                or previous_blocked_until is None
-                or previous_blocked_until <= update.attempted_at
-            ):
-                blocked_until = update.attempted_at + HEALTH_REMINDER_SECONDS
-            if update.state != "blocked" and changed:
-                blocked_until = None
-            if row is None:
-                self._insert_health_state(update, blocked_until, should_log)
-            else:
-                self._connection.execute(
-                    "UPDATE health_state SET state = ?, cause = ?, attempted_at = ?, "
-                    "success = ?, nonempty = ?, item_count = ?, duration_ms = ?, "
-                    "scheduler_lag_ms = ?, transition_at = CASE WHEN ? THEN ? ELSE transition_at END, "
-                    "consecutive_failures = CASE WHEN ? THEN 0 ELSE consecutive_failures + 1 END, "
-                    "total_attempts = total_attempts + 1, total_successes = total_successes + ?, "
-                    "total_nonempty = total_nonempty + ?, total_items = total_items + ?, "
-                    "blocked_until = ?, last_notified_at = CASE WHEN ? THEN ? ELSE last_notified_at END, "
-                    "last_success_at = CASE WHEN ? THEN ? ELSE last_success_at END, "
-                    "last_nonempty_at = CASE WHEN ? THEN ? ELSE last_nonempty_at END "
-                    "WHERE feed_id = ? AND job_kind = ?",
-                    (
-                        update.state,
-                        update.cause,
-                        update.attempted_at,
-                        int(update.success),
-                        int(update.nonempty),
-                        update.item_count,
-                        update.duration_ms,
-                        update.scheduler_lag_ms,
-                        int(changed),
-                        update.attempted_at,
-                        int(update.success),
-                        int(update.success),
-                        int(update.nonempty),
-                        update.item_count,
-                        blocked_until,
-                        int(should_log),
-                        update.attempted_at,
-                        int(update.success),
-                        update.attempted_at,
-                        int(update.nonempty),
-                        update.attempted_at,
-                        update.feed_id,
-                        update.job_kind,
-                    ),
-                )
-        return HealthNotice(changed, recovered, should_log, previous_state)
-
-    def _insert_health_state(
-        self,
-        update: HealthUpdate,
-        blocked_until: int | None,
-        should_log: bool,
-    ) -> None:
-        self._connection.execute(
-            "INSERT INTO health_state "
-            "(feed_id, job_kind, state, cause, attempted_at, success, nonempty, "
-            "item_count, duration_ms, scheduler_lag_ms, transition_at, "
-            "consecutive_failures, total_attempts, total_successes, total_nonempty, "
-            "total_items, blocked_until, last_notified_at, last_success_at, "
-            "last_nonempty_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                update.feed_id,
-                update.job_kind,
-                update.state,
-                update.cause,
-                update.attempted_at,
-                int(update.success),
-                int(update.nonempty),
-                update.item_count,
-                update.duration_ms,
-                update.scheduler_lag_ms,
-                update.attempted_at,
-                0 if update.success else 1,
-                int(update.success),
-                int(update.nonempty),
-                update.item_count,
-                blocked_until,
-                update.attempted_at if should_log else None,
-                update.attempted_at if update.success else None,
-                update.attempted_at if update.nonempty else None,
-            ),
-        )
-
-    @staticmethod
-    def _should_log_health(
-        update: HealthUpdate,
-        changed: bool,
-        recovered: bool,
-        previous_notified: int | None,
-        reminder_seconds: int,
-    ) -> bool:
-        return (
-            changed
-            or recovered
-            or (
-                update.state in {"failed", "blocked"}
-                and (
-                    previous_notified is None
-                    or update.attempted_at - int(previous_notified) >= reminder_seconds
-                )
-            )
+        return self._health.record_health(
+            update,
+            reminder_seconds=reminder_seconds,
         )
 
     def get_blocked_until(self, feed_id: str) -> int | None:
-        row = self._connection.execute(
-            "SELECT MAX(blocked_until) FROM health_state "
-            "WHERE feed_id = ? AND blocked_until IS NOT NULL AND blocked_until > unixepoch()",
-            (feed_id,),
-        ).fetchone()
-        return None if row is None or row[0] is None else int(row[0])
+        return self._health.get_blocked_until(feed_id)
 
     def record_job_timing(
         self,
@@ -668,170 +520,17 @@ class DeliveryStore:
         duration_ms: int,
         scheduler_lag_ms: int,
     ) -> None:
-        """Update timing columns on an existing health row only."""
-        with self._connection:
-            self._connection.execute(
-                "UPDATE health_state SET duration_ms = ?, scheduler_lag_ms = ? "
-                "WHERE feed_id = ? AND job_kind = ?",
-                (duration_ms, scheduler_lag_ms, feed_id, job_kind),
-            )
+        self._health.record_job_timing(
+            feed_id,
+            job_kind,
+            duration_ms,
+            scheduler_lag_ms,
+        )
 
     def list_health(self, feed_id: str | None = None) -> tuple[HealthRecord, ...]:
-        where = FEED_WHERE_CLAUSE if feed_id is not None else ""
-        query = (
-            "SELECT feed_id, job_kind, state, cause, attempted_at, success, nonempty, "
-            "item_count, duration_ms, scheduler_lag_ms, transition_at, "
-            "consecutive_failures, total_attempts, total_successes, total_nonempty, "
-            "total_items, blocked_until, last_notified_at, last_success_at, "
-            "last_nonempty_at FROM health_state"
-        )
-        query += where
-        query += " ORDER BY feed_id, job_kind"
-        rows = self._connection.execute(
-            query,
-            () if feed_id is None else (feed_id,),
-        )
-        return tuple(
-            HealthRecord(
-                feed_id=row[0],
-                job_kind=row[1],
-                state=row[2],
-                cause=row[3],
-                attempted_at=row[4],
-                success=bool(row[5]),
-                nonempty=bool(row[6]),
-                item_count=int(row[7]),
-                duration_ms=row[8],
-                scheduler_lag_ms=row[9],
-                transition_at=row[10],
-                consecutive_failures=int(row[11]),
-                total_attempts=int(row[12]),
-                total_successes=int(row[13]),
-                total_nonempty=int(row[14]),
-                total_items=int(row[15]),
-                blocked_until=row[16],
-                last_notified_at=row[17],
-                last_success_at=row[18],
-                last_nonempty_at=row[19],
-            )
-            for row in rows
-        )
+        return self._health.list_health(feed_id)
 
     # SQLite schema and migrations ---------------------------------------
 
     def _initialize(self) -> None:
-        # Foreign keys are enforced at runtime; disabling them for the one-way
-        # legacy-table drop keeps the migration independent of foreign-key
-        # ordering in databases created by older releases.
-        self._connection.execute("PRAGMA foreign_keys = OFF")
-        self._connection.execute("PRAGMA temp_store = MEMORY")
-        self._connection.execute("PRAGMA journal_mode = WAL")
-        self._connection.execute("PRAGMA synchronous = NORMAL")
-        self._connection.execute("PRAGMA busy_timeout = 5000")
-        with self._connection:
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS delivered_entries (feed_id TEXT NOT NULL, "
-                "entry_id TEXT NOT NULL, delivered_at INTEGER NOT NULL DEFAULT (unixepoch()), "
-                "PRIMARY KEY (feed_id, entry_id)) WITHOUT ROWID",
-            )
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS initialized_feeds (feed_id TEXT NOT NULL PRIMARY KEY, "
-                "initialized_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
-            )
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS price_snapshots (feed_id TEXT NOT NULL, "
-                "product_id TEXT NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
-                "currency TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
-                "PRIMARY KEY (feed_id, product_id)) WITHOUT ROWID",
-            )
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS price_notifications ("
-                "notification_id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "feed_id TEXT NOT NULL, group_id TEXT NOT NULL, product_id TEXT NOT NULL, "
-                "title TEXT NOT NULL, link TEXT NOT NULL, previous_price TEXT, "
-                "current_price TEXT NOT NULL, previous_amount TEXT, "
-                "current_amount TEXT, currency TEXT NOT NULL, "
-                "entry_json TEXT NOT NULL, source_title TEXT NOT NULL, "
-                "observed_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' "
-                "CHECK(status IN ('pending','sent')), "
-                "attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER, "
-                "sent_at INTEGER, last_error TEXT)",
-            )
-            notification_columns = {
-                str(row[1])
-                for row in self._connection.execute(
-                    "PRAGMA table_info(price_notifications)",
-                )
-            }
-            for column in ("previous_amount", "current_amount"):
-                if column not in notification_columns:
-                    self._connection.execute(
-                        f"ALTER TABLE price_notifications ADD COLUMN {column} TEXT",
-                    )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS price_notifications_pending "
-                "ON price_notifications(feed_id, status, notification_id)",
-            )
-            legacy = self._connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anhoch_price_snapshots'",
-            ).fetchone()
-            if legacy is not None:
-                self._connection.execute(
-                    "INSERT OR IGNORE INTO price_snapshots "
-                    "(feed_id, product_id, amount, formatted, currency, updated_at) "
-                    "SELECT feed_id, CAST(product_id AS TEXT), amount, formatted, currency, updated_at "
-                    "FROM anhoch_price_snapshots",
-                )
-                self._connection.execute("DROP TABLE anhoch_price_snapshots")
-            self._connection.execute(
-                "INSERT OR IGNORE INTO initialized_feeds (feed_id) "
-                "SELECT DISTINCT feed_id FROM delivered_entries",
-            )
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS price_confirmation_cursors ("
-                "feed_id TEXT PRIMARY KEY, last_product_id TEXT NOT NULL, "
-                "updated_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
-            )
-            legacy_cursor = self._connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
-                "AND name = 'price_normal_delivery_cursors'",
-            ).fetchone()
-            if legacy_cursor is not None:
-                self._connection.execute(
-                    "INSERT OR IGNORE INTO price_confirmation_cursors "
-                    "(feed_id, last_product_id, updated_at) "
-                    "SELECT feed_id, last_product_id, updated_at "
-                    "FROM price_normal_delivery_cursors",
-                )
-                self._connection.execute("DROP TABLE price_normal_delivery_cursors")
-            # Phase 3 intentionally discards legacy approval/hold/reconciliation
-            # history. Take a database backup before upgrading if that history
-            # must be retained; drops are idempotent.
-            for table in LEGACY_TABLES:
-                self._connection.execute(f"DROP TABLE IF EXISTS {table}")
-            self._connection.execute(
-                "CREATE TABLE IF NOT EXISTS health_state (feed_id TEXT NOT NULL, job_kind TEXT NOT NULL, "
-                "state TEXT NOT NULL, cause TEXT, attempted_at INTEGER, success INTEGER NOT NULL DEFAULT 0, "
-                "nonempty INTEGER NOT NULL DEFAULT 0, item_count INTEGER NOT NULL DEFAULT 0, "
-                "duration_ms INTEGER, scheduler_lag_ms INTEGER, transition_at INTEGER, "
-                "consecutive_failures INTEGER NOT NULL DEFAULT 0, total_attempts INTEGER NOT NULL DEFAULT 0, "
-                "total_successes INTEGER NOT NULL DEFAULT 0, total_nonempty INTEGER NOT NULL DEFAULT 0, "
-                "total_items INTEGER NOT NULL DEFAULT 0, blocked_until INTEGER, last_notified_at INTEGER, "
-                "last_success_at INTEGER, last_nonempty_at INTEGER, "
-                "PRIMARY KEY(feed_id, job_kind)) WITHOUT ROWID",
-            )
-            health_columns = {
-                str(row[1])
-                for row in self._connection.execute("PRAGMA table_info(health_state)")
-            }
-            for column in ("last_success_at", "last_nonempty_at"):
-                if column not in health_columns:
-                    self._connection.execute(
-                        f"ALTER TABLE health_state ADD COLUMN {column} INTEGER",
-                    )
-            self._connection.execute(
-                "UPDATE health_state SET state = 'failed', "
-                "cause = COALESCE(cause, 'LegacyState') "
-                "WHERE state IN ('unknown', 'quarantined', 'recovery_required')",
-            )
-        self._connection.execute("PRAGMA foreign_keys = ON")
+        initialize_schema(self._connection)
