@@ -532,6 +532,7 @@ def test_mixed_drops_and_rises_send_one_brief_message() -> None:
     assert "Categories:" in message.entry.description
     assert "-10.0%" in message.entry.description
     assert "+10.0%" in message.entry.description
+    assert "20 dropped, 11 rose" in message.entry.description
     assert "1 extreme move" in message.entry.description
     assert "is in the report" in message.entry.description
     assert "The complete searchable list is attached (HTML and CSV)." in (
@@ -547,8 +548,67 @@ def test_digest_pluralizes_multiple_extreme_moves() -> None:
         record("low", notification_id=2, previous_price="100", current_price="5"),
     )
     description = build_digest_messages(setec.make_feed(), records)[0].entry.description
+    assert "1 dropped, 1 rose" in description
     assert "2 extreme moves" in description
     assert "are in the report" in description
+
+
+def test_long_links_trim_sections_without_empty_headings() -> None:
+    long_link = "https://shop.example.test/" + "a" * 600
+    records = (
+        *(
+            record(
+                f"drop-{index}",
+                notification_id=index + 1,
+                previous_price="100",
+                current_price="90",
+                link=f"{long_link}/drop-{index}",
+            )
+            for index in range(5)
+        ),
+        *(
+            record(
+                f"rise-{index}",
+                notification_id=100 + index,
+                previous_price="100",
+                current_price="110",
+                link=f"{long_link}/rise-{index}",
+            )
+            for index in range(5)
+        ),
+    )
+    description = build_digest_messages(setec.make_feed(), records)[0].entry.description
+    lines = description.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("**Largest"):
+            assert index + 1 < len(lines)
+            assert "→" in lines[index + 1]
+        if line.startswith("**Largest") and " — top " in line:
+            shown = int(line.split(" — top ", 1)[1].split(" of ", 1)[0])
+            following_rows = 0
+            for following in lines[index + 1 :]:
+                if following.startswith(("**Largest", "The complete")):
+                    break
+                if "→" in following:
+                    following_rows += 1
+            assert following_rows == shown
+    assert len(description) <= 4000
+
+
+def test_digest_normalizes_long_multiline_category_names() -> None:
+    records = (
+        record(
+            "category",
+            notification_id=1,
+            categories=("Computers\nand accessories " * 4,),
+        ),
+    )
+    description = build_digest_messages(setec.make_feed(), records)[0].entry.description
+    lines = description.splitlines()
+    category_line = next(line for line in lines if line.startswith("Categories:"))
+    assert not any(line.startswith("and accessories") for line in lines)
+    assert len(category_line) <= 300
+    assert "…" in category_line
 
 
 def test_all_drops_attach_reports_to_single_message() -> None:

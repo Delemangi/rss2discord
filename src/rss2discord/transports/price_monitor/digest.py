@@ -29,7 +29,10 @@ from rss2discord.price_notifications import PriceNotificationRecord
 MAX_TOP_DROPS: Final = 5
 MAX_TOP_RISES: Final = 5
 MAX_DIGEST_CATEGORIES: Final = 5
+MAX_CATEGORY_NAME_CHARACTERS: Final = 40
 MAX_BRIEF_CHARACTERS: Final = 3_900
+
+type _Section = tuple[str, int, list[str]]
 PLAUSIBLE_RATIO_MIN: Final = Decimal("0.1")
 PLAUSIBLE_RATIO_MAX: Final = Decimal(10)
 ATTACHMENT_NOTE: Final = "The complete searchable list is attached (HTML and CSV)."
@@ -92,7 +95,6 @@ def build_digest_messages(
             (rises, "rose"),
             (unchanged, "unchanged"),
             (new, "new"),
-            (extremes, "extreme move" if extremes == 1 else "extreme moves"),
         ]
         if count
     ]
@@ -107,19 +109,21 @@ def build_digest_messages(
         prefix_lines.append(category_line)
     prefix = "\n".join(prefix_lines)
 
-    rows: list[str] = []
+    sections: list[_Section] = []
     if drop_items:
-        rows.append(_section_heading("Largest drops", len(drop_items), drops))
-        rows.extend(_move_line(item) for item in drop_items)
+        sections.append(
+            ("Largest drops", drops, [_move_line(item) for item in drop_items]),
+        )
     if rise_items:
-        rows.append(_section_heading("Largest rises", len(rise_items), rises))
-        rows.extend(_move_line(item) for item in rise_items)
+        sections.append(
+            ("Largest rises", rises, [_move_line(item) for item in rise_items]),
+        )
 
     message = _brief_message(
         feed,
         source_title=source_title,
         prefix=prefix,
-        rows=rows,
+        sections=sections,
         suffix=suffix,
         files=files,
     )
@@ -149,11 +153,11 @@ def _brief_message(
     *,
     source_title: str,
     prefix: str,
-    rows: list[str],
+    sections: list[_Section],
     suffix: list[str],
     files: tuple[ReportFile, ...],
 ) -> WebhookMessage:
-    text = _brief_text(prefix, rows, suffix)
+    text = _brief_text(prefix, sections, suffix)
     return WebhookMessage(
         feed=feed,
         entry=EntryData(
@@ -171,15 +175,35 @@ def _brief_message(
 
 def _brief_text(
     prefix: str,
-    rows: list[str],
+    sections: list[_Section],
     suffix: list[str],
 ) -> str:
     while True:
-        parts = [prefix, *rows, *suffix]
-        text = "\n".join(parts)
-        if len(text) <= MAX_BRIEF_CHARACTERS or not rows:
+        text = "\n".join([prefix, *_section_lines(sections), *suffix])
+        if len(text) <= MAX_BRIEF_CHARACTERS or not _trim_last_section(sections):
             return _bounded(text, MAX_TEXT_DISPLAY_CHARACTERS)
+
+
+def _section_lines(sections: list[_Section]) -> list[str]:
+    lines: list[str] = []
+    for label, total, rows in sections:
+        if not rows:
+            continue
+        lines.append(_section_heading(label, len(rows), total))
+        lines.extend(rows)
+    return lines
+
+
+def _trim_last_section(sections: list[_Section]) -> bool:
+    for index in range(len(sections) - 1, -1, -1):
+        _label, _total, rows = sections[index]
+        if not rows:
+            continue
         rows.pop()
+        if not rows:
+            sections.pop(index)
+        return True
+    return False
 
 
 def build_report_files(
@@ -207,14 +231,17 @@ def _category_line(records: Sequence[PriceNotificationRecord]) -> str | None:
     counts: Counter[str] = Counter()
     for record in records:
         categories = record.entry.categories
-        category = categories[0] if categories else "Uncategorized"
-        if not category.strip():
+        category = _single_line(categories[0], 200) if categories else ""
+        if not category:
             category = "Uncategorized"
         counts[category] += 1
     if not counts or set(counts) <= {"Uncategorized"}:
         return None
     items = counts.most_common(MAX_DIGEST_CATEGORIES)
-    return "Categories: " + ", ".join(f"{name} ({count:,})" for name, count in items)
+    return "Categories: " + ", ".join(
+        f"{_truncate_words(name, MAX_CATEGORY_NAME_CHARACTERS)} ({count:,})"
+        for name, count in items
+    )
 
 
 def _move_line(
@@ -262,15 +289,17 @@ def _split_changes(
             unchanged_count += 1
             continue
         ratio = current / previous
-        if ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX:
+        extreme = ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX
+        if extreme:
             extreme_count += 1
-            continue
         if ratio < 1:
-            drops.append((record, previous, current, ratio))
             drop_count += 1
+            if not extreme:
+                drops.append((record, previous, current, ratio))
         else:
-            rises.append((record, previous, current, ratio))
             rise_count += 1
+            if not extreme:
+                rises.append((record, previous, current, ratio))
 
     drops.sort(key=lambda item: (item[3], -(item[2] - item[1]).copy_abs()))
     rises.sort(key=lambda item: (-item[3], -(item[2] - item[1]).copy_abs()))

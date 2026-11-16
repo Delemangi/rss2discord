@@ -44,9 +44,10 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    sends one card per product. A larger group sends one compact brief: header
    direction totals, up to five largest drops and five largest rises with links
    and percentages, and a category summary when categories exist. Extreme moves
-   are counted and left to the report. The complete HTML and CSV reports attach
-   to that brief. The HTML report is self-contained and searchable/sortable.
-   Rows are marked sent only after Discord confirms the brief.
+   count toward the direction totals but are left out of the top lists and
+   detailed in the report. The complete HTML and CSV reports attach to that
+   brief. The HTML report is self-contained and searchable/sortable. Rows are
+   marked sent only after Discord confirms the brief.
 7. **Record health.** A drained outbox records `healthy` or `empty`. A failed
    send records `failed` with cause `DeliveryRetryPending` and leaves the rows
    pending.
