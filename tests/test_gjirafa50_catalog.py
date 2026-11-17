@@ -330,6 +330,33 @@ def test_catalog_accepts_priced_total_below_root_total(
     assert "root_total=3 priced_total=2 excluded=1" in caplog.text
 
 
+def test_catalog_tolerates_small_count_inversion(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("WARNING")
+    responses = [
+        catalog_payload(4, []),
+        catalog_payload(5, []),
+        catalog_payload(5, [(1, 100), (2, 200), (3, 300), (4, 400), (5, 500)]),
+        catalog_payload(5, [], total_pages=1),
+        catalog_payload(4, []),
+        catalog_payload(5, []),
+    ]
+    get = RecordingGet([StubResponse(payload) for payload in responses])
+
+    client = Gjirafa50CatalogClient()
+    with Gjirafa50HttpClient(get) as http:
+        products = client._scan_catalog(
+            ROOT_URL,
+            _OperationBudget(lambda: False),
+            http,
+        )
+
+    assert {product.id for product in products} == {1, 2, 3, 4, 5}
+    assert "inversion=1 tolerance=100" in caplog.text
+    assert "unique product count exceeds root count" not in caplog.text
+
+
 def test_catalog_counts_skipped_cards_toward_coverage(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -651,7 +678,7 @@ def test_retry_attempt_summary_reports_fresh_inventory_and_delta_counters(
         [
             # Attempt 1 fails at the priced-range probe (retryable).
             StubResponse(catalog_payload(1, product)),
-            StubResponse(catalog_payload(2, product)),
+            StubResponse(catalog_payload(1001, product)),
             # Attempt 2 succeeds.
             StubResponse(catalog_payload(1, product)),
             StubResponse(catalog_payload(1, product)),
