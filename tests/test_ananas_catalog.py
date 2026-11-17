@@ -356,14 +356,46 @@ def test_ananas_rejects_inconsistent_page_metadata(
         AnanasCatalogClient().fetch_catalog(ANANAS_FEED_URL)
 
 
+def test_ananas_accepts_ninety_nine_percent_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeAlgolia(
+        {
+            0: _page([_hit(index) for index in range(48)], total=100, pages=3),
+            1: _page(
+                [_hit(index) for index in range(48, 96)],
+                total=100,
+                pages=3,
+                page=1,
+            ),
+            2: _page(
+                [_hit(index) for index in range(96, 99)],
+                total=100,
+                pages=3,
+                page=2,
+            ),
+        },
+    )
+    monkeypatch.setattr(ananas_catalog, "_perform_request", fake)
+
+    products = AnanasCatalogClient().fetch_catalog(ANANAS_FEED_URL)
+
+    assert len(products) == 99
+
+
 def test_ananas_rejects_low_coverage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = FakeAlgolia(
         {
-            0: _page([_hit(0)], total=100, pages=3),
-            1: _page([], total=100, pages=3, page=1),
-            2: _page([], total=100, pages=3, page=2),
+            0: _page([_hit(index) for index in range(48)], total=100, pages=3),
+            1: _page(
+                [_hit(index) for index in range(48, 96)],
+                total=100,
+                pages=3,
+                page=1,
+            ),
+            2: _page([_hit(96)], total=100, pages=3, page=2),
         },
     )
     monkeypatch.setattr(ananas_catalog, "_perform_request", fake)

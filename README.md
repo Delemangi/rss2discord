@@ -9,7 +9,7 @@ Monitor feeds, forums, marketplaces, and product catalogs; send new-item and opt
 - Pazar3 and Reklama5 listings
 - Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, and Technomarket products
 
-See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges. Ananas uses a public Algolia proxy, requires `ANANAS_ALGOLIA_SEARCH_KEY` in the environment, and supports its computers and components category URLs. Its full scans are best-effort against a live marketplace index and require at least 90% inventory coverage.
+See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges. Ananas uses a public Algolia proxy, requires `ANANAS_ALGOLIA_SEARCH_KEY` in the environment, and supports its computers and components category URLs. Its full scans are best-effort against a live marketplace index and require at least 98% inventory coverage.
 
 ## Setec public-webstore scope
 

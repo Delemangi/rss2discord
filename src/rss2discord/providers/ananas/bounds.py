@@ -65,5 +65,5 @@ MAX_ANANAS_SCAN_SECONDS: Final = 300.0
 MAX_ANANAS_RETAINED_SNAPSHOTS: Final = 10_000
 # The live marketplace can change totals and page boundaries during a scan.
 # Accept bounded drift, but require nearly complete inventory coverage.
-ANANAS_MIN_COVERAGE_RATIO: Final = 0.90
+ANANAS_MIN_COVERAGE_RATIO: Final = 0.98
 ANANAS_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
