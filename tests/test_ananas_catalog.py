@@ -271,6 +271,20 @@ def test_ananas_resolves_arbitrary_subcategory(
     )
 
 
+def test_ananas_resolves_root_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeAlgolia({0: _page([_hit(1)])})
+    monkeypatch.setattr(ananas_catalog, "_perform_request", fake)
+
+    products = AnanasCatalogClient().fetch_catalog(
+        "https://ananas.mk/kategorii/it-shop",
+    )
+
+    assert len(products) == 1
+    assert fake.calls[0]["body"]["filters"] == 'product.categories.lvl0:"IT Shop"'
+
+
 def test_ananas_rejects_unknown_category(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
