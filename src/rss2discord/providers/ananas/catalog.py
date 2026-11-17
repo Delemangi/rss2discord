@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import time
@@ -25,12 +26,14 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_ALGOLIA_SEARCH_KEY_ENV,
     ANANAS_ATTRIBUTES_TO_RETRIEVE,
     ANANAS_CATEGORY_FILTERS,
+    ANANAS_COMPONENTS_FEED_URL,
     ANANAS_FEED_URL,
     ANANAS_HOST,
     ANANAS_IMAGE_HOST,
     ANANAS_JSON_CONTENT_TYPE,
     ANANAS_LABEL,
     ANANAS_LATEST_LOOKBACK_MS,
+    ANANAS_MIN_COVERAGE_RATIO,
     ANANAS_ORIGIN,
     ANANAS_PAGE_SIZE,
     ANANAS_USER_AGENT,
@@ -47,6 +50,7 @@ from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
 __all__ = [
+    "ANANAS_COMPONENTS_FEED_URL",
     "ANANAS_FEED_URL",
     "ANANAS_SCAN_LIMITS",
     "AnanasCatalogClient",
@@ -59,6 +63,7 @@ ANANAS_SCAN_LIMITS: Final = ScanLimits(
     max_requests=MAX_ANANAS_REQUESTS,
     max_bytes=MAX_ANANAS_SCAN_BYTES,
 )
+logger = logging.getLogger(__name__)
 
 
 class _HttpResponse(Protocol):
@@ -200,7 +205,7 @@ class AnanasCatalogClient:
         if total == 0:
             budget.after_request()
             return ()
-        grouped, _seen_inventory = self._collect_pages(
+        grouped, seen_inventory = self._collect_pages(
             first_hits=first_hits,
             total=total,
             page_count=page_count,
@@ -209,6 +214,16 @@ class AnanasCatalogClient:
             budget=budget,
             is_shutdown_requested=is_shutdown_requested,
         )
+        coverage = len(seen_inventory) / total
+        if coverage < 1.0:
+            logger.warning(
+                "Ananas catalog coverage %.4f (%s of %s inventory observations)",
+                coverage,
+                len(seen_inventory),
+                total,
+            )
+        if coverage < ANANAS_MIN_COVERAGE_RATIO:
+            raise FeedFetchError(ANANAS_LABEL, "IncompleteCatalog")
         if not latest:
             self._check_final_page(
                 filter_expression,
@@ -254,8 +269,17 @@ class AnanasCatalogClient:
                 budget=budget,
             )
             expected = min(ANANAS_PAGE_SIZE, total - page * ANANAS_PAGE_SIZE)
+            if len(page_hits) > ANANAS_PAGE_SIZE:
+                raise FeedFetchError(ANANAS_LABEL, "InvalidPage")
             if len(page_hits) != expected:
-                raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
+                logger.debug(
+                    "Ananas page cardinality changed: page=%s expected=%s observed=%s",
+                    page,
+                    expected,
+                    len(page_hits),
+                )
+                if not page_hits:
+                    break
             self._append_page(page_hits, grouped, seen_inventory, budget)
         return grouped, seen_inventory
 
@@ -279,7 +303,15 @@ class AnanasCatalogClient:
             budget,
         )
         if page_total != total or page_pages != page_count:
-            raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
+            logger.debug(
+                "Ananas catalog metadata changed: page=%s expected_total=%s "
+                "observed_total=%s expected_pages=%s observed_pages=%s",
+                page,
+                total,
+                page_total,
+                page_count,
+                page_pages,
+            )
         return page_hits
 
     @staticmethod
@@ -293,7 +325,11 @@ class AnanasCatalogClient:
             budget.before_chunk()
             product = AnanasCatalogClient._parse_hit(item)
             if product.inventory_id in seen_inventory:
-                raise FeedFetchError(ANANAS_LABEL, "DuplicateInventory")
+                logger.debug(
+                    "Ananas duplicate inventory id skipped: %s",
+                    product.inventory_id,
+                )
+                continue
             seen_inventory.add(product.inventory_id)
             grouped[product.product_id] = _select_offer(
                 grouped.get(product.product_id),
@@ -315,15 +351,26 @@ class AnanasCatalogClient:
             budget,
         )
         if final_total != total or final_pages != page_count:
-            raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
-        if len(final_hits) != min(total, ANANAS_PAGE_SIZE):
-            raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
+            logger.debug(
+                "Ananas final page metadata changed: expected_total=%s "
+                "observed_total=%s expected_pages=%s observed_pages=%s",
+                total,
+                final_total,
+                page_count,
+                final_pages,
+            )
+        if len(final_hits) > ANANAS_PAGE_SIZE:
+            raise FeedFetchError(ANANAS_LABEL, "InvalidPage")
         final_seen: set[str] = set()
         for item in final_hits:
             budget.before_chunk()
             product = AnanasCatalogClient._parse_hit(item)
             if product.inventory_id in final_seen:
-                raise FeedFetchError(ANANAS_LABEL, "DuplicateInventory")
+                logger.debug(
+                    "Ananas duplicate inventory id in final page skipped: %s",
+                    product.inventory_id,
+                )
+                continue
             final_seen.add(product.inventory_id)
 
     @staticmethod

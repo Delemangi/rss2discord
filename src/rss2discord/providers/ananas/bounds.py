@@ -10,12 +10,18 @@ ANANAS_IMAGE_HOST: Final = "static.ananas.rs"
 ANANAS_FEED_URL: Final = (
     f"{ANANAS_ORIGIN}/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema"
 )
+ANANAS_COMPONENTS_FEED_URL: Final = (
+    f"{ANANAS_ORIGIN}/kategorii/it-shop/kompjuterski-komponenti"
+)
 # Category filters are keyed by the only supported public category URL so more
 # categories can be added without changing the catalog or strategy contracts.
 ANANAS_CATEGORY_FILTERS: Final = MappingProxyType(
     {
         ANANAS_FEED_URL: (
             'product.categories.lvl1:"IT Shop > Компјутери и компјутерска опрема"'
+        ),
+        ANANAS_COMPONENTS_FEED_URL: (
+            'product.categories.lvl1:"IT Shop > Компјутерски компоненти"'
         ),
     },
 )
@@ -57,4 +63,7 @@ MAX_ANANAS_SCAN_BYTES: Final = (MAX_ANANAS_PAGES + 1) * MAX_ANANAS_RESPONSE_BYTE
 MAX_ANANAS_REQUESTS: Final = 3 * (MAX_ANANAS_PAGES + 1)
 MAX_ANANAS_SCAN_SECONDS: Final = 300.0
 MAX_ANANAS_RETAINED_SNAPSHOTS: Final = 10_000
+# The live marketplace can change totals and page boundaries during a scan.
+# Accept bounded drift, but require nearly complete inventory coverage.
+ANANAS_MIN_COVERAGE_RATIO: Final = 0.90
 ANANAS_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
