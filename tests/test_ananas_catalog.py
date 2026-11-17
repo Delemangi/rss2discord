@@ -18,7 +18,6 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_COMPONENTS_FEED_URL,
     ANANAS_FEED_URL,
     ANANAS_GRAPHQL_ENDPOINT,
-    ANANAS_PAGE_SIZE,
 )
 from rss2discord.providers.ananas.catalog import (
     AnanasCatalogClient,
@@ -27,11 +26,13 @@ from rss2discord.providers.ananas.catalog import (
 from rss2discord.transports import FeedFetchError
 
 DUMMY_SEARCH_KEY = "dummy-ananas-search-key"
+TEST_PAGE_SIZE = 48
 
 
 @pytest.fixture(autouse=True)
 def _set_ananas_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ANANAS_ALGOLIA_SEARCH_KEY_ENV, DUMMY_SEARCH_KEY)
+    monkeypatch.setattr(ananas_catalog, "ANANAS_PAGE_SIZE", TEST_PAGE_SIZE)
 
 
 @dataclass
@@ -180,7 +181,7 @@ def _page(
 ) -> dict[str, object]:
     resolved_total = len(hits) if total is None else total
     resolved_pages = (
-        (resolved_total + ANANAS_PAGE_SIZE - 1) // ANANAS_PAGE_SIZE
+        (resolved_total + TEST_PAGE_SIZE - 1) // TEST_PAGE_SIZE
         if pages is None
         else pages
     )
@@ -189,7 +190,7 @@ def _page(
         "nbHits": resolved_total,
         "page": page,
         "nbPages": resolved_pages,
-        "hitsPerPage": ANANAS_PAGE_SIZE,
+        "hitsPerPage": TEST_PAGE_SIZE,
         "index": ANANAS_ALGOLIA_INDEX,
     }
 
@@ -493,12 +494,12 @@ def test_ananas_rejects_low_coverage(
         {
             0: _page([_hit(index) for index in range(48)], total=100, pages=3),
             1: _page(
-                [_hit(index) for index in range(48, 96)],
+                [_hit(index) for index in range(48, 94)],
                 total=100,
                 pages=3,
                 page=1,
             ),
-            2: _page([_hit(96)], total=100, pages=3, page=2),
+            2: _page([], total=100, pages=3, page=2),
         },
     )
     monkeypatch.setattr(ananas_catalog, "_perform_request", fake)
@@ -623,10 +624,7 @@ def test_ananas_latest_scan_uses_numeric_filter_and_fetches_all_pages(
     )
     pages = {
         page: _page(
-            [
-                _hit(page * ANANAS_PAGE_SIZE + offset)
-                for offset in range(ANANAS_PAGE_SIZE)
-            ],
+            [_hit(page * TEST_PAGE_SIZE + offset) for offset in range(TEST_PAGE_SIZE)],
             total=480,
             pages=10,
             page=page,
@@ -638,7 +636,7 @@ def test_ananas_latest_scan_uses_numeric_filter_and_fetches_all_pages(
 
     products = AnanasCatalogClient().fetch_latest_products(ANANAS_FEED_URL)
 
-    assert len(products) == 10 * ANANAS_PAGE_SIZE
+    assert len(products) == 10 * TEST_PAGE_SIZE
     assert [call["body"]["page"] for call in fake.calls] == list(range(10))
     for call in fake.calls:
         assert call["body"]["numericFilters"] == [
