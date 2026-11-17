@@ -79,7 +79,7 @@ def test_checked_in_config_example_documents_reklama5_computer_parts() -> None:
 
     assert feed.strategy == "reklama5"
     assert feed.url == (
-        "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0"
+        "https://reklama5.com/Search?cat=584&sell=1&buy=0&trade=0"
         "&includeOld=1&includeNew=1"
     )
     assert feed.price_check_interval == 3600

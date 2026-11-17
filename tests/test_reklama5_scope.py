@@ -59,6 +59,11 @@ def test_reklama5_scope_rejects_explicit_empty_fragment() -> None:
             "www.reklama5.mk",
             "/Search/Index/",
         ),
+        (
+            "https://reklama5.com/Search?cat=584",
+            "reklama5.com",
+            "/Search",
+        ),
     ],
 )
 def test_reklama5_scope_accepts_approved_origins_and_paths(
@@ -160,7 +165,7 @@ def test_reklama5_redirect_accepts_search_path_and_query_reordering() -> None:
     assert accepted
 
 
-def test_reklama5_redirect_rejects_apex_to_www_switch() -> None:
+def test_reklama5_redirect_accepts_apex_to_www_switch() -> None:
     scope = Reklama5SearchScope.from_url("https://reklama5.mk/Search?cat=584")
     request = scope.page_request(1)
 
@@ -169,7 +174,19 @@ def test_reklama5_redirect_rejects_apex_to_www_switch() -> None:
         "https://www.reklama5.mk/Search?cat=584&SortByPrice=2&pageView=1&page=1",
     )
 
-    assert not accepted
+    assert accepted
+
+
+def test_reklama5_redirect_accepts_mk_to_com_switch() -> None:
+    scope = Reklama5SearchScope.from_url("https://reklama5.mk/Search?cat=584")
+    request = scope.page_request(1)
+
+    accepted = scope.accepts_redirect(
+        request,
+        "https://reklama5.com/Search?cat=584&SortByPrice=2&pageView=1&page=1",
+    )
+
+    assert accepted
 
 
 def test_reklama5_redirect_rejects_explicit_port_zero() -> None:
