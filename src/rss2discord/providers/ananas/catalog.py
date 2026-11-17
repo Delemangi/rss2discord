@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from html import unescape
 from typing import Any, Final, Protocol, TypeGuard
@@ -24,16 +26,22 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_ALGOLIA_ENDPOINT,
     ANANAS_ALGOLIA_SEARCH_KEY_ENV,
     ANANAS_ATTRIBUTES_TO_RETRIEVE,
-    ANANAS_CATEGORY_FILTERS,
+    ANANAS_CATEGORY_PATH_PREFIX,
+    ANANAS_COMPONENTS_FEED_URL,
     ANANAS_FEED_URL,
+    ANANAS_GRAPHQL_ENDPOINT,
+    ANANAS_GRAPHQL_MARKET,
+    ANANAS_GRAPHQL_SOURCE_APP,
     ANANAS_HOST,
     ANANAS_IMAGE_HOST,
     ANANAS_JSON_CONTENT_TYPE,
     ANANAS_LABEL,
     ANANAS_LATEST_LOOKBACK_MS,
+    ANANAS_MIN_COVERAGE_RATIO,
     ANANAS_ORIGIN,
     ANANAS_PAGE_SIZE,
     ANANAS_USER_AGENT,
+    MAX_ANANAS_CATEGORY_RESPONSE_BYTES,
     MAX_ANANAS_PAGES,
     MAX_ANANAS_PRODUCTS,
     MAX_ANANAS_REQUESTS,
@@ -47,6 +55,7 @@ from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
 __all__ = [
+    "ANANAS_COMPONENTS_FEED_URL",
     "ANANAS_FEED_URL",
     "ANANAS_SCAN_LIMITS",
     "AnanasCatalogClient",
@@ -59,6 +68,45 @@ ANANAS_SCAN_LIMITS: Final = ScanLimits(
     max_requests=MAX_ANANAS_REQUESTS,
     max_bytes=MAX_ANANAS_SCAN_BYTES,
 )
+logger = logging.getLogger(__name__)
+
+ANANAS_CATEGORY_QUERY: Final = """
+query Categories($rootOnly: Boolean = true) {
+  response: getCategories(rootOnly: $rootOnly) {
+    ...CategoryFields
+    children {
+      ...CategoryFields
+      children {
+        ...CategoryFields
+        children {
+          ...CategoryFields
+          children {
+            ...CategoryFields
+            children {
+              ...CategoryFields
+              children {
+                ...CategoryFields
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+fragment CategoryFields on Category {
+  id
+  name
+  slug
+}
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedCategory:
+    slug: str
+    path: tuple[str, ...]
+    filter_expression: str
 
 
 class _HttpResponse(Protocol):
@@ -114,14 +162,14 @@ def _validate_response(response: _HttpResponse) -> None:
 
 
 def validate_ananas_url(url: str) -> str:
-    """Validate one of the explicitly supported Ananas category URLs."""
-    if url not in ANANAS_CATEGORY_FILTERS:
-        raise FeedFetchError(ANANAS_LABEL, "InvalidUrl")
+    """Validate any Ananas category URL under the public category tree."""
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError:
         raise FeedFetchError(ANANAS_LABEL, "InvalidUrl") from None
+    path = parsed.path.rstrip("/")
+    prefix = ANANAS_CATEGORY_PATH_PREFIX
     if (
         parsed.scheme != "https"
         or parsed.hostname != ANANAS_HOST
@@ -130,9 +178,23 @@ def validate_ananas_url(url: str) -> str:
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or not path.startswith(prefix)
+        or path == prefix.rstrip("/")
     ):
         raise FeedFetchError(ANANAS_LABEL, "InvalidUrl")
-    return url
+    slug = path[len(prefix) :]
+    for segment in slug.split("/"):
+        if (
+            not segment
+            or segment in {".", ".."}
+            or any(character in segment for character in "/\\?#%")
+            or any(
+                character.isspace() or not character.isprintable()
+                for character in segment
+            )
+        ):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidUrl")
+    return urlunsplit(("https", ANANAS_HOST, path, "", ""))
 
 
 class AnanasCatalogClient:
@@ -143,7 +205,8 @@ class AnanasCatalogClient:
         url: str,
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> tuple[AnanasProduct, ...]:
-        validate_ananas_url(url)
+        url = validate_ananas_url(url)
+        _require_search_key()
         budget = ScanBudget.start(ANANAS_SCAN_LIMITS, is_shutdown_requested)
         return self._scan_catalog(
             url,
@@ -159,7 +222,8 @@ class AnanasCatalogClient:
         retry_policy: FetchRetryPolicy | None = None,
         is_shutdown_requested: Callable[[], bool] = lambda: False,
     ) -> tuple[AnanasProduct, ...]:
-        validate_ananas_url(url)
+        url = validate_ananas_url(url)
+        _require_search_key()
         budget = ScanBudget.start(ANANAS_SCAN_LIMITS, is_shutdown_requested)
         if retry_policy is None:
             return self._scan_catalog(
@@ -186,7 +250,8 @@ class AnanasCatalogClient:
         *,
         latest: bool,
     ) -> tuple[AnanasProduct, ...]:
-        filter_expression = ANANAS_CATEGORY_FILTERS[validate_ananas_url(url)]
+        category = self._resolve_category(validate_ananas_url(url), budget)
+        filter_expression = category.filter_expression
         numeric_filters = (
             (f"firstPublishedTimestamp > {_latest_cutoff_ms()}",) if latest else ()
         )
@@ -200,7 +265,7 @@ class AnanasCatalogClient:
         if total == 0:
             budget.after_request()
             return ()
-        grouped, _seen_inventory = self._collect_pages(
+        grouped, seen_inventory = self._collect_pages(
             first_hits=first_hits,
             total=total,
             page_count=page_count,
@@ -209,6 +274,16 @@ class AnanasCatalogClient:
             budget=budget,
             is_shutdown_requested=is_shutdown_requested,
         )
+        coverage = len(seen_inventory) / total
+        if coverage < 1.0:
+            logger.warning(
+                "Ananas catalog coverage %.4f (%s of %s inventory observations)",
+                coverage,
+                len(seen_inventory),
+                total,
+            )
+        if coverage < ANANAS_MIN_COVERAGE_RATIO:
+            raise FeedFetchError(ANANAS_LABEL, "IncompleteCatalog")
         if not latest:
             self._check_final_page(
                 filter_expression,
@@ -219,6 +294,56 @@ class AnanasCatalogClient:
             )
         budget.after_request()
         return tuple(grouped.values())
+
+    def _resolve_category(self, url: str, budget: ScanBudget) -> _ResolvedCategory:
+        slug = _category_slug(url)
+        categories = self._fetch_category_tree(budget)
+        path = _find_category_path(categories, slug)
+        if path is None:
+            raise FeedFetchError(ANANAS_LABEL, "UnknownCategory")
+        return _ResolvedCategory(
+            slug=slug,
+            path=path,
+            filter_expression=_category_filter(path),
+        )
+
+    def _fetch_category_tree(self, budget: ScanBudget) -> list[Any]:
+        budget.before_request()
+        callback = BoundedContentCallback.start(
+            budget,
+            max_bytes=MAX_ANANAS_CATEGORY_RESPONSE_BYTES,
+            label=ANANAS_LABEL,
+        )
+        response = _perform_request(
+            ANANAS_GRAPHQL_ENDPOINT,
+            headers=_graphql_headers(),
+            json_body={
+                "query": ANANAS_CATEGORY_QUERY,
+                "variables": {"rootOnly": False},
+            },
+            timeout=budget.request_timeout(),
+            stream=False,
+            allow_redirects=False,
+            content_callback=callback.write,
+        )
+        _raise_callback_abort(callback)
+        budget.after_request()
+        _validate_response(response)
+        content_type = (
+            response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        )
+        if content_type != ANANAS_JSON_CONTENT_TYPE:
+            raise FeedFetchError(ANANAS_LABEL, "InvalidResponse")
+        payload = _decode_json(callback.content)
+        if not isinstance(payload, dict):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidCategoryTree")
+        if payload.get("errors"):
+            raise FeedFetchError(ANANAS_LABEL, "CategoryTreeError")
+        data = payload.get("data")
+        categories = data.get("response") if isinstance(data, dict) else None
+        if not isinstance(categories, list):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidCategoryTree")
+        return categories
 
     @staticmethod
     def _validate_scan_limits(total: int, page_count: int) -> None:
@@ -254,8 +379,17 @@ class AnanasCatalogClient:
                 budget=budget,
             )
             expected = min(ANANAS_PAGE_SIZE, total - page * ANANAS_PAGE_SIZE)
+            if len(page_hits) > ANANAS_PAGE_SIZE:
+                raise FeedFetchError(ANANAS_LABEL, "InvalidPage")
             if len(page_hits) != expected:
-                raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
+                logger.debug(
+                    "Ananas page cardinality changed: page=%s expected=%s observed=%s",
+                    page,
+                    expected,
+                    len(page_hits),
+                )
+                if not page_hits:
+                    break
             self._append_page(page_hits, grouped, seen_inventory, budget)
         return grouped, seen_inventory
 
@@ -279,7 +413,15 @@ class AnanasCatalogClient:
             budget,
         )
         if page_total != total or page_pages != page_count:
-            raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
+            logger.debug(
+                "Ananas catalog metadata changed: page=%s expected_total=%s "
+                "observed_total=%s expected_pages=%s observed_pages=%s",
+                page,
+                total,
+                page_total,
+                page_count,
+                page_pages,
+            )
         return page_hits
 
     @staticmethod
@@ -293,7 +435,11 @@ class AnanasCatalogClient:
             budget.before_chunk()
             product = AnanasCatalogClient._parse_hit(item)
             if product.inventory_id in seen_inventory:
-                raise FeedFetchError(ANANAS_LABEL, "DuplicateInventory")
+                logger.debug(
+                    "Ananas duplicate inventory id skipped: %s",
+                    product.inventory_id,
+                )
+                continue
             seen_inventory.add(product.inventory_id)
             grouped[product.product_id] = _select_offer(
                 grouped.get(product.product_id),
@@ -315,15 +461,26 @@ class AnanasCatalogClient:
             budget,
         )
         if final_total != total or final_pages != page_count:
-            raise FeedFetchError(ANANAS_LABEL, "CatalogMetadataDrift")
-        if len(final_hits) != min(total, ANANAS_PAGE_SIZE):
-            raise FeedFetchError(ANANAS_LABEL, "IncompletePage")
+            logger.debug(
+                "Ananas final page metadata changed: expected_total=%s "
+                "observed_total=%s expected_pages=%s observed_pages=%s",
+                total,
+                final_total,
+                page_count,
+                final_pages,
+            )
+        if len(final_hits) > ANANAS_PAGE_SIZE:
+            raise FeedFetchError(ANANAS_LABEL, "InvalidPage")
         final_seen: set[str] = set()
         for item in final_hits:
             budget.before_chunk()
             product = AnanasCatalogClient._parse_hit(item)
             if product.inventory_id in final_seen:
-                raise FeedFetchError(ANANAS_LABEL, "DuplicateInventory")
+                logger.debug(
+                    "Ananas duplicate inventory id in final page skipped: %s",
+                    product.inventory_id,
+                )
+                continue
             final_seen.add(product.inventory_id)
 
     @staticmethod
@@ -438,17 +595,76 @@ class AnanasCatalogClient:
             ) from None
 
 
-def _request_headers() -> Mapping[str, str]:
+def _require_search_key() -> str:
     api_key = os.environ.get(ANANAS_ALGOLIA_SEARCH_KEY_ENV, "").strip()
     if not api_key:
         raise FeedFetchError(ANANAS_LABEL, "MissingSearchKey")
+    return api_key
+
+
+def _request_headers() -> Mapping[str, str]:
     return {
         "Accept": ANANAS_JSON_CONTENT_TYPE,
         "Content-Type": ANANAS_JSON_CONTENT_TYPE,
         "User-Agent": ANANAS_USER_AGENT,
         "x-algolia-application-id": ANANAS_ALGOLIA_APPLICATION_ID,
-        "x-algolia-api-key": api_key,
+        "x-algolia-api-key": _require_search_key(),
     }
+
+
+def _graphql_headers() -> Mapping[str, str]:
+    return {
+        "Accept": ANANAS_JSON_CONTENT_TYPE,
+        "Content-Type": ANANAS_JSON_CONTENT_TYPE,
+        "User-Agent": ANANAS_USER_AGENT,
+        "Accept-Language": "mk",
+        "Origin": ANANAS_ORIGIN,
+        "Referer": f"{ANANAS_ORIGIN}/",
+        "x-ananas-market": ANANAS_GRAPHQL_MARKET,
+        "x-source-app": ANANAS_GRAPHQL_SOURCE_APP,
+    }
+
+
+def _category_slug(url: str) -> str:
+    path = urlsplit(url).path.rstrip("/")
+    return path[len(ANANAS_CATEGORY_PATH_PREFIX) :]
+
+
+def _find_category_path(
+    categories: list[Any],
+    slug: str,
+    ancestors: tuple[str, ...] = (),
+) -> tuple[str, ...] | None:
+    for item in categories:
+        if not isinstance(item, dict):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidCategoryTree")
+        name = item.get("name")
+        category_slug = item.get("slug")
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or not isinstance(category_slug, str)
+            or not category_slug
+        ):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidCategoryTree")
+        path = (*ancestors, name.strip())
+        if category_slug == slug:
+            return path
+        children = item.get("children")
+        if children is None:
+            continue
+        if not isinstance(children, list):
+            raise FeedFetchError(ANANAS_LABEL, "InvalidCategoryTree")
+        found = _find_category_path(children, slug, path)
+        if found is not None:
+            return found
+    return None
+
+
+def _category_filter(path: tuple[str, ...]) -> str:
+    level = len(path) - 1
+    value = " > ".join(path).replace("\\", "\\\\").replace('"', '\\"')
+    return f'product.categories.lvl{level}:"{value}"'
 
 
 def _request_body(
