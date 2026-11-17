@@ -15,6 +15,14 @@ from rss2discord.transports import FeedFetchError, listing_http
 from tests.reklama5_helpers import RecordingGet, StubResponse, scan_budget, search_scope
 
 
+@pytest.fixture(autouse=True)
+def _skip_rate_limit_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "rss2discord.providers.reklama5.http.time.sleep",
+        lambda _seconds: None,
+    )
+
+
 class CallbackSession:
     def __init__(
         self,

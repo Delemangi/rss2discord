@@ -24,7 +24,9 @@ MAX_REKLAMA5_ATTEMPT_BYTES: Final = 6_291_456
 MAX_REKLAMA5_REDIRECTS: Final = 10
 MAX_REKLAMA5_ATTEMPT_SECONDS: Final = 120.0
 MAX_REKLAMA5_CATALOG_ATTEMPT_BYTES: Final = 500 * 1024 * 1024
-MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS: Final = 300.0
+MAX_REKLAMA5_CATALOG_ATTEMPT_SECONDS: Final = 600.0
+MAX_REKLAMA5_RATE_LIMIT_RETRIES: Final = 3
+REKLAMA5_DEFAULT_RETRY_AFTER_SECONDS: Final = 10.0
 
 REKLAMA5_BROWSER_HEADERS: Final = (
     ("Accept-Language", "mk-MK,mk;q=0.9,en;q=0.8"),
@@ -93,9 +95,26 @@ def fetch_reklama5_page(
     budget: Reklama5ScanBudget,
 ) -> bytes:
     """Fetch one trusted search page within a caller-owned attempt budget."""
-    return fetch_listing_page(
-        url=request.url,
-        budget=budget,
-        config=REKLAMA5_LISTING_CONFIG,
-        accepts_redirect=lambda target: request.scope.accepts_redirect(request, target),
-    )
+    for attempt in range(1, MAX_REKLAMA5_RATE_LIMIT_RETRIES + 1):
+        try:
+            return fetch_listing_page(
+                url=request.url,
+                budget=budget,
+                config=REKLAMA5_LISTING_CONFIG,
+                accepts_redirect=lambda target: request.scope.accepts_redirect(
+                    request,
+                    target,
+                ),
+            )
+        except FeedFetchError as error:
+            if (
+                error.cause_type != "HTTPError"
+                or error.status_code != 429
+                or attempt == MAX_REKLAMA5_RATE_LIMIT_RETRIES
+            ):
+                raise
+            delay = error.retry_after or REKLAMA5_DEFAULT_RETRY_AFTER_SECONDS
+            if time.monotonic() + delay >= budget.expires_at:
+                raise
+            time.sleep(delay)
+    raise AssertionError

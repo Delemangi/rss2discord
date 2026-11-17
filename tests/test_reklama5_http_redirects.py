@@ -1,3 +1,4 @@
+import time
 from urllib.parse import urlsplit
 
 import pytest
@@ -268,9 +269,31 @@ def test_reklama5_fetch_propagates_exact_retry_after_result(
     )
 
     request = search_scope().page_request(1)
-    budget = scan_budget()
+    budget = scan_budget(expires_at=time.monotonic() + 1)
     with pytest.raises(FeedFetchError) as fetch_error:
         fetch_reklama5_page(request, budget)
 
     assert parsed_values == [retry_after]
     assert fetch_error.value.retry_after == 73.25
+
+
+def test_reklama5_fetch_retries_429_with_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "rss2discord.providers.reklama5.http.time.sleep",
+        sleeps.append,
+    )
+    get = RecordingGet(
+        [
+            StubResponse(b"busy", status_code=429, headers={"Retry-After": "10"}),
+            StubResponse(b"page"),
+        ],
+    )
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
+
+    content = fetch_reklama5_page(search_scope().page_request(1), scan_budget())
+
+    assert content == b"page"
+    assert sleeps == [10.0]
