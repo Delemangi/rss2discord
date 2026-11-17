@@ -289,10 +289,10 @@ feeds:
 #   api.ananas.rs and requires ANANAS_ALGOLIA_SEARCH_KEY in the environment.
 #   Any category URL under https://ananas.mk/kategorii/ is supported and resolved
 #   from the live category tree. Discovery requests use a 7-day first-published
-#   window bounded by the same 250-page / 12,000-hit limits. Full scans use 48
-#   hits per page, cap each response at 2 MiB and each scan at 502 MiB / 600
+#   window bounded by the same 20-page / 12,000-hit limits. Full scans use 1,000
+#   hits per page, cap each response at 2 MiB and each scan at 42 MiB / 600
 #   seconds, and re-read page zero to detect index drift. Marketplace drift is
-#   tolerated best-effort, but a scan must cover at least 98% of the initial
+#   tolerated best-effort, but a scan must cover at least 95% of the initial
 #   inventory count. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;

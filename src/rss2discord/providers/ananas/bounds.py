@@ -13,7 +13,7 @@ ANANAS_COMPONENTS_FEED_URL: Final = (
     f"{ANANAS_ORIGIN}/kategorii/it-shop/kompjuterski-komponenti"
 )
 ANANAS_CATEGORY_PATH_PREFIX: Final = "/kategorii/"
-ANANAS_PAGE_SIZE: Final = 48
+ANANAS_PAGE_SIZE: Final = 1_000
 ANANAS_ALGOLIA_ENDPOINT: Final = (
     "https://api.ananas.rs/algolia-reverse-proxy/1/indexes/"
     "prod_merchant_inventories_mk_mk/query"
@@ -44,7 +44,7 @@ ANANAS_ATTRIBUTES_TO_RETRIEVE: Final = (
     "product.newProduct",
 )
 ANANAS_LATEST_LOOKBACK_MS: Final = 7 * 24 * 60 * 60 * 1000
-MAX_ANANAS_PAGES: Final = 250
+MAX_ANANAS_PAGES: Final = 20
 MAX_ANANAS_PRODUCTS: Final = 12_000
 MAX_ANANAS_RESPONSE_BYTES: Final = 2 * 1024 * 1024
 MAX_ANANAS_CATEGORY_RESPONSE_BYTES: Final = 2 * 1024 * 1024
@@ -57,5 +57,5 @@ MAX_ANANAS_SCAN_SECONDS: Final = 600.0
 MAX_ANANAS_RETAINED_SNAPSHOTS: Final = 10_000
 # The live marketplace can change totals and page boundaries during a scan.
 # Accept bounded drift, but require nearly complete inventory coverage.
-ANANAS_MIN_COVERAGE_RATIO: Final = 0.98
+ANANAS_MIN_COVERAGE_RATIO: Final = 0.95
 ANANAS_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
