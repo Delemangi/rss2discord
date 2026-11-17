@@ -147,8 +147,12 @@ def test_reklama5_parser_skips_exact_normalized_promoted_marker() -> None:
     assert parse_cards(Reklama5Card(promotion="  Промовирано  ")).listings == ()
 
 
+def test_reklama5_parser_skips_english_promoted_marker() -> None:
+    assert parse_cards(Reklama5Card(promotion="Promoted")).listings == ()
+
+
 def test_reklama5_parser_rejects_unknown_promotion_marker() -> None:
-    card = Reklama5Card(promotion="Promoted")
+    card = Reklama5Card(promotion="Sponsored")
     with pytest.raises(FeedFetchError) as fetch_error:
         parse_cards(card)
 

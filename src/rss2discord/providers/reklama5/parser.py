@@ -38,6 +38,7 @@ _IMAGE_PATTERN: Final = re.compile(
 _SUMMARY_LENGTH: Final = 2_000
 _NEW_AD_BADGE_SUFFIX: Final = " НОВ ОГЛАС"
 _MAX_YEARLESS_DATE_LOOKBACK_YEARS: Final = 8
+_PROMOTED_MARKERS: Final = frozenset({"промовирано", "promoted"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +142,7 @@ def _is_promoted(card: Tag) -> bool:
     promotion = card.select_one(".promotedBtn")
     if promotion is None:
         return False
-    if normalized_text(promotion) != "Промовирано":
+    if normalized_text(promotion).casefold() not in _PROMOTED_MARKERS:
         raise FeedFetchError(REKLAMA5_LABEL, "InvalidPromotionMarker")
     return True
 
