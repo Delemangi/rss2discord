@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', or 'technomarket'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -112,7 +112,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
@@ -162,6 +162,19 @@ feeds:
     price_check_interval: 3600
     webhook_name: "Hivetec Bot"
 
+  # TechnoSapien and any other public WooCommerce shop through the Store API.
+  # Use the shop root, /shop/, or a /product-category/<slug>/ URL to restrict a
+  # feed to one category. Discovery reads the newest 30 products; price scans
+  # read the complete catalog. Only HTTPS shop origins without credentials are
+  # accepted, and product links and images must stay on the shop host.
+  - id: "technosapien-products"
+    name: "TechnoSapien"
+    url: "https://technosapien.mk/"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "woocommerce"
+    price_check_interval: 3600
+    webhook_name: "TechnoSapien Bot"
+
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:
   # https://gjirafa50.mk/ or https://gjirafa50.com/. Use a separate stable feed ID for
   # each storefront. Prices use MKD for .mk and EUR for .com. The independent price
@@ -186,7 +199,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -197,7 +210,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -272,6 +285,8 @@ feeds:
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   - 'technomarket': For new products from one public Technomarket category
+#   - 'woocommerce': For new products and price monitoring from any public WooCommerce
+#     Store API shop, using the shop root, /shop/, or a /product-category/<slug>/ URL
 # - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;
 #   omit or set to null to inherit the global refresh_interval. Independent of price_check_interval.
 # - seed_existing_on_first_fetch: Set to true for an RSS/Atom feed whose current
@@ -282,7 +297,7 @@ feeds:
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
-# - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, or Technomarket
+# - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Ananas uses the public Algolia proxy at
@@ -302,6 +317,12 @@ feeds:
 #   absolute deadline, and aggregate caps of 20,000 images and 20,000 categories.
 #   Changed pagination totals, incomplete traversal, duplicate IDs, and aggregate
 #   metadata excess fail closed.
+#   WooCommerce scans accept any credential-free HTTPS shop root, /shop/, or
+#   /product-category/<slug>/ URL, resolve the category through the public
+#   Store API, use 30 products for discovery and 100 per page for full scans,
+#   and allow at most 50 pages / 5,000 products / 64 MiB / 300 seconds per
+#   operation. Only products whose links stay on the configured shop host are
+#   accepted; price scans skip out-of-stock and zero-price products.
 #   Gjirafa50 scans accept only https://gjirafa50.mk/ or https://gjirafa50.com/,
 #   use MKD for .mk and EUR for .com, process 24 products per page, recursively
 #   split cent-precise storefront-currency ranges below 9,000 products, and allow at

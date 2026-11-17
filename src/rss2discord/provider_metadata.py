@@ -16,6 +16,7 @@ PRICE_STRATEGIES: Final = frozenset(
         "reklama5",
         "setec",
         "technomarket",
+        "woocommerce",
     },
 )
 STRATEGY_LABELS: Final = {
@@ -33,6 +34,7 @@ STRATEGY_LABELS: Final = {
     "rss": "RSS",
     "setec": "Setec",
     "technomarket": "Technomarket",
+    "woocommerce": "WooCommerce",
     "xenforo": "Forum",
 }
 ADAPTER_LABELS: Final = {

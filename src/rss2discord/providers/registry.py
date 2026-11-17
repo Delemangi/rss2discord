@@ -57,6 +57,12 @@ from rss2discord.providers.technomarket.prices import (
     TechnomarketPriceMonitor,
 )
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
+from rss2discord.providers.woocommerce.catalog import WooCommerceCatalogClient
+from rss2discord.providers.woocommerce.prices import (
+    WooCommerceCatalog,
+    WooCommercePriceMonitor,
+)
+from rss2discord.providers.woocommerce.strategy import WooCommerceStrategy
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports import RSSStrategy, ScraperStrategy, XenForoStrategy
 from rss2discord.transports.price_monitor import (
@@ -94,6 +100,7 @@ def build_discovery_strategies(
         "rss": RSSStrategy(),
         "setec": SetecStrategy(),
         "technomarket": TechnomarketStrategy(is_shutdown_requested),
+        "woocommerce": WooCommerceStrategy(is_shutdown_requested),
         "xenforo": XenForoStrategy(),
     }
 
@@ -256,6 +263,18 @@ def build_provider_price_monitor(
                 feed,
                 PriceMonitorDependencies[TechnomarketCatalog](
                     catalog=TechnomarketCatalogClient(),
+                    snapshots=dependencies.snapshots,
+                    sender=dependencies.sender,
+                    fetch_retry_policy=dependencies.fetch_retry_policy,
+                    sqlite_retry_policy=dependencies.sqlite_retry_policy,
+                    delivery=dependencies.delivery,
+                ),
+            )
+        case "woocommerce":
+            return WooCommercePriceMonitor(
+                feed,
+                PriceMonitorDependencies[WooCommerceCatalog](
+                    catalog=WooCommerceCatalogClient(),
                     snapshots=dependencies.snapshots,
                     sender=dependencies.sender,
                     fetch_retry_policy=dependencies.fetch_retry_policy,
