@@ -45,6 +45,7 @@ from rss2discord.providers.setec.prices import SetecPriceMonitor
 from rss2discord.providers.setec.strategy import SetecStrategy
 from rss2discord.providers.technomarket.prices import TechnomarketPriceMonitor
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
+from rss2discord.providers.time_mk.strategy import TimeMkStrategy
 from rss2discord.providers.woocommerce.prices import WooCommercePriceMonitor
 from rss2discord.providers.woocommerce.strategy import WooCommerceStrategy
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
@@ -71,6 +72,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "rss": RSSStrategy,
     "setec": SetecStrategy,
     "technomarket": TechnomarketStrategy,
+    "time_mk": TimeMkStrategy,
     "woocommerce": WooCommerceStrategy,
     "xenforo": XenForoStrategy,
 }
