@@ -15,9 +15,9 @@ from rss2discord.providers.ananas.bounds import (
     ANANAS_ALGOLIA_ENDPOINT,
     ANANAS_ALGOLIA_INDEX,
     ANANAS_ALGOLIA_SEARCH_KEY_ENV,
-    ANANAS_CATEGORY_FILTERS,
     ANANAS_COMPONENTS_FEED_URL,
     ANANAS_FEED_URL,
+    ANANAS_GRAPHQL_ENDPOINT,
     ANANAS_PAGE_SIZE,
 )
 from rss2discord.providers.ananas.catalog import (
@@ -49,10 +49,57 @@ class _FakeResponse:
             )
 
 
+def _default_category_tree() -> dict[str, object]:
+    return {
+        "data": {
+            "response": [
+                {
+                    "id": 1,
+                    "name": "IT Shop",
+                    "slug": "it-shop",
+                    "children": [
+                        {
+                            "id": 2,
+                            "name": "Компјутери и компјутерска опрема",
+                            "slug": "it-shop/kompjuteri-i-kompjuterska-oprema",
+                            "children": [
+                                {
+                                    "id": 3,
+                                    "name": "Монитори",
+                                    "slug": (
+                                        "it-shop/kompjuteri-i-kompjuterska-oprema/"
+                                        "monitori"
+                                    ),
+                                    "children": [],
+                                },
+                            ],
+                        },
+                        {
+                            "id": 4,
+                            "name": "Компјутерски компоненти",
+                            "slug": "it-shop/kompjuterski-komponenti",
+                            "children": [],
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+
+
 class FakeAlgolia:
-    def __init__(self, pages: Mapping[int, dict[str, object]]) -> None:
+    def __init__(
+        self,
+        pages: Mapping[int, dict[str, object]],
+        *,
+        category_tree: dict[str, object] | None = None,
+    ) -> None:
         self.pages = dict(pages)
+        self.category_tree = (
+            _default_category_tree() if category_tree is None else category_tree
+        )
         self.calls: list[dict[str, Any]] = []
+        self.graphql_calls: list[dict[str, Any]] = []
 
     def __call__(
         self,
@@ -66,6 +113,16 @@ class FakeAlgolia:
         content_callback: Callable[[bytes], int],
     ) -> _FakeResponse:
         del timeout, allow_redirects, stream
+        if url == ANANAS_GRAPHQL_ENDPOINT:
+            self.graphql_calls.append(
+                {
+                    "url": url,
+                    "headers": dict(headers),
+                    "body": dict(json_body),
+                },
+            )
+            content_callback(json.dumps(self.category_tree).encode("utf-8"))
+            return _FakeResponse()
         self.calls.append(
             {
                 "url": url,
@@ -143,7 +200,6 @@ def _page(
         "http://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema",
         "https://www.ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema",
         "https://ananas.mk:443/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema",
-        "https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema/",
         "https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema?x=1",
         "https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema#x",
     ],
@@ -151,6 +207,10 @@ def _page(
 def test_ananas_rejects_noncanonical_feed_urls(url: str) -> None:
     with pytest.raises(FeedFetchError, match="InvalidUrl"):
         validate_ananas_url(url)
+
+
+def test_ananas_normalizes_trailing_slash() -> None:
+    assert validate_ananas_url(f"{ANANAS_FEED_URL}/") == ANANAS_FEED_URL
 
 
 def test_ananas_full_scan_paginates_and_uses_supported_filter(
@@ -171,10 +231,9 @@ def test_ananas_full_scan_paginates_and_uses_supported_filter(
     assert len(products) == 49
     assert [call["body"]["page"] for call in fake.calls] == [0, 1, 0]
     assert fake.calls[0]["url"] == ANANAS_ALGOLIA_ENDPOINT
-    assert ANANAS_CATEGORY_FILTERS[ANANAS_FEED_URL] == (
+    assert fake.calls[0]["body"]["filters"] == (
         'product.categories.lvl1:"IT Shop > Компјутери и компјутерска опрема"'
     )
-    assert fake.calls[0]["body"]["filters"] == ANANAS_CATEGORY_FILTERS[ANANAS_FEED_URL]
     assert "numericFilters" not in fake.calls[0]["body"]
     headers = fake.calls[0]["headers"]
     assert isinstance(headers, dict)
@@ -191,12 +250,42 @@ def test_ananas_components_category_filter(
     products = AnanasCatalogClient().fetch_catalog(ANANAS_COMPONENTS_FEED_URL)
 
     assert len(products) == 1
-    assert ANANAS_CATEGORY_FILTERS[ANANAS_COMPONENTS_FEED_URL] == (
-        'product.categories.lvl1:"IT Shop > Компјутерски компоненти"'
-    )
     assert fake.calls[0]["body"]["filters"] == (
         'product.categories.lvl1:"IT Shop > Компјутерски компоненти"'
     )
+
+
+def test_ananas_resolves_arbitrary_subcategory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeAlgolia({0: _page([_hit(1)])})
+    monkeypatch.setattr(ananas_catalog, "_perform_request", fake)
+
+    products = AnanasCatalogClient().fetch_catalog(
+        "https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema/monitori",
+    )
+
+    assert len(products) == 1
+    assert fake.calls[0]["body"]["filters"] == (
+        'product.categories.lvl2:"IT Shop > Компјутери и компјутерска опрема > Монитори"'
+    )
+
+
+def test_ananas_rejects_unknown_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree: dict[str, object] = {
+        "data": {
+            "response": [
+                {"id": 1, "name": "IT Shop", "slug": "it-shop", "children": []},
+            ],
+        },
+    }
+    fake = FakeAlgolia({0: _page([_hit(1)])}, category_tree=tree)
+    monkeypatch.setattr(ananas_catalog, "_perform_request", fake)
+
+    with pytest.raises(FeedFetchError, match="UnknownCategory"):
+        AnanasCatalogClient().fetch_catalog(ANANAS_FEED_URL)
 
 
 def test_ananas_parses_hit_fields_and_builds_product_url(
@@ -454,6 +543,7 @@ def test_ananas_enforces_response_byte_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(ananas_catalog, "MAX_ANANAS_RESPONSE_BYTES", 3)
+    monkeypatch.setattr(ananas_catalog, "MAX_ANANAS_CATEGORY_RESPONSE_BYTES", 3)
 
     def perform(
         url: str,
@@ -476,6 +566,7 @@ def test_ananas_enforces_response_byte_limit(
 
 
 def test_ananas_enforces_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ananas_catalog, "MAX_ANANAS_PAGES", 100)
     fake = FakeAlgolia(
         {
             0: _page(
@@ -492,6 +583,7 @@ def test_ananas_enforces_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_ananas_enforces_product_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ananas_catalog, "MAX_ANANAS_PRODUCTS", 10_000)
     fake = FakeAlgolia(
         {
             0: _page(
@@ -538,4 +630,6 @@ def test_ananas_latest_scan_uses_numeric_filter_and_fetches_all_pages(
         assert call["body"]["numericFilters"] == [
             "firstPublishedTimestamp > 1700000000000",
         ]
-        assert call["body"]["filters"] == ANANAS_CATEGORY_FILTERS[ANANAS_FEED_URL]
+        assert call["body"]["filters"] == (
+            'product.categories.lvl1:"IT Shop > Компјутери и компјутерска опрема"'
+        )

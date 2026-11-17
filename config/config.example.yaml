@@ -117,9 +117,10 @@ feeds:
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
-  # Ananas new products and opt-in price monitoring for the computers and
-  # components categories. Requires the ANANAS_ALGOLIA_SEARCH_KEY environment
-  # variable; no search key is committed. Supported category URLs:
+  # Ananas new products and opt-in price monitoring for any category URL under
+  # https://ananas.mk/kategorii/. The category filter is resolved from the live
+  # category tree. Requires the ANANAS_ALGOLIA_SEARCH_KEY environment variable;
+  # no search key is committed. Examples:
   # https://ananas.mk/kategorii/it-shop/kompjuteri-i-kompjuterska-oprema
   # https://ananas.mk/kategorii/it-shop/kompjuterski-komponenti
   # Uncomment the blocks below and add a real webhook to enable them.
@@ -261,7 +262,7 @@ feeds:
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
-#   - 'ananas': For new products and optional price monitoring from the Ananas computers or components category
+#   - 'ananas': For new products and optional price monitoring from any Ananas category URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
 #   - 'hivetec': For new products from Hivetec's public WooCommerce catalog
@@ -286,13 +287,13 @@ feeds:
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Ananas uses the public Algolia proxy at
 #   api.ananas.rs and requires ANANAS_ALGOLIA_SEARCH_KEY in the environment.
-#   The computers and components category URLs are supported. Discovery
-#   requests use a 7-day first-published window bounded by
-#   the same 100-page / 10,000-hit limits. Full scans use 48 hits per page, cap
-#   each response at 2 MiB and each scan at 202 MiB / 300 seconds, and re-read
-#   page zero to detect index drift. Marketplace drift is tolerated best-effort,
-#   but a scan must cover at least 98% of the initial inventory count. Anhoch
-#   scans use 500 products per
+#   Any category URL under https://ananas.mk/kategorii/ is supported and resolved
+#   from the live category tree. Discovery requests use a 7-day first-published
+#   window bounded by the same 250-page / 12,000-hit limits. Full scans use 48
+#   hits per page, cap each response at 2 MiB and each scan at 502 MiB / 600
+#   seconds, and re-read page zero to detect index drift. Marketplace drift is
+#   tolerated best-effort, but a scan must cover at least 98% of the initial
+#   inventory count. Anhoch scans use 500 products per
 #   page, a 2 MiB per-response cap, and a 200 MiB total cap. Neksio scans enumerate
 #   homepage categories, use 100 products per page, and cap each response at 1 MiB;
 #   a scan fails above 100 categories, 100 pages per category, or 10,000 products.
