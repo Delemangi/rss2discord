@@ -34,6 +34,7 @@ FeedStrategyName = Literal[
     "setec",
     "cccenter",
     "technomarket",
+    "time_mk",
     "woocommerce",
 ]
 MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600

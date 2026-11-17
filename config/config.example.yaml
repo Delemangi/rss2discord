@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -175,6 +175,21 @@ feeds:
     price_check_interval: 3600
     webhook_name: "TechnoSapien Bot"
 
+  # Time.mk aggregated Macedonian news. The root URL fetches the default
+  # tech + Macedonia + economy categories. Use /all (or /rss/all) for every
+  # category, or /rss/<category>,<category> for a subset. Common slugs:
+  # tehnologija, makedonija, ekonomija, vesti, svet, balkan, skopje, kultura,
+  # sport, fudbal, kosarka, rakomet, tenis, avto, avtomoto, hrana, zdravje,
+  # hronika, republika, style, scena, life, fun, magazin, patuvanja, sex,
+  # sportdrugo.
+  - id: "time-mk-news"
+    name: "Time.mk"
+    url: "https://time.mk/"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "time_mk"
+    seed_existing_on_first_fetch: true
+    webhook_name: "Time.mk"
+
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:
   # https://gjirafa50.mk/ or https://gjirafa50.com/. Use a separate stable feed ID for
   # each storefront. Prices use MKD for .mk and EUR for .com. The independent price
@@ -285,6 +300,8 @@ feeds:
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   - 'technomarket': For new products from one public Technomarket category
+#   - 'time_mk': For aggregated Macedonian news from a configurable Time.mk
+#     category subset; the root URL defaults to tech + Macedonia + economy
 #   - 'woocommerce': For new products and price monitoring from any public WooCommerce
 #     Store API shop, using the shop root, /shop/, or a /product-category/<slug>/ URL
 # - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;
