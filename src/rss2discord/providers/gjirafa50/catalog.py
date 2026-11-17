@@ -39,6 +39,12 @@ MAX_GJIRAFA50_SCAN_SECONDS: Final = 3_600
 # A best-effort scan is only usable if it observed nearly all priced products.
 # Skipped cards count toward coverage because they exist but cannot be monitored.
 GJIRAFA50_MIN_COVERAGE_RATIO: Final = 0.90
+# The live index can briefly report a slightly larger count for the whole priced
+# range than for the unfiltered root while an update settles. A small inversion
+# is drift, not a missing price axis; only a material inversion means the two
+# queries no longer describe the same catalog.
+GJIRAFA50_COUNT_INVERSION_RATIO: Final = 0.001
+GJIRAFA50_COUNT_INVERSION_FLOOR: Final = 100
 # Page enumeration is network-latency bound. A small fixed worker pool raises
 # throughput while the global host pacer keeps the request rate unchanged.
 GJIRAFA50_SCAN_WORKERS: Final = 6
@@ -331,19 +337,29 @@ class Gjirafa50CatalogClient:
                 entire_range,
                 phase="whole_range_probe",
             ).total_hits
+            catalog_total = max(root_total, priced_total)
             if priced_total > root_total:
+                inversion = priced_total - root_total
+                tolerance = max(
+                    GJIRAFA50_COUNT_INVERSION_FLOOR,
+                    ceil(root_total * GJIRAFA50_COUNT_INVERSION_RATIO),
+                )
                 logger.warning(
                     "Gjirafa50 priced range exceeds root count: phase=whole_range "
-                    "range=%s parent_count=%d range_count=%d",
+                    "range=%s parent_count=%d range_count=%d inversion=%d "
+                    "tolerance=%d",
                     entire_range,
                     root_total,
                     priced_total,
+                    inversion,
+                    tolerance,
                 )
-                raise FeedFetchError(  # noqa: TRY301
-                    GJIRAFA50_LABEL,
-                    "IncompletePriceRange",
-                    retryable=True,
-                )
+                if inversion > tolerance:
+                    raise FeedFetchError(  # noqa: TRY301
+                        GJIRAFA50_LABEL,
+                        "IncompletePriceRange",
+                        retryable=True,
+                    )
             if priced_total > MAX_GJIRAFA50_PRODUCTS:
                 logger.warning(
                     "Gjirafa50 priced catalog exceeds unique product capacity: "
@@ -374,7 +390,7 @@ class Gjirafa50CatalogClient:
                     scan,
                     price_range,
                     shard_total,
-                    root_total,
+                    catalog_total,
                     products,
                     worker_pool=worker_pool,
                 )

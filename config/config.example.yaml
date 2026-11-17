@@ -307,7 +307,8 @@ feeds:
 #   split cent-precise storefront-currency ranges below 9,000 products, and allow at
 #   most 7,000 requests / 150,000 products / 128 shards / 2 GiB / 60 minutes
 #   per operation, including retries.
-#   Counts, identities, prices, terminal pages, and post-scan totals must reconcile.
+#   Counts, identities, prices, and terminal pages must reconcile best-effort;
+#   a count inversion beyond 0.1% of the root (minimum 100 products) fails closed.
 #   Setec queries the storefront's own search index rather than its product API.
 #   A price scan first reads an exact, uncapped facet count, then enumerates the
 #   catalogue by recursively halving the calculated-amount range until every
