@@ -28,7 +28,7 @@ def test_reklama5_fetch_sends_required_headers_and_stream_options(
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
             "Sec-Fetch-User": "?1",
-            "Referer": "https://reklama5.mk/",
+            "Referer": "https://reklama5.com/",
         },
     ]
     assert get.allow_redirects == [False]

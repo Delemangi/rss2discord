@@ -33,7 +33,7 @@ REKLAMA5_BROWSER_HEADERS: Final = (
     ("Sec-Fetch-Mode", "navigate"),
     ("Sec-Fetch-Site", "none"),
     ("Sec-Fetch-User", "?1"),
-    ("Referer", "https://reklama5.mk/"),
+    ("Referer", "https://reklama5.com/"),
 )
 
 REKLAMA5_LISTING_CONFIG: Final = ListingHttpConfig(

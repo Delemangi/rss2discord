@@ -9,7 +9,14 @@ from rss2discord.transports.base import FeedFetchError
 
 REKLAMA5_LABEL: Final = "Reklama5"
 
-_ALLOWED_HOSTS: Final = frozenset({"reklama5.mk", "www.reklama5.mk"})
+_ALLOWED_HOSTS: Final = frozenset(
+    {
+        "reklama5.mk",
+        "www.reklama5.mk",
+        "reklama5.com",
+        "www.reklama5.com",
+    },
+)
 _ALLOWED_PATHS: Final = frozenset(
     {"/Search", "/Search/", "/Search/Index", "/Search/Index/"},
 )
@@ -99,13 +106,12 @@ class Reklama5SearchScope:
         trusted_target = _parse_search_url(absolute_target_url)
         if trusted_target is None:
             return False
-        target, target_host, target_port = trusted_target
-        if (
-            target.scheme != self.scheme
-            or target_host != self.host
-            or target_port != self.port
-        ):
+        target, _target_host, target_port = trusted_target
+        if target.scheme != self.scheme or target_port != self.port:
             return False
+        # The service migrated from reklama5.mk to reklama5.com. Both hosts
+        # are trusted, so a cross-host redirect within the allowed set is
+        # accepted as long as the path and normalized query still match.
         requested_query = urlsplit(request.url).query
         return _normalized_query(target.query) == _normalized_query(requested_query)
 
