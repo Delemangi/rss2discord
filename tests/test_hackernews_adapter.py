@@ -112,6 +112,31 @@ def test_hackernews_adapter_adds_front_page_rank() -> None:
     )
 
 
+def test_hackernews_adapter_fetches_rank_on_fresh_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    monkeypatch.setattr(hackernews_module.time, "monotonic", lambda: 1.0)
+    item = HackerNewsItem(
+        id=123,
+        type="story",
+        by="alice",
+        url="https://example.test/article",
+        score=111,
+        descendants=71,
+    )
+    adapter = HackerNewsAdapter(
+        fetch_item=lambda item_id: item,
+        fetch_topstories=lambda: (3, 1, 123),
+    )
+
+    # When
+    result = adapter.adapt({}, make_entry())
+
+    # Then
+    assert result.source_metrics[0] == SourceMetric(label="Rank", value="#3")
+
+
 def test_hackernews_adapter_uses_top_comment_for_link_post() -> None:
     # Given
     story = HackerNewsItem(

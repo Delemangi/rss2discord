@@ -96,7 +96,7 @@ class HackerNewsAdapter:
         self._fetch_item = fetch_item
         self._fetch_topstories = fetch_topstories
         self._topstories: tuple[int, ...] | None = None
-        self._topstories_at = 0.0
+        self._topstories_at: float | None = None
 
     def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
         del entry
@@ -165,7 +165,10 @@ class HackerNewsAdapter:
         if self._fetch_topstories is None:
             return None
         now = time.monotonic()
-        if now - self._topstories_at >= HACKER_NEWS_TOPSTORIES_TTL_SECONDS:
+        if (
+            self._topstories_at is None
+            or now - self._topstories_at >= HACKER_NEWS_TOPSTORIES_TTL_SECONDS
+        ):
             self._topstories = self._fetch_topstories()
             self._topstories_at = now
         if not self._topstories:
