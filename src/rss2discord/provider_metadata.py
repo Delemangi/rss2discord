@@ -35,6 +35,7 @@ STRATEGY_LABELS: Final = {
     "setec": "Setec",
     "technomarket": "Technomarket",
     "time_mk": "Time.mk",
+    "fakulteti_mk": "Fakulteti.mk",
     "woocommerce": "WooCommerce",
     "xenforo": "Forum",
 }

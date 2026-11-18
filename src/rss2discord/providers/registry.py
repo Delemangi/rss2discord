@@ -22,6 +22,7 @@ from rss2discord.providers.cccenter.strategy import CCCenterStrategy
 from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
 from rss2discord.providers.ddstore.prices import DDStoreCatalog, DDStorePriceMonitor
 from rss2discord.providers.ddstore.strategy import DDStoreStrategy
+from rss2discord.providers.fakulteti_mk.strategy import FakultetiMkStrategy
 from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
@@ -87,6 +88,7 @@ def build_discovery_strategies(
         "anhoch": AnhochStrategy(),
         "cccenter": CCCenterStrategy(is_shutdown_requested),
         "ddstore": DDStoreStrategy(is_shutdown_requested),
+        "fakulteti_mk": FakultetiMkStrategy(),
         "gjirafa50": Gjirafa50Strategy(is_shutdown_requested),
         "hivetec": HivetecStrategy(is_shutdown_requested),
         "itmk_oglasnik": ITMkOglasnikStrategy(),
@@ -284,7 +286,7 @@ def build_provider_price_monitor(
                     delivery=dependencies.delivery,
                 ),
             )
-        case "rss" | "xenforo" | "itmk_oglasnik" | "time_mk":
+        case "rss" | "xenforo" | "itmk_oglasnik" | "time_mk" | "fakulteti_mk":
             return None
         case unreachable:
             assert_never(unreachable)
