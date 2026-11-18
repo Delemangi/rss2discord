@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -194,6 +194,17 @@ feeds:
     seed_existing_on_first_fetch: true
     webhook_name: "Time.mk"
 
+  # Fakulteti.mk student news. The root URL fetches all posts; use
+  # /category/<slug>,<slug> for a subset. Categories: nasha-tema, obrazovanie,
+  # nauka, kultura, zdravje, tehnologija, kolumni, zhivot, kariera, ostanato.
+  - id: "fakulteti-mk"
+    name: "Fakulteti.mk"
+    url: "https://fakulteti.mk/category/obrazovanie,nauka,tehnologija,kariera"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "fakulteti_mk"
+    seed_existing_on_first_fetch: true
+    webhook_name: "Fakulteti.mk"
+
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:
   # https://gjirafa50.mk/ or https://gjirafa50.com/. Use a separate stable feed ID for
   # each storefront. Prices use MKD for .mk and EUR for .com. The independent price
@@ -307,6 +318,8 @@ feeds:
 #   - 'time_mk': For aggregated Macedonian news from a configurable Time.mk
 #     category subset; the root URL defaults to tech + Macedonia + economy, and
 #     new entries include the article summary and Open Graph image
+#   - 'fakulteti_mk': For Fakulteti.mk student news from the root URL or a
+#     /category/<slug>,<slug> subset; new entries include the summary and image
 #   - 'woocommerce': For new products and price monitoring from any public WooCommerce
 #     Store API shop, using the shop root, /shop/, or a /product-category/<slug>/ URL
 # - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;
