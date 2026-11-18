@@ -8,7 +8,7 @@ Monitor feeds, forums, marketplaces, and product catalogs; send new-item and opt
 - XenForo and IT.mk Oglasnik
 - Pazar3 and Reklama5 listings
 - Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, Technomarket, and any public WooCommerce Store API shop
-- Time.mk aggregated Macedonian news with configurable category subsets
+- Time.mk aggregated Macedonian news with configurable category subsets and Open Graph summaries/images
 
 See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges. Ananas uses a public Algolia proxy, requires `ANANAS_ALGOLIA_SEARCH_KEY` in the environment, and supports any category URL under `https://ananas.mk/kategorii/`; the category filter is resolved from the live category tree. Its full scans are best-effort against a live marketplace index and require at least 95% inventory coverage.
 

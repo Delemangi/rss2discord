@@ -13,16 +13,21 @@ from urllib.parse import urlsplit
 
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 
 from rss2discord.models import EntryId
 from rss2discord.providers.time_mk.bounds import (
     MAX_TIME_MK_CATEGORIES,
+    MAX_TIME_MK_DESCRIPTION_LENGTH,
+    MAX_TIME_MK_DETAIL_BYTES,
+    MAX_TIME_MK_IMAGE_URL_LENGTH,
     MAX_TIME_MK_RESPONSE_BYTES,
     MAX_TIME_MK_SCAN_BYTES,
     MAX_TIME_MK_SCAN_SECONDS,
     TIME_MK_ALL_CATEGORIES,
     TIME_MK_ALL_FEED,
     TIME_MK_DEFAULT_CATEGORIES,
+    TIME_MK_DETAIL_SECONDS,
     TIME_MK_HOSTS,
     TIME_MK_LABEL,
     TIME_MK_ORIGIN,
@@ -31,7 +36,10 @@ from rss2discord.providers.time_mk.bounds import (
     TIME_MK_STREAM_CHUNK_BYTES,
     TIME_MK_USER_AGENT,
 )
-from rss2discord.providers.time_mk.models import TimeMkArticle
+from rss2discord.providers.time_mk.models import (
+    TimeMkArticle,
+    TimeMkArticleDetails,
+)
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
 
@@ -79,6 +87,43 @@ class TimeMkCatalogClient:
         if successes == 0:
             raise FeedFetchError(TIME_MK_LABEL, "EmptyResponse")
         return _sorted_articles(articles.values())
+
+    def fetch_details(self, url: str) -> TimeMkArticleDetails | None:
+        """Read the Open Graph summary and image from one Time.mk article page."""
+        if not _is_time_mk_article_url(url):
+            return None
+        try:
+            with requests.get(
+                url,
+                headers={"User-Agent": TIME_MK_USER_AGENT},
+                timeout=TIME_MK_DETAIL_SECONDS,
+                stream=True,
+            ) as response:
+                response.raise_for_status()
+                content = _read_content(
+                    response,
+                    remaining_scan_bytes=MAX_TIME_MK_DETAIL_BYTES,
+                )
+        except FeedFetchError as error:
+            logger.warning(
+                "Time.mk article detail fetch failed: cause=%s",
+                error.cause_type,
+            )
+            return None
+        except requests.RequestException as error:
+            logger.warning(
+                "Time.mk article detail fetch failed: cause=%s",
+                type(error).__name__,
+            )
+            return None
+        soup = BeautifulSoup(content, "html.parser")
+        return TimeMkArticleDetails(
+            description=_clean_text(
+                _meta_content(soup, "og:description"),
+                MAX_TIME_MK_DESCRIPTION_LENGTH,
+            ),
+            image_url=_safe_image_url(_meta_content(soup, "og:image")),
+        )
 
     def _fetch_category(
         self,
@@ -273,6 +318,34 @@ def _clean_text(value: str, max_length: int) -> str:
         character if character.isprintable() else " " for character in unescape(value)
     )
     return " ".join(printable.split())[:max_length].strip()
+
+
+def _meta_content(soup: BeautifulSoup, property_name: str) -> str:
+    node = soup.select_one(f'meta[property="{property_name}"]')
+    if node is None:
+        node = soup.select_one(f'meta[name="{property_name}"]')
+    if node is None:
+        return ""
+    content = node.get("content")
+    return content if isinstance(content, str) else ""
+
+
+def _safe_image_url(url: str) -> str | None:
+    if not url or len(url) > MAX_TIME_MK_IMAGE_URL_LENGTH:
+        return None
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        return None
+    return url
 
 
 def _sorted_articles(

@@ -4,6 +4,7 @@ import pytest
 
 from rss2discord.providers.time_mk import catalog as time_mk_catalog
 from rss2discord.providers.time_mk.bounds import TIME_MK_ALL_CATEGORIES
+from rss2discord.providers.time_mk.catalog import TimeMkCatalogClient
 from rss2discord.providers.time_mk.strategy import TimeMkStrategy
 from rss2discord.transports import FeedFetchError
 from tests.time_mk_helpers import (
@@ -14,6 +15,7 @@ from tests.time_mk_helpers import (
     RecordingGet,
     StubResponse,
     article,
+    details_payload,
     rss_payload,
 )
 
@@ -95,6 +97,12 @@ def test_time_mk_default_categories_dedupe_and_sort_oldest_first(
                     ],
                 ),
             ),
+            StubResponse(
+                details_payload(
+                    "Tech A summary",
+                    "https://cdn.example.test/tech-a.jpg",
+                ),
+            ),
         ],
     )
     monkeypatch.setattr(time_mk_catalog.requests, "get", get)
@@ -117,12 +125,14 @@ def test_time_mk_default_categories_dedupe_and_sort_oldest_first(
     assert data.link == "https://time.mk/c/aaaaaaaaaa/mk/tech-a.html"
     assert data.timestamp == "2026-11-17T15:00:00+00:00"
     assert data.categories == (TECH_CATEGORY,)
-    assert data.description == ""
-    assert [url.rsplit("/", 1)[-1] for url in get.urls] == [
+    assert data.description == "Tech A summary"
+    assert data.image_url == "https://cdn.example.test/tech-a.jpg"
+    assert [url.rsplit("/", 1)[-1] for url in get.urls[:3]] == [
         "tehnologija",
         "makedonija",
         "ekonomija",
     ]
+    assert get.urls[3] == "https://time.mk/c/aaaaaaaaaa/mk/tech-a.html"
 
 
 def test_time_mk_explicit_category_subset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -375,3 +385,81 @@ def test_time_mk_single_category_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert len(entries) == 1
     assert len(get.urls) == 1
+
+
+def test_time_mk_details_parse_open_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                details_payload(
+                    "Article summary",
+                    "https://cdn.example.test/article.jpg",
+                ),
+            ),
+        ],
+    )
+    monkeypatch.setattr(time_mk_catalog.requests, "get", get)
+
+    details = TimeMkCatalogClient().fetch_details(
+        "https://time.mk/c/aaaaaaaaaa/mk/tech-a.html",
+    )
+
+    assert details is not None
+    assert details.description == "Article summary"
+    assert details.image_url == "https://cdn.example.test/article.jpg"
+
+
+def test_time_mk_details_reject_non_https_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                details_payload(
+                    "Article summary",
+                    "http://cdn.example.test/article.jpg",
+                ),
+            ),
+        ],
+    )
+    monkeypatch.setattr(time_mk_catalog.requests, "get", get)
+
+    details = TimeMkCatalogClient().fetch_details(
+        "https://time.mk/c/aaaaaaaaaa/mk/tech-a.html",
+    )
+
+    assert details is not None
+    assert details.image_url is None
+
+
+def test_time_mk_details_are_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                rss_payload(
+                    "tehnologija",
+                    [
+                        tech_article(
+                            "aaaaaaaaaa",
+                            "Tech A",
+                            "IT.mk",
+                            "Tue, 17 Nov 2026 15:00:00 +0000",
+                        ),
+                    ],
+                ),
+            ),
+            StubResponse(b"error", status_code=500),
+        ],
+    )
+    monkeypatch.setattr(time_mk_catalog.requests, "get", get)
+    strategy = TimeMkStrategy()
+
+    entries, _source_title = strategy.fetch_entries(TIME_MK_CATEGORY_URL)
+    data = strategy.get_entry_data(entries[0])
+
+    assert data.description == ""
+    assert data.image_url is None
