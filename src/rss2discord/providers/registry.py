@@ -39,7 +39,6 @@ from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.catalog import NeptunCatalogClient
 from rss2discord.providers.neptun.prices import NeptunCatalog, NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
-from rss2discord.providers.opencode_tweets.strategy import OpenCodeTweetsStrategy
 from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3Catalog, Pazar3PriceMonitor
@@ -60,6 +59,7 @@ from rss2discord.providers.technomarket.prices import (
 )
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from rss2discord.providers.time_mk.strategy import TimeMkStrategy
+from rss2discord.providers.tweets.strategy import TweetsStrategy
 from rss2discord.providers.woocommerce.catalog import WooCommerceCatalogClient
 from rss2discord.providers.woocommerce.prices import (
     WooCommerceCatalog,
@@ -95,7 +95,6 @@ def build_discovery_strategies(
         "itmk_oglasnik": ITMkOglasnikStrategy(),
         "neksio": NeksioStrategy(is_shutdown_requested),
         "neptun": NeptunStrategy(),
-        "opencode_tweets": OpenCodeTweetsStrategy(),
         "pazar3": Pazar3Strategy(
             pacer=pazar3_pacer,
             sleep=sleep,
@@ -106,6 +105,7 @@ def build_discovery_strategies(
         "setec": SetecStrategy(),
         "technomarket": TechnomarketStrategy(is_shutdown_requested),
         "time_mk": TimeMkStrategy(),
+        "tweets": TweetsStrategy(),
         "woocommerce": WooCommerceStrategy(is_shutdown_requested),
         "xenforo": XenForoStrategy(),
     }
@@ -289,12 +289,7 @@ def build_provider_price_monitor(
                 ),
             )
         case (
-            "rss"
-            | "xenforo"
-            | "itmk_oglasnik"
-            | "time_mk"
-            | "fakulteti_mk"
-            | "opencode_tweets"
+            "rss" | "xenforo" | "itmk_oglasnik" | "time_mk" | "fakulteti_mk" | "tweets"
         ):
             return None
         case unreachable:

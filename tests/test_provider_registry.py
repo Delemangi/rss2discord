@@ -31,7 +31,6 @@ from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
-from rss2discord.providers.opencode_tweets.strategy import OpenCodeTweetsStrategy
 from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
@@ -48,6 +47,7 @@ from rss2discord.providers.setec.strategy import SetecStrategy
 from rss2discord.providers.technomarket.prices import TechnomarketPriceMonitor
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from rss2discord.providers.time_mk.strategy import TimeMkStrategy
+from rss2discord.providers.tweets.strategy import TweetsStrategy
 from rss2discord.providers.woocommerce.prices import WooCommercePriceMonitor
 from rss2discord.providers.woocommerce.strategy import WooCommerceStrategy
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
@@ -70,13 +70,13 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "itmk_oglasnik": ITMkOglasnikStrategy,
     "neksio": NeksioStrategy,
     "neptun": NeptunStrategy,
-    "opencode_tweets": OpenCodeTweetsStrategy,
     "pazar3": Pazar3Strategy,
     "reklama5": Reklama5Strategy,
     "rss": RSSStrategy,
     "setec": SetecStrategy,
     "technomarket": TechnomarketStrategy,
     "time_mk": TimeMkStrategy,
+    "tweets": TweetsStrategy,
     "woocommerce": WooCommerceStrategy,
     "xenforo": XenForoStrategy,
 }
