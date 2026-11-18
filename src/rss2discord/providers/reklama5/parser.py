@@ -16,8 +16,8 @@ from rss2discord.providers.reklama5.page_validation import (
 from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL, Reklama5PageRequest
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.listing_activity import (
+    ACTIVITY_MONTHS,
     ACTIVITY_TIME_PATTERN,
-    MACEDONIAN_MONTHS,
     SKOPJE,
     TODAY_PATTERN,
     YESTERDAY_PATTERN,
@@ -29,7 +29,7 @@ _DATE_PATTERN: Final = re.compile(
     re.ASCII,
 )
 _MONTH_PATTERN: Final = re.compile(
-    rf"(?P<day>\d{{1,2}}) (?P<month>{'|'.join(MACEDONIAN_MONTHS)}) {ACTIVITY_TIME_PATTERN}",
+    rf"(?P<day>\d{{1,2}}) (?P<month>{'|'.join(ACTIVITY_MONTHS)}) {ACTIVITY_TIME_PATTERN}",
 )
 _IMAGE_PATTERN: Final = re.compile(
     r"background-image\s*+:\s*+url\(\s*+(['\"]?)(?P<url>[^)'\"]++)\1\s*+\)",
@@ -59,6 +59,7 @@ class Reklama5Page:
     listings: tuple[Reklama5Listing, ...]
     organic_ids: frozenset[EntryId]
     organic_row_count: int
+    promoted_row_count: int
     result_count: int
     terminal: bool
 
@@ -76,8 +77,10 @@ def parse_reklama5_page(
     listings: list[Reklama5Listing] = []
     organic_ids: set[EntryId] = set()
     organic_row_count = 0
+    promoted_row_count = 0
     for card in soup.select("#sr-holder > .ad-top-div"):
         if _is_promoted(card):
+            promoted_row_count += 1
             continue
 
         identity = _listing_identity(card, request)
@@ -102,6 +105,7 @@ def parse_reklama5_page(
         listings=tuple(listings),
         organic_ids=frozen_ids,
         organic_row_count=organic_row_count,
+        promoted_row_count=promoted_row_count,
         result_count=evidence.result_count,
         terminal=terminal,
     )
@@ -203,7 +207,7 @@ def _parse_activity(value: str, local_now: datetime) -> datetime | None:
 
 
 def _yearless_activity(match: re.Match[str], local_now: datetime) -> datetime | None:
-    month = MACEDONIAN_MONTHS[match.group("month")]
+    month = ACTIVITY_MONTHS[match.group("month")]
     day = int(match.group("day"))
     oldest_year = local_now.year - _MAX_YEARLESS_DATE_LOOKBACK_YEARS
     for year in range(local_now.year, oldest_year - 1, -1):

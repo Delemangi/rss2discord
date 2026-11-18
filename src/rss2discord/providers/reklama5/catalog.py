@@ -55,6 +55,7 @@ class Reklama5CatalogClient:
         listings: dict[EntryId, Reklama5Listing] = {}
         expected_result_count: int | None = None
         organic_row_count = 0
+        promoted_row_count = 0
         for page_number in range(1, MAX_REKLAMA5_CATALOG_PAGES + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
@@ -77,9 +78,11 @@ class Reklama5CatalogClient:
                 listings.setdefault(listing.entry_id, listing)
             seen_ids.update(page.organic_ids)
             organic_row_count += page.organic_row_count
+            promoted_row_count += page.promoted_row_count
             if page.terminal:
                 _require_complete_catalog(
                     organic_row_count,
+                    promoted_row_count,
                     expected_result_count,
                     is_shutdown_requested,
                 )
@@ -101,11 +104,12 @@ def _validate_catalog_page(
 
 
 def _require_complete_catalog(
-    row_count: int,
+    organic_row_count: int,
+    promoted_row_count: int,
     expected_count: int,
     is_shutdown_requested: Callable[[], bool],
 ) -> None:
-    if row_count != expected_count:
+    if organic_row_count + promoted_row_count != expected_count:
         raise FeedFetchError(REKLAMA5_LABEL, "IncompleteCatalog", retryable=True)
     if is_shutdown_requested():
         raise FeedFetchInterruptedError

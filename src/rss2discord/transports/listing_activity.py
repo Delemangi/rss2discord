@@ -22,9 +22,30 @@ MACEDONIAN_MONTHS: Final = {
     "ное": 11,
     "дек": 12,
 }
+ENGLISH_MONTHS: Final = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12,
+}
+ACTIVITY_MONTHS: Final = {**MACEDONIAN_MONTHS, **ENGLISH_MONTHS}
 ACTIVITY_TIME_PATTERN: Final = r"(?P<hour>\d{2}):(?P<minute>\d{2})"
-TODAY_PATTERN: Final = re.compile(rf"Денес {ACTIVITY_TIME_PATTERN}", re.ASCII)
-YESTERDAY_PATTERN: Final = re.compile(rf"Вчера {ACTIVITY_TIME_PATTERN}", re.ASCII)
+TODAY_PATTERN: Final = re.compile(
+    rf"(?:Денес|Today) {ACTIVITY_TIME_PATTERN}",
+    re.ASCII,
+)
+YESTERDAY_PATTERN: Final = re.compile(
+    rf"(?:Вчера|Yesterday) {ACTIVITY_TIME_PATTERN}",
+    re.ASCII,
+)
 
 
 def localize_wall_time(wall_date: date, match: re.Match[str]) -> datetime | None:

@@ -233,6 +233,30 @@ def test_reklama5_catalog_rejects_changed_advertised_result_count(
     assert fetch_error.value.retryable
 
 
+def test_reklama5_catalog_counts_promoted_rows_toward_completeness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    html = search_page(
+        1,
+        [
+            Reklama5Card(ad_id="1", promotion="Promoted").html(),
+            Reklama5Card(ad_id="2").html(),
+        ],
+        page_links=[],
+        result_count=2,
+    )
+    session = RecordingGet([StubResponse(html)])
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: session)
+
+    listings = Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        SEARCH_URL,
+        retry_policy=_retry_policy(),
+        is_shutdown_requested=lambda: False,
+    )
+
+    assert [listing.entry_id for listing in listings] == ["2"]
+
+
 def test_reklama5_catalog_counts_duplicate_organic_rows_toward_completeness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
