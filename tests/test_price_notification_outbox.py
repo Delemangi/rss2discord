@@ -268,7 +268,7 @@ def test_setec_small_scan_sends_every_change_without_a_ten_cap(tmp_path: Path) -
 
 
 def test_setec_bulk_scan_sends_stats_digest_with_reports(tmp_path: Path) -> None:
-    ids = tuple(f"p-{index:02}" for index in range(26))
+    ids = tuple(f"p-{index:02}" for index in range(101))
     baseline = tuple(setec.make_product(pid, calculated_amount=100) for pid in ids)
     changed = tuple(setec.make_product(pid, calculated_amount=90) for pid in ids)
     sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
@@ -288,7 +288,7 @@ def test_setec_bulk_scan_sends_stats_digest_with_reports(tmp_path: Path) -> None
         assert message.files[1].filename.endswith(".csv")
         assert "Largest drops" in message.entry.description
         csv_text = message.files[1].content.decode()
-        assert len(list(csv.reader(io.StringIO(csv_text)))) == 27
+        assert len(list(csv.reader(io.StringIO(csv_text)))) == 102
         assert all(pid in csv_text for pid in ids)
         assert store.count_pending_price_notifications("setec") == 0
         assert all(item.amount == 90 for item in store.load_price_snapshots("setec"))
@@ -466,7 +466,7 @@ def test_additional_pending_note_appears_only_when_present() -> None:
 
 def test_delivery_threads_additional_pending_into_brief(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        record_scan(store, tuple(str(index) for index in range(26)))
+        record_scan(store, tuple(str(index) for index in range(101)))
         sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
         result = deliver_price_notifications(
             _digest_dependencies(store, sender),
@@ -664,7 +664,7 @@ def _mixed_scan(store: DeliveryStore) -> None:
             entry=entry(f"p-{index}"),
             source_title="Test Shop",
         )
-        for index in range(26)
+        for index in range(101)
     )
     store.record_price_scan(
         feed_id="feed",
@@ -702,7 +702,7 @@ def test_failed_digest_message_leaves_all_rows_pending(tmp_path: Path) -> None:
         assert len(sender.messages) == 1
         pending = store.load_pending_price_group("feed")
         assert pending is not None
-        assert len(pending[1]) == 26
+        assert len(pending[1]) == 101
         assert all(item.attempts == 1 for item in pending[1])
 
 

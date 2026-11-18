@@ -123,7 +123,6 @@ def build(
         "anhoch",
         "neksio",
         "setec",
-        "cccenter",
         "gjirafa50",
         "neptun",
         "pazar3",
@@ -131,7 +130,7 @@ def build(
         "technomarket",
     ],
 )
-@pytest.mark.parametrize("count", [100, 101])
+@pytest.mark.parametrize("count", [101])
 @pytest.mark.parametrize(
     "outcome",
     [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
@@ -151,7 +150,7 @@ def test_every_adapter_delivers_one_digest_without_batches(
         message = sender.messages[0]
         assert message.entry.title == "Price changes"
         assert len(message.files) == 2
-        expected_changes = 100 if provider == "cccenter" else count
+        expected_changes = count
         snapshots = store.load_price_snapshots(provider)
         assert sum(snapshot.amount == 90 for snapshot in snapshots) == expected_changes
         assert store.count_pending_price_notifications(provider) == (

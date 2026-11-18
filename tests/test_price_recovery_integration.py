@@ -112,7 +112,7 @@ def test_catalog_silent_updates_persist_atomically_with_digest(
 
 
 @pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
-@pytest.mark.parametrize("count", [1, 100])
+@pytest.mark.parametrize("count", [1, 101])
 def test_normal_changes_send_without_approval_or_send_cap(
     tmp_path: Path,
     provider: str,

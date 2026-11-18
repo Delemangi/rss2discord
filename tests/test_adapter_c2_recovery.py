@@ -99,7 +99,7 @@ def cc_products(
     )
 
 
-@pytest.mark.parametrize("provider", ["setec", "cccenter"])
+@pytest.mark.parametrize("provider", ["setec"])
 @pytest.mark.parametrize(
     "outcome",
     [DiscordDeliveryResult.DELIVERED, DiscordDeliveryResult.FAILED],
@@ -175,12 +175,38 @@ def test_cccenter_confirmed_detail_delivers_once(tmp_path: Path) -> None:
         assert store.load_price_snapshots("cccenter")[0].amount == 90
 
 
+def test_cccenter_at_cap_sends_inline_cards(tmp_path: Path) -> None:
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = cc_monitor(
+            store,
+            DetailCatalog(
+                [
+                    cc_products("100", ids=range(100)),
+                    cc_products("90", ids=range(100)),
+                ],
+            ),
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        assert len(sender.messages) == 100
+        assert all(
+            message.entry.title != "Price changes" for message in sender.messages
+        )
+        assert (
+            sum(item.amount == 90 for item in store.load_price_snapshots("cccenter"))
+            == 100
+        )
+        assert store.count_pending_price_notifications("cccenter") == 0
+
+
 def test_setec_bulk_digest_excludes_unconfirmed_details(tmp_path: Path) -> None:
     baseline = tuple(
-        setec.make_product(str(i), calculated_amount=100) for i in range(101)
+        setec.make_product(str(i), calculated_amount=100) for i in range(202)
     )
     changed = tuple(
-        setec.make_product(str(i), calculated_amount=90) for i in range(101)
+        setec.make_product(str(i), calculated_amount=90) for i in range(202)
     )
     overrides = {
         item.id: setec.make_product(item.id, calculated_amount=80)
@@ -199,9 +225,10 @@ def test_setec_bulk_digest_excludes_unconfirmed_details(tmp_path: Path) -> None:
         rows = list(
             csv.reader(io.StringIO(sender.messages[0].files[1].content.decode())),
         )
-        assert len(rows) == 52
+        assert len(rows) == 153
         assert (
-            sum(item.amount == 90 for item in store.load_price_snapshots("setec")) == 51
+            sum(item.amount == 90 for item in store.load_price_snapshots("setec"))
+            == 152
         )
 
 

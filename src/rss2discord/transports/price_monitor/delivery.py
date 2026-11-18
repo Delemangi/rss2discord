@@ -3,13 +3,13 @@
 import time
 from collections.abc import Callable, Iterable, Sequence
 from functools import partial
-from typing import Final, assert_never
+from typing import assert_never
 from uuid import uuid4
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import PriceSnapshot
+from rss2discord.models import MAX_INLINE_PRICE_CHANGES, PriceSnapshot
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationDeliveryResult,
@@ -25,8 +25,6 @@ from .contracts import (
 )
 from .digest import build_digest_messages
 from .planning import finish_price_delivery, record_price_health
-
-INLINE_CARD_LIMIT: Final = 25
 
 
 def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
@@ -176,7 +174,7 @@ def deliver_price_notifications(
         _group_id, records = group
         result = (
             _deliver_inline_cards(dependencies, feed, records)
-            if len(records) <= INLINE_CARD_LIMIT
+            if len(records) <= MAX_INLINE_PRICE_CHANGES
             else _deliver_digest(
                 dependencies,
                 feed,
