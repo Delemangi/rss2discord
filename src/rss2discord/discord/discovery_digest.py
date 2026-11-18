@@ -27,7 +27,6 @@ from rss2discord.discord.report import (
 )
 from rss2discord.models import EntryData
 
-INLINE_ENTRY_LIMIT: Final = 25
 MAX_DIGEST_CARDS: Final = 3
 MAX_DIGEST_CATEGORIES: Final = 5
 CSV_HEADER: Final = (

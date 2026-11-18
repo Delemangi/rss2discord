@@ -81,6 +81,7 @@ def make_feed(
     feed_id: str,
     *,
     seed_existing_on_first_fetch: bool = False,
+    digest_threshold: int | None = 100,
 ) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
@@ -88,6 +89,7 @@ def make_feed(
         url="https://example.test/feed.xml",
         webhook=f"https://discord.test/{feed_id}",
         seed_existing_on_first_fetch=seed_existing_on_first_fetch,
+        digest_threshold=digest_threshold,
     )
 
 

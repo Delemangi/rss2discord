@@ -30,6 +30,7 @@ feeds:
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
+    digest_threshold: 100 # Optional: max new entries posted individually; above this, one digest. null disables the digest.
 
   # Hacker News RSS with official API enrichment: points, comments, domain,
   # front-page rank, the top comment for link posts, and Ask HN text.
@@ -318,6 +319,10 @@ feeds:
 #   pages per ordinary cycle, and does not import complete current inventory. Changes,
 #   renewals, and reactivations of the same ad ID remain silent. Its independent price
 #   scan can traverse the complete configured category without changing discovery behavior.
+# - digest_threshold: Optional positive integer, default 100. When a check finds
+#   more new entries than this, one digest with HTML/CSV attachments is sent
+#   instead of individual cards. Set to null to always post individual cards;
+#   recommended for news feeds.
 # - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
