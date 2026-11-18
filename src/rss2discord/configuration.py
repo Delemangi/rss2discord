@@ -106,6 +106,13 @@ class FeedConfig(BaseModel):
                 supported = ", ".join(sorted(PRICE_STRATEGIES))
                 msg = f"price_check_interval requires a price strategy: {supported}"
                 raise ValueError(msg)
+        if (
+            self.price_inline_limit != DEFAULT_PRICE_INLINE_LIMIT
+            and self.strategy not in PRICE_STRATEGIES
+        ):
+            supported = ", ".join(sorted(PRICE_STRATEGIES))
+            msg = f"price_inline_limit requires a price strategy: {supported}"
+            raise ValueError(msg)
         return self
 
 

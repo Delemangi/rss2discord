@@ -66,15 +66,16 @@ RSS/Atom responses are bounded to 1 MiB by default. A 4 MiB allowance applies on
 
 Each price scan compares the validated catalog with the stored baseline.
 
-- Up to 25 changed products in one scan send one price-change card per product.
+- Up to `price_inline_limit` changed products (100 by default) in one scan send one price-change card per product.
 - A larger scan sends one compact brief: direction totals, up to five largest drops and five largest rises with links and percentages, and the complete searchable/sortable HTML report plus CSV attached.
+- The same limit applies when pending notifications are drained, so a retried group at or below the limit sends cards instead of the brief. CCCenter confirms at most 100 changes per scan, so `price_inline_limit` values above 100 do not increase its card count.
 - The baseline and the pending notification rows are written in one transaction before delivery. A failed or interrupted Discord send leaves the notification pending and retries on a later scan; changes are not lost.
 - Delivery is at-least-once. An ambiguous timeout or crash after Discord accepts a message can produce a duplicate.
 - There is no approval, quarantine, or pause step for price changes. Invalid or incomplete catalog evidence is rejected and retried; it never overwrites a valid price.
 
 ## New-item notifications
 
-- Up to 25 new items in one scan send one card per item.
+- Up to `digest_threshold` new items (100 by default) in one scan send one card per item.
 - More send one digest with up to three cards and complete searchable HTML and CSV attachments.
 - Entries are marked delivered only after Discord confirms delivery, so a failed send retries on the next scan.
 - There are no new-entry or delivery-history caps that can permanently stop a feed.

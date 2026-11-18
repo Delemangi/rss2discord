@@ -201,6 +201,40 @@ def test_cccenter_at_cap_sends_inline_cards(tmp_path: Path) -> None:
         assert store.count_pending_price_notifications("cccenter") == 0
 
 
+def test_cccenter_over_cap_confirms_at_most_100_and_sends_inline_cards(
+    tmp_path: Path,
+) -> None:
+    sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = cc_monitor(
+            store,
+            DetailCatalog(
+                [
+                    cc_products("100", ids=range(101)),
+                    cc_products("90", ids=range(101)),
+                ],
+            ),
+            sender,
+        )
+        monitor.scan()
+        monitor.scan()
+        assert len(sender.messages) == 100
+        assert all(
+            message.entry.title != "Price changes" for message in sender.messages
+        )
+        assert (
+            sum(item.amount == 90 for item in store.load_price_snapshots("cccenter"))
+            == 100
+        )
+        assert (
+            sum(item.amount == 100 for item in store.load_price_snapshots("cccenter"))
+            == 1
+        )
+        assert store.count_pending_price_notifications("cccenter") == 0
+        health = store.list_health("cccenter")[0]
+        assert (health.state, health.cause) == ("healthy", None)
+
+
 def test_setec_bulk_digest_excludes_unconfirmed_details(tmp_path: Path) -> None:
     baseline = tuple(
         setec.make_product(str(i), calculated_amount=100) for i in range(202)

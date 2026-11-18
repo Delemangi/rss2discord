@@ -27,7 +27,6 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
-    # price_inline_limit: 100 # Optional: 1-1000; price changes sent individually before one digest. Default 100.
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
@@ -117,6 +116,8 @@ feeds:
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
     # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
+    # Optional: 1-1000; only for price strategies. Price changes sent individually before one digest. Default 100.
+    # price_inline_limit: 100
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
@@ -337,9 +338,12 @@ feeds:
 #   more new entries than this, one digest with HTML/CSV attachments is sent
 #   instead of individual cards. Set to null to always post individual cards;
 #   recommended for news feeds.
-# - price_inline_limit: Optional integer 1-1000, default 100. Price scans with up
-#   to this many changes send individual cards; above it, one digest with
-#   HTML/CSV attachments. The pending outbox uses the same limit.
+# - price_inline_limit: Optional integer 1-1000, default 100, valid only for
+#   price strategies. Price scans with up to this many changes send individual
+#   cards; above it, one digest with HTML/CSV attachments. The pending outbox
+#   uses the same limit, and decides by the pending group's size. CCCenter
+#   confirms at most 100 changes per scan, so values above 100 do not increase
+#   its card count.
 # - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and

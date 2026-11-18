@@ -480,6 +480,37 @@ def test_delivery_threads_additional_pending_into_brief(tmp_path: Path) -> None:
         )
 
 
+def test_outbox_drain_honors_raised_price_inline_limit(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        record_scan(store, tuple(str(index) for index in range(50)))
+        sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED] * 50)
+        result = deliver_price_notifications(
+            _digest_dependencies(store, sender),
+            setec.make_feed().model_copy(update={"price_inline_limit": 200}),
+            "feed",
+        )
+        assert result is PriceNotificationDeliveryResult.DRAINED
+        assert len(sender.messages) == 50
+        assert all(message.files == () for message in sender.messages)
+        assert store.count_pending_price_notifications("feed") == 0
+
+
+def test_outbox_drain_honors_lowered_price_inline_limit(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        record_scan(store, tuple(str(index) for index in range(50)))
+        sender = setec.RecordingSender([DiscordDeliveryResult.DELIVERED])
+        result = deliver_price_notifications(
+            _digest_dependencies(store, sender),
+            setec.make_feed().model_copy(update={"price_inline_limit": 25}),
+            "feed",
+        )
+        assert result is PriceNotificationDeliveryResult.DRAINED
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "Price changes"
+        assert len(sender.messages[0].files) == 2
+        assert store.count_pending_price_notifications("feed") == 0
+
+
 def test_report_count_placeholder_in_title_survives() -> None:
     records = (
         record(

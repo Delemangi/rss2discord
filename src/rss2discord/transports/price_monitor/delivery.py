@@ -172,6 +172,8 @@ def deliver_price_notifications(
         if group is None:
             return PriceNotificationDeliveryResult.DRAINED
         _group_id, records = group
+        # Choose by the pending group's size, not by the scan that recorded it:
+        # rotated confirmation can record fewer rows than the scan found.
         result = (
             _deliver_inline_cards(dependencies, feed, records)
             if len(records) <= feed.price_inline_limit
