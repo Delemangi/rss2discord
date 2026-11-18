@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final
@@ -24,6 +25,8 @@ from rss2discord.transports.base import FeedFetchError
 
 MAX_REKLAMA5_CATALOG_LISTINGS: Final = 10_000
 type Reklama5CatalogClock = Callable[[], datetime]
+
+logger = logging.getLogger(__name__)
 
 
 class Reklama5CatalogClient:
@@ -80,10 +83,11 @@ class Reklama5CatalogClient:
             organic_row_count += page.organic_row_count
             promoted_row_count += page.promoted_row_count
             if page.terminal:
-                _require_complete_catalog(
+                _log_catalog_coverage(
                     organic_row_count,
                     promoted_row_count,
                     expected_result_count,
+                    len(listings),
                     is_shutdown_requested,
                 )
                 return tuple(listings.values())
@@ -103,13 +107,24 @@ def _validate_catalog_page(
         raise FeedFetchError(REKLAMA5_LABEL, "ProductLimitExceeded")
 
 
-def _require_complete_catalog(
+def _log_catalog_coverage(
     organic_row_count: int,
     promoted_row_count: int,
     expected_count: int,
+    unique_count: int,
     is_shutdown_requested: Callable[[], bool],
 ) -> None:
-    if organic_row_count + promoted_row_count != expected_count:
-        raise FeedFetchError(REKLAMA5_LABEL, "IncompleteCatalog", retryable=True)
     if is_shutdown_requested():
         raise FeedFetchInterruptedError
+    observed_count = organic_row_count + promoted_row_count
+    coverage = 1.0 if expected_count == 0 else observed_count / expected_count
+    log = logger.info if coverage == 1.0 else logger.warning
+    log(
+        "Reklama5 best-effort catalog coverage: expected=%d organic=%d "
+        "promoted=%d unique_ids=%d coverage=%.4f",
+        expected_count,
+        organic_row_count,
+        promoted_row_count,
+        unique_count,
+        coverage,
+    )

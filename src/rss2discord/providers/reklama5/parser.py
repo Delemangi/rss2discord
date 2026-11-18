@@ -87,10 +87,10 @@ def parse_reklama5_page(
         if identity is None:
             continue
         organic_ids.add(identity[1])
+        organic_row_count += 1
         listing = _parse_listing(card, request, local_now, identity)
         if listing is not None:
             listings.append(listing)
-            organic_row_count += 1
     frozen_ids = frozenset(organic_ids)
     has_paginator_links = bool(evidence.paginator_pages)
     if evidence.result_count == 0:
