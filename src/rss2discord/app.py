@@ -14,7 +14,7 @@ from .adapters import (
 from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordDeliveryResult, DiscordSender, WebhookMessage
-from .discord.discovery_digest import INLINE_ENTRY_LIMIT, build_discovery_digest
+from .discord.discovery_digest import build_discovery_digest
 from .models import EntryData, EntryId, HealthUpdate
 from .providers.registry import build_discovery_strategies
 from .retries import (
@@ -185,7 +185,8 @@ class RSSToDiscord:
 
         if not pending:
             return EntryProcessingOutcome.COMPLETED
-        if len(pending) <= INLINE_ENTRY_LIMIT:
+        digest_threshold = feed.digest_threshold
+        if digest_threshold is None or len(pending) <= digest_threshold:
             had_failure = False
             for entry_id, entry_data in pending:
                 if self.is_shutdown_requested():

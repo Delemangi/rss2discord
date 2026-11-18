@@ -42,7 +42,7 @@ def test_twenty_five_new_entries_send_cards_and_mark_all(tmp_path: Path) -> None
 
 
 def test_twenty_six_new_entries_send_one_digest_and_mark_all(tmp_path: Path) -> None:
-    feed = make_feed("feed")
+    feed = make_feed("feed", digest_threshold=25)
     sender = FakeSender([True])
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))
@@ -53,6 +53,43 @@ def test_twenty_six_new_entries_send_one_digest_and_mark_all(tmp_path: Path) -> 
         assert len(message.files) == 2
         assert len(message.components or ()) == 4
         assert count_delivered(store, feed.id) == 26
+
+
+def test_twenty_six_new_entries_send_cards_with_default_threshold(
+    tmp_path: Path,
+) -> None:
+    feed = make_feed("feed")
+    sender = FakeSender([True] * 26)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))
+        app.process_feed(feed)
+        assert len(sender.messages) == 26
+        assert all(message.entry.title != "New items" for message in sender.messages)
+        assert count_delivered(store, feed.id) == 26
+
+
+def test_disabled_digest_sends_cards_for_large_batch(tmp_path: Path) -> None:
+    feed = make_feed("feed", digest_threshold=None)
+    sender = FakeSender([True] * 26)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))
+        app.process_feed(feed)
+        assert len(sender.messages) == 26
+        assert all(message.entry.title != "New items" for message in sender.messages)
+        assert count_delivered(store, feed.id) == 26
+
+
+def test_one_hundred_one_new_entries_send_one_digest_by_default(
+    tmp_path: Path,
+) -> None:
+    feed = make_feed("feed")
+    sender = FakeSender([True])
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, FakeStrategy(_entries(101)), (feed,))
+        app.process_feed(feed)
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "New items"
+        assert count_delivered(store, feed.id) == 101
 
 
 def test_digest_html_and_csv_contain_every_entry_with_escaping(
@@ -133,7 +170,7 @@ def test_digest_does_not_download_images(tmp_path: Path) -> None:
 
 
 def test_failed_digest_leaves_entries_unmarked_then_retries(tmp_path: Path) -> None:
-    feed = make_feed("feed")
+    feed = make_feed("feed", digest_threshold=25)
     sender = FakeSender([False, True])
     with DeliveryStore(tmp_path / "state.db") as store:
         app = make_app(store, sender, FakeStrategy(_entries(26)), (feed,))

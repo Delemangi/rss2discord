@@ -68,6 +68,7 @@ class FeedConfig(BaseModel):
     price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
         None
     )
+    digest_threshold: Annotated[int, Field(ge=1)] | None = 100
 
     @field_validator("webhook_avatar")
     @classmethod
