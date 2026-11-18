@@ -10,7 +10,6 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import (
-    MAX_INLINE_PRICE_CHANGES,
     PriceChangeRecord,
     PriceSnapshot,
 )
@@ -116,7 +115,7 @@ def run_price_scan[ProductT](
     change_observations = tuple(
         observation_by_id[record.product_id] for record in records
     )
-    bulk = len(records) > MAX_INLINE_PRICE_CHANGES
+    bulk = len(records) > feed.price_inline_limit
     if not bulk and silent:
         dependencies.sqlite_retry_policy.execute(
             lambda: dependencies.snapshots.upsert_price_snapshots(silent),
@@ -184,6 +183,7 @@ def run_price_scan[ProductT](
             current=current,
             persisted=by_id,
             catalog_count=len(observations),
+            inline_limit=feed.price_inline_limit,
             force_summary=bulk,
             additional_pending=additional_pending,
             allow_currency_changes=allow_currency_changes,

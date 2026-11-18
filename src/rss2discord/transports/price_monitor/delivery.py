@@ -9,7 +9,7 @@ from uuid import uuid4
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import MAX_INLINE_PRICE_CHANGES, PriceSnapshot
+from rss2discord.models import PriceSnapshot
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationDeliveryResult,
@@ -174,7 +174,7 @@ def deliver_price_notifications(
         _group_id, records = group
         result = (
             _deliver_inline_cards(dependencies, feed, records)
-            if len(records) <= MAX_INLINE_PRICE_CHANGES
+            if len(records) <= feed.price_inline_limit
             else _deliver_digest(
                 dependencies,
                 feed,

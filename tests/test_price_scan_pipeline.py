@@ -25,12 +25,17 @@ from rss2discord.transports.price_monitor import scan as scan_module
 from tests.setec_price_monitor_helpers import RecordingSender
 
 
-def feed(feed_id: str = "feed") -> FeedConfig:
+def feed(
+    feed_id: str = "feed",
+    *,
+    price_inline_limit: int = 100,
+) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
         url=f"https://shop.example.test/{feed_id}",
         webhook="https://discord.example.test/hook",
         strategy="anhoch",
+        price_inline_limit=price_inline_limit,
     )
 
 
@@ -103,9 +108,10 @@ def run(
     confirmation_limit: int | None = None,
     shutdown: Callable[[], bool] = lambda: False,
     feed_id: str = "feed",
+    price_inline_limit: int = 100,
 ) -> None:
     run_price_scan(
-        feed=feed(feed_id),
+        feed=feed(feed_id, price_inline_limit=price_inline_limit),
         dependencies=dependencies(store, sender, shutdown=shutdown),
         provider="test",
         label="Test",
@@ -187,6 +193,49 @@ def test_inline_and_bulk_boundary(tmp_path: Path) -> None:
         )
         assert len(sender.messages) == 1
         assert len(sender.messages[0].files) == 2
+
+
+def test_per_feed_price_inline_limit_can_lower_digest_threshold(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(26))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            price_inline_limit=25,
+        )
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "Price changes"
+
+
+def test_per_feed_price_inline_limit_can_raise_inline_threshold(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(101))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            price_inline_limit=200,
+            limit=500,
+        )
+        assert len(sender.messages) == 101
+        assert all(
+            message.entry.title != "Price changes" for message in sender.messages
+        )
 
 
 def test_confirm_all_for_inline_scan(tmp_path: Path) -> None:
