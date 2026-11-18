@@ -31,6 +31,7 @@ from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
+from rss2discord.providers.opencode_tweets.strategy import OpenCodeTweetsStrategy
 from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
@@ -69,6 +70,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "itmk_oglasnik": ITMkOglasnikStrategy,
     "neksio": NeksioStrategy,
     "neptun": NeptunStrategy,
+    "opencode_tweets": OpenCodeTweetsStrategy,
     "pazar3": Pazar3Strategy,
     "reklama5": Reklama5Strategy,
     "rss": RSSStrategy,
