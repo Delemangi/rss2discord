@@ -16,3 +16,11 @@ class TimeMkArticle:
     source: str
     category: str | None
     published_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TimeMkArticleDetails:
+    """Open Graph enrichment read from one Time.mk article page."""
+
+    description: str
+    image_url: str | None

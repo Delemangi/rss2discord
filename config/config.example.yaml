@@ -182,6 +182,8 @@ feeds:
   # sport, fudbal, kosarka, rakomet, tenis, avto, avtomoto, hrana, zdravje,
   # hronika, republika, style, scena, life, fun, magazin, patuvanja, sex,
   # sportdrugo.
+  # New entries are enriched with the article summary and Open Graph image from
+  # the Time.mk article page; enrichment is best-effort.
   - id: "time-mk-news"
     name: "Time.mk"
     url: "https://time.mk/"
@@ -301,7 +303,8 @@ feeds:
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   - 'technomarket': For new products from one public Technomarket category
 #   - 'time_mk': For aggregated Macedonian news from a configurable Time.mk
-#     category subset; the root URL defaults to tech + Macedonia + economy
+#     category subset; the root URL defaults to tech + Macedonia + economy, and
+#     new entries include the article summary and Open Graph image
 #   - 'woocommerce': For new products and price monitoring from any public WooCommerce
 #     Store API shop, using the shop root, /shop/, or a /product-category/<slug>/ URL
 # - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;

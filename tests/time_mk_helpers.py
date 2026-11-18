@@ -39,6 +39,13 @@ def rss_payload(category: str, items: list[str]) -> bytes:
     ).encode()
 
 
+def details_payload(description: str, image: str | None) -> bytes:
+    metas = f'<meta property="og:description" content="{escape(description)}">'
+    if image is not None:
+        metas += f'<meta property="og:image" content="{escape(image)}">'
+    return f"<html><head>{metas}</head><body></body></html>".encode()
+
+
 @dataclass(frozen=True, slots=True)
 class StubResponse:
     content: bytes
