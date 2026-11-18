@@ -9,6 +9,7 @@ from rss2discord.adapters.hackernews import (
     HackerNewsAdapter,
     HackerNewsItem,
     fetch_hacker_news_item,
+    fetch_hacker_news_topstories,
 )
 from rss2discord.models import EntryData, SourceMetric
 from tests.discord_components_helpers import get_text_display_contents, make_message
@@ -81,6 +82,132 @@ def test_hackernews_adapter_uses_self_post_text() -> None:
     assert result.source_metrics == (
         SourceMetric(label="Points", value="25"),
         SourceMetric(label="Comments", value="16"),
+    )
+
+
+def test_hackernews_adapter_adds_front_page_rank() -> None:
+    # Given
+    item = HackerNewsItem(
+        id=123,
+        type="story",
+        by="alice",
+        url="https://example.test/article",
+        score=111,
+        descendants=71,
+    )
+    adapter = HackerNewsAdapter(
+        fetch_item=lambda item_id: item,
+        fetch_topstories=lambda: (3, 1, 123),
+    )
+
+    # When
+    result = adapter.adapt({}, make_entry())
+
+    # Then
+    assert result.source_metrics == (
+        SourceMetric(label="Rank", value="#3"),
+        SourceMetric(label="Points", value="111"),
+        SourceMetric(label="Comments", value="71"),
+        SourceMetric(label="Domain", value="example.test"),
+    )
+
+
+def test_hackernews_adapter_uses_top_comment_for_link_post() -> None:
+    # Given
+    story = HackerNewsItem(
+        id=123,
+        type="story",
+        by="alice",
+        url="https://example.test/article",
+        score=10,
+        descendants=2,
+        kids=(999,),
+    )
+    comment = HackerNewsItem(
+        id=999,
+        type="comment",
+        by="carol",
+        text="Insightful <i>comment</i>",
+    )
+
+    def fetch(item_id: int) -> HackerNewsItem:
+        return comment if item_id == 999 else story
+
+    adapter = HackerNewsAdapter(fetch_item=fetch)
+
+    # When
+    result = adapter.adapt({}, make_entry())
+
+    # Then
+    assert result.description == "Top comment: Insightful comment — carol"
+    assert result.author == "alice"
+
+
+def test_hackernews_adapter_prefers_self_post_text_over_top_comment() -> None:
+    # Given
+    story = HackerNewsItem(
+        id=123,
+        type="story",
+        by="bob",
+        text="Self text",
+        kids=(999,),
+    )
+    fetched: list[int] = []
+
+    def fetch(item_id: int) -> HackerNewsItem:
+        fetched.append(item_id)
+        return story
+
+    adapter = HackerNewsAdapter(fetch_item=fetch)
+    entry = make_entry(link="https://news.ycombinator.com/item?id=123")
+
+    # When
+    result = adapter.adapt({}, entry)
+
+    # Then
+    assert result.description == "Self text"
+    assert fetched == [123]
+
+
+def test_hackernews_adapter_skips_deleted_top_comment() -> None:
+    # Given
+    story = HackerNewsItem(
+        id=123,
+        type="story",
+        url="https://example.test/article",
+        kids=(999,),
+    )
+    comment = HackerNewsItem(id=999, type="comment", deleted=True)
+    adapter = HackerNewsAdapter(
+        fetch_item=lambda item_id: comment if item_id == 999 else story,
+    )
+
+    # When
+    result = adapter.adapt({}, make_entry())
+
+    # Then
+    assert result.description == ""
+
+
+def test_hackernews_adapter_adds_type_for_job() -> None:
+    # Given
+    item = HackerNewsItem(
+        id=123,
+        type="job",
+        by="alice",
+        url="https://example.test/job",
+        score=1,
+    )
+    adapter = HackerNewsAdapter(fetch_item=lambda item_id: item)
+
+    # When
+    result = adapter.adapt({}, make_entry())
+
+    # Then
+    assert result.source_metrics == (
+        SourceMetric(label="Points", value="1"),
+        SourceMetric(label="Domain", value="example.test"),
+        SourceMetric(label="Type", value="Job"),
     )
 
 
@@ -237,3 +364,60 @@ def test_fetch_hacker_news_item_returns_none_on_timeout(
 
     # When / Then
     assert fetch_hacker_news_item(123) is None
+
+
+def test_fetch_hacker_news_topstories_parses_api_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[int]:
+            return [1, 2, 3]
+
+    def fake_get(url: str, *, timeout: int) -> FakeResponse:
+        assert url.endswith("/topstories.json")
+        assert timeout == HACKER_NEWS_TIMEOUT_SECONDS
+        return FakeResponse()
+
+    monkeypatch.setattr(hackernews_module.requests, "get", fake_get)
+
+    # When / Then
+    assert fetch_hacker_news_topstories() == (1, 2, 3)
+
+
+def test_fetch_hacker_news_topstories_returns_none_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    def fail_get(url: str, *, timeout: int) -> requests.Response:
+        del url, timeout
+        raise requests.Timeout
+
+    monkeypatch.setattr(hackernews_module.requests, "get", fail_get)
+
+    # When / Then
+    assert fetch_hacker_news_topstories() is None
+
+
+def test_fetch_hacker_news_topstories_rejects_invalid_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[object]:
+            return [1, "two"]
+
+    def fake_get(url: str, *, timeout: int) -> FakeResponse:
+        del url, timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(hackernews_module.requests, "get", fake_get)
+
+    # When / Then
+    assert fetch_hacker_news_topstories() is None

@@ -4,7 +4,13 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Final, Literal
 
-from .adapters import AdapterError, HackerNewsAdapter, RedditAdapter, SourceAdapter
+from .adapters import (
+    AdapterError,
+    HackerNewsAdapter,
+    RedditAdapter,
+    SourceAdapter,
+    fetch_hacker_news_topstories,
+)
 from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordDeliveryResult, DiscordSender, WebhookMessage
@@ -54,7 +60,9 @@ class RSSToDiscord:
             pazar3_pacer=self._runtime.pazar3_pacer,
         )
         self._adapters: dict[str, SourceAdapter] = {
-            "hackernews": HackerNewsAdapter(),
+            "hackernews": HackerNewsAdapter(
+                fetch_topstories=fetch_hacker_news_topstories,
+            ),
             "reddit": RedditAdapter(),
         }
 
