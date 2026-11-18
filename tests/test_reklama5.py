@@ -139,16 +139,33 @@ def test_reklama5_parser_rejects_blank_duplicate_detail_ids(href: str) -> None:
     assert parse_cards(Reklama5Card(href=href)).listings == ()
 
 
+@pytest.mark.parametrize(
+    "timestamp",
+    ["Today 10:00", "Yesterday 01:03", "16 Nov 23:20"],
+)
+def test_reklama5_parser_accepts_english_activity_dates(timestamp: str) -> None:
+    page = parse_cards(Reklama5Card(timestamp=timestamp))
+
+    assert len(page.listings) == 1
+    assert page.listings[0].activity_at is not None
+
+
 def test_reklama5_parser_treats_missing_promotion_marker_as_organic() -> None:
-    assert parse_cards(Reklama5Card()).organic_ids == {"9000001"}
+    page = parse_cards(Reklama5Card())
+    assert page.organic_ids == {"9000001"}
+    assert page.promoted_row_count == 0
 
 
 def test_reklama5_parser_skips_exact_normalized_promoted_marker() -> None:
-    assert parse_cards(Reklama5Card(promotion="  Промовирано  ")).listings == ()
+    page = parse_cards(Reklama5Card(promotion="  Промовирано  "))
+    assert page.listings == ()
+    assert page.promoted_row_count == 1
 
 
 def test_reklama5_parser_skips_english_promoted_marker() -> None:
-    assert parse_cards(Reklama5Card(promotion="Promoted")).listings == ()
+    page = parse_cards(Reklama5Card(promotion="Promoted"))
+    assert page.listings == ()
+    assert page.promoted_row_count == 1
 
 
 def test_reklama5_parser_rejects_unknown_promotion_marker() -> None:
