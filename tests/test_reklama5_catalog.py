@@ -114,9 +114,11 @@ def test_reklama5_catalog_rejects_listing_capacity_before_returning_partial_data
     assert fetch_error.value.cause_type == "ProductLimitExceeded"
 
 
-def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
+def test_reklama5_catalog_accepts_terminal_page_before_advertised_results(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("INFO")
     html = search_page(
         1,
         [Reklama5Card(ad_id="1").html()],
@@ -126,22 +128,18 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
     monkeypatch.setattr(
         listing_http,
         "create_listing_session",
-        lambda: RecordingGet(
-            [StubResponse(html), StubResponse(html), StubResponse(html)],
-        ),
+        lambda: RecordingGet([StubResponse(html)]),
     )
 
-    client = Reklama5CatalogClient(clock=_clock)
-    fetch_retry_policy = _retry_policy()
-    with pytest.raises(FeedFetchError) as fetch_error:
-        client.fetch_catalog(
-            SEARCH_URL,
-            retry_policy=fetch_retry_policy,
-            is_shutdown_requested=lambda: False,
-        )
+    listings = Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        SEARCH_URL,
+        retry_policy=_retry_policy(),
+        is_shutdown_requested=lambda: False,
+    )
 
-    assert fetch_error.value.cause_type == "IncompleteCatalog"
-    assert fetch_error.value.retryable
+    assert [listing.entry_id for listing in listings] == ["1"]
+    assert "best-effort catalog coverage: expected=2 organic=1" in caplog.text
+    assert "coverage=0.5000" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -161,10 +159,12 @@ def test_reklama5_catalog_rejects_terminal_page_before_advertised_results(
         ),
     ],
 )
-def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
+def test_reklama5_catalog_accepts_malformed_rows_best_effort(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
     malformed_card: Reklama5Card,
 ) -> None:
+    caplog.set_level("INFO")
     html = search_page(
         1,
         [Reklama5Card(ad_id="1").html(), malformed_card.html()],
@@ -174,20 +174,17 @@ def test_reklama5_catalog_rejects_malformed_rows_before_returning_partial_data(
     monkeypatch.setattr(
         listing_http,
         "create_listing_session",
-        lambda: RecordingGet([StubResponse(html) for _attempt in range(3)]),
+        lambda: RecordingGet([StubResponse(html)]),
     )
 
-    client = Reklama5CatalogClient(clock=_clock)
-    fetch_retry_policy = _retry_policy()
-    with pytest.raises(FeedFetchError) as fetch_error:
-        client.fetch_catalog(
-            SEARCH_URL,
-            retry_policy=fetch_retry_policy,
-            is_shutdown_requested=lambda: False,
-        )
+    listings = Reklama5CatalogClient(clock=_clock).fetch_catalog(
+        SEARCH_URL,
+        retry_policy=_retry_policy(),
+        is_shutdown_requested=lambda: False,
+    )
 
-    assert fetch_error.value.cause_type == "IncompleteCatalog"
-    assert fetch_error.value.retryable
+    assert [listing.entry_id for listing in listings] == ["1"]
+    assert "best-effort catalog coverage" in caplog.text
 
 
 def test_reklama5_catalog_rejects_changed_advertised_result_count(
