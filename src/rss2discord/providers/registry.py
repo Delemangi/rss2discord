@@ -59,6 +59,7 @@ from rss2discord.providers.technomarket.prices import (
 )
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from rss2discord.providers.time_mk.strategy import TimeMkStrategy
+from rss2discord.providers.tweets.strategy import TweetsStrategy
 from rss2discord.providers.woocommerce.catalog import WooCommerceCatalogClient
 from rss2discord.providers.woocommerce.prices import (
     WooCommerceCatalog,
@@ -104,6 +105,7 @@ def build_discovery_strategies(
         "setec": SetecStrategy(),
         "technomarket": TechnomarketStrategy(is_shutdown_requested),
         "time_mk": TimeMkStrategy(),
+        "tweets": TweetsStrategy(),
         "woocommerce": WooCommerceStrategy(is_shutdown_requested),
         "xenforo": XenForoStrategy(),
     }
@@ -286,7 +288,9 @@ def build_provider_price_monitor(
                     delivery=dependencies.delivery,
                 ),
             )
-        case "rss" | "xenforo" | "itmk_oglasnik" | "time_mk" | "fakulteti_mk":
+        case (
+            "rss" | "xenforo" | "itmk_oglasnik" | "time_mk" | "fakulteti_mk" | "tweets"
+        ):
             return None
         case unreachable:
             assert_never(unreachable)
