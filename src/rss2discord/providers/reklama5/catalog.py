@@ -118,7 +118,7 @@ def _log_catalog_coverage(
         raise FeedFetchInterruptedError
     observed_count = organic_row_count + promoted_row_count
     coverage = 1.0 if expected_count == 0 else observed_count / expected_count
-    log = logger.info if coverage == 1.0 else logger.warning
+    log = logger.info if observed_count == expected_count else logger.warning
     log(
         "Reklama5 best-effort catalog coverage: expected=%d organic=%d "
         "promoted=%d unique_ids=%d coverage=%.4f",
