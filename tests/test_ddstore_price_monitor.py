@@ -176,13 +176,13 @@ def test_ddstore_price_monitor_retains_history_while_seeding_current_products(
         } == {"old-1", "old-2", "new"}
 
 
-def test_ddstore_price_monitor_delivers_one_digest_for_one_hundred_changes(
+def test_ddstore_price_monitor_delivers_inline_cards_for_one_hundred_changes(
     tmp_path: Path,
 ) -> None:
     # Given
     baseline = tuple(make_product(str(index), amount=100) for index in range(100))
     changed = tuple(make_product(str(index), amount=90) for index in range(100))
-    sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+    sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
 
     with DeliveryStore(tmp_path / "state.db") as store:
         monitor = make_monitor(
@@ -195,8 +195,8 @@ def test_ddstore_price_monitor_delivers_one_digest_for_one_hundred_changes(
         monitor.scan()
 
         # Then
-        assert len(sender.messages) == 1
-        assert len(sender.messages[0].files) == 2
+        assert len(sender.messages) == 100
+        assert all(message.files == () for message in sender.messages)
         assert {
             snapshot.amount for snapshot in store.load_price_snapshots("ddstore")
         } == {Decimal(90)}

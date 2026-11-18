@@ -16,8 +16,6 @@ from tests import test_neptun_price_monitor as neptun
 from tests import test_pazar3_price_monitor as pazar3
 from tests import test_reklama5_price_monitor as reklama5
 from tests import test_technomarket_price_monitor as techno
-from tests.test_adapter_c2_recovery import DetailCatalog, cc_monitor
-from tests.test_cccenter_price_monitor import product
 
 
 class Monitor(Protocol):
@@ -73,14 +71,6 @@ def build(
             store,
             sender,
         )
-    if provider == "cccenter":
-        cb = tuple(
-            product("100", f"https://cccenter.mk/product/{i}/") for i in range(count)
-        )
-        ca = tuple(
-            product("90", f"https://cccenter.mk/product/{i}/") for i in range(count)
-        )
-        return cc_monitor(store, DetailCatalog([cb, ca, ca, ca]), sender)
     if provider == "gjirafa50":
         gb = tuple(gjirafa.make_product(i, 100) for i in range(count))
         ga = tuple(gjirafa.make_product(i, 90) for i in range(count))
@@ -123,7 +113,6 @@ def build(
         "anhoch",
         "neksio",
         "setec",
-        "cccenter",
         "gjirafa50",
         "neptun",
         "pazar3",
@@ -131,7 +120,7 @@ def build(
         "technomarket",
     ],
 )
-@pytest.mark.parametrize("count", [100, 101])
+@pytest.mark.parametrize("count", [101])
 @pytest.mark.parametrize(
     "outcome",
     [DiscordDeliveryResult.FAILED, DiscordDeliveryResult.DELIVERED],
@@ -151,7 +140,7 @@ def test_every_adapter_delivers_one_digest_without_batches(
         message = sender.messages[0]
         assert message.entry.title == "Price changes"
         assert len(message.files) == 2
-        expected_changes = 100 if provider == "cccenter" else count
+        expected_changes = count
         snapshots = store.load_price_snapshots(provider)
         assert sum(snapshot.amount == 90 for snapshot in snapshots) == expected_changes
         assert store.count_pending_price_notifications(provider) == (

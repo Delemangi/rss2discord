@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import (
-    MAX_INLINE_PRICE_CHANGES,
+    DEFAULT_PRICE_INLINE_LIMIT,
     HealthUpdate,
     PriceChangeRecord,
     PriceSnapshot,
@@ -61,6 +61,7 @@ def prepare_price_delivery(
     current: Mapping[str, PriceSnapshot],
     persisted: Mapping[str, PriceSnapshot],
     catalog_count: int,
+    inline_limit: int = DEFAULT_PRICE_INLINE_LIMIT,
     force_summary: bool = False,
     additional_pending: int = 0,
     allow_currency_changes: bool = False,
@@ -72,7 +73,7 @@ def prepare_price_delivery(
             current=current,
             persisted=persisted,
         )
-    if force_summary or len(changes) > MAX_INLINE_PRICE_CHANGES:
+    if force_summary or len(changes) > inline_limit:
         return PriceDeliveryPlan(
             bulk=True,
             additional_pending=additional_pending,

@@ -25,12 +25,17 @@ from rss2discord.transports.price_monitor import scan as scan_module
 from tests.setec_price_monitor_helpers import RecordingSender
 
 
-def feed(feed_id: str = "feed") -> FeedConfig:
+def feed(
+    feed_id: str = "feed",
+    *,
+    price_inline_limit: int = 100,
+) -> FeedConfig:
     return FeedConfig(
         id=feed_id,
         url=f"https://shop.example.test/{feed_id}",
         webhook="https://discord.example.test/hook",
         strategy="anhoch",
+        price_inline_limit=price_inline_limit,
     )
 
 
@@ -103,9 +108,10 @@ def run(
     confirmation_limit: int | None = None,
     shutdown: Callable[[], bool] = lambda: False,
     feed_id: str = "feed",
+    price_inline_limit: int = 100,
 ) -> None:
     run_price_scan(
-        feed=feed(feed_id),
+        feed=feed(feed_id, price_inline_limit=price_inline_limit),
         dependencies=dependencies(store, sender, shutdown=shutdown),
         provider="test",
         label="Test",
@@ -154,12 +160,12 @@ def test_no_change_scan_drains_pending_outbox_and_records_health(
 
 def test_inline_and_bulk_boundary(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        inline_ids = tuple(str(index) for index in range(25))
+        inline_ids = tuple(str(index) for index in range(100))
         seed(
             store,
             tuple(snapshot(product_id) for product_id in inline_ids),
         )
-        sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 25)
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 100)
         run(
             store,
             sender,
@@ -169,10 +175,10 @@ def test_inline_and_bulk_boundary(tmp_path: Path) -> None:
             ],
             feed_id="feed",
         )
-        assert len(sender.messages) == 25
+        assert len(sender.messages) == 100
 
     with DeliveryStore(tmp_path / "digest.db") as store:
-        digest_ids = tuple(str(index) for index in range(201))
+        digest_ids = tuple(str(index) for index in range(101))
         seed(store, tuple(snapshot(product_id) for product_id in digest_ids))
         sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
         run(
@@ -187,6 +193,49 @@ def test_inline_and_bulk_boundary(tmp_path: Path) -> None:
         )
         assert len(sender.messages) == 1
         assert len(sender.messages[0].files) == 2
+
+
+def test_per_feed_price_inline_limit_can_lower_digest_threshold(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(26))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            price_inline_limit=25,
+        )
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "Price changes"
+
+
+def test_per_feed_price_inline_limit_can_raise_inline_threshold(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(101))
+        seed(store, tuple(snapshot(product_id) for product_id in ids))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED] * 101)
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, 90))
+                for product_id in ids
+            ],
+            price_inline_limit=200,
+            limit=500,
+        )
+        assert len(sender.messages) == 101
+        assert all(
+            message.entry.title != "Price changes" for message in sender.messages
+        )
 
 
 def test_confirm_all_for_inline_scan(tmp_path: Path) -> None:
@@ -220,7 +269,7 @@ def test_rotated_confirmation_reports_additional_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        ids = tuple(str(index) for index in range(26))
+        ids = tuple(str(index) for index in range(101))
         seed(store, tuple(snapshot(product_id) for product_id in ids))
         seen: list[tuple[str, ...]] = []
         plans: list[PriceDeliveryPlan] = []
@@ -248,16 +297,17 @@ def test_rotated_confirmation_reports_additional_pending(
             ],
             confirm=confirm,
             confirmation_limit=10,
+            limit=500,
         )
         assert len(seen[0]) == 10
         assert plans[0].bulk is True
-        assert plans[0].additional_pending == 22
+        assert plans[0].additional_pending == 97
         assert len(sender.messages) == 4
 
 
 def test_rotated_confirmation_note_reaches_digest(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        ids = tuple(str(index) for index in range(60))
+        ids = tuple(str(index) for index in range(131))
         seed(store, tuple(snapshot(product_id) for product_id in ids))
         sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
         run(
@@ -268,7 +318,8 @@ def test_rotated_confirmation_note_reaches_digest(tmp_path: Path) -> None:
                 for product_id in ids
             ],
             confirm=lambda observations: observations,
-            confirmation_limit=30,
+            confirmation_limit=101,
+            limit=500,
         )
         assert len(sender.messages) == 1
         assert "30 additional changes are pending confirmation" in (
@@ -278,7 +329,7 @@ def test_rotated_confirmation_note_reaches_digest(tmp_path: Path) -> None:
 
 def test_no_confirmed_change_records_deferral(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
-        ids = tuple(str(index) for index in range(26))
+        ids = tuple(str(index) for index in range(101))
         seed(store, tuple(snapshot(product_id) for product_id in ids))
         sender = RecordingSender([])
         run(
@@ -290,6 +341,7 @@ def test_no_confirmed_change_records_deferral(tmp_path: Path) -> None:
             ],
             confirm=lambda _observations: (),
             confirmation_limit=10,
+            limit=500,
         )
         assert sender.messages == []
         health = store.list_health("feed")[0]
@@ -318,7 +370,7 @@ def test_silent_updates_are_persisted_on_inline_and_bulk_paths(tmp_path: Path) -
         assert persisted["2"].amount == 200
 
     with DeliveryStore(tmp_path / "bulk.db") as store:
-        ids = tuple(str(index) for index in range(26))
+        ids = tuple(str(index) for index in range(101))
         seed(store, tuple(snapshot(product_id) for product_id in ids))
         sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
         run(
@@ -331,6 +383,7 @@ def test_silent_updates_are_persisted_on_inline_and_bulk_paths(tmp_path: Path) -
                 ),
                 PriceObservation("silent", snapshot("silent", 5)),
             ],
+            limit=500,
         )
         persisted = {
             item.product_id: item for item in store.load_price_snapshots("feed")

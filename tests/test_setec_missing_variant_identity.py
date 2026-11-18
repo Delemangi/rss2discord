@@ -51,10 +51,10 @@ def test_approved_batch_missing_variant_id_is_excluded_from_digest(
     tmp_path: Path,
 ) -> None:
     baseline = tuple(
-        setec.make_product(str(index), calculated_amount=100) for index in range(101)
+        setec.make_product(str(index), calculated_amount=100) for index in range(102)
     )
     changed = tuple(
-        setec.make_product(str(index), calculated_amount=90) for index in range(101)
+        setec.make_product(str(index), calculated_amount=90) for index in range(102)
     )
     missing = product_with_variant_id(changed[0], None)
     catalog = setec.CatalogStub(
@@ -72,5 +72,5 @@ def test_approved_batch_missing_variant_id_is_excluded_from_digest(
         assert len(sender.messages[0].files) == 2
         assert store.count_pending_price_notifications("setec") == 0
         snapshots = store.load_price_snapshots("setec")
-        assert sum(snapshot.amount == 90 for snapshot in snapshots) == 100
+        assert sum(snapshot.amount == 90 for snapshot in snapshots) == 101
         assert sum(snapshot.amount == 100 for snapshot in snapshots) == 1

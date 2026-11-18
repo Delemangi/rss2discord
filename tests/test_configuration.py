@@ -29,6 +29,85 @@ def test_load_config_parses_valid_feed(tmp_path: Path) -> None:
     assert not config.feeds[0].seed_existing_on_first_fetch
 
 
+def test_load_config_defaults_price_inline_limit_to_100(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].price_inline_limit == 100
+
+
+@pytest.mark.parametrize("value", [1, 100, 1000])
+def test_load_config_accepts_price_inline_limit_bounds(
+    tmp_path: Path,
+    value: int,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: anhoch\n"
+        f"    price_inline_limit: {value}\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].price_inline_limit == value
+
+
+@pytest.mark.parametrize("value", [0, 1001])
+def test_load_config_rejects_invalid_price_inline_limit(
+    tmp_path: Path,
+    value: int,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    strategy: anhoch\n"
+        f"    price_inline_limit: {value}\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
+def test_load_config_rejects_price_inline_limit_for_non_price_strategy(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    price_inline_limit: 200\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError, match="price_inline_limit requires"):
+        load_config(config_path)
+
+
 def test_load_config_parses_rss_first_fetch_baseline_opt_in(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"

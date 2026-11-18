@@ -3,7 +3,7 @@
 import time
 from collections.abc import Callable, Iterable, Sequence
 from functools import partial
-from typing import Final, assert_never
+from typing import assert_never
 from uuid import uuid4
 
 from rss2discord.configuration import FeedConfig
@@ -25,8 +25,6 @@ from .contracts import (
 )
 from .digest import build_digest_messages
 from .planning import finish_price_delivery, record_price_health
-
-INLINE_CARD_LIMIT: Final = 25
 
 
 def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
@@ -174,9 +172,11 @@ def deliver_price_notifications(
         if group is None:
             return PriceNotificationDeliveryResult.DRAINED
         _group_id, records = group
+        # Choose by the pending group's size, not by the scan that recorded it:
+        # rotated confirmation can record fewer rows than the scan found.
         result = (
             _deliver_inline_cards(dependencies, feed, records)
-            if len(records) <= INLINE_CARD_LIMIT
+            if len(records) <= feed.price_inline_limit
             else _deliver_digest(
                 dependencies,
                 feed,

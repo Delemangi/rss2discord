@@ -5,6 +5,7 @@ from urllib.parse import quote
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rss2discord.models import DEFAULT_PRICE_INLINE_LIMIT
 from rss2discord.provider_metadata import PRICE_STRATEGIES
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
@@ -69,6 +70,9 @@ class FeedConfig(BaseModel):
     price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
         None
     )
+    price_inline_limit: Annotated[int, Field(ge=1, le=1000)] = (
+        DEFAULT_PRICE_INLINE_LIMIT
+    )
     digest_threshold: Annotated[int, Field(ge=1)] | None = 100
 
     @field_validator("webhook_avatar")
@@ -102,6 +106,13 @@ class FeedConfig(BaseModel):
                 supported = ", ".join(sorted(PRICE_STRATEGIES))
                 msg = f"price_check_interval requires a price strategy: {supported}"
                 raise ValueError(msg)
+        if (
+            self.price_inline_limit != DEFAULT_PRICE_INLINE_LIMIT
+            and self.strategy not in PRICE_STRATEGIES
+        ):
+            supported = ", ".join(sorted(PRICE_STRATEGIES))
+            msg = f"price_inline_limit requires a price strategy: {supported}"
+            raise ValueError(msg)
         return self
 
 

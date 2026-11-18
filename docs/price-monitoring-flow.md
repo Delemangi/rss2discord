@@ -31,8 +31,9 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    products and formatting-only changes are silent baseline updates; amount or
    currency changes produce change records. Missing products do not erase history.
 3. **Plan.** Currency mismatches raise `FeedFetchError("CurrencyChanged")`.
-   Up to 25 changed products use individual cards; a larger scan uses one digest.
-   There is no approval or quarantine state.
+   Up to `price_inline_limit` changed products (100 by default) use individual
+   cards; a larger scan uses one digest. There is no approval or quarantine
+   state.
 4. **Confirm where required.** Setec verifies variant identity, currency, and
    amount against product details. CCCenter verifies product details in bounded
    batches. Confirmed changes are reported; unconfirmed changes are excluded from
@@ -40,14 +41,15 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
 5. **Persist.** `record_price_scan` writes the new baselines and the pending
    notification rows in one transaction. No network work happens inside that
    transaction.
-6. **Deliver.** Pending groups drain oldest-first. A group of at most 25 rows
-   sends one card per product. A larger group sends one compact brief: header
-   direction totals, up to five largest drops and five largest rises with links
-   and percentages, and a category summary when categories exist. Extreme moves
-   count toward the direction totals but are left out of the top lists and
-   detailed in the report. The complete HTML and CSV reports attach to that
-   brief. The HTML report is self-contained and searchable/sortable. Rows are
-   marked sent only after Discord confirms the brief.
+6. **Deliver.** Pending groups drain oldest-first. A group of at most
+   `price_inline_limit` rows (100 by default) sends one card per product. A
+   larger group sends one compact brief: header direction totals, up to five
+   largest drops and five largest rises with links and percentages, and a
+   category summary when categories exist. Extreme moves count toward the
+   direction totals but are left out of the top lists and detailed in the
+   report. The complete HTML and CSV reports attach to that brief. The HTML
+   report is self-contained and searchable/sortable. Rows are marked sent only
+   after Discord confirms the brief.
 7. **Record health.** A drained outbox records `healthy` or `empty`. A failed
    send records `failed` with cause `DeliveryRetryPending` and leaves the rows
    pending.
@@ -58,6 +60,10 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   lose a change without also leaving the old baseline in place.
 - Failed or interrupted sends retain pending rows. The next scan drains them
   before sending new work.
+- The drain chooses by the pending group's row count, not by the scan that
+  recorded it. A scan over the limit whose confirmed subset fits the limit
+  (for example, CCCenter caps confirmation at 100 changes) drains as individual
+  cards; deferred changes are re-detected on a later scan.
 - Delivery is at-least-once. A crash after Discord accepts a message but before
   the local `sent` update can produce a duplicate.
 - Reports contain every row: title, link, category, previous price, current
@@ -89,11 +95,11 @@ dropped tables are not recreated.
 
 ## Discovery delivery
 
-Ordinary new items follow the same presentation rule: up to 25 send individual
-cards, and larger batches send one digest with up to three cards plus complete
-HTML and CSV attachments. Entries are marked delivered only after Discord
-confirms, and there are no new-entry or delivery-history caps that can stop a
-feed permanently.
+Ordinary new items follow the same presentation rule: up to
+`digest_threshold` (100 by default) send individual cards, and larger batches
+send one digest with up to three cards plus complete HTML and CSV attachments.
+Entries are marked delivered only after Discord confirms, and there are no
+new-entry or delivery-history caps that can stop a feed permanently.
 
 ## Boundaries to preserve
 
