@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from html import unescape
@@ -16,7 +17,13 @@ logger = logging.getLogger(__name__)
 HACKER_NEWS_ITEM_URL: Final = (
     "https://hacker-news.firebaseio.com/v0/item/{item_id}.json"
 )
+HACKER_NEWS_TOPSTORIES_URL: Final = (
+    "https://hacker-news.firebaseio.com/v0/topstories.json"
+)
 HACKER_NEWS_TIMEOUT_SECONDS: Final = 5
+HACKER_NEWS_TOPSTORIES_TTL_SECONDS: Final = 300
+HACKER_NEWS_MAX_TOPSTORIES: Final = 500
+MAX_HACKER_NEWS_COMMENT_LENGTH: Final = 400
 
 
 class HackerNewsItem(BaseModel):
@@ -30,11 +37,13 @@ class HackerNewsItem(BaseModel):
     url: str | None = None
     score: int | None = None
     descendants: int | None = None
+    kids: tuple[int, ...] = ()
     deleted: bool = False
     dead: bool = False
 
 
 FetchHackerNewsItem = Callable[[int], HackerNewsItem | None]
+FetchHackerNewsTopStories = Callable[[], tuple[int, ...] | None]
 
 
 def fetch_hacker_news_item(item_id: int) -> HackerNewsItem | None:
@@ -54,12 +63,40 @@ def fetch_hacker_news_item(item_id: int) -> HackerNewsItem | None:
         return None
 
 
+def fetch_hacker_news_topstories() -> tuple[int, ...] | None:
+    try:
+        response = requests.get(
+            HACKER_NEWS_TOPSTORIES_URL,
+            timeout=HACKER_NEWS_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as error:
+        logger.warning(
+            "Could not enrich Hacker News front-page rank (%s)",
+            type(error).__name__,
+        )
+        return None
+    if not isinstance(payload, list) or len(payload) > HACKER_NEWS_MAX_TOPSTORIES:
+        return None
+    item_ids: list[int] = []
+    for value in payload:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return None
+        item_ids.append(value)
+    return tuple(item_ids)
+
+
 class HackerNewsAdapter:
     def __init__(
         self,
         fetch_item: FetchHackerNewsItem = fetch_hacker_news_item,
+        fetch_topstories: FetchHackerNewsTopStories | None = None,
     ) -> None:
         self._fetch_item = fetch_item
+        self._fetch_topstories = fetch_topstories
+        self._topstories: tuple[int, ...] | None = None
+        self._topstories_at = 0.0
 
     def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
         del entry
@@ -78,6 +115,16 @@ class HackerNewsAdapter:
             description = _clean_hacker_news_text(item.text)
         elif description.strip().casefold() == "comments":
             description = ""
+        if not description:
+            top_comment = self._top_comment(item)
+            if top_comment is not None and top_comment.text:
+                comment_text = _clean_hacker_news_text(top_comment.text)
+                if comment_text:
+                    author = f" — {top_comment.by}" if top_comment.by else ""
+                    description = _truncate(
+                        f"Top comment: {comment_text}{author}",
+                        MAX_HACKER_NEWS_COMMENT_LENGTH,
+                    )
 
         timestamp = data.timestamp
         if item.time is not None:
@@ -87,6 +134,9 @@ class HackerNewsAdapter:
                 timestamp = data.timestamp
 
         metrics: list[SourceMetric] = []
+        rank = self._rank_for(item.id)
+        if rank is not None:
+            metrics.append(SourceMetric(label="Rank", value=f"#{rank}"))
         if item.score is not None:
             metrics.append(SourceMetric(label="Points", value=str(item.score)))
         if item.descendants is not None:
@@ -96,6 +146,8 @@ class HackerNewsAdapter:
         domain = _article_domain(link)
         if domain is not None:
             metrics.append(SourceMetric(label="Domain", value=domain))
+        if item.type != "story":
+            metrics.append(SourceMetric(label="Type", value=item.type.title()))
 
         return EntryData(
             title=data.title,
@@ -108,6 +160,28 @@ class HackerNewsAdapter:
             categories=data.categories,
             source_metrics=tuple(metrics),
         )
+
+    def _rank_for(self, item_id: int) -> int | None:
+        if self._fetch_topstories is None:
+            return None
+        now = time.monotonic()
+        if now - self._topstories_at >= HACKER_NEWS_TOPSTORIES_TTL_SECONDS:
+            self._topstories = self._fetch_topstories()
+            self._topstories_at = now
+        if not self._topstories:
+            return None
+        try:
+            return self._topstories.index(item_id) + 1
+        except ValueError:
+            return None
+
+    def _top_comment(self, item: HackerNewsItem) -> HackerNewsItem | None:
+        if not item.kids:
+            return None
+        comment = self._fetch_item(item.kids[0])
+        if comment is None or comment.deleted or comment.dead:
+            return None
+        return comment
 
 
 def _item_id(discussion_url: str | None, link: str) -> int | None:
@@ -157,3 +231,9 @@ def _clean_hacker_news_text(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     text = unescape(text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."

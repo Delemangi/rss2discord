@@ -31,7 +31,8 @@ feeds:
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
 
-  # Hacker News RSS with official API enrichment
+  # Hacker News RSS with official API enrichment: points, comments, domain,
+  # front-page rank, the top comment for link posts, and Ask HN text.
   - id: "hacker-news"
     name: "Hacker News"
     url: "https://news.ycombinator.com/rss"
