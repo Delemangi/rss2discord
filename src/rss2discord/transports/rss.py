@@ -13,13 +13,29 @@ from rss2discord.models import EntryData, EntryId
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 from rss2discord.transports.rss_timestamp import get_rss_timestamp
-from rss2discord.url_normalization import normalize_http_url
+from rss2discord.url_normalization import (
+    normalize_http_url,
+    normalize_remote_media_url,
+)
 
 MAX_RSS_FEED_BYTES: Final = 1_048_576
 GITHUB_RELEASE_ATOM_MAX_BYTES: Final = 4_194_304
 RSS_STREAM_CHUNK_BYTES: Final = 65_536
 MAX_RSS_CATEGORIES: Final = 3
 MAX_RSS_CATEGORY_LENGTH: Final = 64
+MAX_RSS_INLINE_IMAGE_CANDIDATES: Final = 10
+INLINE_IMAGE_TAG: Final = re.compile(r"<img\b[^>]{0,4096}>", re.IGNORECASE)
+INLINE_IMAGE_ATTRIBUTE: Final = re.compile(
+    r"""(?:^|\s)(?P<name>src|data-src|srcset|width|height|style)\s*=\s*(?:"(?P<double>[^"]*)"|'(?P<single>[^']*)'|(?P<bare>[^\s"'=<>`]+))""",
+    re.IGNORECASE,
+)
+PLACEHOLDER_IMAGE_HINTS: Final = (
+    "blank.gif",
+    "spacer.gif",
+    "pixel.gif",
+    "1x1.",
+    "transparent.gif",
+)
 
 
 def _is_github_release_atom_url(url: str) -> bool:
@@ -148,14 +164,13 @@ class RSSStrategy(ScraperStrategy):
 
         raw_description = entry.get("summary", entry.get("description", ""))
         description = "" if raw_description is None else str(raw_description)
+        structured_content = self._first_structured_value(
+            self._structured_field(entry, "content"),
+            ("value",),
+        )
         if not description.strip():
-            description = (
-                self._first_structured_value(
-                    self._structured_field(entry, "content"),
-                    ("value",),
-                )
-                or ""
-            )
+            description = structured_content or ""
+        raw_html = description
         description = self._clean_rss_description(description)
         description = self._truncate(description)
 
@@ -186,6 +201,10 @@ class RSSStrategy(ScraperStrategy):
                 image_filter=self._declares_image_mime,
             )
         )
+        if image_url is None:
+            image_url = self._inline_image_url(raw_html)
+        if image_url is None and structured_content and structured_content != raw_html:
+            image_url = self._inline_image_url(structured_content)
 
         return EntryData(
             title=title,
@@ -252,6 +271,70 @@ class RSSStrategy(ScraperStrategy):
         return isinstance(media_type, str) and media_type.casefold().startswith(
             "image/",
         )
+
+    @classmethod
+    def _inline_image_url(cls, html: str) -> str | None:
+        """Return the first safe inline image from an entry description."""
+        if not html:
+            return None
+        for index, match in enumerate(INLINE_IMAGE_TAG.finditer(html)):
+            if index >= MAX_RSS_INLINE_IMAGE_CANDIDATES:
+                break
+            attributes = cls._inline_image_attributes(match.group(0))
+            if cls._is_tracking_pixel(attributes):
+                continue
+            for name in ("src", "data-src", "srcset"):
+                raw_url = attributes.get(name)
+                if raw_url is None:
+                    continue
+                if name == "srcset":
+                    raw_url = raw_url.split(",", 1)[0].strip().split(" ", 1)[0]
+                normalized = normalize_remote_media_url(unescape(raw_url))
+                if normalized is None or cls._is_placeholder_image_url(normalized):
+                    continue
+                return normalized
+        return None
+
+    @staticmethod
+    def _inline_image_attributes(tag: str) -> dict[str, str]:
+        """Read the first value of each supported attribute in one image tag."""
+        attributes: dict[str, str] = {}
+        for match in INLINE_IMAGE_ATTRIBUTE.finditer(tag):
+            name = match.group("name").casefold()
+            value = (
+                match.group("double")
+                or match.group("single")
+                or match.group("bare")
+                or ""
+            )
+            attributes.setdefault(name, value)
+        return attributes
+
+    @staticmethod
+    def _is_tracking_pixel(attributes: Mapping[str, str]) -> bool:
+        """Reject one- or two-pixel images and their inline-style equivalents."""
+        for name in ("width", "height"):
+            value = attributes.get(name)
+            if value is None:
+                continue
+            dimension = re.match(r"\s*(\d+)", value)
+            if dimension is not None and int(dimension.group(1)) <= 2:
+                return True
+        style = attributes.get("style", "")
+        return (
+            re.search(
+                r"(?:width|height)\s*:\s*[12](?:px)?\b",
+                style,
+                flags=re.IGNORECASE,
+            )
+            is not None
+        )
+
+    @staticmethod
+    def _is_placeholder_image_url(url: str) -> bool:
+        """Reject common lazy-load and tracking placeholder filenames."""
+        lowered = url.casefold()
+        return any(hint in lowered for hint in PLACEHOLDER_IMAGE_HINTS)
 
     @classmethod
     def _categories(cls, tags: Any) -> tuple[str, ...]:  # noqa: ANN401

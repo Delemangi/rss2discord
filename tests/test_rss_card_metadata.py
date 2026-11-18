@@ -118,6 +118,189 @@ def test_rss_strategy_selects_structured_images_by_precedence() -> None:
     )
 
 
+def test_rss_strategy_uses_inline_image_when_no_structured_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img width="267" height="200" '
+                'src="https://meta.mk/wp-content/uploads/2026/11/photo.jpg" '
+                'class="webfeedsFeaturedVisual wp-post-image">'
+                "<p>Summary text</p>"
+            ),
+        },
+    )
+
+    # When
+    entry_data = strategy.get_entry_data(entry)
+
+    # Then
+    assert entry_data.image_url == (
+        "https://meta.mk/wp-content/uploads/2026/11/photo.jpg"
+    )
+    assert entry_data.description == "Summary text"
+
+
+def test_rss_strategy_prefers_structured_image_over_inline_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "media_thumbnail": [{"url": "https://images.test/thumbnail.png"}],
+            "summary": '<img src="https://images.test/inline.png">',
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/thumbnail.png"
+
+
+def test_rss_strategy_skips_tracking_pixel_inline_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img src="https://images.test/tiny.png" width="1" height="1">'
+                '<img src="https://images.test/photo.jpg" width="640" height="480">'
+            ),
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/photo.jpg"
+
+
+def test_rss_strategy_skips_inline_style_tracking_pixel() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img src="https://images.test/tiny.png" '
+                'style="width:1px;height:1px">'
+                '<img src="https://images.test/photo.jpg">'
+            ),
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/photo.jpg"
+
+
+def test_rss_strategy_skips_placeholder_inline_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img src="https://images.test/blank.gif">'
+                '<img src="https://images.test/photo.jpg">'
+            ),
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/photo.jpg"
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "http://images.test/photo.jpg",
+        "/relative/photo.jpg",
+        "data:image/png;base64,AAAA",
+        "https://localhost/photo.jpg",
+    ],
+)
+def test_rss_strategy_rejects_unsafe_inline_images(src: str) -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": f'<img src="{src}">',
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url is None
+
+
+def test_rss_strategy_uses_lazy_loaded_inline_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img src="data:image/gif;base64,AAAA" '
+                'data-src="https://images.test/lazy.jpg">'
+            ),
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/lazy.jpg"
+
+
+def test_rss_strategy_uses_srcset_inline_image() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "summary": (
+                '<img srcset="https://images.test/small.jpg 1x, '
+                'https://images.test/large.jpg 2x">'
+            ),
+        },
+    )
+
+    # When
+    image_url = strategy.get_entry_data(entry).image_url
+
+    # Then
+    assert image_url == "https://images.test/small.jpg"
+
+
+def test_rss_strategy_uses_inline_image_from_structured_content() -> None:
+    # Given
+    strategy = RSSStrategy()
+    entry = feedparser.FeedParserDict(
+        {
+            "content": [
+                {
+                    "value": ('<p>Body</p><img src="https://images.test/content.jpg">'),
+                },
+            ],
+        },
+    )
+
+    # When
+    entry_data = strategy.get_entry_data(entry)
+
+    # Then
+    assert entry_data.description == "Body"
+    assert entry_data.image_url == "https://images.test/content.jpg"
+
+
 def test_rss_strategy_rejects_pdf_enclosure_despite_image_medium() -> None:
     # Given
     strategy = RSSStrategy()
