@@ -8,6 +8,7 @@ import pytest
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.tweets.strategy import (
     TWEETS_FALLBACK_LABEL,
+    TWEETS_MEDIA_TITLE,
     TweetsStrategy,
     _candidate_urls,
 )
@@ -226,6 +227,85 @@ def test_tweets_exposes_every_attached_image(
         "https://pbs.twimg.com/media/first.jpg",
         "https://pbs.twimg.com/media/second.jpg",
     )
+
+
+def test_tweets_cleans_nitter_labels_and_status_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["summary"] = (
+        "<p>Caption</p>"
+        '<a href="http://nitter.kareem.one/opencode/status/111#m">Video</a>'
+        '<img src="http://nitter.kareem.one/pic/media%2Fphoto.jpg" />'
+        " http://nitter.kareem.one/opencode/status/111#m"
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    description = strategy.get_entry_data(filtered[0]).description
+    assert description == "Caption"
+    assert "Video" not in description
+    assert "status" not in description
+
+
+def test_tweets_repairs_nitter_separator_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["summary"] = "<p>1M context \ufffd Multimodal \ufffd ZDR</p>"
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    description = strategy.get_entry_data(filtered[0]).description
+    assert description == "1M context · Multimodal · ZDR"
+    assert "\ufffd" not in description
+
+
+def test_tweets_uses_media_fallback_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = ""
+    entries[0]["summary"] = (
+        '<img src="http://nitter.kareem.one/pic/media%2Fphoto.jpg" />'
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    assert strategy.get_entry_data(filtered[0]).title == TWEETS_MEDIA_TITLE
 
 
 def test_tweets_upgrades_http_links_and_drops_media_fragments(
