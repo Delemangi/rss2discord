@@ -206,6 +206,12 @@ class PriceNotificationRepository:
         ).fetchone()
         return 0 if row is None else int(row[0])
 
+    def count_pending_price_notifications_total(self) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM price_notifications WHERE status = 'pending'",
+        ).fetchone()
+        return 0 if row is None else int(row[0])
+
     def list_price_notifications(
         self,
         feed_id: str | None = None,

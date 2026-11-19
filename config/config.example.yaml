@@ -22,6 +22,10 @@ max_post_age_days: 7
 # days. Set to 0 to disable retention.
 state_retention_days: 90
 
+# Optional daily health summary. Leave health_webhook unset to disable.
+# health_webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+# health_summary_interval: 86400
+
 # List of feeds to monitor
 feeds:
   # Example RSS feed

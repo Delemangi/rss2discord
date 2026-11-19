@@ -213,6 +213,9 @@ class DeliveryStore:
     def count_pending_price_notifications(self, feed_id: str) -> int:
         return self._notifications.count_pending_price_notifications(feed_id)
 
+    def count_pending_price_notifications_total(self) -> int:
+        return self._notifications.count_pending_price_notifications_total()
+
     def list_price_notifications(
         self,
         feed_id: str | None = None,

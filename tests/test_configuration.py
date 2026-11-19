@@ -437,3 +437,14 @@ def test_state_retention_days_defaults_and_rejects_negative() -> None:
 
     with pytest.raises(ValidationError):
         AppConfig(state_retention_days=-1)
+
+
+def test_health_summary_config_defaults_and_validation() -> None:
+    config = AppConfig()
+    assert config.health_webhook is None
+    assert config.health_summary_interval == 86_400
+
+    with pytest.raises(ValidationError):
+        AppConfig(health_summary_interval=0)
+    with pytest.raises(ValidationError):
+        AppConfig(health_webhook="")

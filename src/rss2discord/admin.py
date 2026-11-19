@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from rss2discord.delivery_store import DeliveryStore
+from rss2discord.health_report import build_health_summary, format_health_summary
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
     health = commands.add_parser("health")
     health.add_argument("health_command", nargs="?", choices=("list",), default="list")
     health.add_argument("--feed-id")
+
+    summary = commands.add_parser("summary")
+    summary.add_argument("--json", action="store_true")
 
     notifications = commands.add_parser("notifications")
     notifications.add_argument(
@@ -48,6 +52,13 @@ def main(argv: list[str] | None = None) -> int:
                 _print_json(
                     [asdict(record) for record in store.list_health(args.feed_id)],
                 )
+                return 0
+            if args.command == "summary":
+                report = build_health_summary(store, args.database)
+                if args.json:
+                    _print_json(asdict(report))
+                else:
+                    print(format_health_summary(report))
                 return 0
             if args.command == "notifications":
                 _print_json(

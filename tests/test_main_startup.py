@@ -33,7 +33,11 @@ def test_main_runs_application_with_environment_paths(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     database_path = tmp_path / "state.db"
-    config = SimpleNamespace(state_retention_days=0)
+    config = SimpleNamespace(
+        state_retention_days=0,
+        health_webhook=None,
+        health_summary_interval=86_400,
+    )
     store = object()
     sender = object()
     application = _Application()
@@ -79,6 +83,53 @@ def test_main_runs_application_with_environment_paths(
     assert kwargs["config"] is config
     assert kwargs["store"] is store
     assert kwargs["sender"] is sender
+
+
+def test_main_starts_and_stops_health_reporter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = SimpleNamespace(
+        state_retention_days=0,
+        health_webhook="https://discord.test/webhooks/id/token",
+        health_summary_interval=60,
+    )
+    store = object()
+    sender = object()
+    application = _Application()
+    events: list[tuple[str, object]] = []
+
+    class Reporter:
+        def __init__(self, **kwargs: object) -> None:
+            events.append(("init", kwargs))
+
+        def start(self) -> None:
+            events.append(("start", None))
+
+        def stop(self) -> None:
+            events.append(("stop", None))
+
+    monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "config.yaml"))
+    monkeypatch.setenv("STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setattr(main_module, "load_config", lambda path: config)
+    monkeypatch.setattr(main_module, "DatabaseOwnership", lambda path: nullcontext())
+    monkeypatch.setattr(
+        main_module,
+        "DeliveryStore",
+        lambda path: nullcontext(store),
+    )
+    monkeypatch.setattr(main_module, "DiscordWebhookClient", lambda: sender)
+    monkeypatch.setattr(main_module, "RSSToDiscord", lambda **kwargs: application)
+    monkeypatch.setattr(main_module, "_install_signal_handlers", lambda app: None)
+    monkeypatch.setattr(main_module, "HealthSummaryReporter", Reporter)
+
+    assert main() == 0
+
+    assert [event[0] for event in events] == ["init", "start", "stop"]
+    init_kwargs = events[0][1]
+    assert isinstance(init_kwargs, dict)
+    assert init_kwargs["webhook"] == config.health_webhook
+    assert application.ran is True
 
 
 def test_main_returns_one_when_database_is_owned(
