@@ -10,7 +10,11 @@ from pydantic import ValidationError
 from rss2discord.configuration import AppConfig, FeedConfig, FeedStrategyName
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.source_labels import source_label
-from rss2discord.provider_metadata import PRICE_STRATEGIES, STRATEGY_LABELS
+from rss2discord.provider_metadata import (
+    PRICE_STRATEGIES,
+    STRATEGY_LABELS,
+    STRATEGY_METADATA,
+)
 from rss2discord.providers.ananas.prices import AnanasPriceMonitor
 from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
@@ -37,6 +41,7 @@ from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
 from rss2discord.providers.registry import (
+    STRATEGY_SPECS,
     SharedPriceMonitorDependencies,
     build_discovery_strategies,
     build_provider_price_monitor,
@@ -136,6 +141,14 @@ def make_shared_dependencies(
 
 def test_strategy_labels_match_configuration_literal() -> None:
     assert set(STRATEGY_LABELS) == set(get_args(FeedStrategyName))
+
+
+def test_strategy_specs_cover_configuration_and_metadata() -> None:
+    assert set(STRATEGY_SPECS) == set(get_args(FeedStrategyName))
+    assert set(STRATEGY_SPECS) == set(STRATEGY_METADATA)
+    assert {
+        name for name, spec in STRATEGY_SPECS.items() if spec.price_monitor is not None
+    } == set(PRICE_STRATEGIES)
 
 
 def test_build_discovery_strategies_covers_every_strategy() -> None:

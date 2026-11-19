@@ -51,6 +51,7 @@ from rss2discord.providers.ananas.bounds import (
 )
 from rss2discord.providers.ananas.models import AnanasProduct
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
+from rss2discord.transports.bounded_http import validate_content_length
 from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
@@ -151,14 +152,11 @@ def _validate_response(response: _HttpResponse) -> None:
             status_code=status_code,
             retryable=(status_code == 429 or 500 <= status_code < 600),
         ) from None
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > MAX_ANANAS_RESPONSE_BYTES:
-            raise FeedFetchError(ANANAS_LABEL, "ResponseTooLarge")
+    validate_content_length(
+        response,
+        label=ANANAS_LABEL,
+        max_bytes=MAX_ANANAS_RESPONSE_BYTES,
+    )
 
 
 def validate_ananas_url(url: str) -> str:

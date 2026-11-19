@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, closing
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -15,6 +15,7 @@ from curl_cffi import CurlOpt, requests
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.retries import FeedFetchInterruptedError, parse_retry_after
+from rss2discord.transports.bounded_http import read_bounded_content
 
 NEKSIO_LABEL: Final = "Neksio"
 NEKSIO_HOST: Final = "g.store.neksio.mk"
@@ -245,24 +246,13 @@ def _read_content(
     response: requests.Response,
     budget: NeksioScanBudget | None,
 ) -> bytes:
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > MAX_NEKSIO_RESPONSE_BYTES:
-            raise FeedFetchError(NEKSIO_LABEL, "ResponseTooLarge")
-    content = bytearray()
-    chunks: Iterator[bytes] = response.iter_content(
-        chunk_size=NEKSIO_STREAM_CHUNK_BYTES,
+    content = read_bounded_content(
+        response,
+        label=NEKSIO_LABEL,
+        max_bytes=MAX_NEKSIO_RESPONSE_BYTES,
+        chunk_bytes=NEKSIO_STREAM_CHUNK_BYTES,
+        on_chunk=budget.consume_bytes if budget is not None else None,
     )
-    for chunk in chunks:
-        if len(content) + len(chunk) > MAX_NEKSIO_RESPONSE_BYTES:
-            raise FeedFetchError(NEKSIO_LABEL, "ResponseTooLarge")
-        if budget is not None:
-            budget.consume_bytes(len(chunk))
-        content.extend(chunk)
     if budget is not None:
         budget.consume_bytes(0)
-    return bytes(content)
+    return content

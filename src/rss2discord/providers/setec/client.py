@@ -1,6 +1,5 @@
 """Secure, bounded search retrieval for the Setec catalog."""
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from time import monotonic
 from urllib.parse import urljoin, urlsplit
@@ -29,6 +28,7 @@ from rss2discord.providers.setec.public_config import (
 )
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 
 SETEC_PUBLIC_FILTER = "status = 'published' AND is_web_active = 'true'"
 
@@ -300,27 +300,17 @@ def _read_content(
     budget: OperationBudget,
 ) -> bytes:
     remaining_global_scan_bytes = request.remaining_scan_response_bytes - response_bytes
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > request.max_single_response_bytes:
-            raise FeedFetchError(SETEC_LABEL, "ResponseTooLarge")
-        if declared_bytes > remaining_global_scan_bytes:
-            raise FeedFetchError(SETEC_LABEL, "ScanResponseTooLarge")
-    content = bytearray()
-    chunks: Iterator[bytes] = response.iter_content(chunk_size=SETEC_STREAM_CHUNK_BYTES)
-    for chunk in chunks:
-        budget.charge(len(chunk))
-        if len(content) + len(chunk) > request.max_single_response_bytes:
-            raise FeedFetchError(SETEC_LABEL, "ResponseTooLarge")
-        if len(content) + len(chunk) > remaining_global_scan_bytes:
-            raise FeedFetchError(SETEC_LABEL, "ScanResponseTooLarge")
-        content.extend(chunk)
+    content = read_bounded_content(
+        response,
+        label=SETEC_LABEL,
+        max_bytes=request.max_single_response_bytes,
+        chunk_bytes=SETEC_STREAM_CHUNK_BYTES,
+        remaining_bytes=remaining_global_scan_bytes,
+        on_chunk=budget.charge,
+        charge_before_check=True,
+    )
     budget.check()
-    return bytes(content)
+    return content
 
 
 def _check_status(response: requests.Response) -> None:

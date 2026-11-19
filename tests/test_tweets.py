@@ -1,12 +1,16 @@
 """Generic tweets strategy tests."""
 
+from urllib.parse import urlsplit
+
 import feedparser
 import pytest
 
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.tweets.strategy import (
     TWEETS_FALLBACK_LABEL,
     TweetsStrategy,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 
 FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -170,3 +174,84 @@ def test_tweets_uses_fallback_label_when_feed_title_is_empty(
 
     # Then
     assert title == TWEETS_FALLBACK_LABEL
+
+
+def test_tweets_fails_over_to_another_nitter_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    strategy = TweetsStrategy()
+    calls: list[str] = []
+
+    def fetch(url: str) -> tuple[list[object], str]:
+        calls.append(url)
+        if len(calls) == 1:
+            raise FeedFetchError(
+                "RSS",
+                "HTTPError",
+                status_code=429,
+                retryable=True,
+            )
+        return entries, "OpenCode / @opencode"
+
+    monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
+
+    # When
+    filtered, title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    assert title == "OpenCode / @opencode"
+    assert len(calls) == 2
+    assert calls[0] == "https://nitter.kareem.one/opencode/rss"
+    assert calls[1] != calls[0]
+    assert urlsplit(calls[1]).path == "/opencode/rss"
+    assert [strategy.get_entry_id(entry) for entry in filtered] == [
+        "111",
+        "555",
+        "666",
+        "777",
+        "888",
+    ]
+
+
+def test_tweets_raises_the_last_error_when_every_instance_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    strategy = TweetsStrategy()
+    errors: list[FeedFetchError] = []
+
+    def fetch(_url: str) -> tuple[list[object], str]:
+        error = FeedFetchError("RSS", "HTTPError", status_code=503, retryable=True)
+        errors.append(error)
+        raise error
+
+    monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
+
+    # When / Then
+    with pytest.raises(FeedFetchError) as caught:
+        strategy.fetch_entries("https://nitter.kareem.one/opencode/rss")
+    assert caught.value is errors[-1]
+    assert len(errors) > 1
+
+
+def test_tweets_propagates_shutdown_without_failing_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    strategy = TweetsStrategy()
+    calls: list[str] = []
+
+    def fetch(url: str) -> tuple[list[object], str]:
+        calls.append(url)
+        raise FeedFetchInterruptedError
+
+    monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
+
+    # When / Then
+    with pytest.raises(FeedFetchInterruptedError):
+        strategy.fetch_entries("https://nitter.kareem.one/opencode/rss")
+    assert len(calls) == 1

@@ -29,6 +29,7 @@ from rss2discord.retries import (
     FetchRetryPolicy,
     parse_retry_after,
 )
+from rss2discord.transports.bounded_http import validate_content_length
 from rss2discord.transports.catalog_http import BoundedContentCallback
 from rss2discord.transports.scan_budget import ScanBudget, ScanLimits
 
@@ -310,12 +311,12 @@ def _decode_html(response: _HttpResponse, content: bytearray) -> str:
             retryable=status == 429 or 500 <= status < 600,
             retry_after=parse_retry_after(response.headers.get("Retry-After")),
         ) from None
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None and (
-        not content_length.isdigit()
-        or int(content_length) > MAX_TECHNOMARKET_RESPONSE_BYTES
-    ):
-        raise FeedFetchError(TECHNOMARKET_LABEL, "ResponseTooLarge")
+    validate_content_length(
+        response,
+        label=TECHNOMARKET_LABEL,
+        max_bytes=MAX_TECHNOMARKET_RESPONSE_BYTES,
+        invalid_cause="ResponseTooLarge",
+    )
     try:
         return bytes(content).decode(
             response.encoding or "utf-8",

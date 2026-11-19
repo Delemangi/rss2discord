@@ -1,12 +1,15 @@
 """Shared bounded HTTP response reading tests."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 
 import pytest
 
 from rss2discord.fetch_errors import FeedFetchError
-from rss2discord.transports.bounded_http import read_bounded_content
+from rss2discord.transports.bounded_http import (
+    read_bounded_content,
+    validate_content_length,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +30,8 @@ def read(
     headers: Mapping[str, str] | None = None,
     response_cause: str = "ResponseTooLarge",
     scan_cause: str = "ScanResponseTooLarge",
+    on_chunk: Callable[[int], None] | None = None,
+    charge_before_check: bool = False,
 ) -> bytes:
     return read_bounded_content(
         StubResponse(content, headers or {}),
@@ -36,6 +41,8 @@ def read(
         remaining_bytes=remaining_bytes,
         response_cause=response_cause,
         scan_cause=scan_cause,
+        on_chunk=on_chunk,
+        charge_before_check=charge_before_check,
     )
 
 
@@ -104,3 +111,72 @@ def test_custom_causes_apply_to_declared_and_streamed_limits() -> None:
             scan_cause="ScanResponseTooLarge",
         )
     assert streamed.value.cause_type == "ScanResponseTooLarge"
+
+
+def test_on_chunk_charges_each_streamed_chunk() -> None:
+    charges: list[int] = []
+
+    assert read(b"abcd", on_chunk=charges.append) == b"abcd"
+    assert charges == [4]
+
+
+def test_charge_before_check_runs_before_the_streamed_limit() -> None:
+    charged: list[int] = []
+
+    with pytest.raises(FeedFetchError):
+        read(
+            b"x" * 11,
+            on_chunk=charged.append,
+            charge_before_check=True,
+        )
+
+    assert charged == [11]
+
+
+def test_on_chunk_runs_only_after_a_successful_limit_check() -> None:
+    charged: list[int] = []
+
+    with pytest.raises(FeedFetchError):
+        read(b"x" * 11, on_chunk=charged.append)
+
+    assert charged == []
+
+
+def validate(
+    content_length: str | None,
+    *,
+    max_bytes: int = 10,
+    invalid_cause: str | None = None,
+) -> None:
+    headers = {} if content_length is None else {"Content-Length": content_length}
+    validate_content_length(
+        StubResponse(b"", headers),
+        label="Test",
+        max_bytes=max_bytes,
+        invalid_cause=invalid_cause,
+    )
+
+
+def test_validate_content_length_accepts_within_limit() -> None:
+    validate("10")
+
+
+def test_validate_content_length_rejects_declared_oversize() -> None:
+    with pytest.raises(FeedFetchError) as error:
+        validate("11")
+    assert error.value.cause_type == "ResponseTooLarge"
+
+
+def test_validate_content_length_ignores_missing_or_invalid_values() -> None:
+    validate(None)
+    validate("nope")
+
+
+def test_validate_content_length_can_reject_invalid_values() -> None:
+    with pytest.raises(FeedFetchError) as error:
+        validate("nope", invalid_cause="ResponseTooLarge")
+    assert error.value.cause_type == "ResponseTooLarge"
+
+    with pytest.raises(FeedFetchError) as negative:
+        validate("-1", invalid_cause="ResponseTooLarge")
+    assert negative.value.cause_type == "ResponseTooLarge"
