@@ -172,7 +172,7 @@ def _card_components(
 ) -> tuple[JSONValue, ...]:
     payload = build_components_v2_payload(
         feed,
-        replace(entry, description=description, image_url=None),
+        replace(entry, description=description, image_url=None, image_urls=()),
         source_title,
     )
     components = payload.get("components")

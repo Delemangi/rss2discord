@@ -208,12 +208,12 @@ feeds:
     webhook_name: "Fakulteti.mk"
 
   # Tweets from a Nitter RSS profile feed. The strategy keeps original tweets
-  # only (no replies, retweets, or pinned tweets), derives the X handle from
-  # each status link, and rewrites links to x.com. Nitter instances are
-  # volunteer-run and can disappear; the strategy retries the same profile path
-  # on a short built-in list of known instances when the configured one fails.
-  # Use an English Nitter instance: the filter matches Nitter's English title
-  # prefixes.
+  # only (no replies, retweets, or pinned tweets), keeps the public Nitter
+  # link (no X login), and uses attached media when the instance publishes it.
+  # Nitter instances are volunteer-run and can disappear; the strategy retries
+  # the same profile path on a short built-in list of known instances when the
+  # configured one fails. Use an English Nitter instance: the filter matches
+  # Nitter's English title prefixes.
   - id: "opencode-tweets"
     name: "OpenCode Tweets"
     url: "https://nitter.kareem.one/opencode/rss"

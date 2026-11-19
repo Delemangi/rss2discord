@@ -41,6 +41,9 @@ class EntryData:
     categories: tuple[str, ...] = ()
     source_metrics: tuple[SourceMetric, ...] = ()
     price_direction: PriceDirection | None = None
+    # Ordered media gallery URLs. When non-empty, renderers prefer this over
+    # the single image_url thumbnail.
+    image_urls: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

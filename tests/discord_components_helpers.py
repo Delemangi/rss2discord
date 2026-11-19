@@ -130,3 +130,44 @@ def get_child_contents(component: dict[str, JSONValue]) -> list[str]:
         assert isinstance(content, str)
         contents.append(content)
     return contents
+
+
+def get_media_galleries(message: WebhookMessage) -> list[dict[str, JSONValue]]:
+    """Return every Media Gallery component in the payload."""
+    return [
+        component
+        for component in get_all_components(message)
+        if component.get("type") == 12
+    ]
+
+
+def get_media_gallery_items(
+    message: WebhookMessage,
+) -> list[dict[str, JSONValue]]:
+    """Return the media items from the first Media Gallery, if any."""
+    galleries = get_media_galleries(message)
+    if not galleries:
+        return []
+    items = galleries[0].get("items")
+    assert isinstance(items, list)
+    result: list[dict[str, JSONValue]] = []
+    for item in items:
+        assert isinstance(item, dict)
+        result.append(item)
+    return result
+
+
+def get_thumbnail_url(message: WebhookMessage) -> str:
+    """Return the Section thumbnail URL from the first container child."""
+    return get_thumbnail_url_from_children(get_container_children(message))
+
+
+def get_thumbnail_url_from_children(children: list[dict[str, JSONValue]]) -> str:
+    """Return the Section thumbnail URL from already-built container children."""
+    accessory = children[0]["accessory"]
+    assert isinstance(accessory, dict)
+    media = accessory.get("media")
+    assert isinstance(media, dict)
+    url = media.get("url")
+    assert isinstance(url, str)
+    return url

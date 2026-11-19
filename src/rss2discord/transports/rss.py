@@ -4,7 +4,7 @@ import re
 from collections.abc import Callable, Mapping
 from html import unescape
 from typing import Any, Final
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import feedparser
 import requests
@@ -251,10 +251,16 @@ class RSSStrategy(ScraperStrategy):
         )
 
     @classmethod
-    def _inline_image_url(cls, html: str) -> str | None:
-        """Return the first safe inline image from an entry description."""
+    def inline_image_urls(
+        cls,
+        html: str,
+        *,
+        upgrade_http: bool = False,
+    ) -> tuple[str, ...]:
+        """Return safe inline images from an entry description, in order."""
         if not html:
-            return None
+            return ()
+        urls: list[str] = []
         for index, match in enumerate(INLINE_IMAGE_TAG.finditer(html)):
             if index >= MAX_RSS_INLINE_IMAGE_CANDIDATES:
                 break
@@ -268,10 +274,30 @@ class RSSStrategy(ScraperStrategy):
                 if name == "srcset":
                     raw_url = raw_url.split(",", 1)[0].strip().split(" ", 1)[0]
                 normalized = normalize_remote_media_url(unescape(raw_url))
+                if normalized is None and upgrade_http:
+                    normalized = cls._upgrade_http_media_url(raw_url)
                 if normalized is None or cls._is_placeholder_image_url(normalized):
                     continue
-                return normalized
-        return None
+                if normalized not in urls:
+                    urls.append(normalized)
+                break
+        return tuple(urls)
+
+    @classmethod
+    def _inline_image_url(cls, html: str) -> str | None:
+        """Return the first safe inline image from an entry description."""
+        urls = cls.inline_image_urls(html)
+        return urls[0] if urls else None
+
+    @staticmethod
+    def _upgrade_http_media_url(value: str) -> str | None:
+        normalized = normalize_http_url(unescape(value))
+        if normalized is None:
+            return None
+        parsed = urlsplit(normalized)
+        if parsed.scheme.casefold() != "http":
+            return None
+        return normalize_remote_media_url(urlunsplit(parsed._replace(scheme="https")))
 
     @staticmethod
     def _inline_image_attributes(tag: str) -> dict[str, str]:
