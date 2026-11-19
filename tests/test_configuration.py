@@ -5,7 +5,7 @@ from typing import get_args
 import pytest
 from pydantic import ValidationError
 
-from rss2discord.configuration import FeedStrategyName, load_config
+from rss2discord.configuration import AppConfig, FeedStrategyName, load_config
 from tests.configuration_helpers import write_config
 
 
@@ -430,3 +430,10 @@ def test_config_example_lists_every_strategy() -> None:
     assert set(re.findall(r"'([a-z0-9_]+)'", line)) == set(
         get_args(FeedStrategyName),
     )
+
+
+def test_state_retention_days_defaults_and_rejects_negative() -> None:
+    assert AppConfig().state_retention_days == 90
+
+    with pytest.raises(ValidationError):
+        AppConfig(state_retention_days=-1)

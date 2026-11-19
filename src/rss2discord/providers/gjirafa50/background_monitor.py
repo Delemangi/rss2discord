@@ -95,6 +95,15 @@ class Gjirafa50BackgroundPriceMonitor:
                         sender=DiscordWebhookClient(session=discord_session),
                     )
                     Gjirafa50PriceMonitor(self._feed, dependencies).scan()
+                    store.record_job_timing(
+                        self._feed.id,
+                        "price",
+                        max(
+                            0,
+                            int((time.monotonic() - started_at) * 1000),
+                        ),
+                        0,
+                    )
             except (FeedFetchInterruptedError, SQLiteRetryInterruptedError):
                 return
             except Exception as error:  # noqa: RUF100  # noqa: BROAD_EXCEPT_OK

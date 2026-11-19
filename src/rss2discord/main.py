@@ -35,6 +35,7 @@ SAFE_VALIDATION_FIELDS = frozenset(
         "ordinary_check_interval",
         "price_check_interval",
         "refresh_interval",
+        "state_retention_days",
         "strategy",
         "url",
         "webhook",
@@ -51,6 +52,7 @@ def main() -> int:
     try:
         config = load_config(config_path)
         with DatabaseOwnership(database_path), DeliveryStore(database_path) as store:
+            _prune_state(store, config.state_retention_days)
             application = RSSToDiscord(
                 config=config,
                 store=store,
@@ -86,6 +88,29 @@ def main() -> int:
         )
         return 1
     return 0
+
+
+def _prune_state(store: DeliveryStore, retention_days: int) -> None:
+    if retention_days <= 0:
+        return
+    try:
+        result = store.prune_old_records(retention_days=retention_days)
+        if result.total == 0:
+            return
+        logger.info(
+            "Pruned state older than %d days: delivered_entries=%d "
+            "price_notifications=%d",
+            retention_days,
+            result.delivered_entries,
+            result.price_notifications,
+        )
+        store.vacuum()
+    except sqlite3.Error as error:
+        logger.log(
+            logging.ERROR,
+            "State retention failed (%s)",
+            type(error).__name__,
+        )
 
 
 def _sqlite_error_message(error: sqlite3.Error) -> str:

@@ -129,6 +129,7 @@ class AppConfig(BaseModel):
     delay_between_feeds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0
     delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
+    state_retention_days: Annotated[int, Field(ge=0)] = 90
     feeds: tuple[FeedConfig, ...] = ()
 
     @model_validator(mode="after")

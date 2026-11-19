@@ -5,7 +5,7 @@ import signal
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
-from types import FrameType
+from types import FrameType, SimpleNamespace
 
 import pytest
 import yaml
@@ -33,7 +33,7 @@ def test_main_runs_application_with_environment_paths(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     database_path = tmp_path / "state.db"
-    config = object()
+    config = SimpleNamespace(state_retention_days=0)
     store = object()
     sender = object()
     application = _Application()
