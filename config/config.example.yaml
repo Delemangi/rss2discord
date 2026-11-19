@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -219,6 +219,18 @@ feeds:
     strategy: "tweets"
     seed_existing_on_first_fetch: true
     webhook_name: "OpenCode Tweets"
+    digest_threshold: null
+
+  # EMSC earthquake alerts for the Macedonia/Balkans region. The URL is an
+  # FDSN event query; adjust the bounding box, magnitude, and limit.
+  - id: "earthquakes-macedonia"
+    name: "Earthquakes"
+    url: "https://www.seismicportal.eu/fdsnws/event/1/query?format=json&minmagnitude=2.5&minlatitude=40&maxlatitude=43&minlongitude=19&maxlongitude=24&limit=50&orderby=time"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "emsc"
+    ordinary_check_interval: 300
+    seed_existing_on_first_fetch: true
+    webhook_name: "Earthquakes"
     digest_threshold: null
 
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:

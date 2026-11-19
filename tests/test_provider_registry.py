@@ -19,6 +19,7 @@ from rss2discord.providers.cccenter.prices import CCCenterPriceMonitor
 from rss2discord.providers.cccenter.strategy import CCCenterStrategy
 from rss2discord.providers.ddstore.prices import DDStorePriceMonitor
 from rss2discord.providers.ddstore.strategy import DDStoreStrategy
+from rss2discord.providers.emsc.strategy import EmscStrategy
 from rss2discord.providers.fakulteti_mk.strategy import FakultetiMkStrategy
 from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
@@ -64,6 +65,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "anhoch": AnhochStrategy,
     "cccenter": CCCenterStrategy,
     "ddstore": DDStoreStrategy,
+    "emsc": EmscStrategy,
     "fakulteti_mk": FakultetiMkStrategy,
     "gjirafa50": Gjirafa50Strategy,
     "hivetec": HivetecStrategy,

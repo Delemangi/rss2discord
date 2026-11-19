@@ -36,6 +36,7 @@ STRATEGY_LABELS: Final = {
     "technomarket": "Technomarket",
     "time_mk": "Time.mk",
     "fakulteti_mk": "Fakulteti.mk",
+    "emsc": "EMSC",
     "tweets": "Tweets",
     "woocommerce": "WooCommerce",
     "xenforo": "Forum",
