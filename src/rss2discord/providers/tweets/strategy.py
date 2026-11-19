@@ -24,12 +24,14 @@ NITTER_FALLBACK_HOSTS: Final = (
     "nitter.jaydenha.uk",
     "ruf.st",
 )
+_LOGGED_FAILOVERS: set[tuple[str, str]] = set()
 
 
 def _candidate_urls(url: str) -> tuple[str, ...]:
     """Return the configured Nitter URL followed by known fallback instances."""
     try:
         parsed = urlsplit(url)
+        port = parsed.port
     except ValueError:
         return (url,)
     host = parsed.hostname
@@ -41,10 +43,18 @@ def _candidate_urls(url: str) -> tuple[str, ...]:
         if fallback_host == host:
             continue
         netloc = fallback_host
-        if parsed.port is not None:
-            netloc = f"{fallback_host}:{parsed.port}"
+        if port is not None:
+            netloc = f"{fallback_host}:{port}"
         candidates.append(urlunsplit(parsed._replace(netloc=netloc)))
     return tuple(candidates)
+
+
+def _log_failover(url: str, candidate: str) -> None:
+    pair = (url, candidate)
+    if pair in _LOGGED_FAILOVERS:
+        return
+    _LOGGED_FAILOVERS.add(pair)
+    logger.warning("Nitter instance failed over: %s -> %s", url, candidate)
 
 
 @final
@@ -65,14 +75,12 @@ class TweetsStrategy(ScraperStrategy):
             except FeedFetchInterruptedError:
                 raise
             except FeedFetchError as error:
+                if not error.retryable:
+                    raise
                 last_error = error
                 continue
             if candidate != url:
-                logger.warning(
-                    "Nitter instance failed over: %s -> %s",
-                    url,
-                    candidate,
-                )
+                _log_failover(url, candidate)
             filtered = [entry for entry in entries if not self._is_excluded(entry)]
             return filtered, source_title or TWEETS_FALLBACK_LABEL
         if last_error is None:

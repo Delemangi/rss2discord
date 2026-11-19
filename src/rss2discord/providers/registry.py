@@ -1,7 +1,8 @@
 """Single registry composing discovery strategies and price monitors per provider."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Final, Protocol
 
 from rss2discord.configuration import FeedConfig
@@ -116,7 +117,7 @@ class StrategySpec:
     price_monitor: PriceMonitorFactory | None = None
 
 
-STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
+_STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     "ananas": StrategySpec(
         discovery=lambda dependencies: AnanasStrategy(
             dependencies.is_shutdown_requested,
@@ -257,6 +258,7 @@ STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     ),
     "xenforo": StrategySpec(discovery=lambda dependencies: XenForoStrategy()),
 }
+STRATEGY_SPECS: Final[Mapping[str, StrategySpec]] = MappingProxyType(_STRATEGY_SPECS)
 
 
 def build_discovery_strategies(
@@ -277,7 +279,12 @@ def build_provider_price_monitor(
     feed: FeedConfig,
     dependencies: SharedPriceMonitorDependencies,
 ) -> PriceMonitor | None:
-    spec = STRATEGY_SPECS[feed.strategy]
+    try:
+        spec = STRATEGY_SPECS[feed.strategy]
+    except KeyError:
+        raise RuntimeError(
+            f"no strategy spec registered for {feed.strategy!r}",
+        ) from None
     if spec.price_monitor is None:
         return None
     return spec.price_monitor(feed, dependencies)
