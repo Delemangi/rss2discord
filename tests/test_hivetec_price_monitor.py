@@ -110,6 +110,7 @@ def test_hivetec_price_monitor_baselines_then_delivers_price_change(
         message = sender.messages[0]
         assert message.entry.description == ""
         assert message.entry.price_direction is PriceDirection.DECREASE
+        assert message.entry.discount_percentage == "35.0%"
         assert message.entry.link == "https://hivetec.mk/product/product-1/"
         assert [metric.label for metric in message.entry.source_metrics] == [
             "Price",

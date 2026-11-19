@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.providers.hivetec.models import (
@@ -56,6 +56,10 @@ class HivetecStrategy(ScraperStrategy):
             image_url=product.image_url,
             categories=tuple(category.name for category in product.categories),
             source_metrics=hivetec_product_metrics(product),
+            discount_percentage=discount_percentage(
+                product.prices.regular_amount,
+                product.prices.current_amount,
+            ),
         )
 
 

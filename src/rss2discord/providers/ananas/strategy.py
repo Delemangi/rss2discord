@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.ananas.bounds import ANANAS_LABEL
 from rss2discord.providers.ananas.catalog import AnanasCatalogClient
 from rss2discord.providers.ananas.models import AnanasProduct
@@ -56,6 +56,11 @@ class AnanasStrategy(ScraperStrategy):
             SourceMetric("Stock", "In stock" if entry.in_stock else "Out of stock"),
         )
         metrics.append(SourceMetric("Merchant", entry.merchant))
+        discount = (
+            discount_percentage(entry.base_price, entry.price)
+            if entry.base_price is not None
+            else None
+        )
         return EntryData(
             title=entry.name,
             link=entry.url,
@@ -65,6 +70,7 @@ class AnanasStrategy(ScraperStrategy):
             image_url=entry.image_url,
             categories=entry.categories,
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 

@@ -69,6 +69,14 @@ def canonicalize_anhoch_amount(amount: Decimal) -> str:
     return _canonicalize(amount, _ANHOCH_AMOUNT_RULES)
 
 
+def discount_percentage(original: Decimal, current: Decimal) -> str | None:
+    """Return the percentage saved from an original price, if meaningful."""
+    if original <= 0 or current <= 0 or current >= original:
+        return None
+    percent = (original - current) / original * 100
+    return f"{percent:.1f}%"
+
+
 def _canonicalize(amount: Decimal, rules: _CanonicalizationRules) -> str:
     if not amount.is_finite() or amount < 0:
         raise rules.error_type(rules.non_negative_message)

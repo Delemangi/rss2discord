@@ -10,6 +10,7 @@ from typing import Protocol
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.setec.catalog_bounds import SETEC_LABEL
 from rss2discord.providers.setec.models import SetecPriceEntry, SetecProduct
 from rss2discord.providers.setec.strategy import (
@@ -185,6 +186,14 @@ class SetecPriceMonitor:
                 categories=tuple(category.name for category in product.categories),
                 source_metrics=self._metrics_for(product, previous, current),
                 price_direction=price_direction(previous, current),
+                discount_percentage=(
+                    discount_percentage(
+                        product.variants[0].calculated_price.original_amount,
+                        product.variants[0].calculated_price.calculated_amount,
+                    )
+                    if product.variants
+                    else None
+                ),
             ),
             source_title=self._feed.name or SETEC_LABEL,
         )

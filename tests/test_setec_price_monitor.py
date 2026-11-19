@@ -188,6 +188,7 @@ def test_scan_delivers_in_persistent_cursor_id_order_with_exact_setec_message_fi
             "https://images.example.test/prod-30.webp"
         )
         assert sender.messages[0].entry.categories == ("Computers", "Accessories")
+        assert sender.messages[0].entry.discount_percentage == "25.0%"
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90 ден."),
             SourceMetric(label="Previous", value="100 ден.", prior=True),

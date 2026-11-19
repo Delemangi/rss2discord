@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.cccenter.bounds import CCCENTER_LABEL
 from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
 from rss2discord.providers.cccenter.models import CCCenterProduct
@@ -64,6 +64,15 @@ class CCCenterStrategy(ScraperStrategy):
         )
         if entry.sku:
             metrics.append(SourceMetric("SKU", entry.sku))
+        discount = (
+            discount_percentage(entry.original_price, entry.current_price)
+            if entry.price_status == "scalar"
+            and entry.current_price is not None
+            and entry.current_price > 0
+            and entry.original_price is not None
+            and entry.original_price != entry.current_price
+            else None
+        )
         return EntryData(
             title=entry.name,
             link=entry.url,
@@ -73,6 +82,7 @@ class CCCenterStrategy(ScraperStrategy):
             image_url=entry.image_url,
             categories=entry.categories,
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 

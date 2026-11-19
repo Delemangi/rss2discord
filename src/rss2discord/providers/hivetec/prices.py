@@ -7,6 +7,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, PriceSnapshot
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.models import HivetecProduct
 from rss2discord.providers.hivetec.strategy import (
@@ -148,6 +149,10 @@ class HivetecPriceMonitor:
                     previous_price=previous.formatted,
                 ),
                 price_direction=price_direction(previous, current),
+                discount_percentage=discount_percentage(
+                    product.prices.regular_amount,
+                    product.prices.current_amount,
+                ),
             ),
             source_title=self._feed.name or HIVETEC_LABEL,
         )

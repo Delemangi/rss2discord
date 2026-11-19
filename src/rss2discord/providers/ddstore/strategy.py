@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Final, assert_never, final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.ddstore.catalog import DDStoreCatalogClient
 from rss2discord.providers.ddstore.client import DDSTORE_LABEL
 from rss2discord.providers.ddstore.models import DDStoreProduct, DDStoreStockStatus
@@ -73,6 +73,13 @@ class DDStoreStrategy(ScraperStrategy):
                 value=format_ddstore_stock(entry.stock_status),
             ),
         )
+        discount = (
+            discount_percentage(regular_price.value, final_price.value)
+            if is_ddstore_price_available(final_price.value)
+            and regular_price is not None
+            and regular_price.value != final_price.value
+            else None
+        )
         return EntryData(
             title=entry.name,
             link=entry.product_url,
@@ -86,6 +93,7 @@ class DDStoreStrategy(ScraperStrategy):
                 if category.name is not None
             ),
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 
