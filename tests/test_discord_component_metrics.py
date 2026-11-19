@@ -432,3 +432,88 @@ def test_blank_headline_metric_leaves_no_leading_newline() -> None:
 
     # Then - the block must not open on a bare newline
     assert metrics == "-# A: B"
+
+
+def test_discount_badges_headline_for_discovery_cards() -> None:
+    # Given - a product card with an original price and a discount
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            discount_percentage="20.0%",
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the discount is prominent in the headline and not duplicated below
+    assert metrics == (
+        f"Price: **80 MKD** · **20% off**\n{METRICS_GAP}\n-# Original: 100 MKD"
+    )
+    assert "Discount:" not in metrics
+
+
+def test_discount_stays_supporting_for_price_change_cards() -> None:
+    # Given - a price drop alert that also carries a discount versus original
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            price_change_percentage="-10.0%",
+            discount_percentage="20.0%",
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the headline carries the price move only, while Change and Discount
+    # are labeled so the two percentages cannot be confused
+    assert "Price: **80 MKD** ~~90 MKD~~" in metrics
+    assert "Change: -10.0%" in metrics
+    assert "Discount: 20% off" in metrics
+
+
+def test_discount_badge_formats_whole_and_fractional_percentages() -> None:
+    # Given - a discovery card for each discount shape
+    cases = [
+        ("20.0%", "20% off"),
+        ("24.6%", "24.6% off"),
+        ("5.00%", "5% off"),
+        ("35.0%", "35% off"),
+    ]
+
+    for discount, expected_badge in cases:
+        message = make_message(
+            entry=EntryData(
+                title="Item",
+                link="https://example.test/item",
+                description="",
+                author="",
+                timestamp=None,
+                source_metrics=(SourceMetric("Price", "80 MKD"),),
+                discount_percentage=discount,
+            ),
+        )
+
+        # When
+        metrics = get_metrics_content(message)
+
+        # Then - whole values read cleanly, fractional values keep precision
+        assert f"**{expected_badge}**" in metrics
