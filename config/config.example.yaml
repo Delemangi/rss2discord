@@ -25,7 +25,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -220,6 +220,21 @@ feeds:
     seed_existing_on_first_fetch: true
     webhook_name: "OpenCode Tweets"
     digest_threshold: null
+
+  # EMSC earthquake alerts for the Macedonia/Balkans region. The URL must be an
+  # EMSC FDSN event query; event links use the EMSC event ID. Use orderby=time
+  # (descending) so limit selects the latest events; the strategy reverses the
+  # response for delivery. time-asc is only useful with an explicit time window.
+  # A swarm above 10 events sends one digest instead of individual cards.
+  - id: "earthquakes-macedonia"
+    name: "Earthquakes"
+    url: "https://www.seismicportal.eu/fdsnws/event/1/query?format=json&minmagnitude=2.5&minlatitude=40&maxlatitude=43&minlongitude=19&maxlongitude=24&limit=50&orderby=time"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "emsc"
+    ordinary_check_interval: 300
+    seed_existing_on_first_fetch: true
+    webhook_name: "Earthquakes"
+    digest_threshold: 10
 
   # Gjirafa50 discovery checks the newest 30 in-stock products from either exact root:
   # https://gjirafa50.mk/ or https://gjirafa50.com/. Use a separate stable feed ID for

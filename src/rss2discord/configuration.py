@@ -37,6 +37,7 @@ FeedStrategyName = Literal[
     "technomarket",
     "time_mk",
     "fakulteti_mk",
+    "emsc",
     "tweets",
     "woocommerce",
 ]
