@@ -119,6 +119,7 @@ def test_reklama5_price_monitor_silently_baselines_then_delivers_change(
         message = sender.messages[0]
         assert message.entry.description == ""
         assert message.entry.price_direction is PriceDirection.DECREASE
+        assert message.entry.price_change_percentage == "-25.0%"
         assert message.entry.source_metrics[:2] == (
             SourceMetric("Price", "900 МКД"),
             SourceMetric("Previous", "1.200 МКД", prior=True),
@@ -147,6 +148,7 @@ def test_reklama5_price_monitor_delivers_currency_change_without_direction(
         assert len(sender.messages) == 1
         entry = sender.messages[0].entry
         assert entry.price_direction is None
+        assert entry.price_change_percentage is None
         assert entry.source_metrics[:2] == (
             SourceMetric("Price", "20 €"),
             SourceMetric("Previous", "950 МКД", prior=True),

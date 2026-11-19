@@ -27,6 +27,7 @@ from .planning import (
     record_price_health,
     validate_price_currencies,
 )
+from .presentation import with_price_change_percentage
 
 NO_SNAPSHOT_LIMIT: Final = 1_000_000
 
@@ -160,8 +161,12 @@ def run_price_scan[ProductT](
         PriceChangeView(
             previous=records_by_id[observation.snapshot.product_id].previous,
             current=observation.snapshot,
-            message=message_for(
-                observation.product,
+            message=with_price_change_percentage(
+                message_for(
+                    observation.product,
+                    records_by_id[observation.snapshot.product_id].previous,
+                    observation.snapshot,
+                ),
                 records_by_id[observation.snapshot.product_id].previous,
                 observation.snapshot,
             ),
