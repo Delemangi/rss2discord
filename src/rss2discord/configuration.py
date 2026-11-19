@@ -5,7 +5,7 @@ from urllib.parse import quote
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from rss2discord.models import DEFAULT_PRICE_INLINE_LIMIT
+from rss2discord.defaults import DEFAULT_PRICE_INLINE_LIMIT
 from rss2discord.provider_metadata import PRICE_STRATEGIES
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
@@ -93,7 +93,7 @@ class FeedConfig(BaseModel):
         return encoded
 
     @model_validator(mode="after")
-    def require_rss_strategy_for_adapter(self) -> Self:
+    def validate_strategy_options(self) -> Self:
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
