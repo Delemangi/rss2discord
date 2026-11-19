@@ -62,6 +62,7 @@ def entry_to_json(entry: EntryData) -> str:
         "price_direction": (
             None if entry.price_direction is None else str(entry.price_direction)
         ),
+        "price_change_percentage": entry.price_change_percentage,
         "source_metrics": [
             {"label": metric.label, "prior": metric.prior, "value": metric.value}
             for metric in entry.source_metrics
@@ -101,4 +102,9 @@ def entry_from_json(value: str) -> EntryData:
             for metric in payload.get("source_metrics", ())
         ),
         price_direction=None if direction is None else PriceDirection(direction),
+        price_change_percentage=(
+            None
+            if payload.get("price_change_percentage") is None
+            else str(payload["price_change_percentage"])
+        ),
     )

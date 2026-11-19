@@ -22,6 +22,17 @@ def price_direction(
     return PriceDirection.INCREASE
 
 
+def price_change_percentage(
+    previous: PriceSnapshot,
+    current: PriceSnapshot,
+) -> str | None:
+    """Return a signed percentage for comparable non-zero prices."""
+    if previous.currency != current.currency or previous.amount <= 0:
+        return None
+    percent = (current.amount - previous.amount) / previous.amount * 100
+    return f"{percent:+.1f}%"
+
+
 def diff_price_snapshots(
     current: Iterable[PriceSnapshot],
     persisted: Mapping[str, PriceSnapshot],

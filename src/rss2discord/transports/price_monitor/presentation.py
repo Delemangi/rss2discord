@@ -6,7 +6,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 
-from .comparison import price_direction
+from .comparison import price_change_percentage, price_direction
 
 
 def build_price_change_message(
@@ -32,4 +32,22 @@ def build_price_change_message(
             price_direction=price_direction(previous, current),
         ),
         source_title=source_title,
+    )
+
+
+def with_price_change_percentage(
+    message: WebhookMessage,
+    previous: PriceSnapshot,
+    current: PriceSnapshot,
+) -> WebhookMessage:
+    """Attach a signed percentage to a price-change message when comparable."""
+    percentage = price_change_percentage(previous, current)
+    if percentage is None:
+        return message
+    return replace(
+        message,
+        entry=replace(
+            message.entry,
+            price_change_percentage=percentage,
+        ),
     )

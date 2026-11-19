@@ -148,6 +148,7 @@ def test_price_monitor_delivers_price_change_message(
         assert message.entry.categories == ("IT Shop", "Computers")
         assert message.entry.timestamp == "2024-03-15T13:59:19.942000+00:00"
         assert message.entry.price_direction is PriceDirection.DECREASE
+        assert message.entry.price_change_percentage == "-10.0%"
         assert message.entry.source_metrics == (
             SourceMetric("Price", "900 ДЕН"),
             SourceMetric("Previous", "1.000 ДЕН", prior=True),

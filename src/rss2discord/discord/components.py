@@ -112,7 +112,7 @@ def build_components_v2_payload(
     heading = _build_heading(title, link)
     severity = presentation.severity if presentation is not None else None
     badge = f"**{severity.upper()} SEVERITY**" if severity else None
-    metrics = _build_metrics(entry.source_metrics)
+    metrics = _build_metrics(_metrics_with_price_change(entry))
     footer = (
         _build_pwn_watch_footer(entry, severity, link)
         if pwn_watch
@@ -340,6 +340,23 @@ def _build_heading(title: str, safe_link: str | None) -> str:
         if len(linked) <= MAX_HEADING_CHARACTERS:
             return linked
     return f"## {escaped}"
+
+
+def _metrics_with_price_change(entry: EntryData) -> tuple[SourceMetric, ...]:
+    """Insert the price-change percentage after the prior price, if present."""
+    percentage = entry.price_change_percentage
+    if percentage is None:
+        return entry.source_metrics
+    metrics = list(entry.source_metrics)
+    if any(metric.label == "Change" for metric in metrics):
+        return entry.source_metrics
+    metric = SourceMetric("Change", percentage)
+    prior_index = next(
+        (index for index, item in enumerate(metrics) if item.prior),
+        None,
+    )
+    metrics.insert(prior_index + 1 if prior_index is not None else 1, metric)
+    return tuple(metrics)
 
 
 def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
