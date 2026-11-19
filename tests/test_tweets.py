@@ -9,6 +9,7 @@ from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.tweets.strategy import (
     TWEETS_FALLBACK_LABEL,
     TweetsStrategy,
+    _candidate_urls,
 )
 from rss2discord.retries import FeedFetchInterruptedError
 
@@ -236,6 +237,33 @@ def test_tweets_raises_the_last_error_when_every_instance_fails(
         strategy.fetch_entries("https://nitter.kareem.one/opencode/rss")
     assert caught.value is errors[-1]
     assert len(errors) > 1
+
+
+def test_tweets_does_not_fail_over_on_non_retryable_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    strategy = TweetsStrategy()
+    calls: list[str] = []
+    error = FeedFetchError("RSS", "HTTPError", status_code=404)
+
+    def fetch(url: str) -> tuple[list[object], str]:
+        calls.append(url)
+        raise error
+
+    monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
+
+    # When / Then
+    with pytest.raises(FeedFetchError) as caught:
+        strategy.fetch_entries("https://nitter.kareem.one/opencode/rss")
+    assert caught.value is error
+    assert calls == ["https://nitter.kareem.one/opencode/rss"]
+
+
+def test_candidate_urls_keeps_malformed_port_url_unchanged() -> None:
+    url = "https://nitter.kareem.one:abc/opencode/rss"
+
+    assert _candidate_urls(url) == (url,)
 
 
 def test_tweets_propagates_shutdown_without_failing_over(

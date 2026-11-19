@@ -22,6 +22,16 @@ class StubResponse:
         yield self.content
 
 
+@dataclass(frozen=True, slots=True)
+class ChunkedResponse:
+    chunks: tuple[bytes, ...]
+    headers: Mapping[str, str] = field(default_factory=dict)
+
+    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
+        del chunk_size
+        yield from self.chunks
+
+
 def read(
     content: bytes,
     *,
@@ -48,6 +58,34 @@ def read(
 
 def test_reads_content_within_limits() -> None:
     assert read(b"abc") == b"abc"
+
+
+def test_reads_content_across_multiple_chunks() -> None:
+    response = ChunkedResponse((b"1234", b"5678", b"9"))
+
+    assert (
+        read_bounded_content(
+            response,
+            label="Test",
+            max_bytes=9,
+            chunk_bytes=4,
+        )
+        == b"123456789"
+    )
+
+
+def test_rejects_cumulative_oversize_across_chunks() -> None:
+    response = ChunkedResponse((b"1234", b"5678", b"90"))
+
+    with pytest.raises(FeedFetchError) as error:
+        read_bounded_content(
+            response,
+            label="Test",
+            max_bytes=9,
+            chunk_bytes=4,
+        )
+
+    assert error.value.cause_type == "ResponseTooLarge"
 
 
 def test_rejects_declared_response_oversize() -> None:
