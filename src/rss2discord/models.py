@@ -45,6 +45,7 @@ class EntryData:
     # the single image_url thumbnail.
     image_urls: tuple[str, ...] = ()
     price_change_percentage: str | None = None
+    discount_percentage: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,6 +7,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.ddstore.client import DDSTORE_LABEL
 from rss2discord.providers.ddstore.models import DDStoreProduct
 from rss2discord.providers.ddstore.strategy import (
@@ -158,6 +159,14 @@ class DDStorePriceMonitor:
                 ),
                 source_metrics=self._metrics_for(product, previous, current),
                 price_direction=price_direction(previous, current),
+                discount_percentage=(
+                    discount_percentage(
+                        product.price_range.minimum_price.regular_price.value,
+                        product.price_range.minimum_price.final_price.value,
+                    )
+                    if product.price_range.minimum_price.regular_price is not None
+                    else None
+                ),
             ),
             source_title=self._feed.name or DDSTORE_LABEL,
         )

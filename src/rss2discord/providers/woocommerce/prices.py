@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.woocommerce.bounds import (
     MAX_WOOCOMMERCE_PRODUCTS,
     WOOCOMMERCE_LABEL,
@@ -114,6 +115,10 @@ class WooCommercePriceMonitor:
                     previous_price=previous.formatted,
                 ),
                 price_direction=price_direction(previous, current),
+                discount_percentage=discount_percentage(
+                    product.prices.regular_amount,
+                    product.prices.current_amount,
+                ),
             ),
             source_title=self._feed.name or WOOCOMMERCE_LABEL,
         )

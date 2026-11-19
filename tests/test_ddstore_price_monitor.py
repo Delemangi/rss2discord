@@ -138,6 +138,7 @@ def test_ddstore_price_monitor_silently_seeds_then_delivers_price_change(
         assert len(sender.messages) == 1
         assert sender.messages[0].entry.description == ""
         assert sender.messages[0].entry.price_direction == PriceDirection.DECREASE
+        assert sender.messages[0].entry.discount_percentage == "24.6%"
         assert sender.messages[0].entry.source_metrics == (
             SourceMetric(label="Price", value="90,5 ден."),
             SourceMetric(label="Previous", value="100 ден.", prior=True),

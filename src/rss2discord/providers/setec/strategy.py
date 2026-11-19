@@ -5,7 +5,7 @@ from typing import Final, final, override
 from urllib.parse import urljoin
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.setec.catalog import SetecCatalogClient
 from rss2discord.providers.setec.catalog_bounds import (
     MAX_SETEC_LATEST_RESPONSE_BYTES as MAX_SETEC_RESPONSE_BYTES,
@@ -79,6 +79,15 @@ class SetecStrategy(ScraperStrategy):
                         value=format_setec_mkd(price_variant.original_amount),
                     ),
                 )
+        discount = (
+            discount_percentage(
+                price_variant.original_amount,
+                price_variant.calculated_amount,
+            )
+            if price_variant is not None
+            and price_variant.original_amount != price_variant.calculated_amount
+            else None
+        )
         return EntryData(
             title=entry.title,
             link=urljoin(SETEC_PRODUCT_BASE_URL, entry.handle),
@@ -88,6 +97,7 @@ class SetecStrategy(ScraperStrategy):
             image_url=entry.thumbnail or None,
             categories=tuple(category.name for category in entry.categories),
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 

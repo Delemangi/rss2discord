@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.woocommerce.bounds import WOOCOMMERCE_LABEL
 from rss2discord.providers.woocommerce.catalog import WooCommerceCatalogClient
 from rss2discord.providers.woocommerce.models import (
@@ -60,6 +60,10 @@ class WooCommerceStrategy(ScraperStrategy):
             image_url=first_party_image_url(product, entry.hostname),
             categories=tuple(category.name for category in product.categories),
             source_metrics=woocommerce_product_metrics(product),
+            discount_percentage=discount_percentage(
+                product.prices.regular_amount,
+                product.prices.current_amount,
+            ),
         )
 
 

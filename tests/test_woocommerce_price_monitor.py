@@ -109,6 +109,7 @@ def test_woocommerce_price_monitor_baselines_then_delivers_price_change(
         message = sender.messages[0]
         assert message.entry.description == ""
         assert message.entry.price_direction is PriceDirection.DECREASE
+        assert message.entry.discount_percentage == "35.0%"
         assert message.entry.link == "https://technosapien.mk/product/product-1/"
         assert message.entry.image_url == (
             "https://technosapien.mk/wp-content/uploads/product-1-300x300.jpg"

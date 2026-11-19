@@ -7,6 +7,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.cccenter.bounds import (
     CCCENTER_LABEL,
     MAX_CCCENTER_RETAINED_SNAPSHOTS,
@@ -187,6 +188,12 @@ class CCCenterPriceMonitor:
                     *((SourceMetric("SKU", product.sku),) if product.sku else ()),
                 ),
                 price_direction=price_direction(previous, current),
+                discount_percentage=(
+                    discount_percentage(product.original_price, product.current_price)
+                    if product.original_price is not None
+                    and product.current_price is not None
+                    else None
+                ),
             ),
             source_title=self._feed.name or CCCENTER_LABEL,
         )

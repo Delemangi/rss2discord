@@ -112,7 +112,7 @@ def build_components_v2_payload(
     heading = _build_heading(title, link)
     severity = presentation.severity if presentation is not None else None
     badge = f"**{severity.upper()} SEVERITY**" if severity else None
-    metrics = _build_metrics(_metrics_with_price_change(entry))
+    metrics = _build_metrics(_metrics_with_price_details(entry))
     footer = (
         _build_pwn_watch_footer(entry, severity, link)
         if pwn_watch
@@ -342,20 +342,41 @@ def _build_heading(title: str, safe_link: str | None) -> str:
     return f"## {escaped}"
 
 
-def _metrics_with_price_change(entry: EntryData) -> tuple[SourceMetric, ...]:
-    """Insert the price-change percentage after the prior price, if present."""
-    percentage = entry.price_change_percentage
-    if percentage is None:
-        return entry.source_metrics
+def _metrics_with_price_details(entry: EntryData) -> tuple[SourceMetric, ...]:
+    """Insert derived change and discount percentages into the metric list."""
     metrics = list(entry.source_metrics)
-    if any(metric.label == "Change" for metric in metrics):
-        return entry.source_metrics
-    metric = SourceMetric("Change", percentage)
-    prior_index = next(
-        (index for index, item in enumerate(metrics) if item.prior),
-        None,
-    )
-    metrics.insert(prior_index + 1 if prior_index is not None else 1, metric)
+
+    percentage = entry.price_change_percentage
+    if percentage is not None and not any(
+        metric.label == "Change" for metric in metrics
+    ):
+        prior_index = next(
+            (index for index, item in enumerate(metrics) if item.prior),
+            None,
+        )
+        metrics.insert(
+            prior_index + 1 if prior_index is not None else 1,
+            SourceMetric("Change", percentage),
+        )
+
+    discount = entry.discount_percentage
+    if discount is not None and not any(
+        metric.label == "Discount" for metric in metrics
+    ):
+        original_index = next(
+            (index for index, item in enumerate(metrics) if item.label == "Original"),
+            None,
+        )
+        if original_index is not None:
+            insert_at = original_index + 1
+        else:
+            price_index = next(
+                (index for index, item in enumerate(metrics) if item.label == "Price"),
+                None,
+            )
+            insert_at = price_index + 1 if price_index is not None else len(metrics)
+        metrics.insert(insert_at, SourceMetric("Discount", discount))
+
     return tuple(metrics)
 
 

@@ -100,6 +100,7 @@ def test_technomarket_price_monitor_baselines_and_alerts_effective_smart_changes
 
         assert len(sender.messages) == 1
         assert sender.messages[0].entry.price_direction is PriceDirection.DECREASE
+        assert sender.messages[0].entry.discount_percentage == "5.2%"
         assert ("Original", "57.999 ден.") in {
             (metric.label, metric.value)
             for metric in sender.messages[0].entry.source_metrics

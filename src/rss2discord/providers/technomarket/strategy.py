@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.technomarket.bounds import (
     TECHNOMARKET_LABEL,
 )
@@ -68,6 +68,14 @@ class TechnomarketStrategy(ScraperStrategy):
         metrics.extend(
             SourceMetric("Category", category) for category in entry.categories
         )
+        discount = (
+            discount_percentage(entry.regular_price, effective)
+            if effective is not None
+            and effective > 0
+            and entry.regular_price is not None
+            and entry.regular_price != effective
+            else None
+        )
         return EntryData(
             title=entry.name,
             link=entry.url,
@@ -77,6 +85,7 @@ class TechnomarketStrategy(ScraperStrategy):
             image_url=entry.image_url,
             categories=entry.categories,
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 

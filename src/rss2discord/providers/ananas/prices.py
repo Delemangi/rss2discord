@@ -7,6 +7,7 @@ from typing import Protocol
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
+from rss2discord.price_amount import discount_percentage
 from rss2discord.providers.ananas.bounds import (
     ANANAS_LABEL,
     MAX_ANANAS_RETAINED_SNAPSHOTS,
@@ -115,6 +116,11 @@ class AnanasPriceMonitor:
                 categories=product.categories,
                 source_metrics=tuple(metrics),
                 price_direction=price_direction(previous, current),
+                discount_percentage=(
+                    discount_percentage(product.base_price, product.price)
+                    if product.base_price is not None
+                    else None
+                ),
             ),
             source_title=self._feed.name or ANANAS_LABEL,
         )

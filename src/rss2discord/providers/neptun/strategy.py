@@ -5,7 +5,7 @@ from typing import Final, final, override
 from zoneinfo import ZoneInfo
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount
+from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
 from rss2discord.providers.neptun.catalog import (
     NeptunCatalogClient,
 )
@@ -57,6 +57,11 @@ class NeptunStrategy(ScraperStrategy):
                 ),
             ),
         )
+        discount = (
+            discount_percentage(entry.regular_price, entry.actual_price)
+            if entry.actual_price > 0 and entry.regular_price != entry.actual_price
+            else None
+        )
         return EntryData(
             title=entry.title,
             link=(
@@ -75,6 +80,7 @@ class NeptunStrategy(ScraperStrategy):
             ),
             categories=(entry.category.name,),
             source_metrics=tuple(metrics),
+            discount_percentage=discount,
         )
 
 
