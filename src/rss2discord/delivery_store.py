@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -29,6 +30,18 @@ from rss2discord.price_notifications import (
 def _is_transient_lock(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
     return "locked" in message or "busy" in message
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionResult:
+    """Rows removed by one state-retention pass."""
+
+    delivered_entries: int = 0
+    price_notifications: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.delivered_entries + self.price_notifications
 
 
 class DeliveryStore:
@@ -259,6 +272,32 @@ class DeliveryStore:
 
     def list_health(self, feed_id: str | None = None) -> tuple[HealthRecord, ...]:
         return self._health.list_health(feed_id)
+
+    # Maintenance ---------------------------------------------------------
+
+    def prune_old_records(self, *, retention_days: int) -> RetentionResult:
+        """Delete delivered entries and sent notifications outside the window."""
+        if retention_days <= 0:
+            return RetentionResult()
+        cutoff = int(time.time()) - retention_days * 86_400
+        with self._connection:
+            delivered = self._connection.execute(
+                "DELETE FROM delivered_entries WHERE delivered_at < ?",
+                (cutoff,),
+            ).rowcount
+            notifications = self._connection.execute(
+                "DELETE FROM price_notifications WHERE status = 'sent' "
+                "AND COALESCE(sent_at, last_attempt_at, observed_at) < ?",
+                (cutoff,),
+            ).rowcount
+        return RetentionResult(
+            delivered_entries=max(0, delivered),
+            price_notifications=max(0, notifications),
+        )
+
+    def vacuum(self) -> None:
+        """Reclaim free pages after pruning; call before other writers start."""
+        self._connection.execute("VACUUM")
 
     # SQLite schema and migrations ---------------------------------------
 

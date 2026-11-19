@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from threading import Event, Lock, Thread
 
@@ -6,6 +7,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordWebhookClient
+from rss2discord.models import HealthUpdate
 from rss2discord.providers.gjirafa50 import (
     background_monitor as gjirafa50_background_monitor,
 )
@@ -227,6 +229,51 @@ def test_background_worker_constructs_thread_local_store_and_sender(
     assert len(captured) == 1
     assert isinstance(captured[0].snapshots, DeliveryStore)
     assert isinstance(captured[0].sender, DiscordWebhookClient)
+
+
+def test_background_worker_records_success_timing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class HealthyPriceMonitor:
+        def __init__(
+            self,
+            feed: FeedConfig,
+            dependencies: Gjirafa50PriceMonitorDependencies,
+        ) -> None:
+            self._feed = feed
+            self._dependencies = dependencies
+
+        def scan(self) -> None:
+            self._dependencies.snapshots.record_health(
+                HealthUpdate(
+                    feed_id=self._feed.id,
+                    job_kind="price",
+                    state="healthy",
+                    cause=None,
+                    attempted_at=int(time.time()),
+                    success=True,
+                    nonempty=False,
+                    item_count=0,
+                ),
+            )
+
+    monkeypatch.setattr(
+        gjirafa50_background_monitor,
+        "Gjirafa50PriceMonitor",
+        HealthyPriceMonitor,
+    )
+    monitor = _build_background_monitor(tmp_path, "timing")
+
+    monitor.scan()
+    monitor.close()
+
+    with DeliveryStore(tmp_path / "timing.db") as store:
+        records = store.list_health("timing")
+
+    price_record = next(record for record in records if record.job_kind == "price")
+    assert price_record.duration_ms is not None
+    assert price_record.duration_ms >= 0
 
 
 def _build_background_monitor(
