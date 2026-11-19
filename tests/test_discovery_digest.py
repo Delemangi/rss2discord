@@ -169,6 +169,30 @@ def test_digest_does_not_download_images(tmp_path: Path) -> None:
     assert "https://images.example.test" not in str(message.components)
 
 
+def test_digest_clears_image_urls_for_gallery_entries() -> None:
+    entries = [
+        (
+            str(index),
+            replace(
+                make_entry(str(index)).data,
+                image_url=f"https://images.example.test/{index}.png",
+                image_urls=(
+                    f"https://pbs.twimg.com/media/{index}_1.jpg",
+                    f"https://pbs.twimg.com/media/{index}_2.jpg",
+                ),
+            ),
+        )
+        for index in range(26)
+    ]
+    message = build_discovery_digest(make_feed("feed"), entries, "Source")
+    assert "pbs.twimg.com" not in str(message.components)
+    assert message.components is not None
+    assert all(
+        not isinstance(component, dict) or component.get("type") != 12
+        for component in message.components
+    )
+
+
 def test_failed_digest_leaves_entries_unmarked_then_retries(tmp_path: Path) -> None:
     feed = make_feed("feed", digest_threshold=25)
     sender = FakeSender([False, True])

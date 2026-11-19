@@ -32,6 +32,7 @@ IS_COMPONENTS_V2: Final = 1 << 15
 TEXT_DISPLAY_COMPONENT: Final = 10
 SECTION_COMPONENT: Final = 9
 THUMBNAIL_COMPONENT: Final = 11
+MEDIA_GALLERY_COMPONENT: Final = 12
 SEPARATOR_COMPONENT: Final = 14
 CONTAINER_COMPONENT: Final = 17
 
@@ -51,6 +52,7 @@ MAX_METRIC_VALUE_CHARACTERS: Final = 64
 # this keeps headroom above them: a card overflowing the cap loses its tail
 # silently, and that is a worse failure than a slightly longer subtext line.
 MAX_RENDERED_METRICS: Final = 8
+MAX_MEDIA_GALLERY_ITEMS: Final = 10
 # A well-formed <t:...:R> is tiny; this only bounds unparseable timestamps,
 # which fall back to being echoed verbatim.
 MAX_FOOTER_TIMESTAMP_CHARACTERS: Final = 128
@@ -125,7 +127,10 @@ def build_components_v2_payload(
         ),
     )
 
-    safe_image_url = _resolve_image_url(entry, attachment_filename)
+    safe_image_url, gallery_component = _resolve_image_presentation(
+        entry,
+        attachment_filename,
+    )
 
     container_components: list[JSONValue] = []
     heading_component = _text_display(heading)
@@ -141,6 +146,8 @@ def build_components_v2_payload(
         description_component,
         badge_component=badge_component,
     )
+    if gallery_component is not None:
+        container_components.append(gallery_component)
 
     container_components.append(
         {
@@ -246,15 +253,47 @@ def _accent_color(feed: FeedConfig, entry: EntryData) -> int:
     return DEFAULT_ACCENT_COLOR
 
 
-def _resolve_image_url(
+def _resolve_image_presentation(
     entry: EntryData,
     attachment_filename: str | None,
-) -> str | None:
-    if attachment_filename is None:
-        return _safe_remote_media_url(entry.image_url) if entry.image_url else None
-    if attachment_filename in ATTACHMENT_FILENAMES:
-        return f"attachment://{attachment_filename}"
-    return None
+) -> tuple[str | None, dict[str, JSONValue] | None]:
+    """Return either a thumbnail URL or a media gallery component, never both.
+
+    Report attachments keep their existing attachment/thumbnail behaviour.
+    When an entry carries a gallery, the gallery replaces the thumbnail.
+    If the gallery has no safe URLs, fall back to the single ``image_url``.
+    """
+    if attachment_filename is not None:
+        if attachment_filename in ATTACHMENT_FILENAMES:
+            return f"attachment://{attachment_filename}", None
+        return None, None
+    gallery = _build_media_gallery(entry.image_urls)
+    if gallery is not None:
+        return None, gallery
+    return _resolve_image_url(entry), None
+
+
+def _resolve_image_url(entry: EntryData) -> str | None:
+    return _safe_remote_media_url(entry.image_url) if entry.image_url else None
+
+
+def _build_media_gallery(image_urls: tuple[str, ...]) -> dict[str, JSONValue] | None:
+    """Build a Discord Media Gallery component from up to ten safe URLs."""
+    if not image_urls:
+        return None
+    seen: set[str] = set()
+    items: list[JSONValue] = []
+    for url in image_urls:
+        if len(items) >= MAX_MEDIA_GALLERY_ITEMS:
+            break
+        safe_url = _safe_remote_media_url(url)
+        if safe_url is None or safe_url in seen:
+            continue
+        seen.add(safe_url)
+        items.append({"media": {"url": safe_url}})
+    if not items:
+        return None
+    return {"items": items, "type": MEDIA_GALLERY_COMPONENT}
 
 
 def _description_budget(heading: str, metrics: str | None, footer: str) -> int:

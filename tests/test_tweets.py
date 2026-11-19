@@ -114,7 +114,7 @@ def test_tweets_keeps_only_original_tweets(
     assert strategy.seed_existing_on_first_fetch is True
 
 
-def test_tweets_rewrites_links_for_each_handle(
+def test_tweets_keeps_public_nitter_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
@@ -125,16 +125,130 @@ def test_tweets_rewrites_links_for_each_handle(
 
     # When / Then
     first = strategy.get_entry_data(filtered[0])
-    assert first.link == "https://x.com/opencode/status/111"
+    assert first.link == "https://nitter.kareem.one/opencode/status/111"
     assert first.image_url == "https://pbs.twimg.com/media/x.jpg"
+    assert first.image_urls == ("https://pbs.twimg.com/media/x.jpg",)
     assert strategy.get_entry_data(filtered[2]).link == (
-        "https://x.com/opencode/status/666"
+        "https://nitter.kareem.one/opencode/status/666"
     )
     assert strategy.get_entry_data(filtered[3]).link == (
-        "https://x.com/other/status/777"
+        "https://nitter.example/other/status/777"
     )
     assert strategy.get_entry_data(filtered[4]).link == (
         "https://nitter.example/i/web/status/888"
+    )
+
+
+def test_tweets_upgrades_nitter_image_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["summary"] = (
+        '<p>Photo</p><img src="http://nitter.kareem.one/pic/media%2Fabc.jpg" />'
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    assert strategy.get_entry_data(filtered[0]).image_url == (
+        "https://pbs.twimg.com/media/abc.jpg"
+    )
+    assert strategy.get_entry_data(filtered[0]).image_urls == (
+        "https://pbs.twimg.com/media/abc.jpg",
+    )
+
+
+def test_tweets_prefers_attached_media_over_link_cards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["summary"] = (
+        '<img src="http://nitter.kareem.one/pic/card_img%2F1%2Fcard.jpg" />'
+        '<img src="http://nitter.kareem.one/pic/media%2Fphoto.jpg" />'
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    assert strategy.get_entry_data(filtered[0]).image_url == (
+        "https://pbs.twimg.com/media/photo.jpg"
+    )
+    assert strategy.get_entry_data(filtered[0]).image_urls == (
+        "https://pbs.twimg.com/media/photo.jpg",
+    )
+
+
+def test_tweets_exposes_every_attached_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["summary"] = (
+        '<img src="http://nitter.kareem.one/pic/media%2Ffirst.jpg" />'
+        '<img src="http://nitter.kareem.one/pic/media%2Fsecond.jpg" />'
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.image_url == "https://pbs.twimg.com/media/first.jpg"
+    assert data.image_urls == (
+        "https://pbs.twimg.com/media/first.jpg",
+        "https://pbs.twimg.com/media/second.jpg",
+    )
+
+
+def test_tweets_upgrades_http_links_and_drops_media_fragments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["link"] = "http://nitter.kareem.one/opencode/status/111#m"
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    assert strategy.get_entry_data(filtered[0]).link == (
+        "https://nitter.kareem.one/opencode/status/111"
     )
 
 
@@ -158,7 +272,7 @@ def test_tweets_keeps_link_when_id_is_not_numeric(
 
     # Then
     assert strategy.get_entry_data(filtered[0]).link == (
-        "https://nitter.kareem.one/opencode/status/111#m"
+        "https://nitter.kareem.one/opencode/status/111"
     )
 
 
