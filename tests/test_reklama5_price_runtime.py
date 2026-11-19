@@ -52,7 +52,10 @@ def test_build_price_jobs_wires_enabled_reklama5_category_monitor(
                 is_shutdown_requested=lambda: False,
             ),
         )
+        assert [job.interval for job in jobs] == [17]
+        jobs[0].run()
+        assert jobs[0].close is not None
+        jobs[0].close()
 
-    assert [job.interval for job in jobs] == [17]
     assert len(constructed) == 1
     assert isinstance(constructed[0].catalog, Reklama5CatalogClient)

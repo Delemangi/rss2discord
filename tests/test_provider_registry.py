@@ -29,10 +29,8 @@ from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
-from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
-from rss2discord.providers.neksio.prices import NeksioPriceMonitor
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
@@ -42,11 +40,11 @@ from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
 from rss2discord.providers.registry import (
     STRATEGY_SPECS,
+    BackgroundPriceMonitor,
     SharedPriceMonitorDependencies,
     build_discovery_strategies,
     build_provider_price_monitor,
 )
-from rss2discord.providers.reklama5.prices import Reklama5PriceMonitor
 from rss2discord.providers.reklama5.strategy import Reklama5Strategy
 from rss2discord.providers.setec.prices import SetecPriceMonitor
 from rss2discord.providers.setec.strategy import SetecStrategy
@@ -93,11 +91,11 @@ EXPECTED_MONITOR_TYPES: dict[str, type[object]] = {
     "cccenter": CCCenterPriceMonitor,
     "ddstore": DDStorePriceMonitor,
     "gjirafa50": Gjirafa50BackgroundPriceMonitor,
-    "hivetec": HivetecPriceMonitor,
-    "neksio": NeksioPriceMonitor,
+    "hivetec": BackgroundPriceMonitor,
+    "neksio": BackgroundPriceMonitor,
     "neptun": NeptunPriceMonitor,
     "pazar3": Pazar3PriceMonitor,
-    "reklama5": Reklama5PriceMonitor,
+    "reklama5": BackgroundPriceMonitor,
     "setec": SetecPriceMonitor,
     "technomarket": TechnomarketPriceMonitor,
     "woocommerce": WooCommercePriceMonitor,
