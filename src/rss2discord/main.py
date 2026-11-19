@@ -14,6 +14,7 @@ from .configuration import load_config
 from .database_ownership import DatabaseOwnership, DatabaseOwnershipError
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordWebhookClient
+from .health_report import HealthSummaryReporter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +30,8 @@ SAFE_VALIDATION_FIELDS = frozenset(
         "delay_between_posts",
         "embed_color",
         "feeds",
+        "health_summary_interval",
+        "health_webhook",
         "id",
         "max_post_age_days",
         "name",
@@ -59,7 +62,19 @@ def main() -> int:
                 sender=DiscordWebhookClient(),
             )
             _install_signal_handlers(application)
-            application.run()
+            reporter: HealthSummaryReporter | None = None
+            if config.health_webhook:
+                reporter = HealthSummaryReporter(
+                    webhook=config.health_webhook,
+                    database_path=database_path,
+                    interval=config.health_summary_interval,
+                )
+                reporter.start()
+            try:
+                application.run()
+            finally:
+                if reporter is not None:
+                    reporter.stop()
     except DatabaseOwnershipError as error:
         logger.log(logging.ERROR, "Database writer startup refused: %s", error)
         return 1

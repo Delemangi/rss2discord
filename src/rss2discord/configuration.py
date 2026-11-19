@@ -130,6 +130,8 @@ class AppConfig(BaseModel):
     delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
     state_retention_days: Annotated[int, Field(ge=0)] = 90
+    health_webhook: NonEmptyString | None = None
+    health_summary_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 86_400
     feeds: tuple[FeedConfig, ...] = ()
 
     @model_validator(mode="after")
