@@ -422,8 +422,10 @@ def test_config_example_lists_every_strategy() -> None:
     config_path = Path(__file__).resolve().parents[1] / "config" / "config.example.yaml"
     text = config_path.read_text(encoding="utf-8")
     line = next(
-        line for line in text.splitlines() if 'strategy: "rss" # Optional:' in line
+        (line for line in text.splitlines() if 'strategy: "rss" # Optional:' in line),
+        None,
     )
+    assert line is not None, "config example strategy line not found"
 
     assert set(re.findall(r"'([a-z0-9_]+)'", line)) == set(
         get_args(FeedStrategyName),
