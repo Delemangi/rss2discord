@@ -59,6 +59,7 @@ MAX_FOOTER_TIMESTAMP_CHARACTERS: Final = 128
 
 SEPARATOR_SPACING_COMPACT: Final = 1
 METADATA_SEPARATOR: Final = " • "
+HEADLINE_BADGE_SEPARATOR: Final = " · "
 SUBTEXT_PREFIX: Final = "-# "
 # Always written as an escape, so the character stays visible to whoever edits
 # this. It splits a bare link's scheme to stop Discord auto-linking it, and it
@@ -112,7 +113,11 @@ def build_components_v2_payload(
     heading = _build_heading(title, link)
     severity = presentation.severity if presentation is not None else None
     badge = f"**{severity.upper()} SEVERITY**" if severity else None
-    metrics = _build_metrics(_metrics_with_price_details(entry))
+    metrics_with_details, headline_discount_badge = _metrics_with_price_details(entry)
+    metrics = _build_metrics(
+        metrics_with_details,
+        headline_suffix=headline_discount_badge,
+    )
     footer = (
         _build_pwn_watch_footer(entry, severity, link)
         if pwn_watch
@@ -342,9 +347,35 @@ def _build_heading(title: str, safe_link: str | None) -> str:
     return f"## {escaped}"
 
 
-def _metrics_with_price_details(entry: EntryData) -> tuple[SourceMetric, ...]:
-    """Insert derived change and discount percentages into the metric list."""
+def _format_discount_percentage(percentage: str) -> str:
+    """Return a compact discount badge from a percentage string.
+
+    Whole percentages drop the fractional part; others keep up to one decimal
+    place. This matches how people read discounts: ``20% off`` reads more
+    naturally than ``20.0% off``, while ``24.6% off`` keeps its precision.
+    """
+    text = percentage.strip()
+    if not text.endswith("%"):
+        return f"{text} off"
+    value_text = text[:-1].strip()
+    if "." in value_text:
+        value_text = value_text.rstrip("0").rstrip(".")
+    return f"{value_text or '0'}% off"
+
+
+def _metrics_with_price_details(
+    entry: EntryData,
+) -> tuple[tuple[SourceMetric, ...], str | None]:
+    """Insert derived change and discount percentages into the metric list.
+
+    Returns the adjusted metrics plus an optional discount badge to append to
+    the headline metric. Discovery cards badge the headline so the saving is
+    the first thing a reader sees; price-change cards keep the discount as a
+    supporting metric so the headline does not carry two unlabelled
+    percentages (``20% off`` versus ``Change: -10.0%``).
+    """
     metrics = list(entry.source_metrics)
+    headline_badge: str | None = None
 
     percentage = entry.price_change_percentage
     if percentage is not None and not any(
@@ -363,24 +394,41 @@ def _metrics_with_price_details(entry: EntryData) -> tuple[SourceMetric, ...]:
     if discount is not None and not any(
         metric.label == "Discount" for metric in metrics
     ):
-        original_index = next(
-            (index for index, item in enumerate(metrics) if item.label == "Original"),
-            None,
-        )
-        if original_index is not None:
-            insert_at = original_index + 1
+        formatted = _format_discount_percentage(discount)
+        if entry.price_change_percentage is None:
+            # Discovery card: badge the headline instead of burying it in details.
+            headline_badge = f"**{formatted}**"
         else:
-            price_index = next(
-                (index for index, item in enumerate(metrics) if item.label == "Price"),
+            # Price-change card: keep discount readable in the supporting line.
+            original_index = next(
+                (
+                    index
+                    for index, item in enumerate(metrics)
+                    if item.label == "Original"
+                ),
                 None,
             )
-            insert_at = price_index + 1 if price_index is not None else len(metrics)
-        metrics.insert(insert_at, SourceMetric("Discount", discount))
+            if original_index is not None:
+                insert_at = original_index + 1
+            else:
+                price_index = next(
+                    (
+                        index
+                        for index, item in enumerate(metrics)
+                        if item.label == "Price"
+                    ),
+                    None,
+                )
+                insert_at = price_index + 1 if price_index is not None else len(metrics)
+            metrics.insert(insert_at, SourceMetric("Discount", formatted))
 
-    return tuple(metrics)
+    return tuple(metrics), headline_badge
 
 
-def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
+def _build_metrics(
+    metrics: tuple[SourceMetric, ...],
+    headline_suffix: str | None = None,
+) -> str | None:
     if not metrics:
         return None
     rendered = metrics[:MAX_RENDERED_METRICS]
@@ -390,6 +438,11 @@ def _build_metrics(metrics: tuple[SourceMetric, ...]) -> str | None:
     )
     prior = rendered[prior_index] if prior_index is not None else None
     headline = _render_headline_metric(rendered[0], prior)
+    if headline_suffix:
+        if headline:
+            headline = f"{headline}{HEADLINE_BADGE_SEPARATOR}{headline_suffix}"
+        else:
+            headline = headline_suffix
     supporting = [
         _render_metric(metric)
         for index, metric in enumerate(rendered)

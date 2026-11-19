@@ -310,3 +310,78 @@ def test_components_v2_payload_keeps_a_title_on_one_line() -> None:
     # Then - a heading occupies one line, so no counterfeit line can appear
     assert contents[0] == "## Real Story -# RSS • Verified Source"
     assert "\n" not in contents[0]
+
+
+def test_components_v2_payload_without_discount_is_unchanged() -> None:
+    # Given - a product card with price details but no discount field
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="Description",
+            author="Author",
+            timestamp="2026-07-20T12:00:00+00:00",
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Original", "100 MKD"),
+            ),
+        ),
+    )
+
+    # When
+    payload = build_payload(message)
+
+    # Then - exact payload proves the discount-free path is untouched
+    assert payload == {
+        "allowed_mentions": {"parse": []},
+        "avatar_url": "https://example.test/avatar.png",
+        "components": [
+            {
+                "accent_color": 5814783,
+                "components": [
+                    {
+                        "content": "## [Item](https://example.test/item)",
+                        "type": 10,
+                    },
+                    {
+                        "content": "Price: **80 MKD**\n-# \u200b\n-# Original: 100 MKD",
+                        "type": 10,
+                    },
+                    {"content": "Description", "type": 10},
+                    {"divider": True, "spacing": 1, "type": 14},
+                    {
+                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "type": 10,
+                    },
+                ],
+                "type": 17,
+            },
+        ],
+        "flags": 32768,
+        "username": "RSS Bot",
+    }
+
+
+def test_discount_badge_respects_text_limits() -> None:
+    # Given - a discounted product card where every text field is hostile
+    message = make_message(
+        entry=EntryData(
+            title="T" * 5000,
+            link="https://example.test/item",
+            description="D" * 5000,
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            discount_percentage="20.0%",
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the badge is visible and every text block stays inside its budgets
+    assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+    assert contents[-1] == "-# RSS • News"
+    assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
+    assert any("**20% off**" in content for content in contents)
