@@ -1,6 +1,6 @@
 """Bounded first-party HTTP boundary for Neptun category requests."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -15,6 +15,7 @@ from rss2discord.providers.neptun.models import (
 )
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 
 NEPTUN_LABEL: Final = "Neptun"
 NEPTUN_HOST: Final = "www.neptun.mk"
@@ -223,26 +224,10 @@ def _read_content(
     *,
     remaining_scan_bytes: int,
 ) -> bytes:
-    response_limit = min(NEPTUN_RESPONSE_BYTES, remaining_scan_bytes)
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > NEPTUN_RESPONSE_BYTES:
-            raise FeedFetchError(NEPTUN_LABEL, "ResponseTooLarge")
-        if declared_bytes > remaining_scan_bytes:
-            raise FeedFetchError(NEPTUN_LABEL, "ScanResponseTooLarge")
-    content = bytearray()
-    chunks: Iterator[bytes] = response.iter_content(NEPTUN_STREAM_CHUNK_BYTES)
-    for chunk in chunks:
-        if len(content) + len(chunk) > response_limit:
-            cause = (
-                "ResponseTooLarge"
-                if remaining_scan_bytes >= NEPTUN_RESPONSE_BYTES
-                else "ScanResponseTooLarge"
-            )
-            raise FeedFetchError(NEPTUN_LABEL, cause)
-        content.extend(chunk)
-    return bytes(content)
+    return read_bounded_content(
+        response,
+        label=NEPTUN_LABEL,
+        max_bytes=NEPTUN_RESPONSE_BYTES,
+        chunk_bytes=NEPTUN_STREAM_CHUNK_BYTES,
+        remaining_bytes=remaining_scan_bytes,
+    )

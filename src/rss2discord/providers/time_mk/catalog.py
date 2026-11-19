@@ -42,6 +42,7 @@ from rss2discord.providers.time_mk.models import (
 )
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 
 TIME_MK_TERMINAL_CAUSES: Final = frozenset({"ScanTimeout", "ScanResponseTooLarge"})
 TIME_MK_ARTICLE_PATH: Final = re.compile(r"/c/([0-9a-f]+)/")
@@ -368,25 +369,10 @@ def _read_content(
     *,
     remaining_scan_bytes: int,
 ) -> bytes:
-    response_limit = min(MAX_TIME_MK_RESPONSE_BYTES, remaining_scan_bytes)
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > MAX_TIME_MK_RESPONSE_BYTES:
-            raise FeedFetchError(TIME_MK_LABEL, "ResponseTooLarge")
-        if declared_bytes > remaining_scan_bytes:
-            raise FeedFetchError(TIME_MK_LABEL, "ScanResponseTooLarge")
-    content = bytearray()
-    for chunk in response.iter_content(TIME_MK_STREAM_CHUNK_BYTES):
-        if len(content) + len(chunk) > response_limit:
-            cause = (
-                "ResponseTooLarge"
-                if remaining_scan_bytes >= MAX_TIME_MK_RESPONSE_BYTES
-                else "ScanResponseTooLarge"
-            )
-            raise FeedFetchError(TIME_MK_LABEL, cause)
-        content.extend(chunk)
-    return bytes(content)
+    return read_bounded_content(
+        response,
+        label=TIME_MK_LABEL,
+        max_bytes=MAX_TIME_MK_RESPONSE_BYTES,
+        chunk_bytes=TIME_MK_STREAM_CHUNK_BYTES,
+        remaining_bytes=remaining_scan_bytes,
+    )

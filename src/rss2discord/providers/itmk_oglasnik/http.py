@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 import requests
 
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 
 ITMK_OGLASNIK_LABEL: Final = "IT.mk Oglasnik"
 ITMK_OGLASNIK_USER_AGENT: Final = (
@@ -53,7 +54,7 @@ def _fetch_page(url: str) -> tuple[bytes, str]:
                         ITMK_OGLASNIK_LABEL,
                         "InvalidRedirect",
                     )
-                _read_content(response)
+                _read_bounded(response)
                 current_url = urljoin(response.url, location)
                 continue
             try:
@@ -69,26 +70,17 @@ def _fetch_page(url: str) -> tuple[bytes, str]:
                         response.headers.get("Retry-After"),
                     ),
                 ) from None
-            return _read_content(response), response.url
+            return _read_bounded(response), response.url
     raise FeedFetchError(ITMK_OGLASNIK_LABEL, "TooManyRedirects")
 
 
-def _read_content(response: requests.Response) -> bytes:
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > MAX_ITMK_OGLASNIK_PAGE_BYTES:
-            raise FeedFetchError(ITMK_OGLASNIK_LABEL, "ResponseTooLarge")
-
-    content = bytearray()
-    for chunk in response.iter_content(chunk_size=ITMK_OGLASNIK_STREAM_CHUNK_BYTES):
-        if len(content) + len(chunk) > MAX_ITMK_OGLASNIK_PAGE_BYTES:
-            raise FeedFetchError(ITMK_OGLASNIK_LABEL, "ResponseTooLarge")
-        content.extend(chunk)
-    return bytes(content)
+def _read_bounded(response: requests.Response) -> bytes:
+    return read_bounded_content(
+        response,
+        label=ITMK_OGLASNIK_LABEL,
+        max_bytes=MAX_ITMK_OGLASNIK_PAGE_BYTES,
+        chunk_bytes=ITMK_OGLASNIK_STREAM_CHUNK_BYTES,
+    )
 
 
 def _parse_retry_after(value: str | None) -> float | None:

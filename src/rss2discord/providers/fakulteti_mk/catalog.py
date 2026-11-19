@@ -36,6 +36,7 @@ from rss2discord.providers.fakulteti_mk.bounds import (
 from rss2discord.providers.fakulteti_mk.models import FakultetiMkPost
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 from rss2discord.url_normalization import normalize_remote_media_url
 
 logger = logging.getLogger(__name__)
@@ -205,21 +206,15 @@ def normalize_fakulteti_mk_url(url: str) -> tuple[str, ...]:
 def _read_content(response: requests.Response, remaining_bytes: int) -> bytes:
     if remaining_bytes <= 0:
         raise FeedFetchError(FAKULTETI_MK_LABEL, "ScanResponseTooLarge")
-    limit = min(MAX_FAKULTETI_MK_RESPONSE_BYTES, remaining_bytes)
-    content_length = response.headers.get("Content-Length")
-    if content_length is not None:
-        try:
-            declared_bytes = int(content_length)
-        except ValueError:
-            declared_bytes = 0
-        if declared_bytes > limit:
-            raise FeedFetchError(FAKULTETI_MK_LABEL, "ScanResponseTooLarge")
-    content = bytearray()
-    for chunk in response.iter_content(chunk_size=FAKULTETI_MK_STREAM_CHUNK_BYTES):
-        if len(content) + len(chunk) > limit:
-            raise FeedFetchError(FAKULTETI_MK_LABEL, "ScanResponseTooLarge")
-        content.extend(chunk)
-    return bytes(content)
+    return read_bounded_content(
+        response,
+        label=FAKULTETI_MK_LABEL,
+        max_bytes=MAX_FAKULTETI_MK_RESPONSE_BYTES,
+        chunk_bytes=FAKULTETI_MK_STREAM_CHUNK_BYTES,
+        remaining_bytes=remaining_bytes,
+        response_cause="ScanResponseTooLarge",
+        scan_cause="ScanResponseTooLarge",
+    )
 
 
 def _post_from_item(

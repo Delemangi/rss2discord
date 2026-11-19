@@ -12,6 +12,7 @@ import requests
 from rss2discord.models import EntryData, EntryId
 from rss2discord.retries import parse_retry_after
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
+from rss2discord.transports.bounded_http import read_bounded_content
 from rss2discord.transports.rss_timestamp import get_rss_timestamp
 from rss2discord.url_normalization import (
     normalize_http_url,
@@ -95,7 +96,12 @@ class RSSStrategy(ScraperStrategy):
                     and _is_github_release_atom_url(final_url)
                 ):
                     max_bytes = GITHUB_RELEASE_ATOM_MAX_BYTES
-                content = self._read_content(response, max_bytes=max_bytes)
+                content = read_bounded_content(
+                    response,
+                    label="RSS",
+                    max_bytes=max_bytes,
+                    chunk_bytes=RSS_STREAM_CHUNK_BYTES,
+                )
         except FeedFetchError:
             raise
         except (requests.ConnectionError, requests.Timeout) as error:
@@ -113,34 +119,6 @@ class RSSStrategy(ScraperStrategy):
 
         feed_title = str(getattr(feed.feed, "title", "RSS Feed"))
         return feed.entries[::-1], feed_title
-
-    @staticmethod
-    def _read_content(
-        response: requests.Response,
-        *,
-        max_bytes: int = MAX_RSS_FEED_BYTES,
-    ) -> bytes:
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            try:
-                declared_bytes = int(content_length)
-            except ValueError:
-                declared_bytes = 0
-            if declared_bytes > max_bytes:
-                raise FeedFetchError(
-                    "RSS",
-                    "ResponseTooLarge",
-                )
-
-        content = bytearray()
-        for chunk in response.iter_content(chunk_size=RSS_STREAM_CHUNK_BYTES):
-            if len(content) + len(chunk) > max_bytes:
-                raise FeedFetchError(
-                    "RSS",
-                    "ResponseTooLarge",
-                )
-            content.extend(chunk)
-        return bytes(content)
 
     @staticmethod
     def _parse_retry_after(value: str | None) -> float | None:
