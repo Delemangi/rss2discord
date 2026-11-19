@@ -1,9 +1,11 @@
+import re
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
-from rss2discord.configuration import load_config
+from rss2discord.configuration import FeedStrategyName, load_config
 from tests.configuration_helpers import write_config
 
 
@@ -414,3 +416,15 @@ def test_load_config_parses_ananas_strategy_with_price_monitor(
     # Then
     assert config.feeds[0].strategy == "ananas"
     assert config.feeds[0].price_check_interval == 3600
+
+
+def test_config_example_lists_every_strategy() -> None:
+    config_path = Path(__file__).resolve().parents[1] / "config" / "config.example.yaml"
+    text = config_path.read_text(encoding="utf-8")
+    line = next(
+        line for line in text.splitlines() if 'strategy: "rss" # Optional:' in line
+    )
+
+    assert set(re.findall(r"'([a-z0-9_]+)'", line)) == set(
+        get_args(FeedStrategyName),
+    )

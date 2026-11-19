@@ -5,7 +5,6 @@ from typing import Final, NewType
 
 EntryId = NewType("EntryId", str)
 
-DEFAULT_PRICE_INLINE_LIMIT: Final = 100
 HEALTH_REMINDER_SECONDS: Final = 21_600
 
 

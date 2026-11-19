@@ -4,9 +4,9 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 
+from rss2discord.defaults import DEFAULT_PRICE_INLINE_LIMIT
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import (
-    DEFAULT_PRICE_INLINE_LIMIT,
     HealthUpdate,
     PriceChangeRecord,
     PriceSnapshot,
