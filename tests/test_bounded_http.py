@@ -25,6 +25,8 @@ def read(
     max_bytes: int = 10,
     remaining_bytes: int | None = None,
     headers: Mapping[str, str] | None = None,
+    response_cause: str = "ResponseTooLarge",
+    scan_cause: str = "ScanResponseTooLarge",
 ) -> bytes:
     return read_bounded_content(
         StubResponse(content, headers or {}),
@@ -32,6 +34,8 @@ def read(
         max_bytes=max_bytes,
         chunk_bytes=4,
         remaining_bytes=remaining_bytes,
+        response_cause=response_cause,
+        scan_cause=scan_cause,
     )
 
 
@@ -71,3 +75,32 @@ def test_uses_response_cause_when_remaining_covers_response() -> None:
 
 def test_invalid_content_length_falls_back_to_streaming() -> None:
     assert read(b"abc", headers={"Content-Length": "nope"}) == b"abc"
+
+
+def test_streamed_both_limits_uses_response_cause() -> None:
+    with pytest.raises(FeedFetchError) as error:
+        read(b"x" * 11, max_bytes=10, remaining_bytes=5)
+    assert error.value.cause_type == "ResponseTooLarge"
+
+
+def test_custom_causes_apply_to_declared_and_streamed_limits() -> None:
+    with pytest.raises(FeedFetchError) as declared:
+        read(
+            b"",
+            max_bytes=10,
+            remaining_bytes=5,
+            headers={"Content-Length": "6"},
+            response_cause="ScanResponseTooLarge",
+            scan_cause="ScanResponseTooLarge",
+        )
+    assert declared.value.cause_type == "ScanResponseTooLarge"
+
+    with pytest.raises(FeedFetchError) as streamed:
+        read(
+            b"x" * 6,
+            max_bytes=10,
+            remaining_bytes=5,
+            response_cause="ScanResponseTooLarge",
+            scan_cause="ScanResponseTooLarge",
+        )
+    assert streamed.value.cause_type == "ScanResponseTooLarge"
