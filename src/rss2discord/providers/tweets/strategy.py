@@ -20,7 +20,7 @@ TWEETS_MEDIA_TITLE: Final = "Media tweet"
 EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "RT by @", "Pinned: ")
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
-    r"(?:\s*[^\w\s]?\s*)?https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
+    r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
     re.IGNORECASE,
 )
 NITTER_MEDIA_LABEL: Final = re.compile(
@@ -123,7 +123,7 @@ def _clean_description(description: str) -> str:
     cleaned = NITTER_MEDIA_LABEL.sub("", cleaned)
     cleaned = re.sub(r"\s\ufffd\s", " · ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
+    return cleaned.rstrip(" \t\r\n·•—–-\ufffd").strip()
 
 
 def _fallback_title(title: str, description: str) -> str:
