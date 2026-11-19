@@ -1,6 +1,7 @@
 """Generic tweets strategy backed by a Nitter RSS profile feed."""
 
 import logging
+import re
 from dataclasses import replace
 from typing import Any, Final, final, override
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -15,7 +16,17 @@ from rss2discord.url_normalization import normalize_remote_media_url
 logger = logging.getLogger(__name__)
 
 TWEETS_FALLBACK_LABEL: Final = "Tweets"
+TWEETS_MEDIA_TITLE: Final = "Media tweet"
 EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "RT by @", "Pinned: ")
+EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
+NITTER_STATUS_LINK: Final = re.compile(
+    r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
+    re.IGNORECASE,
+)
+NITTER_MEDIA_LABEL: Final = re.compile(
+    r"(?m)^\s*(?:Video|Image)\s*$",
+    re.IGNORECASE,
+)
 NITTER_FALLBACK_HOSTS: Final = (
     "nitter.kareem.one",
     "nitter.mie.foundation",
@@ -106,6 +117,26 @@ def _is_attached_media(url: str) -> bool:
     return any(hint in path for hint in ATTACHED_MEDIA_PATH_HINTS)
 
 
+def _clean_description(description: str) -> str:
+    """Drop Nitter-only media labels, status links, and excess blank lines."""
+    cleaned = NITTER_STATUS_LINK.sub("", description)
+    cleaned = NITTER_MEDIA_LABEL.sub("", cleaned)
+    cleaned = re.sub(r"\s\ufffd\s", " · ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.rstrip(" \t\r\n·•—–-\ufffd").strip()
+
+
+def _fallback_title(title: str, description: str) -> str:
+    stripped = title.strip()
+    if stripped not in EMPTY_TITLES:
+        return stripped
+    first_line = next(
+        (line.strip() for line in description.splitlines() if line.strip()),
+        "",
+    )
+    return first_line[:120] if first_line else TWEETS_MEDIA_TITLE
+
+
 @final
 class TweetsStrategy(ScraperStrategy):
     """Keep original tweets from a Nitter profile feed."""
@@ -143,11 +174,14 @@ class TweetsStrategy(ScraperStrategy):
     @override
     def get_entry_data(self, entry: Any) -> EntryData:
         data = self._rss.get_entry_data(entry)
+        description = _clean_description(data.description)
         images = _tweet_image_urls(entry, self._rss)
         if not images and data.image_url is not None:
             images = (data.image_url,)
         return replace(
             data,
+            title=_fallback_title(data.title, description),
+            description=description,
             link=_public_tweet_link(data.link),
             image_url=images[0] if images else None,
             image_urls=images,
