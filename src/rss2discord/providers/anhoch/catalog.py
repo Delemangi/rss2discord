@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Final
 from urllib.parse import urljoin
 
@@ -23,6 +23,7 @@ from rss2discord.providers.anhoch.models import (
 )
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports.base import FeedFetchError
+from rss2discord.transports.bounded_http import read_bounded_content
 
 ANHOCH_PRODUCT_BASE_URL: Final = "https://www.anhoch.com/products/"
 ANHOCH_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"
@@ -212,27 +213,13 @@ class AnhochCatalogClient:
         max_response_bytes: int,
         max_scan_bytes: int,
     ) -> bytes:
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            try:
-                declared_bytes = int(content_length)
-            except ValueError:
-                declared_bytes = 0
-            if declared_bytes > max_response_bytes:
-                raise FeedFetchError(ANHOCH_LABEL, "ResponseTooLarge")
-            if declared_bytes > max_scan_bytes:
-                raise FeedFetchError(ANHOCH_LABEL, "ScanResponseTooLarge")
-        content = bytearray()
-        chunks: Iterator[bytes] = response.iter_content(
-            chunk_size=ANHOCH_STREAM_CHUNK_BYTES,
+        return read_bounded_content(
+            response,
+            label=ANHOCH_LABEL,
+            max_bytes=max_response_bytes,
+            chunk_bytes=ANHOCH_STREAM_CHUNK_BYTES,
+            remaining_bytes=max_scan_bytes,
         )
-        for chunk in chunks:
-            if len(content) + len(chunk) > max_response_bytes:
-                raise FeedFetchError(ANHOCH_LABEL, "ResponseTooLarge")
-            if len(content) + len(chunk) > max_scan_bytes:
-                raise FeedFetchError(ANHOCH_LABEL, "ScanResponseTooLarge")
-            content.extend(chunk)
-        return bytes(content)
 
 
 def _check_response_status(response: requests.Response) -> None:

@@ -20,6 +20,7 @@ from rss2discord.providers.emsc.bounds import (
 )
 from rss2discord.providers.emsc.models import EarthquakeEvent
 from rss2discord.retries import parse_retry_after
+from rss2discord.transports.bounded_http import read_bounded_content
 
 
 class EmscCatalogClient:
@@ -47,7 +48,12 @@ class EmscCatalogClient:
                             response.headers.get("Retry-After"),
                         ),
                     ) from None
-                content = self._read_content(response)
+                content = read_bounded_content(
+                    response,
+                    label=EMSC_LABEL,
+                    max_bytes=MAX_EMSC_RESPONSE_BYTES,
+                    chunk_bytes=EMSC_STREAM_CHUNK_BYTES,
+                )
         except FeedFetchError:
             raise
         except (requests.ConnectionError, requests.Timeout) as error:
@@ -59,24 +65,6 @@ class EmscCatalogClient:
         except requests.RequestException as error:
             raise FeedFetchError(EMSC_LABEL, type(error).__name__) from None
         return _parse_events(content, reverse=reverse)
-
-    @staticmethod
-    def _read_content(response: requests.Response) -> bytes:
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            try:
-                declared_bytes = int(content_length)
-            except ValueError:
-                declared_bytes = 0
-            if declared_bytes > MAX_EMSC_RESPONSE_BYTES:
-                raise FeedFetchError(EMSC_LABEL, "ResponseTooLarge")
-
-        content = bytearray()
-        for chunk in response.iter_content(chunk_size=EMSC_STREAM_CHUNK_BYTES):
-            if len(content) + len(chunk) > MAX_EMSC_RESPONSE_BYTES:
-                raise FeedFetchError(EMSC_LABEL, "ResponseTooLarge")
-            content.extend(chunk)
-        return bytes(content)
 
 
 def _parse_events(
