@@ -29,7 +29,7 @@ class EmscStrategy(ScraperStrategy):
 
     @override
     def get_entry_data(self, entry: EarthquakeEvent) -> EntryData:
-        magnitude = f"{entry.magnitude:g}"
+        magnitude = f"{entry.magnitude:.1f}"
         description_lines = [f"Depth: {entry.depth_km:g} km"]
         if entry.magnitude_type:
             description_lines.append(f"Magnitude type: {entry.magnitude_type}")

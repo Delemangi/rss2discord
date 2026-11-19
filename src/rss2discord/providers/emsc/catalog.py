@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 
@@ -25,6 +26,7 @@ class EmscCatalogClient:
     """Fetch one bounded EMSC FDSN event query."""
 
     def fetch_events(self, url: str) -> tuple[EarthquakeEvent, ...]:
+        reverse = _is_descending_order(url)
         try:
             with requests.get(
                 url,
@@ -56,7 +58,7 @@ class EmscCatalogClient:
             ) from None
         except requests.RequestException as error:
             raise FeedFetchError(EMSC_LABEL, type(error).__name__) from None
-        return _parse_events(content)
+        return _parse_events(content, reverse=reverse)
 
     @staticmethod
     def _read_content(response: requests.Response) -> bytes:
@@ -77,7 +79,11 @@ class EmscCatalogClient:
         return bytes(content)
 
 
-def _parse_events(content: bytes) -> tuple[EarthquakeEvent, ...]:
+def _parse_events(
+    content: bytes,
+    *,
+    reverse: bool,
+) -> tuple[EarthquakeEvent, ...]:
     try:
         payload = json.loads(content)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -92,7 +98,16 @@ def _parse_events(content: bytes) -> tuple[EarthquakeEvent, ...]:
         for feature in features[:MAX_EMSC_EVENTS]
         if (event := _parse_feature(feature)) is not None
     ]
-    return tuple(reversed(events))
+    return tuple(reversed(events)) if reverse else tuple(events)
+
+
+def _is_descending_order(url: str) -> bool:
+    try:
+        query = parse_qs(urlsplit(url).query)
+    except ValueError:
+        return True
+    order = (query.get("orderby") or ["time"])[0].strip().casefold()
+    return order not in {"time-asc", "magnitude-asc"}
 
 
 def _parse_feature(feature: object) -> EarthquakeEvent | None:
@@ -114,6 +129,8 @@ def _parse_feature(feature: object) -> EarthquakeEvent | None:
         timestamp = datetime.fromisoformat(raw_time)
     except ValueError:
         return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
     try:
         magnitude = float(properties["mag"])
     except (KeyError, TypeError, ValueError):

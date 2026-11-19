@@ -207,3 +207,92 @@ def test_emsc_rejects_missing_features(monkeypatch: pytest.MonkeyPatch) -> None:
     # When / Then
     with pytest.raises(FeedFetchError, match="InvalidResponse"):
         EmscCatalogClient().fetch_events(EMSC_URL)
+
+
+def test_emsc_respects_ascending_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    install(
+        monkeypatch,
+        StubResponse(
+            payload(
+                [
+                    feature("old", time="2026-11-18T06:00:00Z"),
+                    feature("new", time="2026-11-18T08:00:00Z"),
+                ],
+            ),
+        ),
+    )
+
+    # When
+    events = EmscCatalogClient().fetch_events(
+        f"{EMSC_URL}&orderby=time-asc",
+    )
+
+    # Then
+    assert [event.event_id for event in events] == ["old", "new"]
+
+
+def test_emsc_treats_naive_time_as_utc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    install(
+        monkeypatch,
+        StubResponse(
+            payload([feature("naive", time="2026-11-18T06:40:07.92")]),
+        ),
+    )
+
+    # When
+    events = EmscCatalogClient().fetch_events(EMSC_URL)
+
+    # Then
+    assert events[0].time == "2026-11-18T06:40:07.920000+00:00"
+
+
+def test_emsc_uses_geometry_coordinates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    item = feature("geometry")
+    properties = item["properties"]
+    assert isinstance(properties, dict)
+    properties.pop("lat")
+    properties.pop("lon")
+    install(monkeypatch, StubResponse(payload([item])))
+
+    # When
+    events = EmscCatalogClient().fetch_events(EMSC_URL)
+
+    # Then
+    assert (events[0].latitude, events[0].longitude) == (41.07, 23.93)
+
+
+def test_emsc_rejects_streamed_oversized_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    install(
+        monkeypatch,
+        StubResponse(b"x" * (MAX_EMSC_RESPONSE_BYTES + 1)),
+    )
+
+    # When / Then
+    with pytest.raises(FeedFetchError, match="ResponseTooLarge"):
+        EmscCatalogClient().fetch_events(EMSC_URL)
+
+
+def test_emsc_formats_magnitude_with_one_decimal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    install(monkeypatch, StubResponse(payload([feature("whole", mag=2.0)])))
+    strategy = EmscStrategy()
+
+    # When
+    entries, _title = strategy.fetch_entries(EMSC_URL)
+
+    # Then
+    assert strategy.get_entry_data(entries[0]).title == "M 2.0 — GREECE"
