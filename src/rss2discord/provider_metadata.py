@@ -1,47 +1,46 @@
 """Canonical provider strategy metadata and display labels."""
 
+from dataclasses import dataclass
 from typing import Final
 
-PRICE_STRATEGIES: Final = frozenset(
-    {
-        "ananas",
-        "anhoch",
-        "cccenter",
-        "ddstore",
-        "gjirafa50",
-        "hivetec",
-        "neksio",
-        "neptun",
-        "pazar3",
-        "reklama5",
-        "setec",
-        "technomarket",
-        "woocommerce",
-    },
-)
-STRATEGY_LABELS: Final = {
-    "ananas": "Ananas",
-    "anhoch": "Anhoch",
-    "cccenter": "CCCenter",
-    "ddstore": "DDStore",
-    "gjirafa50": "Gjirafa50",
-    "hivetec": "Hivetec",
-    "itmk_oglasnik": "IT.mk Oglasnik",
-    "neksio": "Neksio",
-    "neptun": "Neptun",
-    "pazar3": "Pazar3",
-    "reklama5": "Reklama5",
-    "rss": "RSS",
-    "setec": "Setec",
-    "technomarket": "Technomarket",
-    "time_mk": "Time.mk",
-    "fakulteti_mk": "Fakulteti.mk",
-    "emsc": "EMSC",
-    "tweets": "Tweets",
-    "woocommerce": "WooCommerce",
-    "xenforo": "Forum",
+
+@dataclass(frozen=True, slots=True)
+class StrategyMetadata:
+    """Display and capability metadata for one feed strategy."""
+
+    label: str
+    price: bool = False
+
+
+STRATEGY_METADATA: Final[dict[str, StrategyMetadata]] = {
+    "ananas": StrategyMetadata("Ananas", price=True),
+    "anhoch": StrategyMetadata("Anhoch", price=True),
+    "cccenter": StrategyMetadata("CCCenter", price=True),
+    "ddstore": StrategyMetadata("DDStore", price=True),
+    "emsc": StrategyMetadata("EMSC"),
+    "fakulteti_mk": StrategyMetadata("Fakulteti.mk"),
+    "gjirafa50": StrategyMetadata("Gjirafa50", price=True),
+    "hivetec": StrategyMetadata("Hivetec", price=True),
+    "itmk_oglasnik": StrategyMetadata("IT.mk Oglasnik"),
+    "neksio": StrategyMetadata("Neksio", price=True),
+    "neptun": StrategyMetadata("Neptun", price=True),
+    "pazar3": StrategyMetadata("Pazar3", price=True),
+    "reklama5": StrategyMetadata("Reklama5", price=True),
+    "rss": StrategyMetadata("RSS"),
+    "setec": StrategyMetadata("Setec", price=True),
+    "technomarket": StrategyMetadata("Technomarket", price=True),
+    "time_mk": StrategyMetadata("Time.mk"),
+    "tweets": StrategyMetadata("Tweets"),
+    "woocommerce": StrategyMetadata("WooCommerce", price=True),
+    "xenforo": StrategyMetadata("Forum"),
 }
-ADAPTER_LABELS: Final = {
+STRATEGY_LABELS: Final[dict[str, str]] = {
+    name: metadata.label for name, metadata in STRATEGY_METADATA.items()
+}
+PRICE_STRATEGIES: Final[frozenset[str]] = frozenset(
+    name for name, metadata in STRATEGY_METADATA.items() if metadata.price
+)
+ADAPTER_LABELS: Final[dict[str, str]] = {
     "hackernews": "Hacker News",
     "reddit": "Reddit",
 }

@@ -1,18 +1,50 @@
 """Generic tweets strategy backed by a Nitter RSS profile feed."""
 
+import logging
 import re
 from dataclasses import replace
 from typing import Any, Final, final, override
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
+from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import EntryData, EntryId
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import ScraperStrategy
 from rss2discord.transports.rss import RSSStrategy
+
+logger = logging.getLogger(__name__)
 
 TWEETS_FALLBACK_LABEL: Final = "Tweets"
 TWEET_URL: Final = "https://x.com/{handle}/status/{entry_id}"
 EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "RT by @", "Pinned: ")
 HANDLE_PATTERN: Final = re.compile(r"[A-Za-z0-9_]{1,15}")
+NITTER_FALLBACK_HOSTS: Final = (
+    "nitter.kareem.one",
+    "nitter.mie.foundation",
+    "nitter.jaydenha.uk",
+    "ruf.st",
+)
+
+
+def _candidate_urls(url: str) -> tuple[str, ...]:
+    """Return the configured Nitter URL followed by known fallback instances."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return (url,)
+    host = parsed.hostname
+    if host is None:
+        return (url,)
+    host = host.casefold()
+    candidates = [url]
+    for fallback_host in NITTER_FALLBACK_HOSTS:
+        if fallback_host == host:
+            continue
+        netloc = fallback_host
+        if parsed.port is not None:
+            netloc = f"{fallback_host}:{parsed.port}"
+        candidates.append(urlunsplit(parsed._replace(netloc=netloc)))
+    return tuple(candidates)
 
 
 @final
@@ -26,9 +58,26 @@ class TweetsStrategy(ScraperStrategy):
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
-        entries, source_title = self._rss.fetch_entries(url)
-        filtered = [entry for entry in entries if not self._is_excluded(entry)]
-        return filtered, source_title or TWEETS_FALLBACK_LABEL
+        last_error: FeedFetchError | None = None
+        for candidate in _candidate_urls(url):
+            try:
+                entries, source_title = self._rss.fetch_entries(candidate)
+            except FeedFetchInterruptedError:
+                raise
+            except FeedFetchError as error:
+                last_error = error
+                continue
+            if candidate != url:
+                logger.warning(
+                    "Nitter instance failed over: %s -> %s",
+                    url,
+                    candidate,
+                )
+            filtered = [entry for entry in entries if not self._is_excluded(entry)]
+            return filtered, source_title or TWEETS_FALLBACK_LABEL
+        if last_error is None:
+            raise FeedFetchError("Tweets", "NoNitterInstance")
+        raise last_error
 
     @override
     def get_entry_id(self, entry: Any) -> EntryId | None:
