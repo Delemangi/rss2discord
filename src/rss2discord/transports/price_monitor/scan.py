@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
@@ -31,6 +33,7 @@ from .planning import (
 from .presentation import with_price_change_percentage, with_restock
 
 NO_SNAPSHOT_LIMIT: Final = 1_000_000
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,48 @@ def _view_for[ProductT](
     )
 
 
+@dataclass(slots=True)
+class _ScanCounters:
+    """Mutable counters reported once per completed price scan."""
+
+    observations: int = 0
+    alerts: int = 0
+    restocks: int = 0
+    suppressed: int = 0
+    unavailable: int = 0
+    confirmed: int = 0
+    bulk: bool = False
+
+
+def _log_scan(
+    *,
+    feed_id: str,
+    provider: str,
+    counters: _ScanCounters,
+    outcome: str,
+    elapsed_seconds: float,
+    error: str | None = None,
+) -> None:
+    detail = f" error={error}" if error is not None else ""
+    logger.info(
+        "Price scan feed=%s provider=%s observations=%d alerts=%d restocks=%d "
+        "suppressed=%d unavailable=%d confirmed=%d bulk=%s outcome=%s%s "
+        "elapsed_ms=%d",
+        feed_id,
+        provider,
+        counters.observations,
+        counters.alerts,
+        counters.restocks,
+        counters.suppressed,
+        counters.unavailable,
+        counters.confirmed,
+        str(counters.bulk).lower(),
+        outcome,
+        detail,
+        round(elapsed_seconds * 1000),
+    )
+
+
 def run_price_scan[ProductT](
     *,
     feed: FeedConfig,
@@ -110,6 +155,68 @@ def run_price_scan[ProductT](
     allow_currency_changes: bool = False,
 ) -> None:
     """Load baselines, diff observations, confirm, and deliver one provider scan."""
+    started = time.perf_counter()
+    counters = _ScanCounters()
+    try:
+        outcome = _run_price_scan(
+            feed=feed,
+            dependencies=dependencies,
+            provider=provider,
+            label=label,
+            observations=observations,
+            message_for=message_for,
+            snapshot_limit=snapshot_limit,
+            confirm=confirm,
+            confirmation_limit=confirmation_limit,
+            allow_currency_changes=allow_currency_changes,
+            counters=counters,
+        )
+    except FeedFetchInterruptedError:
+        _log_scan(
+            feed_id=feed.id,
+            provider=provider,
+            counters=counters,
+            outcome="interrupted",
+            elapsed_seconds=time.perf_counter() - started,
+        )
+        raise
+    except FeedFetchError as error:
+        _log_scan(
+            feed_id=feed.id,
+            provider=provider,
+            counters=counters,
+            outcome="error",
+            elapsed_seconds=time.perf_counter() - started,
+            error=type(error).__name__,
+        )
+        raise
+    _log_scan(
+        feed_id=feed.id,
+        provider=provider,
+        counters=counters,
+        outcome=outcome.value,
+        elapsed_seconds=time.perf_counter() - started,
+    )
+
+
+def _run_price_scan[ProductT](
+    *,
+    feed: FeedConfig,
+    dependencies: PriceChangeDeliveryDependencies,
+    provider: str,
+    label: str,
+    observations: Sequence[PriceObservation[ProductT]],
+    message_for: Callable[[ProductT, PriceSnapshot, PriceSnapshot], WebhookMessage],
+    snapshot_limit: int,
+    confirm: Callable[
+        [Sequence[PriceObservation[ProductT]]],
+        Sequence[PriceObservation[ProductT]],
+    ]
+    | None = None,
+    confirmation_limit: int | None = None,
+    allow_currency_changes: bool = False,
+    counters: _ScanCounters,
+) -> PriceDeliveryOutcome:
     if snapshot_limit < 1:
         raise ValueError("snapshot_limit must be positive")
     if dependencies.delivery.is_shutdown_requested():
@@ -129,6 +236,7 @@ def run_price_scan[ProductT](
     for observation in observations:
         current[observation.snapshot.product_id] = observation.snapshot
         observation_by_id[observation.snapshot.product_id] = observation
+    counters.observations = len(current)
     if len(set(by_id) | set(current)) > snapshot_limit:
         raise FeedFetchError(label, "SnapshotLimitExceeded")
     if not allow_currency_changes:
@@ -169,6 +277,10 @@ def run_price_scan[ProductT](
         record for record in alerting if record.current.available is not False
     )
     silent = (*silent, *(record.current for record in unavailable))
+    counters.alerts = len(alerting)
+    counters.restocks = len(restock_records)
+    counters.suppressed = len(suppressed)
+    counters.unavailable = len(unavailable)
     # Restocks bypass the price filters above and are never suppressed.
     records = _in_observation_order((*alerting, *restock_records), current)
     record_ids = {record.product_id for record in records}
@@ -184,15 +296,14 @@ def run_price_scan[ProductT](
             dependencies.sqlite_retry_policy.execute(
                 lambda: dependencies.snapshots.upsert_price_snapshots(silent),
             )
-        if drain_pending_price_notifications(dependencies, feed) is (
-            PriceDeliveryOutcome.DELIVERED
-        ):
+        outcome = drain_pending_price_notifications(dependencies, feed)
+        if outcome is PriceDeliveryOutcome.DELIVERED:
             finish_price_delivery(
                 dependencies.snapshots,
                 feed.id,
                 len(current),
             )
-        return
+        return outcome
 
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
@@ -202,6 +313,7 @@ def run_price_scan[ProductT](
         observation_by_id[record.product_id] for record in records
     )
     bulk = len(records) > feed.price_inline_limit
+    counters.bulk = bulk
     if not bulk and silent:
         dependencies.sqlite_retry_policy.execute(
             lambda: dependencies.snapshots.upsert_price_snapshots(silent),
@@ -234,10 +346,11 @@ def run_price_scan[ProductT](
                 "PriceConfirmationDeferred",
                 len(current),
             )
-            return
+            return PriceDeliveryOutcome.FAILED
     else:
         confirmed = tuple(confirm(change_observations))
         additional_pending = 0
+    counters.confirmed = len(confirmed)
 
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
@@ -273,7 +386,7 @@ def run_price_scan[ProductT](
         ),
     )
     if plan.bulk:
-        deliver_price_changes(
+        return deliver_price_changes(
             views,
             dependencies,
             lambda view: view.message,
@@ -281,7 +394,6 @@ def run_price_scan[ProductT](
             feed=feed,
             baseline_extra=silent,
         )
-        return
     outcome = deliver_price_changes(
         views,
         dependencies,
@@ -302,9 +414,9 @@ def run_price_scan[ProductT](
             "DeliveryRetryPending",
             pending or len(records),
         )
-        return
+        return PriceDeliveryOutcome.FAILED
     if outcome is PriceDeliveryOutcome.INTERRUPTED:
-        return
+        return PriceDeliveryOutcome.INTERRUPTED
     if len(confirmed) < len(records):
         record_price_health(
             dependencies.snapshots,
@@ -313,9 +425,10 @@ def run_price_scan[ProductT](
             "PriceConfirmationDeferred",
             len(current),
         )
-    else:
-        finish_price_delivery(
-            dependencies.snapshots,
-            feed.id,
-            len(current),
-        )
+        return PriceDeliveryOutcome.FAILED
+    finish_price_delivery(
+        dependencies.snapshots,
+        feed.id,
+        len(current),
+    )
+    return PriceDeliveryOutcome.DELIVERED

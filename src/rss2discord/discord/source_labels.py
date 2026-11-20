@@ -13,6 +13,10 @@ def source_label(feed: FeedConfig) -> str:
         return ADAPTER_LABELS[feed.adapter]
     if feed.strategy == "rss":
         return _rss_source_label(feed.url)
+    if feed.strategy == "woocommerce" and feed.name and feed.name.strip():
+        # WooCommerce is a mechanism, not a brand: prefer the configured shop
+        # name so cards do not lead with a generic provider label.
+        return feed.name.strip()
     return STRATEGY_LABELS[feed.strategy]
 
 
