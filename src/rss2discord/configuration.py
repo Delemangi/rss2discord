@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, ClassVar, Final, Literal, Self
 from urllib.parse import quote
@@ -75,6 +76,12 @@ class FeedConfig(BaseModel):
     price_inline_limit: Annotated[int, Field(ge=1, le=1000)] = (
         DEFAULT_PRICE_INLINE_LIMIT
     )
+    price_min_change_percentage: Annotated[
+        float,
+        Field(ge=0, allow_inf_nan=False),
+    ] = 0
+    price_min_change_amount: Annotated[Decimal, Field(ge=0)] | None = None
+    price_ignore_increases: bool = False
     digest_threshold: Annotated[int, Field(ge=1)] | None = 100
 
     @field_validator("webhook_avatar")
@@ -115,6 +122,18 @@ class FeedConfig(BaseModel):
             supported = ", ".join(sorted(PRICE_STRATEGIES))
             msg = f"price_inline_limit requires a price strategy: {supported}"
             raise ValueError(msg)
+        for field_name, enabled in (
+            (
+                "price_min_change_percentage",
+                self.price_min_change_percentage != 0,
+            ),
+            ("price_min_change_amount", self.price_min_change_amount is not None),
+            ("price_ignore_increases", self.price_ignore_increases),
+        ):
+            if enabled and self.strategy not in PRICE_STRATEGIES:
+                supported = ", ".join(sorted(PRICE_STRATEGIES))
+                msg = f"{field_name} requires a price strategy: {supported}"
+                raise ValueError(msg)
         return self
 
 
