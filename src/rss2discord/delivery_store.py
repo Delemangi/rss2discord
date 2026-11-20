@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
 from rss2discord.delivery_health import HealthRepository
+from rss2discord.delivery_history import PriceHistoryRepository
 from rss2discord.delivery_notifications import PriceNotificationRepository
 from rss2discord.delivery_prices import PriceSnapshotRepository
 from rss2discord.delivery_schema import initialize_schema
@@ -19,6 +21,7 @@ from rss2discord.models import (
     HealthNotice,
     HealthRecord,
     HealthUpdate,
+    PriceHistoryContext,
     PriceSnapshot,
 )
 from rss2discord.price_notifications import (
@@ -38,10 +41,11 @@ class RetentionResult:
 
     delivered_entries: int = 0
     price_notifications: int = 0
+    price_history: int = 0
 
     @property
     def total(self) -> int:
-        return self.delivered_entries + self.price_notifications
+        return self.delivered_entries + self.price_notifications + self.price_history
 
 
 class DeliveryStore:
@@ -72,6 +76,7 @@ class DeliveryStore:
             self._connection.close()
             raise
         self._prices = PriceSnapshotRepository(self._connection)
+        self._history = PriceHistoryRepository(self._connection)
         self._notifications = PriceNotificationRepository(self._connection)
         self._health = HealthRepository(self._connection)
 
@@ -168,6 +173,21 @@ class DeliveryStore:
 
     def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
         self._prices.upsert_price_snapshots(snapshots)
+
+    def load_price_history_context(
+        self,
+        feed_id: str,
+        observations: Mapping[str, PriceSnapshot],
+        *,
+        window_days: int = PRICE_HISTORY_WINDOW_DAYS,
+        now: int | None = None,
+    ) -> Mapping[str, PriceHistoryContext]:
+        return self._history.load_price_history_context(
+            feed_id,
+            observations,
+            window_days=window_days,
+            now=now,
+        )
 
     # Durable price-notification outbox ----------------------------------
 
@@ -279,7 +299,7 @@ class DeliveryStore:
     # Maintenance ---------------------------------------------------------
 
     def prune_old_records(self, *, retention_days: int) -> RetentionResult:
-        """Delete delivered entries and sent notifications outside the window."""
+        """Delete delivered entries, sent notifications, and old price history."""
         if retention_days <= 0:
             return RetentionResult()
         cutoff = int(time.time()) - retention_days * 86_400
@@ -293,9 +313,20 @@ class DeliveryStore:
                 "AND COALESCE(sent_at, last_attempt_at, observed_at) < ?",
                 (cutoff,),
             ).rowcount
+            # Keep each product's newest observation so a long-unchanged price
+            # still has a baseline older than the retention window.
+            history = self._connection.execute(
+                "DELETE FROM price_history WHERE observed_at < ? AND EXISTS ("
+                "SELECT 1 FROM price_history AS newer "
+                "WHERE newer.feed_id = price_history.feed_id "
+                "AND newer.product_id = price_history.product_id "
+                "AND newer.observed_at > price_history.observed_at)",
+                (cutoff,),
+            ).rowcount
         return RetentionResult(
             delivered_entries=max(0, delivered),
             price_notifications=max(0, notifications),
+            price_history=max(0, history),
         )
 
     def vacuum(self) -> None:

@@ -1,15 +1,17 @@
 """Delivery stage for source-neutral price monitoring."""
 
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import replace
 from functools import partial
 from typing import assert_never
 from uuid import uuid4
 
 from rss2discord.configuration import FeedConfig
+from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import PriceSnapshot
+from rss2discord.models import PriceHistoryContext, PriceSnapshot
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationDeliveryResult,
@@ -53,11 +55,13 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         if drained is PriceDeliveryOutcome.INTERRUPTED:
             return PriceDeliveryOutcome.INTERRUPTED
     selected = set(plan.selected_ids)
+    selected_changes = tuple(
+        change for change in materialized if change.current.product_id in selected
+    )
+    history_contexts: Mapping[tuple[str, str], PriceHistoryContext] | None = None
     delay_before_next = False
     had_failure = False
-    for change in materialized:
-        if change.current.product_id not in selected:
-            continue
+    for change in selected_changes:
         if dependencies.delivery.is_shutdown_requested():
             return PriceDeliveryOutcome.INTERRUPTED
         if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
@@ -66,6 +70,18 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         if dependencies.delivery.is_shutdown_requested():
             return PriceDeliveryOutcome.INTERRUPTED
         message = message_for(change)
+        if message.entry.price_change_percentage is not None:
+            if history_contexts is None:
+                history_contexts = _load_price_history_contexts(
+                    dependencies,
+                    (candidate.current for candidate in selected_changes),
+                )
+            message = _with_price_history(
+                message,
+                history_contexts.get(
+                    (change.current.feed_id, change.current.product_id),
+                ),
+            )
         if dependencies.delivery.is_shutdown_requested():
             return PriceDeliveryOutcome.INTERRUPTED
         result = dependencies.sender.send(message, dependencies.delivery.sleep)
@@ -194,6 +210,20 @@ def _deliver_inline_cards(
     feed: FeedConfig,
     records: Sequence[PriceNotificationRecord],
 ) -> PriceNotificationDeliveryResult:
+    contexts = _load_price_history_contexts(
+        dependencies,
+        (
+            PriceSnapshot(
+                feed_id=record.feed_id,
+                product_id=record.product_id,
+                amount=record.current_amount,
+                formatted=record.current_price,
+                currency=record.currency,
+            )
+            for record in records
+            if record.entry.price_change_percentage is not None
+        ),
+    )
     delay_before_next = False
     for index, record in enumerate(records):
         if dependencies.delivery.is_shutdown_requested():
@@ -201,14 +231,15 @@ def _deliver_inline_cards(
         if not _wait_before_next(dependencies, delay_before_next):
             return PriceNotificationDeliveryResult.INTERRUPTED
         delay_before_next = False
-        result = dependencies.sender.send(
+        message = _with_price_history(
             WebhookMessage(
                 feed=feed,
                 entry=record.entry,
                 source_title=record.source_title,
             ),
-            dependencies.delivery.sleep,
+            contexts.get((record.feed_id, record.product_id)),
         )
+        result = dependencies.sender.send(message, dependencies.delivery.sleep)
         if result is DiscordDeliveryResult.DELIVERED:
             _mark_sent(dependencies, (record.notification_id,))
             delay_before_next = True
@@ -247,6 +278,50 @@ def _deliver_digest(
         return PriceNotificationDeliveryResult.FAILED
     _mark_sent(dependencies, (record.notification_id for record in records))
     return PriceNotificationDeliveryResult.DRAINED
+
+
+def _load_price_history_contexts(
+    dependencies: PriceChangeDeliveryDependencies,
+    observations: Iterable[PriceSnapshot],
+) -> Mapping[tuple[str, str], PriceHistoryContext]:
+    """Load one history context per product with a single call per feed."""
+    grouped: dict[str, dict[str, PriceSnapshot]] = {}
+    for observation in observations:
+        grouped.setdefault(observation.feed_id, {})[observation.product_id] = (
+            observation
+        )
+    contexts: dict[tuple[str, str], PriceHistoryContext] = {}
+    for feed_id, feed_observations in grouped.items():
+        loaded = dependencies.sqlite_retry_policy.execute(
+            partial(
+                dependencies.snapshots.load_price_history_context,
+                feed_id,
+                feed_observations,
+            ),
+        )
+        contexts.update(
+            ((feed_id, product_id), context) for product_id, context in loaded.items()
+        )
+    return contexts
+
+
+def _with_price_history(
+    message: WebhookMessage,
+    context: PriceHistoryContext | None,
+) -> WebhookMessage:
+    """Attach range context to an inline change card when one is known."""
+    if context is None or message.entry.price_change_percentage is None:
+        return message
+    return replace(
+        message,
+        entry=replace(
+            message.entry,
+            price_period_low=context.low_formatted,
+            price_period_high=context.high_formatted,
+            price_period_days=PRICE_HISTORY_WINDOW_DAYS,
+            price_is_period_low=context.is_low,
+        ),
+    )
 
 
 def _wait_before_next(
