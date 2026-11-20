@@ -12,7 +12,7 @@ from rss2discord.price_amount import canonicalize_price_amount
 
 _SNAPSHOT_LOOKUP_CHUNK = 500
 
-_SNAPSHOT_ROW = tuple[str, str, str, str, str]
+_SNAPSHOT_ROW = tuple[str, str, str, str, str, int | None]
 
 
 def _existing_snapshot_prices(
@@ -44,7 +44,7 @@ def _existing_prices_by_feed(
 ) -> dict[tuple[str, str], tuple[str, str]]:
     """Look up persisted prices per feed with a bounded IN clause."""
     by_feed: dict[str, list[str]] = {}
-    for feed_id, product_id, _amount, _formatted, _currency in snapshots:
+    for feed_id, product_id, _amount, _formatted, _currency, _available in snapshots:
         by_feed.setdefault(feed_id, []).append(product_id)
     existing: dict[tuple[str, str], tuple[str, str]] = {}
     for feed_id, product_ids in by_feed.items():
@@ -68,7 +68,7 @@ def _append_price_history(
     observed_at = int(time.time())
     rows = [
         (feed_id, product_id, amount, formatted, currency, observed_at)
-        for feed_id, product_id, amount, formatted, currency in snapshots
+        for feed_id, product_id, amount, formatted, currency, _available in snapshots
         if existing.get((feed_id, product_id)) != (amount, currency)
     ]
     connection.executemany(
@@ -90,6 +90,7 @@ def _upsert_price_snapshots(
             canonicalize_price_amount(snapshot.amount),
             snapshot.formatted,
             snapshot.currency,
+            None if snapshot.available is None else int(snapshot.available),
         )
         for snapshot in snapshots
     )
@@ -98,14 +99,16 @@ def _upsert_price_snapshots(
     existing = _existing_prices_by_feed(connection, materialized)
     connection.executemany(
         "INSERT INTO price_snapshots "
-        "(feed_id, product_id, amount, formatted, currency) "
-        "VALUES (?, ?, ?, ?, ?) "
+        "(feed_id, product_id, amount, formatted, currency, available) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(feed_id, product_id) DO UPDATE SET "
         "amount = excluded.amount, formatted = excluded.formatted, "
-        "currency = excluded.currency, updated_at = unixepoch() "
+        "currency = excluded.currency, available = excluded.available, "
+        "updated_at = unixepoch() "
         "WHERE price_snapshots.amount <> excluded.amount "
         "OR price_snapshots.formatted <> excluded.formatted "
-        "OR price_snapshots.currency <> excluded.currency",
+        "OR price_snapshots.currency <> excluded.currency "
+        "OR price_snapshots.available IS NOT excluded.available",
         materialized,
     )
     _append_price_history(connection, materialized, existing)
@@ -124,7 +127,7 @@ class PriceSnapshotRepository:
         limit: int | None = None,
     ) -> tuple[PriceSnapshot, ...]:
         rows = self._connection.execute(
-            "SELECT product_id, amount, formatted, currency "
+            "SELECT product_id, amount, formatted, currency, available "
             "FROM price_snapshots WHERE feed_id = ? ORDER BY product_id LIMIT ?",
             (feed_id, -1 if limit is None else limit),
         )
@@ -135,8 +138,9 @@ class PriceSnapshotRepository:
                 amount=Decimal(amount),
                 formatted=formatted,
                 currency=currency,
+                available=None if available is None else bool(available),
             )
-            for product_id, amount, formatted, currency in rows
+            for product_id, amount, formatted, currency, available in rows
         )
 
     def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:

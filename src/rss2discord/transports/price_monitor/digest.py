@@ -66,9 +66,16 @@ def build_digest_messages(
     if not records:
         raise ValueError("digest requires at least one notification")
     source_title = _single_line(records[0].source_title, 160)
-    drop_items, rise_items, drops, rises, extremes, unchanged, new = _split_changes(
-        records,
-    )
+    (
+        drop_items,
+        rise_items,
+        drops,
+        rises,
+        extremes,
+        unchanged,
+        new,
+        restocked,
+    ) = _split_changes(records)
     files = build_report_files(
         records[0].feed_id,
         records[0].group_id,
@@ -95,6 +102,7 @@ def build_digest_messages(
             (rises, "rose"),
             (unchanged, "unchanged"),
             (new, "new"),
+            (restocked, "restocked"),
         ]
         if count
     ]
@@ -273,15 +281,33 @@ def _split_changes(
     int,
     int,
     int,
+    int,
 ]:
-    """Return top drops, top rises, and counts for summary."""
+    """Return top drops, top rises, and disjoint counts for the summary.
+
+    A restock counts once under ``restocked`` even when it also carries a real
+    price move. Such a move stays eligible for the drops/rises lists, but a
+    restock whose price is unchanged never looks like a price move.
+    """
     drop_count = rise_count = unchanged_count = new_count = extreme_count = 0
+    restocked_count = 0
     drops: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
     rises: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
 
     for record in records:
         previous = record.previous_amount
         current = record.current_amount
+        if record.entry.restocked:
+            restocked_count += 1
+            if previous is not None and previous > 0 and current != previous:
+                ratio = current / previous
+                if ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX:
+                    extreme_count += 1
+                elif ratio < 1:
+                    drops.append((record, previous, current, ratio))
+                else:
+                    rises.append((record, previous, current, ratio))
+            continue
         if previous is None or previous <= 0:
             new_count += 1
             continue
@@ -311,6 +337,7 @@ def _split_changes(
         extreme_count,
         unchanged_count,
         new_count,
+        restocked_count,
     )
 
 

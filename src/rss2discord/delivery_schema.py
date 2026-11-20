@@ -43,9 +43,18 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         connection.execute(
             "CREATE TABLE IF NOT EXISTS price_snapshots (feed_id TEXT NOT NULL, "
             "product_id TEXT NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
-            "currency TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+            "currency TEXT NOT NULL, available INTEGER, "
+            "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
             "PRIMARY KEY (feed_id, product_id)) WITHOUT ROWID",
         )
+        snapshot_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(price_snapshots)")
+        }
+        if "available" not in snapshot_columns:
+            connection.execute(
+                "ALTER TABLE price_snapshots ADD COLUMN available INTEGER",
+            )
         connection.execute(
             "CREATE TABLE IF NOT EXISTS price_notifications ("
             "notification_id INTEGER PRIMARY KEY AUTOINCREMENT, "

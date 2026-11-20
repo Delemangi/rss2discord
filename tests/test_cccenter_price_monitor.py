@@ -180,7 +180,7 @@ def test_cccenter_price_monitor_baselines_silently_then_alerts_changes_and_skips
         catalog=CatalogStub(
             [
                 (product("56000"), product(None, "https://cccenter.mk/product/b/")),
-                (replace(product("54000"), is_in_stock=False),),
+                (product("54000"),),
             ],
         ),
         snapshots=None,  # type: ignore[arg-type]

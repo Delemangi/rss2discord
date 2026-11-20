@@ -784,6 +784,103 @@ def test_period_low_suppressed_by_positive_percentage_without_direction() -> Non
     assert "**30-day low**" not in metrics
 
 
+def test_equal_price_restock_badges_without_redundant_previous_or_change() -> None:
+    # Given - an item that came back at exactly the same price
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "80 MKD", prior=True),
+                SourceMetric("Stock", "In stock"),
+                SourceMetric("Merchant", "Example"),
+            ),
+            restocked=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the restock is prominent and nothing repeats the same figure
+    assert metrics == (
+        f"Price: **80 MKD** · **Back in stock**\n{METRICS_GAP}\n-# Merchant: Example"
+    )
+    assert "Previous" not in metrics
+    assert "Change" not in metrics
+    assert "+0.0%" not in metrics
+    assert "Stock" not in metrics
+
+
+def test_restock_with_price_drop_keeps_previous_and_change() -> None:
+    # Given - an item that restocked and dropped in price at the same time
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+                SourceMetric("Stock", "7"),
+            ),
+            price_change_percentage="-11.1%",
+            restocked=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the restock badge, previous price, and change all remain readable
+    assert metrics == (
+        "Price: **80 MKD** ~~90 MKD~~ · **Back in stock**\n"
+        f"{METRICS_GAP}\n"
+        "-# Change: -11.1%\n"
+        "-# Stock: 7"
+    )
+
+
+def test_restock_with_period_low_shows_both_signals() -> None:
+    # Given - a restock that is also the lowest price in the window
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+            ),
+            price_change_percentage="-11.1%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+            restocked=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - both the restock and the period-low signals survive, neither
+    # overwriting the other
+    assert metrics == (
+        "Price: **80 MKD** ~~90 MKD~~ · **Back in stock** · **30-day low**\n"
+        f"{METRICS_GAP}\n"
+        "-# Change: -11.1%"
+    )
+
+
 def test_period_range_skips_when_crowding_existing_metrics() -> None:
     # Given - a dense price drop where the range would be the last line
     message = make_message(

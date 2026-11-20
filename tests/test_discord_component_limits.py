@@ -467,6 +467,135 @@ def test_period_low_badge_respects_text_limits() -> None:
     assert any("**30-day low**" in content for content in contents)
 
 
+def test_restocked_false_price_change_card_is_unchanged() -> None:
+    # Given - a normal price-change alert explicitly marked as not a restock
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="Description",
+            author="Author",
+            timestamp="2026-07-20T12:00:00+00:00",
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            price_change_percentage="-11.1%",
+            discount_percentage="20.0%",
+            price_direction=PriceDirection.DECREASE,
+            restocked=False,
+        ),
+    )
+
+    # When
+    payload = build_payload(message)
+
+    # Then - exact payload proves the restock path did not touch normal alerts
+    assert payload == {
+        "allowed_mentions": {"parse": []},
+        "components": [
+            {
+                "accent_color": 3908957,
+                "components": [
+                    {
+                        "content": "## [Price change: Item](https://example.test/item)",
+                        "type": 10,
+                    },
+                    {
+                        "content": "Price: **80 MKD** ~~90 MKD~~\n-# \u200b\n-# Change: -11.1%\n-# Original: 100 MKD\n-# Discount: 20% off",
+                        "type": 10,
+                    },
+                    {"content": "Description", "type": 10},
+                    {"divider": True, "spacing": 1, "type": 14},
+                    {"content": "-# RSS • News • By Author", "type": 10},
+                ],
+                "type": 17,
+            },
+        ],
+        "flags": 32768,
+        "username": "RSS Bot",
+        "avatar_url": "https://example.test/avatar.png",
+    }
+
+
+def test_restocked_false_discovery_card_is_unchanged() -> None:
+    # Given - a product discovery card explicitly marked as not a restock
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="Description",
+            author="Author",
+            timestamp="2026-07-20T12:00:00+00:00",
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            discount_percentage="20.0%",
+            restocked=False,
+        ),
+    )
+
+    # When
+    payload = build_payload(message)
+
+    # Then - exact payload proves discovery rendering is untouched
+    assert payload == {
+        "allowed_mentions": {"parse": []},
+        "components": [
+            {
+                "accent_color": 5814783,
+                "components": [
+                    {
+                        "content": "## [Item](https://example.test/item)",
+                        "type": 10,
+                    },
+                    {
+                        "content": "Price: **80 MKD** · **20% off**\n-# \u200b\n-# Original: 100 MKD",
+                        "type": 10,
+                    },
+                    {"content": "Description", "type": 10},
+                    {"divider": True, "spacing": 1, "type": 14},
+                    {
+                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "type": 10,
+                    },
+                ],
+                "type": 17,
+            },
+        ],
+        "flags": 32768,
+        "username": "RSS Bot",
+        "avatar_url": "https://example.test/avatar.png",
+    }
+
+
+def test_restock_badge_respects_text_limits() -> None:
+    # Given - a restock card where every text field is hostile
+    message = make_message(
+        entry=EntryData(
+            title="T" * 5000,
+            link="https://example.test/item",
+            description="D" * 5000,
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            restocked=True,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - the badge is visible and every text block stays inside its budgets
+    assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+    assert contents[-1] == "-# RSS • News"
+    assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
+    assert any("**Back in stock**" in content for content in contents)
+
+
 def test_period_range_respects_text_limits() -> None:
     # Given - a hostile price-drop card with a usable range
     message = make_message(

@@ -117,16 +117,18 @@ class CCCenterPriceMonitor:
                     raise FeedFetchError(CCCENTER_LABEL, "InvalidProductIdentity")
                 by_id[product.product_id] = product
             confirmed.extend(
-                PriceObservation(
-                    by_id[observation.snapshot.product_id],
-                    observation.snapshot,
-                )
+                PriceObservation(detail, observation.snapshot)
                 for observation in chunk
-                if observation.snapshot.product_id in by_id
-                and by_id[observation.snapshot.product_id].price_status == "scalar"
+                if (detail := by_id.get(observation.snapshot.product_id)) is not None
+                and detail.price_status == "scalar"
                 and observation.snapshot.currency == "MKD"
-                and by_id[observation.snapshot.product_id].current_price
-                == observation.snapshot.amount
+                and detail.current_price == observation.snapshot.amount
+                # A restock must also be confirmed by the detail page's stock
+                # state; an out-of-stock detail never confirms availability.
+                and (
+                    observation.snapshot.available is None
+                    or detail.is_in_stock is observation.snapshot.available
+                )
             )
             if len(confirmed) >= 100:
                 break
@@ -147,6 +149,7 @@ class CCCenterPriceMonitor:
             amount=product.current_price,
             formatted=format_cccenter_mkd(product.current_price),
             currency="MKD",
+            available=product.is_in_stock,
         )
 
     def _message(

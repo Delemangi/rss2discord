@@ -377,7 +377,37 @@ def _metrics_with_price_details(
     range is appended as compact context.
     """
     metrics = list(entry.source_metrics)
-    headline_badge: str | None = None
+    headline_badges: list[str] = []
+
+    if entry.restocked:
+        # Equal-price restocks should not echo the same figure as a previous
+        # price, and the badge already says the item is back; drop a literal
+        # "In stock" stock line so it does not read twice.
+        previous_index = next(
+            (index for index, item in enumerate(metrics) if item.label == "Previous"),
+            None,
+        )
+        if previous_index is not None and entry.price_change_percentage is None:
+            price_index = next(
+                (index for index, item in enumerate(metrics) if item.label == "Price"),
+                None,
+            )
+            if (
+                price_index is not None
+                and metrics[price_index].value == metrics[previous_index].value
+            ):
+                metrics.pop(previous_index)
+                if previous_index < price_index:
+                    price_index -= 1
+        metrics = [
+            metric
+            for metric in metrics
+            if not (
+                metric.label == "Stock"
+                and metric.value.strip().casefold() == "in stock"
+            )
+        ]
+        headline_badges.append("**Back in stock**")
 
     is_price_change = entry.price_change_percentage is not None
 
@@ -401,7 +431,7 @@ def _metrics_with_price_details(
         formatted = _format_discount_percentage(discount)
         if entry.price_change_percentage is None:
             # Discovery card: badge the headline instead of burying it in details.
-            headline_badge = f"**{formatted}**"
+            headline_badges.append(f"**{formatted}**")
         else:
             # Price-change card: keep discount readable in the supporting line.
             original_index = next(
@@ -428,7 +458,7 @@ def _metrics_with_price_details(
 
     if is_price_change:
         if entry.price_is_period_low and _is_price_decrease(entry):
-            headline_badge = f"**{entry.price_period_days}-day low**"
+            headline_badges.append(f"**{entry.price_period_days}-day low**")
         elif (
             not entry.price_is_period_low
             and entry.price_period_low is not None
@@ -446,6 +476,9 @@ def _metrics_with_price_details(
                 ),
             )
 
+    headline_badge = (
+        HEADLINE_BADGE_SEPARATOR.join(headline_badges) if headline_badges else None
+    )
     return tuple(metrics), headline_badge
 
 

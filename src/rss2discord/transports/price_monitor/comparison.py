@@ -40,10 +40,12 @@ def diff_price_snapshots(
     """Return silent updates and price transitions in current observation order.
 
     New IDs and formatting-only changes are silent; amount or currency changes
-    produce records even when their display text is unchanged. Equal snapshots
-    and persisted IDs absent from current produce no work. This pure comparison
-    does not filter held IDs, gate currencies, or persist anything: delivery
-    planning owns those decisions.
+    produce records even when their display text is unchanged. A change in
+    reported availability alone is also silent here so the caller can persist
+    stock state without treating it as a price move. Equal snapshots and
+    persisted IDs absent from current produce no work. This pure comparison does
+    not filter held IDs, gate currencies, or persist anything: delivery planning
+    owns those decisions.
     """
     silent: list[PriceSnapshot] = []
     changes: list[PriceChangeRecord] = []
@@ -55,6 +57,39 @@ def diff_price_snapshots(
             previous.amount != snapshot.amount or previous.currency != snapshot.currency
         ):
             changes.append(PriceChangeRecord(snapshot.product_id, previous, snapshot))
-        elif previous.formatted != snapshot.formatted:
+        elif (
+            previous.formatted != snapshot.formatted
+            or previous.available != snapshot.available
+        ):
             silent.append(snapshot)
     return tuple(silent), tuple(changes)
+
+
+def diff_stock_snapshots(
+    current: Iterable[PriceSnapshot],
+    persisted: Mapping[str, PriceSnapshot],
+) -> tuple[tuple[PriceSnapshot, ...], tuple[PriceChangeRecord, ...]]:
+    """Return silent stock updates and restock transitions in observation order.
+
+    Only a persisted ``False`` turning into ``True`` is a restock. A new ID is
+    left to the price diff as a silent baseline, an unknown persisted state is
+    persisted silently because there is no prior stock claim to contradict, an
+    out-of-stock observation is silent, and an observation that reports no
+    availability establishes nothing. Decimal amount and currency are carried
+    through unchanged so a restock can also report its price move.
+    """
+    silent: list[PriceSnapshot] = []
+    restocks: list[PriceChangeRecord] = []
+    for snapshot in current:
+        previous = persisted.get(snapshot.product_id)
+        if previous is None or snapshot.available is None:
+            continue
+        if previous.available is None:
+            silent.append(snapshot)
+        elif previous.available is snapshot.available:
+            continue
+        elif snapshot.available:
+            restocks.append(PriceChangeRecord(snapshot.product_id, previous, snapshot))
+        else:
+            silent.append(snapshot)
+    return tuple(silent), tuple(restocks)

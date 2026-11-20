@@ -160,7 +160,7 @@ def test_price_monitor_delivers_price_change_message(
         assert store.load_price_snapshots("ananas")[0].amount == Decimal(900)
 
 
-def test_price_monitor_excludes_out_of_stock_products(
+def test_price_monitor_includes_out_of_stock_products_with_a_valid_price(
     tmp_path: Path,
 ) -> None:
     sender = RecordingSender([])
@@ -178,14 +178,21 @@ def test_price_monitor_excludes_out_of_stock_products(
         )
 
         monitor.scan()
-        assert store.load_price_snapshots("ananas") == ()
+        persisted = store.load_price_snapshots("ananas")
+        assert persisted[0].amount == Decimal(1000)
+        assert persisted[0].available is False
 
+        # A silent availability change keeps the last observed price.
         monitor.scan()
-        assert store.load_price_snapshots("ananas")[0].amount == Decimal(1000)
+        persisted = store.load_price_snapshots("ananas")
+        assert persisted[0].amount == Decimal(1000)
+        assert persisted[0].available is True
 
+        # An out-of-stock price move never alerts; it only advances the baseline.
         monitor.scan()
         assert sender.messages == []
-        assert store.load_price_snapshots("ananas")[0].amount == Decimal(1000)
+        assert store.load_price_snapshots("ananas")[0].amount == Decimal(900)
+        assert store.load_price_snapshots("ananas")[0].available is False
 
 
 def test_price_monitor_groups_observations_by_slug(

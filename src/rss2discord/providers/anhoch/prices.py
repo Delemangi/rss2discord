@@ -78,6 +78,7 @@ class AnhochPriceMonitor:
             amount=product.selling_price.amount,
             formatted=product.selling_price.formatted,
             currency=product.selling_price.currency,
+            available=product.is_in_stock,
         )
 
     def _message_for(
