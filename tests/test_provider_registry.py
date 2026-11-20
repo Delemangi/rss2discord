@@ -38,6 +38,7 @@ from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
+from rss2discord.providers.reddit.strategy import RedditStrategy
 from rss2discord.providers.registry import (
     STRATEGY_SPECS,
     BackgroundPriceMonitor,
@@ -76,6 +77,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "neksio": NeksioStrategy,
     "neptun": NeptunStrategy,
     "pazar3": Pazar3Strategy,
+    "reddit": RedditStrategy,
     "reklama5": Reklama5Strategy,
     "rss": RSSStrategy,
     "setec": SetecStrategy,

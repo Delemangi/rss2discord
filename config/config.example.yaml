@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -237,6 +237,20 @@ feeds:
     webhook_name: "OpenCode Tweets"
     digest_threshold: null
 
+  # Reddit posts through the official Data API. Access requires an approved
+  # Reddit OAuth application; until approval the strategy fails with
+  # MissingCredentials. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in the
+  # environment and use REDDIT_USER_AGENT to describe the bot. The strategy
+  # reads at most 300 newest posts from /r/<subreddit>/<sort>, returns them
+  # oldest-first, and skips stickied, NSFW, and spoiler posts. Optional
+  # ?t=hour|day|week|month|year|all applies to top and controversial only.
+  # - id: "reddit-python"
+  #   name: "r/python"
+  #   url: "https://www.reddit.com/r/python/top?t=day"
+  #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  #   strategy: "reddit"
+  #   webhook_name: "Reddit"
+
   # EMSC earthquake alerts for the Macedonia/Balkans region. The URL must be an
   # EMSC FDSN event query; event links use the EMSC event ID. Use orderby=time
   # (descending) so limit selects the latest events; the strategy reverses the
@@ -341,6 +355,8 @@ feeds:
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
 # - url: The RSS/Atom feed, XenForo thread, marketplace page, Pazar3 listing URL,
 #   Reklama5 search URL, or product catalog URL (required).
+#   Reddit feeds use https://www.reddit.com/r/<subreddit>/<sort> or the
+#   old.reddit.com equivalent, with an optional ?t= window for top/controversial.
 #   Public GitHub release feeds use https://github.com/OWNER/REPOSITORY/releases.atom
 #   and render with a GitHub source label. GitLab project commit Atom feeds use
 #   https://HOST/NAMESPACE/PROJECT/-/commits/BRANCH.atom and render with a GitLab
@@ -352,6 +368,9 @@ feeds:
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
+#   - 'reddit': For posts from one subreddit listing through the official Reddit
+#     Data API; requires an approved OAuth client and REDDIT_CLIENT_ID /
+#     REDDIT_CLIENT_SECRET, with an optional descriptive REDDIT_USER_AGENT.
 #   - 'ananas': For new products and optional price monitoring from any Ananas category URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
