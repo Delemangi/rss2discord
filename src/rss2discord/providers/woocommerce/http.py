@@ -63,12 +63,20 @@ def normalize_shop_url(url: str) -> WooCommerceShop:
         raise FeedFetchError(WOOCOMMERCE_LABEL, "InvalidUrl")
     path = parsed.path.rstrip("/") or "/"
     category_slug: str | None = None
+    category_prefix = next(
+        (
+            prefix
+            for prefix in ("/product-category/", "/kategori/")
+            if path.startswith(prefix)
+        ),
+        None,
+    )
     if path == "/shop":
         path = "/"
-    elif path.startswith("/product-category/"):
+    elif category_prefix is not None:
         segments = [
             unquote(segment)
-            for segment in path.removeprefix("/product-category/").split("/")
+            for segment in path.removeprefix(category_prefix).split("/")
             if segment
         ]
         if not segments:
