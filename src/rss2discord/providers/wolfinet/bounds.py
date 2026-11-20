@@ -1,0 +1,18 @@
+"""Safety limits and source constants for the Wolfinet Odoo shop."""
+
+from typing import Final
+
+WOLFINET_LABEL: Final = "Wolfinet"
+WOLFINET_HOST: Final = "wolfinet.com.mk"
+WOLFINET_ORIGIN: Final = f"https://{WOLFINET_HOST}"
+WOLFINET_SHOP_PATH: Final = "/en/shop"
+WOLFINET_PRODUCTS_PER_PAGE: Final = 20
+MAX_WOLFINET_PAGES: Final = 20
+MAX_WOLFINET_LATEST_PAGES: Final = 2
+MAX_WOLFINET_PRODUCTS: Final = 500
+MAX_WOLFINET_RESPONSE_BYTES: Final = 2 * 1024 * 1024
+MAX_WOLFINET_SCAN_BYTES: Final = MAX_WOLFINET_PAGES * MAX_WOLFINET_RESPONSE_BYTES
+WOLFINET_REQUEST_TIMEOUT: Final = 30.0
+WOLFINET_INTER_REQUEST_DELAY: Final = 0.2
+WOLFINET_USER_AGENT: Final = "Mozilla/5.0 (compatible; rss2discord/0.1)"
+MAX_WOLFINET_RETAINED_SNAPSHOTS: Final = 1_000

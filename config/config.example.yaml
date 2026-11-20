@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -122,7 +122,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, Wolfinet, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     # Optional: 1-1000; only for price strategies. Price changes sent individually before one digest. Default 100.
     # price_inline_limit: 100
@@ -290,7 +290,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, Wolfinet, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -301,7 +301,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, Wolfinet, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -353,6 +353,17 @@ feeds:
   #   price_check_interval: 21600
   #   webhook_name: "PROXNet Bot"
 
+  # Wolfinet Odoo shop discovery and optional full-shop price monitoring.
+  # The URL must be the exact credential-free shop root; full scans traverse
+  # 15+ pages, so the example uses a six-hour price interval.
+  # - id: "wolfinet-shop"
+  #   name: "Wolfinet"
+  #   url: "https://wolfinet.com.mk/en/shop"
+  #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  #   strategy: "wolfinet"
+  #   price_check_interval: 21600
+  #   webhook_name: "Wolfinet Bot"
+
   # Example feed 2
   - id: "another-feed"
     name: "Another Feed"
@@ -400,6 +411,8 @@ feeds:
 #     new entries include the article summary and Open Graph image
 #   - 'fakulteti_mk': For Fakulteti.mk student news from the root URL or a
 #     /category/<slug>,<slug> subset; new entries include the summary and image
+#   - 'wolfinet': For new products and optional full-shop price monitoring
+#     from the Wolfinet Odoo shop root
 #   - 'woocommerce': For new products and price monitoring from any public WooCommerce
 #     Store API shop, using the shop root, /shop/, or a /product-category/<slug>/ URL
 # - ordinary_check_interval: Optional positive finite seconds between ordinary discovery checks;
