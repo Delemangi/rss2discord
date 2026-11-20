@@ -32,6 +32,7 @@ FeedStrategyName = Literal[
     "neksio",
     "neptun",
     "pazar3",
+    "proxnet",
     "reklama5",
     "reddit",
     "setec",

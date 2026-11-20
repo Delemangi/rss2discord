@@ -55,6 +55,9 @@ from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
 from rss2discord.providers.pazar3.strategy import Pazar3Strategy
+from rss2discord.providers.proxnet.catalog import ProxnetCatalogClient
+from rss2discord.providers.proxnet.prices import ProxnetPriceMonitor
+from rss2discord.providers.proxnet.strategy import ProxnetStrategy
 from rss2discord.providers.reddit.strategy import RedditStrategy
 from rss2discord.providers.reklama5.catalog import Reklama5CatalogClient
 from rss2discord.providers.reklama5.prices import Reklama5PriceMonitor
@@ -419,6 +422,15 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
         ),
     ),
     "reddit": StrategySpec(discovery=lambda dependencies: RedditStrategy()),
+    "proxnet": StrategySpec(
+        discovery=lambda dependencies: ProxnetStrategy(
+            dependencies.is_shutdown_requested,
+        ),
+        price_monitor=lambda feed, dependencies: ProxnetPriceMonitor(
+            feed,
+            _monitor_dependencies(ProxnetCatalogClient(), dependencies),
+        ),
+    ),
     "reklama5": StrategySpec(
         discovery=lambda dependencies: Reklama5Strategy(
             is_shutdown_requested=dependencies.is_shutdown_requested,

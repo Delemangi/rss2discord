@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -122,7 +122,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "anhoch"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     # Optional: 1-1000; only for price strategies. Price changes sent individually before one digest. Default 100.
     # price_inline_limit: 100
@@ -290,7 +290,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "setec"
     # Full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "Setec Bot"
 
@@ -301,7 +301,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "ddstore"
     # Independent full-catalog selling-price scan every hour. Omit or set null to disable;
-    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
+    # valid only for Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce. The immediate first scan stores a silent baseline.
     price_check_interval: 3600
     webhook_name: "DDStore Bot"
 
@@ -341,6 +341,18 @@ feeds:
     price_check_interval: 3600
     webhook_name: "Neptun Bot"
 
+  # PROXNet category discovery and optional complete-category price monitoring.
+  # The category URL must use the /mk/ prefix; product, search, cart, and account
+  # pages are rejected. Full scans traverse up to 11 pages for this category, so
+  # the example uses a six-hour price interval.
+  # - id: "proxnet-networking"
+  #   name: "PROXNet Networking"
+  #   url: "https://www.proxnet.mk/mk/17-mrezhna-oprema"
+  #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  #   strategy: "proxnet"
+  #   price_check_interval: 21600
+  #   webhook_name: "PROXNet Bot"
+
   # Example feed 2
   - id: "another-feed"
     name: "Another Feed"
@@ -378,6 +390,8 @@ feeds:
 #   - 'gjirafa50': For new products and full in-stock catalog price monitoring from Gjirafa50.mk or Gjirafa50.com
 #   - 'neksio': For new products from Neksio's public catalog
 #   - 'neptun': For new products from one Neptun category page
+#   - 'proxnet': For new products and optional full-category price monitoring
+#     from a PROXNet /mk/ category page
 #   - 'setec': For new products from Setec's public catalog
 #   - 'ddstore': For new products from DDStore's public GraphQL catalog
 #   - 'technomarket': For new products from one public Technomarket category
@@ -432,7 +446,7 @@ feeds:
 #   price-change percentage. Restocks with no price change are counted
 #   separately in bulk digests. When false, availability is still stored so a
 #   later scan can detect the change, but no restock is ever posted.
-# - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
+# - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and
 #   silently creates a baseline snapshot. Ananas uses the public Algolia proxy at
