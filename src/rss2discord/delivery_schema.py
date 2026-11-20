@@ -85,6 +85,29 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
                 "FROM anhoch_price_snapshots",
             )
             connection.execute("DROP TABLE anhoch_price_snapshots")
+        # Price history is append-only. Seed one baseline row per existing
+        # snapshot on the first creation only so restarts never resurrect rows
+        # that retention or an operator removed.
+        price_history_exists = (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'price_history'",
+            ).fetchone()
+            is not None
+        )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS price_history (feed_id TEXT NOT NULL, "
+            "product_id TEXT NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
+            "currency TEXT NOT NULL, observed_at INTEGER NOT NULL, "
+            "PRIMARY KEY (feed_id, product_id, observed_at)) WITHOUT ROWID",
+        )
+        if not price_history_exists:
+            connection.execute(
+                "INSERT OR IGNORE INTO price_history "
+                "(feed_id, product_id, amount, formatted, currency, observed_at) "
+                "SELECT feed_id, product_id, amount, formatted, currency, updated_at "
+                "FROM price_snapshots",
+            )
         connection.execute(
             "INSERT OR IGNORE INTO initialized_feeds (feed_id) "
             "SELECT DISTINCT feed_id FROM delivered_entries",

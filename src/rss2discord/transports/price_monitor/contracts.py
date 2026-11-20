@@ -1,15 +1,17 @@
 """Contracts stage for source-neutral price monitoring."""
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
 from rss2discord.discord.client import DiscordSender, SleepCallback
 from rss2discord.models import (
     HEALTH_REMINDER_SECONDS,
     HealthNotice,
     HealthUpdate,
+    PriceHistoryContext,
     PriceSnapshot,
 )
 from rss2discord.price_notifications import (
@@ -62,6 +64,15 @@ class PriceRecoveryStore(PriceSnapshotStore, Protocol):
     ) -> None: ...
 
     def count_pending_price_notifications(self, feed_id: str) -> int: ...
+
+    def load_price_history_context(
+        self,
+        feed_id: str,
+        observations: Mapping[str, PriceSnapshot],
+        *,
+        window_days: int = PRICE_HISTORY_WINDOW_DAYS,
+        now: int | None = None,
+    ) -> Mapping[str, PriceHistoryContext]: ...
 
     def select_price_confirmation_subset(
         self,

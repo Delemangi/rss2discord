@@ -366,16 +366,20 @@ def _format_discount_percentage(percentage: str) -> str:
 def _metrics_with_price_details(
     entry: EntryData,
 ) -> tuple[tuple[SourceMetric, ...], str | None]:
-    """Insert derived change and discount percentages into the metric list.
+    """Insert derived change, discount, and price-history context into metrics.
 
-    Returns the adjusted metrics plus an optional discount badge to append to
-    the headline metric. Discovery cards badge the headline so the saving is
+    Returns the adjusted metrics plus an optional badge to append to the
+    headline metric. Discovery cards badge the headline so the saving is
     the first thing a reader sees; price-change cards keep the discount as a
     supporting metric so the headline does not carry two unlabelled
-    percentages (``20% off`` versus ``Change: -10.0%``).
+    percentages (``20% off`` versus ``Change: -10.0%``). A genuine period
+    low is promoted to the headline for price drops; otherwise the period
+    range is appended as compact context.
     """
     metrics = list(entry.source_metrics)
     headline_badge: str | None = None
+
+    is_price_change = entry.price_change_percentage is not None
 
     percentage = entry.price_change_percentage
     if percentage is not None and not any(
@@ -422,7 +426,37 @@ def _metrics_with_price_details(
                 insert_at = price_index + 1 if price_index is not None else len(metrics)
             metrics.insert(insert_at, SourceMetric("Discount", formatted))
 
+    if is_price_change:
+        if entry.price_is_period_low and _is_price_decrease(entry):
+            headline_badge = f"**{entry.price_period_days}-day low**"
+        elif (
+            not entry.price_is_period_low
+            and entry.price_period_low is not None
+            and entry.price_period_high is not None
+            and entry.price_period_low != entry.price_period_high
+            and not any(
+                metric.label == f"{entry.price_period_days}-day range"
+                for metric in metrics
+            )
+        ):
+            metrics.append(
+                SourceMetric(
+                    f"{entry.price_period_days}-day range",
+                    f"{entry.price_period_low} – {entry.price_period_high}",
+                ),
+            )
+
     return tuple(metrics), headline_badge
+
+
+def _is_price_decrease(entry: EntryData) -> bool:
+    """Return whether the price move is a decrease, if known."""
+    if entry.price_direction is not None:
+        return entry.price_direction == PriceDirection.DECREASE
+    percentage = entry.price_change_percentage
+    if percentage is None:
+        return False
+    return percentage.lstrip().startswith("-")
 
 
 def _build_metrics(

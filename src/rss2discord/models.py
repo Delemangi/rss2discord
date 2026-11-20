@@ -3,6 +3,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Final, NewType
 
+from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
+
 EntryId = NewType("EntryId", str)
 
 HEALTH_REMINDER_SECONDS: Final = 21_600
@@ -46,6 +48,23 @@ class EntryData:
     image_urls: tuple[str, ...] = ()
     price_change_percentage: str | None = None
     discount_percentage: str | None = None
+    # Price-history context for alerts. Both values are formatted in the
+    # source's own format and cover the window ending at this observation.
+    price_period_low: str | None = None
+    price_period_high: str | None = None
+    price_period_days: int = PRICE_HISTORY_WINDOW_DAYS
+    price_is_period_low: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PriceHistoryContext:
+    """Observed price range for one product over a history window."""
+
+    low: Decimal
+    low_formatted: str
+    high: Decimal
+    high_formatted: str
+    is_low: bool
 
 
 @dataclass(frozen=True, slots=True)

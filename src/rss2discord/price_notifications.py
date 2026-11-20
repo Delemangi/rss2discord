@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
+from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
 from rss2discord.models import EntryData, PriceDirection, PriceSnapshot, SourceMetric
 
 
@@ -64,6 +65,10 @@ def entry_to_json(entry: EntryData) -> str:
         ),
         "price_change_percentage": entry.price_change_percentage,
         "discount_percentage": entry.discount_percentage,
+        "price_period_low": entry.price_period_low,
+        "price_period_high": entry.price_period_high,
+        "price_period_days": entry.price_period_days,
+        "price_is_period_low": entry.price_is_period_low,
         "source_metrics": [
             {"label": metric.label, "prior": metric.prior, "value": metric.value}
             for metric in entry.source_metrics
@@ -113,4 +118,18 @@ def entry_from_json(value: str) -> EntryData:
             if payload.get("discount_percentage") is None
             else str(payload["discount_percentage"])
         ),
+        price_period_low=(
+            None
+            if payload.get("price_period_low") is None
+            else str(payload["price_period_low"])
+        ),
+        price_period_high=(
+            None
+            if payload.get("price_period_high") is None
+            else str(payload["price_period_high"])
+        ),
+        price_period_days=int(
+            payload.get("price_period_days", PRICE_HISTORY_WINDOW_DAYS),
+        ),
+        price_is_period_low=bool(payload.get("price_is_period_low", False)),
     )

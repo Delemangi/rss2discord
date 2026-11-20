@@ -38,6 +38,7 @@ def test_unsuccessful_delivery_does_not_persist_the_snapshot(
 ) -> None:
     snapshot = PriceSnapshot("feed", "1", Decimal(90), "90", "MKD")
     store = Mock()
+    store.load_price_history_context.return_value = {}
     dependencies = Mock(snapshots=store)
     dependencies.delivery.is_shutdown_requested.return_value = False
     dependencies.sqlite_retry_policy.execute.side_effect = lambda operation: operation()
@@ -68,6 +69,7 @@ def test_unsuccessful_delivery_does_not_persist_the_snapshot(
 def test_only_successful_delivery_delays_the_next_attempt() -> None:
     snapshot = PriceSnapshot("feed", "1", Decimal(90), "90", "MKD")
     store = Mock()
+    store.load_price_history_context.return_value = {}
     dependencies = Mock(snapshots=store)
     dependencies.delivery = price_monitor.PriceAlertDelivery(
         Mock(return_value=True),
