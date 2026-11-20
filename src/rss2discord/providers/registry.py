@@ -70,6 +70,9 @@ from rss2discord.providers.technomarket.prices import TechnomarketPriceMonitor
 from rss2discord.providers.technomarket.strategy import TechnomarketStrategy
 from rss2discord.providers.time_mk.strategy import TimeMkStrategy
 from rss2discord.providers.tweets.strategy import TweetsStrategy
+from rss2discord.providers.wolfinet.catalog import WolfinetCatalogClient
+from rss2discord.providers.wolfinet.prices import WolfinetPriceMonitor
+from rss2discord.providers.wolfinet.strategy import WolfinetStrategy
 from rss2discord.providers.woocommerce.catalog import WooCommerceCatalogClient
 from rss2discord.providers.woocommerce.prices import WooCommercePriceMonitor
 from rss2discord.providers.woocommerce.strategy import WooCommerceStrategy
@@ -466,6 +469,15 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     ),
     "time_mk": StrategySpec(discovery=lambda dependencies: TimeMkStrategy()),
     "tweets": StrategySpec(discovery=lambda dependencies: TweetsStrategy()),
+    "wolfinet": StrategySpec(
+        discovery=lambda dependencies: WolfinetStrategy(
+            dependencies.is_shutdown_requested,
+        ),
+        price_monitor=lambda feed, dependencies: WolfinetPriceMonitor(
+            feed,
+            _monitor_dependencies(WolfinetCatalogClient(), dependencies),
+        ),
+    ),
     "woocommerce": StrategySpec(
         discovery=lambda dependencies: WooCommerceStrategy(
             dependencies.is_shutdown_requested,
