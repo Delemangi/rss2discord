@@ -1,6 +1,7 @@
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from typing import cast
 
 import requests
 from pydantic import JsonValue
@@ -26,11 +27,22 @@ def product_payload(
     regular_price: str = "199900",
     in_stock: bool = True,
     host: str = "technosapien.mk",
+    permalink: str | None = None,
+    images: list[dict[str, JsonValue]] | None = None,
 ) -> dict[str, JsonValue]:
+    default_images: list[dict[str, JsonValue]] = [
+        {
+            "id": product_id,
+            "src": f"https://{host}/wp-content/uploads/product-{product_id}.jpg",
+            "thumbnail": (
+                f"https://{host}/wp-content/uploads/product-{product_id}-300x300.jpg"
+            ),
+        },
+    ]
     return {
         "id": product_id,
         "name": f"Product {product_id} &#8211; Gaming",
-        "permalink": f"https://{host}/product/product-{product_id}/",
+        "permalink": permalink or f"https://{host}/product/product-{product_id}/",
         "sku": f"SKU-{product_id}",
         "type": "simple",
         "prices": {
@@ -39,16 +51,7 @@ def product_payload(
             "currency_code": "MKD",
             "currency_minor_unit": 2,
         },
-        "images": [
-            {
-                "id": product_id,
-                "src": f"https://{host}/wp-content/uploads/product-{product_id}.jpg",
-                "thumbnail": (
-                    f"https://{host}/wp-content/uploads/"
-                    f"product-{product_id}-300x300.jpg"
-                ),
-            },
-        ],
+        "images": cast(JsonValue, images if images is not None else default_images),
         "categories": [
             {
                 "id": 75,
