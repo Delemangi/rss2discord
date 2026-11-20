@@ -49,13 +49,14 @@ def product(
     )
 
 
-def feed() -> FeedConfig:
+def feed(*, restock_alerts: bool = False) -> FeedConfig:
     return FeedConfig(
         id="technosapien",
         name="TechnoSapien",
         url=SHOP_URL,
         webhook="https://discord.example.test/webhooks/id/token",
         strategy="woocommerce",
+        restock_alerts=restock_alerts,
     )
 
 
@@ -63,9 +64,11 @@ def monitor(
     catalog: CatalogStub,
     store: DeliveryStore,
     sender: RecordingSender,
+    *,
+    restock_alerts: bool = False,
 ) -> WooCommercePriceMonitor:
     return WooCommercePriceMonitor(
-        feed(),
+        feed(restock_alerts=restock_alerts),
         WooCommercePriceMonitorDependencies(
             catalog=catalog,
             snapshots=store,
@@ -126,6 +129,7 @@ def test_woocommerce_price_monitor_baselines_then_delivers_price_change(
             SourceMetric("Previous", "1.499 ден.", prior=True),
         )
         assert str(store.load_price_snapshots("technosapien")[0].amount) == "1299"
+        assert store.load_price_snapshots("technosapien")[0].available is True
 
 
 def test_woocommerce_price_monitor_preserves_snapshot_when_price_is_zero(
@@ -145,21 +149,53 @@ def test_woocommerce_price_monitor_preserves_snapshot_when_price_is_zero(
         assert str(store.load_price_snapshots("technosapien")[0].amount) == "1499"
 
 
-def test_woocommerce_price_monitor_skips_out_of_stock_price(
+def test_woocommerce_price_monitor_silently_baselines_out_of_stock_price(
     tmp_path: Path,
 ) -> None:
     out_of_stock = WooCommerceProduct.model_validate(
         product_payload(1, price="129900", in_stock=False),
     )
     with DeliveryStore(tmp_path / "state.db") as store:
+        sender = RecordingSender([])
         price_monitor = monitor(
             CatalogStub([(product(1, "149900"),), (out_of_stock,)]),
             store,
-            RecordingSender([DiscordDeliveryResult.DELIVERED]),
+            sender,
         )
 
         price_monitor.scan()
-        with pytest.raises(FeedFetchError, match="EmptyCatalog"):
-            price_monitor.scan()
+        price_monitor.scan()
 
-        assert str(store.load_price_snapshots("technosapien")[0].amount) == "1499"
+        persisted = store.load_price_snapshots("technosapien")
+
+    assert sender.messages == []
+    assert str(persisted[0].amount) == "1299"
+    assert persisted[0].available is False
+
+
+def test_woocommerce_price_monitor_alerts_when_out_of_stock_returns(
+    tmp_path: Path,
+) -> None:
+    out_of_stock = WooCommerceProduct.model_validate(
+        product_payload(1, price="129900", in_stock=False),
+    )
+    back_in_stock = WooCommerceProduct.model_validate(
+        product_payload(1, price="129900", in_stock=True),
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        price_monitor = monitor(
+            CatalogStub([(out_of_stock,), (back_in_stock,)]),
+            store,
+            sender,
+            restock_alerts=True,
+        )
+
+        price_monitor.scan()
+        price_monitor.scan()
+
+        persisted = store.load_price_snapshots("technosapien")
+
+    assert len(sender.messages) == 1
+    assert sender.messages[0].entry.restocked is True
+    assert persisted[0].available is True
