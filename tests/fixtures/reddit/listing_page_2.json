@@ -1,0 +1,56 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": null,
+    "before": null,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_image1",
+          "id": "image1",
+          "title": "Screenshot",
+          "author": "frank",
+          "created_utc": 1699999900.0,
+          "selftext": "",
+          "url": "https://i.redd.it/image1.jpg",
+          "permalink": "/r/python/comments/image1/screenshot/",
+          "post_hint": "image",
+          "score": 21,
+          "num_comments": 6,
+          "domain": "i.redd.it",
+          "thumbnail": "default",
+          "preview": {
+            "images": [
+              {
+                "source": {
+                  "url": "https://preview.redd.it/image1.jpg?width=640&amp;format=pjpg",
+                  "width": 640,
+                  "height": 480
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_image2",
+          "id": "image2",
+          "title": "Thumbnail fallback",
+          "author": "grace",
+          "created_utc": 1699999800.0,
+          "selftext": "",
+          "url": "https://i.redd.it/image2.png",
+          "permalink": "/r/python/comments/image2/thumbnail_fallback/",
+          "post_hint": "image",
+          "score": 3,
+          "num_comments": 0,
+          "domain": "i.redd.it",
+          "thumbnail": "https://b.thumbs.redditmedia.com/fallback2.jpg"
+        }
+      }
+    ]
+  }
+}

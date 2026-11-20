@@ -1,0 +1,151 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_cursor2",
+    "before": null,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_link1",
+          "id": "link1",
+          "title": "Interesting link",
+          "author": "alice",
+          "created_utc": 1700000300.0,
+          "selftext": "",
+          "url": "https://example.com/article",
+          "url_overridden_by_dest": "https://example.com/article",
+          "permalink": "/r/python/comments/link1/interesting_link/",
+          "post_hint": "link",
+          "is_self": false,
+          "score": 42,
+          "num_comments": 7,
+          "domain": "example.com",
+          "thumbnail": "https://b.thumbs.redditmedia.com/thumb.jpg",
+          "link_flair_text": "News",
+          "preview": {
+            "images": [
+              {
+                "source": {
+                  "url": "https://preview.redd.it/link1.jpg?width=640&format=pjpg&auto=webp&amp;s=abc",
+                  "width": 640,
+                  "height": 360
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_self1",
+          "id": "self1",
+          "title": "Ask about Python",
+          "author": "bob",
+          "created_utc": 1700000200.0,
+          "selftext": "<p>Hello &amp; welcome to the thread</p>",
+          "url": "https://www.reddit.com/r/python/comments/self1/ask_about_python/",
+          "permalink": "/r/python/comments/self1/ask_about_python/",
+          "post_hint": "self",
+          "is_self": true,
+          "score": 10,
+          "num_comments": 3,
+          "domain": "self.python",
+          "thumbnail": "self"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_gallery1",
+          "id": "gallery1",
+          "title": "Chart gallery",
+          "author": "carol",
+          "created_utc": 1700000100.0,
+          "selftext": "",
+          "url": "https://www.reddit.com/gallery/gallery1",
+          "permalink": "/r/python/comments/gallery1/chart_gallery/",
+          "post_hint": "image",
+          "is_gallery": true,
+          "score": 100,
+          "num_comments": 12,
+          "domain": "i.redd.it",
+          "thumbnail": "https://b.thumbs.redditmedia.com/gallery.jpg",
+          "gallery_data": {
+            "items": [
+              {"media_id": "m1"},
+              {"media_id": "m2"}
+            ]
+          },
+          "media_metadata": {
+            "m1": {
+              "status": "valid",
+              "s": {
+                "u": "https://i.redd.it/m1.png?width=640&amp;format=png",
+                "width": 640,
+                "height": 480
+              }
+            },
+            "m2": {
+              "status": "valid",
+              "s": {
+                "u": "https://i.redd.it/m2.png?width=640&amp;format=png",
+                "width": 640,
+                "height": 480
+              }
+            }
+          }
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_sticky1",
+          "id": "sticky1",
+          "title": "Weekly stickied thread",
+          "author": "mod",
+          "created_utc": 1700000050.0,
+          "permalink": "/r/python/comments/sticky1/weekly_thread/",
+          "stickied": true,
+          "score": 1,
+          "num_comments": 50,
+          "domain": "self.python",
+          "thumbnail": "default"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_nsfw1",
+          "id": "nsfw1",
+          "title": "NSFW post",
+          "author": "dana",
+          "created_utc": 1700000040.0,
+          "permalink": "/r/python/comments/nsfw1/nsfw_post/",
+          "over_18": true,
+          "score": 5,
+          "num_comments": 2,
+          "domain": "i.redd.it",
+          "thumbnail": "nsfw"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_spoiler1",
+          "id": "spoiler1",
+          "title": "Spoiler post",
+          "author": "erin",
+          "created_utc": 1700000030.0,
+          "permalink": "/r/python/comments/spoiler1/spoiler_post/",
+          "spoiler": true,
+          "score": 8,
+          "num_comments": 4,
+          "domain": "example.com",
+          "thumbnail": "spoiler"
+        }
+      }
+    ]
+  }
+}
