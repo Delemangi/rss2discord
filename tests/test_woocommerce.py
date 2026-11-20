@@ -5,7 +5,10 @@ from pydantic import JsonValue, ValidationError
 
 from rss2discord.models import SourceMetric
 from rss2discord.providers.woocommerce import http as woocommerce_http
-from rss2discord.providers.woocommerce.models import WooCommerceProduct
+from rss2discord.providers.woocommerce.models import (
+    MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT,
+    WooCommerceProduct,
+)
 from rss2discord.providers.woocommerce.strategy import WooCommerceStrategy
 from rss2discord.transports import FeedFetchError
 from tests.woocommerce_helpers import (
@@ -176,14 +179,33 @@ def test_woocommerce_accepts_a_product_with_seventeen_images(
     assert len(entries[0].product.images) == 17
 
 
-def test_woocommerce_rejects_more_than_the_image_limit() -> None:
+def test_woocommerce_rejects_a_same_host_root_product_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = product_payload(1, permalink="https://technosapien.mk/")
+    get = RecordingGet(
+        [
+            StubResponse(
+                products_payload([payload]),
+                headers={"X-WP-Total": "1", "X-WP-TotalPages": "1"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(woocommerce_http.requests, "get", get)
+
+    with pytest.raises(FeedFetchError, match="InvalidProductUrl"):
+        WooCommerceStrategy().fetch_entries(SHOP_URL)
+
+
+def test_woocommerce_truncates_images_beyond_the_limit() -> None:
     images: list[dict[str, JsonValue]] = [
         {"id": index, "src": "", "thumbnail": ""} for index in range(25)
     ]
     payload = product_payload(1, images=images)
 
-    with pytest.raises(ValidationError):
-        WooCommerceProduct.model_validate(payload)
+    product = WooCommerceProduct.model_validate(payload)
+
+    assert len(product.images) == MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT
 
 
 def test_woocommerce_rejects_regular_price_below_current_price() -> None:

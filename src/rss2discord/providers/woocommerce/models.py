@@ -95,13 +95,14 @@ class WooCommerceProduct(BaseModel):
 
     @field_validator("images", mode="before")
     @classmethod
-    def require_bounded_images(cls, images: JsonValue) -> JsonValue:
+    def truncate_excess_images(cls, images: JsonValue) -> JsonValue:
+        # A shop may legitimately have more gallery images than a card needs.
+        # Keep the bound without failing the whole catalog page for one product.
         if (
             isinstance(images, list)
             and len(images) > MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT
         ):
-            msg = "too many product images"
-            raise ValueError(msg)
+            return images[:MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT]
         return images
 
     @field_validator("categories", mode="before")
