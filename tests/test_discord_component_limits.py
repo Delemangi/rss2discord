@@ -596,6 +596,37 @@ def test_restock_badge_respects_text_limits() -> None:
     assert any("**Back in stock**" in content for content in contents)
 
 
+def test_combined_restock_and_period_low_badges_respect_text_limits() -> None:
+    # Given - a restock at the period low where every text field is hostile
+    message = make_message(
+        entry=EntryData(
+            title="T" * 5000,
+            link="https://example.test/item",
+            description="D" * 5000,
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            restocked=True,
+            price_change_percentage="-11.1%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    contents = get_text_display_contents(message)
+
+    # Then - both badges are visible and every text block stays inside its budgets
+    assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
+    assert len(contents[0]) <= MAX_HEADING_CHARACTERS
+    assert contents[-1] == "-# RSS • News"
+    assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
+    assert any("**Back in stock**" in content for content in contents)
+    assert any("**30-day low**" in content for content in contents)
+
+
 def test_period_range_respects_text_limits() -> None:
     # Given - a hostile price-drop card with a usable range
     message = make_message(

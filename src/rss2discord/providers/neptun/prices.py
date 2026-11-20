@@ -80,6 +80,7 @@ class NeptunPriceMonitor:
             product.actual_price,
             format_neptun_mkd(product.actual_price),
             "MKD",
+            available=product.available_online and product.available_webshop,
         )
 
     def _message_for(

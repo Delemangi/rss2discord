@@ -4,6 +4,8 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import PriceSnapshot
@@ -11,6 +13,7 @@ from rss2discord.providers.ananas.models import AnanasProduct
 from rss2discord.providers.ananas.prices import AnanasPriceMonitor
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from rss2discord.providers.cccenter.prices import CCCenterPriceMonitor
+from rss2discord.providers.neptun.models import NeptunProduct
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
@@ -20,7 +23,14 @@ from rss2discord.transports.price_monitor import (
 from tests.anhoch_price_monitor_helpers import CatalogStub as AnhochCatalogStub
 from tests.anhoch_price_monitor_helpers import make_monitor as make_anhoch_monitor
 from tests.anhoch_price_monitor_helpers import make_product as make_anhoch_product
+from tests.neptun_helpers import product_payload as neptun_product_payload
 from tests.setec_price_monitor_helpers import RecordingSender
+from tests.test_ddstore_price_monitor import CatalogStub as DDStoreCatalogStub
+from tests.test_ddstore_price_monitor import make_feed as make_ddstore_feed
+from tests.test_ddstore_price_monitor import make_monitor as make_ddstore_monitor
+from tests.test_ddstore_price_monitor import make_product as make_ddstore_product
+from tests.test_neptun_price_monitor import CatalogStub as NeptunCatalogStub
+from tests.test_neptun_price_monitor import make_monitor as make_neptun_monitor
 
 
 class AnanasCatalogStub:
@@ -281,3 +291,97 @@ def test_cccenter_confirms_a_restock_when_details_agree(tmp_path: Path) -> None:
         confirmed = monitor._confirm_observations((observation,))
 
     assert [item.snapshot.product_id for item in confirmed] == [product_id]
+
+
+def neptun_product(
+    *,
+    product_id: int,
+    available_online: bool,
+    available_webshop: bool,
+) -> NeptunProduct:
+    payload = neptun_product_payload(product_id)
+    payload["AvailableOnline"] = available_online
+    payload["AvailableWebshop"] = available_webshop
+    return NeptunProduct.model_validate(payload)
+
+
+def test_neptun_snapshot_is_available_when_both_flags_are_true(
+    tmp_path: Path,
+) -> None:
+    product = neptun_product(
+        product_id=1,
+        available_online=True,
+        available_webshop=True,
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_neptun_monitor(
+            NeptunCatalogStub([(product,)]),
+            store,
+            RecordingSender([]),
+        )
+
+        monitor.scan()
+
+        persisted = store.load_price_snapshots("neptun")
+
+    assert persisted[0].available is True
+
+
+def test_neptun_snapshot_is_unavailable_when_either_flag_is_false(
+    tmp_path: Path,
+) -> None:
+    products = (
+        neptun_product(
+            product_id=1,
+            available_online=False,
+            available_webshop=True,
+        ),
+        neptun_product(
+            product_id=2,
+            available_online=True,
+            available_webshop=False,
+        ),
+    )
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_neptun_monitor(
+            NeptunCatalogStub([products]),
+            store,
+            RecordingSender([]),
+        )
+
+        monitor.scan()
+
+        persisted = {
+            item.product_id: item for item in store.load_price_snapshots("neptun")
+        }
+
+    assert persisted["1"].available is False
+    assert persisted["2"].available is False
+
+
+@pytest.mark.parametrize(
+    ("stock_status", "expected"),
+    [("IN_STOCK", True), ("OUT_OF_STOCK", False)],
+)
+def test_ddstore_snapshot_reports_availability(
+    tmp_path: Path,
+    stock_status: str,
+    expected: bool,
+) -> None:
+    product = make_ddstore_product("1", stock_status=stock_status)
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = make_ddstore_monitor(
+            make_ddstore_feed(),
+            DDStoreCatalogStub([(product,)]),
+            store,
+            RecordingSender([]),
+        )
+
+        monitor.scan()
+
+        persisted = store.load_price_snapshots("ddstore")
+
+    assert persisted[0].available is expected

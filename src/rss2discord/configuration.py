@@ -45,7 +45,9 @@ FeedStrategyName = Literal[
 ]
 MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600
 # Providers whose price snapshots report stock, so they can alert on restocks.
-RESTOCK_STRATEGIES: Final = frozenset({"ananas", "anhoch", "cccenter"})
+RESTOCK_STRATEGIES: Final = frozenset(
+    {"ananas", "anhoch", "cccenter", "ddstore", "neptun"},
+)
 
 
 class FeedConfig(BaseModel):

@@ -423,11 +423,11 @@ feeds:
 #   zero) still alert. These defaults preserve current behavior: every detected
 #   price change is posted.
 # - restock_alerts: Optional boolean, default false, valid only for Ananas,
-#   Anhoch, and CCCenter. When true, a product that was reported out of stock
-#   and is now reported in stock posts one restock card even if its price did
-#   not move, and price moves while a product is out of stock are never posted
-#   (they only advance the stored baseline). Restock alerts bypass
-#   price_min_change_percentage, price_min_change_amount, and
+#   Anhoch, CCCenter, DDStore, and Neptun. When true, a product that was
+#   reported out of stock and is now reported in stock posts one restock card
+#   even if its price did not move, and price moves while a product is out of
+#   stock are never posted (they only advance the stored baseline). Restock
+#   alerts bypass price_min_change_percentage, price_min_change_amount, and
 #   price_ignore_increases; a restock that also moved in price carries the
 #   price-change percentage. Restocks with no price change are counted
 #   separately in bulk digests. When false, availability is still stored so a

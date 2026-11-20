@@ -28,7 +28,9 @@ def test_restock_alerts_defaults_to_false() -> None:
 
 
 def test_restock_strategies_are_the_stock_aware_providers() -> None:
-    assert {"ananas", "anhoch", "cccenter"} == RESTOCK_STRATEGIES
+    expected = {"ananas", "anhoch", "cccenter", "ddstore", "neptun"}
+
+    assert expected == RESTOCK_STRATEGIES
 
 
 @pytest.mark.parametrize("strategy", sorted(RESTOCK_STRATEGIES))
@@ -36,7 +38,7 @@ def test_restock_alerts_is_accepted_for_stock_aware_strategies(strategy: str) ->
     assert make_feed(strategy, restock_alerts=True).restock_alerts is True
 
 
-@pytest.mark.parametrize("strategy", ["rss", "neptun", "ddstore"])
+@pytest.mark.parametrize("strategy", ["rss", "gjirafa50"])
 def test_restock_alerts_is_rejected_without_a_stock_aware_strategy(
     strategy: str,
 ) -> None:

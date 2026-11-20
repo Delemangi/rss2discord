@@ -237,6 +237,58 @@ def test_entry_without_a_change_percentage_is_not_enriched(
         assert rendered.price_period_high is None
 
 
+def test_equal_price_restock_receives_history_context(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed_history(store, "1", ("250", 5), ("200", 10))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+        restock_entry = replace(entry(percentage=None), restocked=True)
+
+        deliver_price_changes(
+            [change("1", "100", previous_amount="100")],
+            dependencies(store, sender),
+            lambda _change: WebhookMessage(
+                feed=feed(),
+                entry=restock_entry,
+                source_title="Shop",
+            ),
+            plan=PriceDeliveryPlan(("1",)),
+        )
+
+        assert len(sender.messages) == 1
+        rendered = sender.messages[0].entry
+        assert rendered.restocked is True
+        assert rendered.price_change_percentage is None
+        assert rendered.price_period_low == "100 MKD"
+        assert rendered.price_period_high == "250 MKD"
+        assert rendered.price_period_days == 30
+        assert rendered.price_is_period_low is True
+
+
+def test_non_restock_without_a_change_percentage_is_not_enriched(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed_history(store, "1", ("250", 5))
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+        deliver_price_changes(
+            [change("1", "100", previous_amount="100")],
+            dependencies(store, sender),
+            lambda _change: WebhookMessage(
+                feed=feed(),
+                entry=entry(percentage=None),
+                source_title="Shop",
+            ),
+            plan=PriceDeliveryPlan(("1",)),
+        )
+
+        rendered = sender.messages[0].entry
+        assert rendered.price_period_low is None
+        assert rendered.price_period_high is None
+        assert rendered.price_period_days == 30
+        assert rendered.price_is_period_low is False
+
+
 def test_history_fields_round_trip_through_the_outbox_json() -> None:
     original = replace(
         entry(),
