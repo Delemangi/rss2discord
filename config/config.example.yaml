@@ -126,6 +126,11 @@ feeds:
     price_check_interval: 3600
     # Optional: 1-1000; only for price strategies. Price changes sent individually before one digest. Default 100.
     # price_inline_limit: 100
+    # Optional low-value alert filters; the defaults below preserve current behavior
+    # and post every detected change.
+    # price_min_change_percentage: 5 # Skip changes below 5% of the previous price.
+    # price_min_change_amount: 100 # Skip changes below 100 in the product's currency.
+    # price_ignore_increases: false # Set true to post drops only.
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
@@ -383,6 +388,20 @@ feeds:
 #   uses the same limit, and decides by the pending group's size. CCCenter
 #   confirms at most 100 changes per scan, so values above 100 do not increase
 #   its card count.
+# - price_min_change_percentage: Optional non-negative percentage, default 0
+#   (disabled), valid only for price strategies. A detected change below this
+#   percentage of the previous amount is not posted and only advances the stored
+#   baseline. 5 means five percentage points.
+# - price_min_change_amount: Optional non-negative absolute amount, default null
+#   (disabled), valid only for price strategies. A detected change smaller than
+#   this amount in the product's own currency is not posted and only advances
+#   the stored baseline.
+# - price_ignore_increases: Optional boolean, default false, valid only for price
+#   strategies. When true, price increases are never posted; drops still alert.
+#   A change is suppressed when any configured filter matches, and comparisons
+#   that cannot be established (currency change or previous amount at or below
+#   zero) still alert. These defaults preserve current behavior: every detected
+#   price change is posted.
 # - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and

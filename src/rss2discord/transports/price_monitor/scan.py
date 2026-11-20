@@ -21,6 +21,7 @@ from .contracts import (
     PriceDeliveryOutcome,
 )
 from .delivery import deliver_price_changes, drain_pending_price_notifications
+from .filters import split_price_alert_changes
 from .planning import (
     finish_price_delivery,
     prepare_price_delivery,
@@ -94,6 +95,11 @@ def run_price_scan[ProductT](
     silent, records = diff_price_snapshots(current.values(), by_id)
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
+    alerting, suppressed = split_price_alert_changes(records, feed)
+    # A filtered change still advances its baseline so the same move is not
+    # re-evaluated forever. Silent snapshots already ride the inline/bulk paths.
+    silent = (*silent, *(record.current for record in suppressed))
+    records = alerting
     if not records:
         if silent:
             dependencies.sqlite_retry_policy.execute(

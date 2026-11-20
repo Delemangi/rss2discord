@@ -18,6 +18,7 @@ from .contracts import PriceMonitorDependencies as PriceMonitorDependencies
 from .contracts import PriceRecoveryStore as PriceRecoveryStore
 from .contracts import PriceSnapshotStore as PriceSnapshotStore
 from .delivery import deliver_price_changes as deliver_price_changes
+from .filters import split_price_alert_changes as split_price_alert_changes
 from .planning import finish_price_delivery as finish_price_delivery
 from .planning import logger as logger
 from .planning import prepare_price_delivery as prepare_price_delivery
