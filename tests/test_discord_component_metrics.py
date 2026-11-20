@@ -881,6 +881,102 @@ def test_restock_with_period_low_shows_both_signals() -> None:
     )
 
 
+def test_restock_at_period_low_without_price_change_shows_both_badges() -> None:
+    # Given - an item that came back at the same price, which is the window low
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "80 MKD", prior=True),
+                SourceMetric("Stock", "7"),
+            ),
+            restocked=True,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - both signals are in the headline; no duplicate previous or change
+    assert metrics == (
+        "Price: **80 MKD** · **Back in stock** · **30-day low**\n"
+        f"{METRICS_GAP}\n"
+        "-# Stock: 7"
+    )
+    assert "Previous" not in metrics
+    assert "Change" not in metrics
+    assert "+0.0%" not in metrics
+    assert "30-day range" not in metrics
+
+
+def test_restock_not_at_period_low_shows_no_low_badge() -> None:
+    # Given - a restock with a price drop that is not the period low
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "85 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+                SourceMetric("Stock", "7"),
+            ),
+            restocked=True,
+            price_change_percentage="-5.6%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=False,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - no low badge, but the range line adds useful context at the tail
+    assert "Price: **85 MKD** ~~90 MKD~~ · **Back in stock**" in metrics
+    assert "**30-day low**" not in metrics
+    assert "-# Change: -5.6%" in metrics
+    assert "-# 30-day range: 80 MKD – 120 MKD" in metrics
+
+
+def test_restock_without_history_fields_is_unchanged() -> None:
+    # Given - a restock alert that carries no price-history context
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "80 MKD", prior=True),
+                SourceMetric("Stock", "7"),
+            ),
+            restocked=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the card renders exactly as before history fields were introduced
+    assert metrics == (
+        f"Price: **80 MKD** · **Back in stock**\n{METRICS_GAP}\n-# Stock: 7"
+    )
+
+
 def test_period_range_skips_when_crowding_existing_metrics() -> None:
     # Given - a dense price drop where the range would be the last line
     message = make_message(

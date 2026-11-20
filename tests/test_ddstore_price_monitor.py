@@ -119,7 +119,6 @@ def test_ddstore_price_monitor_silently_seeds_then_delivers_price_change(
         "1",
         amount=Decimal("90.50"),
         regular_amount=120,
-        stock_status="OUT_OF_STOCK",
         created_at="2024-07-10 09:10:11",
     )
     sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
@@ -143,7 +142,7 @@ def test_ddstore_price_monitor_silently_seeds_then_delivers_price_change(
             SourceMetric(label="Price", value="90,5 ден."),
             SourceMetric(label="Previous", value="100 ден.", prior=True),
             SourceMetric(label="Original", value="120 ден."),
-            SourceMetric(label="Stock", value="Out of stock"),
+            SourceMetric(label="Stock", value="In stock"),
         )
         assert sender.messages[0].entry.timestamp == "2024-07-10T09:10:11+00:00"
         snapshots = {

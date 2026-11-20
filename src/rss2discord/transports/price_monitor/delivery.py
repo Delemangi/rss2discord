@@ -70,7 +70,7 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
         if dependencies.delivery.is_shutdown_requested():
             return PriceDeliveryOutcome.INTERRUPTED
         message = message_for(change)
-        if message.entry.price_change_percentage is not None:
+        if message.entry.price_change_percentage is not None or message.entry.restocked:
             if history_contexts is None:
                 history_contexts = _load_price_history_contexts(
                     dependencies,
@@ -222,6 +222,7 @@ def _deliver_inline_cards(
             )
             for record in records
             if record.entry.price_change_percentage is not None
+            or record.entry.restocked
         ),
     )
     delay_before_next = False
@@ -309,8 +310,10 @@ def _with_price_history(
     message: WebhookMessage,
     context: PriceHistoryContext | None,
 ) -> WebhookMessage:
-    """Attach range context to an inline change card when one is known."""
-    if context is None or message.entry.price_change_percentage is None:
+    """Attach range context to an inline change or restock card when one is known."""
+    if context is None:
+        return message
+    if message.entry.price_change_percentage is None and not message.entry.restocked:
         return message
     return replace(
         message,

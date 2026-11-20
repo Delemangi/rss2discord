@@ -41,6 +41,7 @@ def ddstore_snapshot(feed_id: str, product: DDStoreProduct) -> PriceSnapshot:
         price.value,
         format_ddstore_mkd(price.value),
         price.currency,
+        available=product.stock_status == "IN_STOCK",
     )
 
 

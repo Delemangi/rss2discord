@@ -373,8 +373,8 @@ def _metrics_with_price_details(
     the first thing a reader sees; price-change cards keep the discount as a
     supporting metric so the headline does not carry two unlabelled
     percentages (``20% off`` versus ``Change: -10.0%``). A genuine period
-    low is promoted to the headline for price drops; otherwise the period
-    range is appended as compact context.
+    low is promoted to the headline for price drops and restocks; otherwise
+    the period range is appended as compact context when there is room.
     """
     metrics = list(entry.source_metrics)
     headline_badges: list[str] = []
@@ -408,6 +408,10 @@ def _metrics_with_price_details(
             )
         ]
         headline_badges.append("**Back in stock**")
+        if entry.price_is_period_low:
+            _append_period_low_badge(entry, headline_badges)
+        else:
+            _append_period_range_metric(entry, metrics)
 
     is_price_change = entry.price_change_percentage is not None
 
@@ -458,28 +462,48 @@ def _metrics_with_price_details(
 
     if is_price_change:
         if entry.price_is_period_low and _is_price_decrease(entry):
-            headline_badges.append(f"**{entry.price_period_days}-day low**")
-        elif (
-            not entry.price_is_period_low
-            and entry.price_period_low is not None
-            and entry.price_period_high is not None
-            and entry.price_period_low != entry.price_period_high
-            and not any(
-                metric.label == f"{entry.price_period_days}-day range"
-                for metric in metrics
-            )
-        ):
-            metrics.append(
-                SourceMetric(
-                    f"{entry.price_period_days}-day range",
-                    f"{entry.price_period_low} – {entry.price_period_high}",
-                ),
-            )
+            _append_period_low_badge(entry, headline_badges)
+        elif not entry.price_is_period_low:
+            _append_period_range_metric(entry, metrics)
 
     headline_badge = (
         HEADLINE_BADGE_SEPARATOR.join(headline_badges) if headline_badges else None
     )
     return tuple(metrics), headline_badge
+
+
+def _append_period_low_badge(
+    entry: EntryData,
+    headline_badges: list[str],
+) -> None:
+    """Add the period-low headline badge once, even if both restock and price
+    change paths would qualify.
+    """
+    badge = f"**{entry.price_period_days}-day low**"
+    if badge not in headline_badges:
+        headline_badges.append(badge)
+
+
+def _append_period_range_metric(
+    entry: EntryData,
+    metrics: list[SourceMetric],
+) -> None:
+    """Append a compact price-history range when the values are usable.
+
+    The range is added at the tail so it is the first thing the render cap
+    drops when metrics are crowded, leaving price, change, and restock badges
+    intact.
+    """
+    low = entry.price_period_low
+    high = entry.price_period_high
+    label = f"{entry.price_period_days}-day range"
+    if (
+        low is not None
+        and high is not None
+        and low != high
+        and not any(metric.label == label for metric in metrics)
+    ):
+        metrics.append(SourceMetric(label, f"{low} – {high}"))
 
 
 def _is_price_decrease(entry: EntryData) -> bool:
