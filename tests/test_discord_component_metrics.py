@@ -6,7 +6,7 @@ from rss2discord.discord.components import (
     MAX_RENDERED_METRICS,
     METRICS_GAP,
 )
-from rss2discord.models import EntryData, SourceMetric
+from rss2discord.models import EntryData, PriceDirection, SourceMetric
 from tests.discord_components_helpers import (
     get_child_contents,
     get_container_children,
@@ -517,3 +517,309 @@ def test_discount_badge_formats_whole_and_fractional_percentages() -> None:
 
         # Then - whole values read cleanly, fractional values keep precision
         assert f"**{expected_badge}**" in metrics
+
+
+def test_period_low_badges_headline_for_price_drop() -> None:
+    # Given - a price drop that is also the period low
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+            ),
+            price_change_percentage="-11.1%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the low is prominent in the headline and not duplicated below
+    assert metrics == (
+        "Price: **80 MKD** ~~90 MKD~~ · **30-day low**\n"
+        f"{METRICS_GAP}\n"
+        "-# Change: -11.1%"
+    )
+    assert "30-day range" not in metrics
+
+
+def test_period_range_supports_price_drop_not_at_low() -> None:
+    # Given - a price drop with room left in the period window
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "85 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+            ),
+            price_change_percentage="-5.6%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=False,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the range is compact context that does not steal the headline
+    assert "Price: **85 MKD** ~~90 MKD~~" in metrics
+    assert "-# Change: -5.6%" in metrics
+    assert "-# 30-day range: 80 MKD – 120 MKD" in metrics
+    assert "**30-day low**" not in metrics
+
+
+def test_period_low_badge_not_shown_for_price_rise() -> None:
+    # Given - a price rise that happens to sit at the numeric period low
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "70 MKD", prior=True),
+            ),
+            price_change_percentage="+14.3%",
+            price_direction=PriceDirection.INCREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the direction gate keeps the badge off increases
+    assert "**30-day low**" not in metrics
+    assert "30-day range" not in metrics
+
+
+def test_period_range_skipped_when_values_missing_or_equal() -> None:
+    # Given - a price drop that lacks a usable range
+    cases: tuple[tuple[str | None, str | None], ...] = (
+        (None, "120 MKD"),
+        ("80 MKD", None),
+        ("100 MKD", "100 MKD"),
+    )
+
+    for low, high in cases:
+        message = make_message(
+            entry=EntryData(
+                title="Item",
+                link="https://example.test/item",
+                description="",
+                author="",
+                timestamp=None,
+                source_metrics=(SourceMetric("Price", "90 MKD"),),
+                price_change_percentage="-10.0%",
+                price_is_period_low=False,
+                price_period_low=low,
+                price_period_high=high,
+            ),
+        )
+
+        # When
+        metrics = get_metrics_content(message)
+
+        # Then - the range line is omitted rather than rendered incompletely
+        assert "30-day range" not in metrics
+
+
+def test_discount_stays_supporting_when_period_low_badges_headline() -> None:
+    # Given - a price drop that is the period low and also discounted from original
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Previous", "90 MKD", prior=True),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            price_change_percentage="-11.1%",
+            discount_percentage="20.0%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the low owns the headline; discount and change stay labeled below
+    assert "Price: **80 MKD** ~~90 MKD~~ · **30-day low**" in metrics
+    assert "-# Change: -11.1%" in metrics
+    assert "-# Discount: 20% off" in metrics
+    assert "30-day range" not in metrics
+
+
+def test_discovery_card_ignores_history_fields() -> None:
+    # Given - a discovery product card that happens to carry history context
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "80 MKD"),
+                SourceMetric("Original", "100 MKD"),
+            ),
+            discount_percentage="20.0%",
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - discovery cards render exactly as before; history fields are ignored
+    assert metrics == (
+        f"Price: **80 MKD** · **20% off**\n{METRICS_GAP}\n-# Original: 100 MKD"
+    )
+    assert "30-day low" not in metrics
+    assert "30-day range" not in metrics
+
+
+def test_period_low_badge_uses_price_period_days() -> None:
+    # Given - a price drop with a non-default history window
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            price_change_percentage="-10.0%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_days=7,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the badge reflects the configured window length
+    assert "**7-day low**" in metrics
+    assert "30-day low" not in metrics
+
+
+def test_period_low_falls_back_to_percentage_sign_when_direction_missing() -> None:
+    # Given - a price drop with no explicit direction field
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            price_change_percentage="-10.0%",
+            price_direction=None,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the negative percentage is enough to gate the badge on
+    assert "**30-day low**" in metrics
+
+
+def test_period_low_suppressed_by_positive_percentage_without_direction() -> None:
+    # Given - a price rise with no explicit direction field
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            price_change_percentage="+10.0%",
+            price_direction=None,
+            price_period_low="80 MKD",
+            price_period_high="120 MKD",
+            price_is_period_low=True,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the positive percentage keeps the badge off
+    assert "**30-day low**" not in metrics
+
+
+def test_period_range_skips_when_crowding_existing_metrics() -> None:
+    # Given - a dense price drop where the range would be the last line
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "11.450 ден"),
+                SourceMetric("Previous", "12.450 ден", prior=True),
+                SourceMetric("Original", "13.990 ден"),
+                SourceMetric("Product code", "KF560C36-32"),
+                SourceMetric("Manufacturer", "Kingston"),
+                SourceMetric("Stock", "7"),
+            ),
+            price_change_percentage="-8.0%",
+            price_direction=PriceDirection.DECREASE,
+            price_period_low="11.450 ден",
+            price_period_high="13.990 ден",
+            price_is_period_low=False,
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the range is appended last and the existing order is preserved
+    lines = metrics.splitlines()
+    assert lines[0] == "Price: **11.450 ден** ~~12.450 ден~~"
+    assert "-# Change: -8.0%" in metrics
+    assert "-# Original: 13.990 ден" in metrics
+    assert "-# Product code: KF560C36-32" in metrics
+    assert "-# Manufacturer: Kingston" in metrics
+    assert "-# Stock: 7" in metrics
+    assert "-# 30-day range: 11.450 ден – 13.990 ден" in metrics
+    # Range follows the existing supporting metrics
+    assert metrics.index("30-day range") > metrics.index("Stock: 7")
