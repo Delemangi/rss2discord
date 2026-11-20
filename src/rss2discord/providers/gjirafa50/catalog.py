@@ -27,11 +27,12 @@ GJIRAFA50_WINDOW_SIZE: Final = 30
 GJIRAFA50_PAGE_SIZE: Final = 24
 MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS: Final = 2_147_483_647 * 100 + 1
 MAX_GJIRAFA50_SHARD_PRODUCTS: Final = 8_999
-# The observed .com catalog has roughly 124,000 products. At 24 per page, 150,000
-# products plus 128 shards' probes/sentinels/reconciliation fit in 7,000
-# requests. Retries share this work budget; they do not get a fresh allowance.
+# The observed .com catalog has roughly 127,000 products. A full scan uses about
+# 5,500 requests at 24 per page, including shard probes/sentinels/reconciliation.
+# Retries share this work budget, so the cap covers at least two full attempts;
+# the byte cap and scan deadline still bound total work.
 MAX_GJIRAFA50_PRODUCTS: Final = 150_000
-MAX_GJIRAFA50_PAGES: Final = 7_000
+MAX_GJIRAFA50_PAGES: Final = 15_000
 MAX_GJIRAFA50_FETCHED_PRODUCTS: Final = MAX_GJIRAFA50_PAGES * GJIRAFA50_PAGE_SIZE
 MAX_GJIRAFA50_SHARDS: Final = 128
 MAX_GJIRAFA50_SCAN_BYTES: Final = 2 * 1024 * 1024 * 1024
