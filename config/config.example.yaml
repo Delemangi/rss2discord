@@ -131,6 +131,7 @@ feeds:
     # price_min_change_percentage: 5 # Skip changes below 5% of the previous price.
     # price_min_change_amount: 100 # Skip changes below 100 in the product's currency.
     # price_ignore_increases: false # Set true to post drops only.
+    # restock_alerts: false # Alert when an out-of-stock product returns, without a price-move title.
     webhook_name: "Anhoch Bot"
     webhook_avatar: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://www.anhoch.com&size=256"
 
@@ -402,6 +403,16 @@ feeds:
 #   that cannot be established (currency change or previous amount at or below
 #   zero) still alert. These defaults preserve current behavior: every detected
 #   price change is posted.
+# - restock_alerts: Optional boolean, default false, valid only for Ananas,
+#   Anhoch, and CCCenter. When true, a product that was reported out of stock
+#   and is now reported in stock posts one restock card even if its price did
+#   not move, and price moves while a product is out of stock are never posted
+#   (they only advance the stored baseline). Restock alerts bypass
+#   price_min_change_percentage, price_min_change_amount, and
+#   price_ignore_increases; a restock that also moved in price carries the
+#   price-change percentage. Restocks with no price change are counted
+#   separately in bulk digests. When false, availability is still stored so a
+#   later scan can detect the change, but no restock is ever posted.
 # - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and

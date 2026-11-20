@@ -40,7 +40,14 @@ def with_price_change_percentage(
     previous: PriceSnapshot,
     current: PriceSnapshot,
 ) -> WebhookMessage:
-    """Attach a signed percentage to a price-change message when comparable."""
+    """Attach a signed percentage to a price-change message when comparable.
+
+    An equal amount carries no move to report, so the message is returned
+    unchanged instead of gaining a ``+0.0%`` line. A restock at the same price
+    therefore stays a stock alert rather than looking like a price change.
+    """
+    if previous.amount == current.amount:
+        return message
     percentage = price_change_percentage(previous, current)
     if percentage is None:
         return message
@@ -49,5 +56,17 @@ def with_price_change_percentage(
         entry=replace(
             message.entry,
             price_change_percentage=percentage,
+        ),
+    )
+
+
+def with_restock(message: WebhookMessage) -> WebhookMessage:
+    """Mark a message as a stock alert instead of a price move."""
+    return replace(
+        message,
+        entry=replace(
+            message.entry,
+            restocked=True,
+            price_direction=None,
         ),
     )

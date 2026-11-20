@@ -43,6 +43,8 @@ FeedStrategyName = Literal[
     "woocommerce",
 ]
 MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600
+# Providers whose price snapshots report stock, so they can alert on restocks.
+RESTOCK_STRATEGIES: Final = frozenset({"ananas", "anhoch", "cccenter"})
 
 
 class FeedConfig(BaseModel):
@@ -82,6 +84,7 @@ class FeedConfig(BaseModel):
     ] = 0
     price_min_change_amount: Annotated[Decimal, Field(ge=0)] | None = None
     price_ignore_increases: bool = False
+    restock_alerts: bool = False
     digest_threshold: Annotated[int, Field(ge=1)] | None = 100
 
     @field_validator("webhook_avatar")
@@ -134,6 +137,10 @@ class FeedConfig(BaseModel):
                 supported = ", ".join(sorted(PRICE_STRATEGIES))
                 msg = f"{field_name} requires a price strategy: {supported}"
                 raise ValueError(msg)
+        if self.restock_alerts and self.strategy not in RESTOCK_STRATEGIES:
+            supported = ", ".join(sorted(RESTOCK_STRATEGIES))
+            msg = f"restock_alerts requires a stock-aware price strategy: {supported}"
+            raise ValueError(msg)
         return self
 
 

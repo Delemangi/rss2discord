@@ -69,6 +69,7 @@ def entry_to_json(entry: EntryData) -> str:
         "price_period_high": entry.price_period_high,
         "price_period_days": entry.price_period_days,
         "price_is_period_low": entry.price_is_period_low,
+        "restocked": entry.restocked,
         "source_metrics": [
             {"label": metric.label, "prior": metric.prior, "value": metric.value}
             for metric in entry.source_metrics
@@ -132,4 +133,5 @@ def entry_from_json(value: str) -> EntryData:
             payload.get("price_period_days", PRICE_HISTORY_WINDOW_DAYS),
         ),
         price_is_period_low=bool(payload.get("price_is_period_low", False)),
+        restocked=bool(payload.get("restocked", False)),
     )

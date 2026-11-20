@@ -54,6 +54,9 @@ class EntryData:
     price_period_high: str | None = None
     price_period_days: int = PRICE_HISTORY_WINDOW_DAYS
     price_is_period_low: bool = False
+    # Marks a stock alert instead of a price move, so renderers do not title
+    # the card as a change and digests can count it separately.
+    restocked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +79,9 @@ class PriceSnapshot:
     amount: Decimal
     formatted: str
     currency: str
+    # Stock state when the source exposes it. ``None`` means the source did not
+    # report availability, which is never treated as a restock.
+    available: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -60,12 +60,12 @@ class AnanasPriceMonitor:
             retry_policy=self._dependencies.fetch_retry_policy,
             is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
-        # Out-of-stock products are not observed; their last real snapshot is
-        # preserved so an unavailable offer cannot overwrite a known price.
+        # Out-of-stock products with a valid price are still observed so a later
+        # restock can be detected; non-positive prices are never observed.
         observations = tuple(
             PriceObservation(product, self._snapshot(product))
             for product in products
-            if product.in_stock and product.price > 0
+            if product.price > 0
         )
         run_price_scan(
             feed=self._feed,
@@ -84,6 +84,7 @@ class AnanasPriceMonitor:
             amount=Decimal(product.price),
             formatted=format_ananas_mkd(product.price),
             currency=product.currency,
+            available=product.in_stock,
         )
 
     def _message(

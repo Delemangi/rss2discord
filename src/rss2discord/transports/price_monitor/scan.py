@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -15,7 +15,7 @@ from rss2discord.models import (
 )
 from rss2discord.retries import FeedFetchInterruptedError
 
-from .comparison import diff_price_snapshots
+from .comparison import diff_price_snapshots, diff_stock_snapshots
 from .contracts import (
     PriceChangeDeliveryDependencies,
     PriceDeliveryOutcome,
@@ -28,7 +28,7 @@ from .planning import (
     record_price_health,
     validate_price_currencies,
 )
-from .presentation import with_price_change_percentage
+from .presentation import with_price_change_percentage, with_restock
 
 NO_SNAPSHOT_LIMIT: Final = 1_000_000
 
@@ -44,6 +44,52 @@ class PriceChangeView:
     previous: PriceSnapshot
     current: PriceSnapshot
     message: WebhookMessage
+
+
+def _in_observation_order(
+    records: Sequence[PriceChangeRecord],
+    current: Mapping[str, PriceSnapshot],
+) -> tuple[PriceChangeRecord, ...]:
+    """Order disjoint records the way the provider observed their products."""
+    order = {product_id: index for index, product_id in enumerate(current)}
+    return tuple(
+        sorted(records, key=lambda record: order.get(record.product_id, len(order))),
+    )
+
+
+def _dedupe_snapshots(
+    snapshots: Sequence[PriceSnapshot],
+) -> tuple[PriceSnapshot, ...]:
+    """Keep the first snapshot per product so a scan upserts it only once."""
+    seen: set[str] = set()
+    unique: list[PriceSnapshot] = []
+    for snapshot in snapshots:
+        if snapshot.product_id in seen:
+            continue
+        seen.add(snapshot.product_id)
+        unique.append(snapshot)
+    return tuple(unique)
+
+
+def _view_for[ProductT](
+    observation: PriceObservation[ProductT],
+    record: PriceChangeRecord,
+    restock_ids: Collection[str],
+    message_for: Callable[[ProductT, PriceSnapshot, PriceSnapshot], WebhookMessage],
+) -> PriceChangeView:
+    """Build one card, marking restocks so they are not titled as price moves."""
+    message = message_for(observation.product, record.previous, observation.snapshot)
+    if record.product_id in restock_ids:
+        message = with_restock(message)
+    return PriceChangeView(
+        previous=record.previous,
+        current=observation.snapshot,
+        message=with_price_change_percentage(
+            message,
+            record.previous,
+            observation.snapshot,
+        ),
+    )
 
 
 def run_price_scan[ProductT](
@@ -92,14 +138,47 @@ def run_price_scan[ProductT](
             persisted=by_id,
         )
 
-    silent, records = diff_price_snapshots(current.values(), by_id)
+    silent, price_records = diff_price_snapshots(current.values(), by_id)
+    stock_silent, restock_records = diff_stock_snapshots(current.values(), by_id)
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
-    alerting, suppressed = split_price_alert_changes(records, feed)
+    silent = (*silent, *stock_silent)
+    if not feed.restock_alerts:
+        # Availability still advances the baseline, it just never alerts.
+        silent = (*silent, *(record.current for record in restock_records))
+        restock_records = ()
+    alerting, suppressed = split_price_alert_changes(price_records, feed)
+    restock_ids = {record.product_id for record in restock_records}
+    # A restock carries the same current snapshot, so it takes precedence over
+    # whatever the price diff detected for that product.
+    alerting = tuple(
+        record for record in alerting if record.product_id not in restock_ids
+    )
+    suppressed = tuple(
+        record for record in suppressed if record.product_id not in restock_ids
+    )
     # A filtered change still advances its baseline so the same move is not
     # re-evaluated forever. Silent snapshots already ride the inline/bulk paths.
     silent = (*silent, *(record.current for record in suppressed))
-    records = alerting
+    # An out-of-stock observation cannot be a price alert; keep only its
+    # baseline current so a later restock reports against the latest price.
+    unavailable = tuple(
+        record for record in alerting if record.current.available is False
+    )
+    alerting = tuple(
+        record for record in alerting if record.current.available is not False
+    )
+    silent = (*silent, *(record.current for record in unavailable))
+    # Restocks bypass the price filters above and are never suppressed.
+    records = _in_observation_order((*alerting, *restock_records), current)
+    record_ids = {record.product_id for record in records}
+    # A product that will alert persists through its delivery (or the outbox),
+    # never as a pre-delivery baseline; otherwise a failed send would lose the
+    # alert. One snapshot per product: the same product can be silent for
+    # several reasons in one scan.
+    silent = _dedupe_snapshots(
+        [snapshot for snapshot in silent if snapshot.product_id not in record_ids],
+    )
     if not records:
         if silent:
             dependencies.sqlite_retry_policy.execute(
@@ -164,18 +243,11 @@ def run_price_scan[ProductT](
         raise FeedFetchInterruptedError
 
     views = tuple(
-        PriceChangeView(
-            previous=records_by_id[observation.snapshot.product_id].previous,
-            current=observation.snapshot,
-            message=with_price_change_percentage(
-                message_for(
-                    observation.product,
-                    records_by_id[observation.snapshot.product_id].previous,
-                    observation.snapshot,
-                ),
-                records_by_id[observation.snapshot.product_id].previous,
-                observation.snapshot,
-            ),
+        _view_for(
+            observation,
+            records_by_id[observation.snapshot.product_id],
+            restock_ids,
+            message_for,
         )
         for observation in confirmed
     )
