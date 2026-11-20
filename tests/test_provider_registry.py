@@ -182,6 +182,12 @@ def test_source_label_uses_registry_label(strategy: FeedStrategyName) -> None:
     assert source_label(make_feed(strategy)) == STRATEGY_LABELS[strategy]
 
 
+def test_woocommerce_source_label_uses_the_configured_shop_name() -> None:
+    configured = make_feed("woocommerce").model_copy(update={"name": " All4net "})
+
+    assert source_label(configured) == "All4net"
+
+
 @pytest.mark.parametrize("strategy", sorted(PRICE_STRATEGIES))
 def test_price_strategy_builds_monitor(
     strategy: FeedStrategyName,
