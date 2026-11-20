@@ -95,6 +95,61 @@ def test_build_health_summary_counts_states_and_pending(tmp_path: Path) -> None:
     ]
 
 
+def test_quiet_ordinary_scan_is_healthy_after_producing_items(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    with DeliveryStore(database) as store:
+        _health(store, "quiet-feed", "healthy")
+        _health(store, "quiet-feed", "empty")
+
+        summary = build_health_summary(store, database)
+
+    assert summary.total_feeds == 1
+    assert summary.healthy == 1
+    assert summary.empty == 0
+    assert summary.problems == ()
+
+
+def test_empty_price_monitor_remains_a_problem_after_producing_items(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    with DeliveryStore(database) as store:
+        _health(store, "price-feed", "healthy", job_kind="price")
+        _health(store, "price-feed", "empty", job_kind="price")
+
+        summary = build_health_summary(store, database)
+
+    assert summary.empty == 1
+    assert [record.job_kind for record in summary.problems] == ["price"]
+
+
+def test_never_populated_ordinary_feed_remains_a_problem(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    with DeliveryStore(database) as store:
+        _health(store, "new-feed", "empty")
+
+        summary = build_health_summary(store, database)
+
+    assert summary.empty == 1
+    assert [record.feed_id for record in summary.problems] == ["new-feed"]
+
+
+def test_quiet_ordinary_scan_does_not_hide_a_failed_price_job(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    with DeliveryStore(database) as store:
+        _health(store, "mixed-feed", "healthy")
+        _health(store, "mixed-feed", "empty")
+        _health(store, "mixed-feed", "failed", cause="HTTPError", job_kind="price")
+
+        summary = build_health_summary(store, database)
+
+    assert summary.failed == 1
+    assert len(summary.problems) == 1
+    assert summary.problems[0].job_kind == "price"
+
+
 def test_build_health_summary_uses_worst_state_per_feed(tmp_path: Path) -> None:
     database = tmp_path / "state.db"
     with DeliveryStore(database) as store:

@@ -47,18 +47,18 @@ def build_health_summary(store: DeliveryStore, database_path: Path) -> HealthSum
         min(
             records,
             key=lambda record: (
-                STATE_ORDER.get(record.state, 3),
+                _summary_severity(record),
                 record.job_kind,
             ),
         )
         for records in by_feed.values()
     )
-    counts = Counter(record.state for record in worst_records)
+    counts = Counter(_summary_state(record) for record in worst_records)
     problems = tuple(
         sorted(
-            (record for record in worst_records if record.state != "healthy"),
+            (record for record in worst_records if _summary_state(record) != "healthy"),
             key=lambda record: (
-                STATE_ORDER.get(record.state, 3),
+                _summary_severity(record),
                 record.feed_id,
                 record.job_kind,
             ),
@@ -77,6 +77,30 @@ def build_health_summary(store: DeliveryStore, database_path: Path) -> HealthSum
         database_bytes=_database_bytes(database_path),
         problems=problems,
     )
+
+
+def _is_routine_empty(record: HealthRecord) -> bool:
+    """Report a quiet ordinary scan as healthy once the feed has produced items.
+
+    A successful scan with no new entries is normal for a low-churn feed. Only
+    empty results that have never produced anything, and empty price monitors,
+    need operator attention.
+    """
+    return (
+        record.state == "empty"
+        and record.job_kind == "ordinary"
+        and record.total_nonempty > 0
+    )
+
+
+def _summary_state(record: HealthRecord) -> str:
+    return "healthy" if _is_routine_empty(record) else record.state
+
+
+def _summary_severity(record: HealthRecord) -> int:
+    if _is_routine_empty(record):
+        return STATE_ORDER["healthy"]
+    return STATE_ORDER.get(record.state, 3)
 
 
 def format_health_summary(summary: HealthSummary) -> str:
