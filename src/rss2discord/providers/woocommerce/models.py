@@ -19,7 +19,7 @@ from pydantic import (
 from rss2discord.price_amount import canonicalize_price_amount
 
 MAX_WOOCOMMERCE_CATEGORIES_PER_PRODUCT: Final = 16
-MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT: Final = 16
+MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT: Final = 24
 
 
 class WooCommercePrices(BaseModel):
@@ -95,13 +95,14 @@ class WooCommerceProduct(BaseModel):
 
     @field_validator("images", mode="before")
     @classmethod
-    def require_bounded_images(cls, images: JsonValue) -> JsonValue:
+    def truncate_excess_images(cls, images: JsonValue) -> JsonValue:
+        # A shop may legitimately have more gallery images than a card needs.
+        # Keep the bound without failing the whole catalog page for one product.
         if (
             isinstance(images, list)
             and len(images) > MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT
         ):
-            msg = "too many product images"
-            raise ValueError(msg)
+            return images[:MAX_WOOCOMMERCE_IMAGES_PER_PRODUCT]
         return images
 
     @field_validator("categories", mode="before")
@@ -129,8 +130,15 @@ class WooCommerceDiscoveryProduct:
 
 
 def first_party_product_url(url: str, hostname: str) -> str | None:
-    """Return a product URL only when it stays on the configured shop."""
-    if not _is_first_party_url(url, hostname, "/product/"):
+    """Return a product URL only when it stays on the configured shop.
+
+    WooCommerce lets each shop choose its product permalink base, so the path
+    cannot be assumed to start with ``/product/``. The host, scheme, port, and
+    credential checks remain the security boundary.
+    """
+    if not _is_first_party_url(url, hostname, "/"):
+        return None
+    if urlsplit(url).path in {"", "/"}:
         return None
     return url
 
