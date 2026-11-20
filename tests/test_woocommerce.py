@@ -97,6 +97,62 @@ def test_woocommerce_strategy_resolves_category_url(
     assert query["category"] == ["100"]
 
 
+def test_woocommerce_strategy_resolves_kategori_category_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
+        [
+            StubResponse(
+                categories_payload(
+                    [category_payload(100, "Rrjete dhe Wi-Fi", "network")],
+                ),
+            ),
+            StubResponse(
+                products_payload([product_payload(1)]),
+                headers={"X-WP-Total": "1", "X-WP-TotalPages": "1"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(woocommerce_http.requests, "get", get)
+
+    # When
+    entries, _source_title = WooCommerceStrategy().fetch_entries(
+        "https://technosapien.mk/kategori/network",
+    )
+
+    # Then
+    assert len(entries) == 1
+    query = parse_qs(urlsplit(get.urls[1]).query)
+    assert query["category"] == ["100"]
+
+
+def test_woocommerce_strategy_skips_zero_price_products(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    get = RecordingGet(
+        [
+            StubResponse(
+                products_payload(
+                    [
+                        product_payload(1),
+                        product_payload(2, price="0", regular_price="0"),
+                    ],
+                ),
+                headers={"X-WP-Total": "2", "X-WP-TotalPages": "1"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(woocommerce_http.requests, "get", get)
+
+    # When
+    entries, _source_title = WooCommerceStrategy().fetch_entries(SHOP_URL)
+
+    # Then
+    assert [entry.product.id for entry in entries] == [1]
+
+
 @pytest.mark.parametrize(
     "url",
     [

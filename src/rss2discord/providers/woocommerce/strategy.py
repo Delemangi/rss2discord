@@ -34,13 +34,17 @@ class WooCommerceStrategy(ScraperStrategy):
         self,
         url: str,
     ) -> tuple[list[WooCommerceDiscoveryProduct], str]:
+        products = WooCommerceCatalogClient().fetch_latest_products(
+            url,
+            self._is_shutdown_requested,
+        )
+        # A zero price is an "ask for price" placeholder, not a product card.
         return (
-            list(
-                WooCommerceCatalogClient().fetch_latest_products(
-                    url,
-                    self._is_shutdown_requested,
-                ),
-            ),
+            [
+                product
+                for product in products
+                if product.product.prices.current_amount > 0
+            ],
             WOOCOMMERCE_LABEL,
         )
 
