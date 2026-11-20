@@ -28,7 +28,14 @@ def test_restock_alerts_defaults_to_false() -> None:
 
 
 def test_restock_strategies_are_the_stock_aware_providers() -> None:
-    expected = {"ananas", "anhoch", "cccenter", "ddstore", "neptun"}
+    expected = {
+        "ananas",
+        "anhoch",
+        "cccenter",
+        "ddstore",
+        "neptun",
+        "woocommerce",
+    }
 
     assert expected == RESTOCK_STRATEGIES
 

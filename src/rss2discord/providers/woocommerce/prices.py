@@ -65,7 +65,7 @@ class WooCommercePriceMonitor:
         observations = tuple(
             PriceObservation(product, self._snapshot(product))
             for product in products
-            if product.is_in_stock and product.prices.current_amount > 0
+            if product.prices.current_amount > 0
         )
         if not observations:
             raise FeedFetchError(WOOCOMMERCE_LABEL, "EmptyCatalog")
@@ -88,6 +88,7 @@ class WooCommercePriceMonitor:
             amount=amount,
             formatted=format_woocommerce_price(amount, prices.currency_code),
             currency=prices.currency_code,
+            available=product.is_in_stock,
         )
 
     def _message_for(
