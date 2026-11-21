@@ -61,6 +61,10 @@ class ScraperStrategy(ABC):
             if (entry_id := self.get_entry_id(entry)) is not None
         }
 
+    def get_entry_timestamp(self, entry: Any) -> str | None:  # noqa: ANN401
+        """Return the source timestamp used for feed staleness checks."""
+        return self.get_entry_data(entry).timestamp
+
     @staticmethod
     def _clean_html(text: str) -> str:
         if not text:

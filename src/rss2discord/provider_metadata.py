@@ -12,22 +12,23 @@ class StrategyMetadata:
 
     label: str
     price: bool = False
+    restock: bool = False
 
 
 STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
     {
-        "ananas": StrategyMetadata("Ananas", price=True),
-        "anhoch": StrategyMetadata("Anhoch", price=True),
+        "ananas": StrategyMetadata("Ananas", price=True, restock=True),
+        "anhoch": StrategyMetadata("Anhoch", price=True, restock=True),
         "arctic_shift": StrategyMetadata("Reddit"),
-        "cccenter": StrategyMetadata("CCCenter", price=True),
-        "ddstore": StrategyMetadata("DDStore", price=True),
+        "cccenter": StrategyMetadata("CCCenter", price=True, restock=True),
+        "ddstore": StrategyMetadata("DDStore", price=True, restock=True),
         "emsc": StrategyMetadata("EMSC"),
         "fakulteti_mk": StrategyMetadata("Fakulteti.mk"),
         "gjirafa50": StrategyMetadata("Gjirafa50", price=True),
         "hivetec": StrategyMetadata("Hivetec", price=True),
         "itmk_oglasnik": StrategyMetadata("IT.mk Oglasnik"),
         "neksio": StrategyMetadata("Neksio", price=True),
-        "neptun": StrategyMetadata("Neptun", price=True),
+        "neptun": StrategyMetadata("Neptun", price=True, restock=True),
         "pazar3": StrategyMetadata("Pazar3", price=True),
         "proxnet": StrategyMetadata("PROXNet", price=True),
         "reklama5": StrategyMetadata("Reklama5", price=True),
@@ -38,7 +39,7 @@ STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
         "time_mk": StrategyMetadata("Time.mk"),
         "tweets": StrategyMetadata("Tweets"),
         "wolfinet": StrategyMetadata("Wolfinet", price=True),
-        "woocommerce": StrategyMetadata("WooCommerce", price=True),
+        "woocommerce": StrategyMetadata("WooCommerce", price=True, restock=True),
         "xenforo": StrategyMetadata("Forum"),
     },
 )
@@ -47,6 +48,9 @@ STRATEGY_LABELS: Final[Mapping[str, str]] = MappingProxyType(
 )
 PRICE_STRATEGIES: Final[frozenset[str]] = frozenset(
     name for name, metadata in STRATEGY_METADATA.items() if metadata.price
+)
+RESTOCK_STRATEGIES: Final[frozenset[str]] = frozenset(
+    name for name, metadata in STRATEGY_METADATA.items() if metadata.restock
 )
 ADAPTER_LABELS: Final[dict[str, str]] = {
     "hackernews": "Hacker News",

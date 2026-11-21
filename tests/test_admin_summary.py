@@ -43,7 +43,7 @@ def test_admin_summary_prints_counts_and_problems(
     assert main(["--database", str(database), "summary"]) == 0
 
     output = capsys.readouterr().out
-    assert "2 feeds: 1 healthy, 0 empty, 1 failed, 0 blocked" in output
+    assert "2 feeds: 1 healthy, 0 empty, 0 stale, 1 failed, 0 blocked" in output
     assert "`failed-feed` ordinary **failed** (HTTPError)" in output
 
 

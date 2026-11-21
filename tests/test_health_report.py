@@ -6,6 +6,7 @@ from threading import Event
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.health_report import (
     MAX_SUMMARY_CHARACTERS,
+    HealthSummary,
     HealthSummaryReporter,
     build_health_summary,
     format_health_summary,
@@ -88,6 +89,8 @@ def test_build_health_summary_counts_states_and_pending(tmp_path: Path) -> None:
     assert summary.other == 0
     assert summary.pending_price_notifications == 1
     assert summary.database_bytes > 0
+    assert summary.database_file_bytes > 0
+    assert summary.database_bytes >= summary.database_file_bytes + summary.wal_bytes
     assert [record.feed_id for record in summary.problems] == [
         "failed-feed",
         "blocked-feed",
@@ -170,6 +173,27 @@ def test_build_health_summary_uses_worst_state_per_feed(tmp_path: Path) -> None:
     assert summary.problems[0].job_kind == "price"
 
 
+def test_format_health_summary_reports_database_and_wal_separately() -> None:
+    summary = HealthSummary(
+        total_feeds=1,
+        healthy=1,
+        empty=0,
+        stale=0,
+        failed=0,
+        blocked=0,
+        other=0,
+        pending_price_notifications=0,
+        database_bytes=3_072,
+        database_file_bytes=1_024,
+        wal_bytes=2_048,
+        problems=(),
+    )
+
+    text = format_health_summary(summary)
+
+    assert "Database: 1.0 KB (WAL 2.0 KB)" in text
+
+
 def test_format_health_summary_includes_problems_and_limits_length(
     tmp_path: Path,
 ) -> None:
@@ -182,7 +206,7 @@ def test_format_health_summary_includes_problems_and_limits_length(
     text = format_health_summary(summary)
 
     assert "**rss2discord health**" in text
-    assert "20 feeds: 0 healthy, 0 empty, 20 failed, 0 blocked" in text
+    assert "20 feeds: 0 healthy, 0 empty, 0 stale, 20 failed, 0 blocked" in text
     assert "`failed-00`" in text
     assert "… and 8 more" in text
     assert len(text) <= MAX_SUMMARY_CHARACTERS

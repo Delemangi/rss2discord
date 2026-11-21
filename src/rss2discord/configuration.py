@@ -7,7 +7,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rss2discord.defaults import DEFAULT_PRICE_INLINE_LIMIT
-from rss2discord.provider_metadata import PRICE_STRATEGIES
+from rss2discord.provider_metadata import PRICE_STRATEGIES, RESTOCK_STRATEGIES
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
     normalize_remote_media_url,
@@ -48,9 +48,7 @@ FeedStrategyName = Literal[
 ]
 MIN_GJIRAFA50_PRICE_CHECK_INTERVAL: Final = 21_600
 # Providers whose price snapshots report stock, so they can alert on restocks.
-RESTOCK_STRATEGIES: Final = frozenset(
-    {"ananas", "anhoch", "cccenter", "ddstore", "neptun", "woocommerce"},
-)
+# Derived from StrategyMetadata.restock in provider_metadata.
 
 
 class FeedConfig(BaseModel):
@@ -92,6 +90,7 @@ class FeedConfig(BaseModel):
     price_ignore_increases: bool = False
     restock_alerts: bool = False
     digest_threshold: Annotated[int, Field(ge=1)] | None = 100
+    stale_after_days: Annotated[int, Field(ge=1)] | None = None
 
     @field_validator("webhook_avatar")
     @classmethod
