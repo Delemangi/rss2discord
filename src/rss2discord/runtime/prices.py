@@ -26,7 +26,10 @@ from rss2discord.retries import (
     SQLiteRetryInterruptedError,
     SQLiteRetryPolicy,
 )
-from rss2discord.transports.price_monitor import PriceAlertDelivery
+from rss2discord.transports.price_monitor import (
+    PriceAlertDelivery,
+    price_scan_timing,
+)
 
 from .health import (
     cooldown_peer_ids,
@@ -144,7 +147,8 @@ def _scan_price_monitor(
     try:
         if feed_is_blocked(feed, feeds, store, attempted_at):
             return
-        monitor.scan()
+        with price_scan_timing():
+            monitor.scan()
     except FeedFetchInterruptedError:
         return
     except SQLiteRetryInterruptedError:

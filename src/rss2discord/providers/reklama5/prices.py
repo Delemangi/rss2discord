@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import time
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Final, Protocol
@@ -59,7 +58,6 @@ class Reklama5PriceMonitor:
         self._scan()
 
     def _scan(self) -> None:
-        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         listings = self._dependencies.catalog.fetch_catalog(
@@ -81,7 +79,6 @@ class Reklama5PriceMonitor:
             message_for=self._message_for,
             snapshot_limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS,
             allow_currency_changes=True,
-            started_at=started_at,
         )
 
     def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:

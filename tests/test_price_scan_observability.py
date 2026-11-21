@@ -13,7 +13,12 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceSnapshot
-from rss2discord.transports.price_monitor import PriceObservation, run_price_scan
+from rss2discord.transports.price_monitor import (
+    PriceObservation,
+    current_scan_started_at,
+    price_scan_timing,
+    run_price_scan,
+)
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_price_scan_pipeline import (
     dependencies,
@@ -129,6 +134,19 @@ def test_scan_log_counts_alerts_restocks_filters_and_unavailable(
         assert "bulk=false" in caplog.text
         assert "outcome=delivered" in caplog.text
         assert "elapsed_ms=" in caplog.text
+
+
+def test_price_scan_timing_context_sets_and_resets_the_start() -> None:
+    # Given no active timing context
+    assert current_scan_started_at() is None
+
+    # When / Then
+    before = time.perf_counter()
+    with price_scan_timing():
+        started = current_scan_started_at()
+        assert started is not None
+        assert started >= before
+    assert current_scan_started_at() is None
 
 
 def test_scan_log_uses_the_provider_start_time(

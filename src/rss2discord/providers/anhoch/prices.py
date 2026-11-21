@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import Protocol
 
@@ -52,7 +51,6 @@ class AnhochPriceMonitor:
 
     def _scan(self) -> None:
         """Fetch, classify, persist silent updates, then deliver changed prices in order."""
-        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -71,7 +69,6 @@ class AnhochPriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=NO_SNAPSHOT_LIMIT,
-            started_at=started_at,
         )
 
     def _snapshot(self, product: AnhochProduct) -> PriceSnapshot:

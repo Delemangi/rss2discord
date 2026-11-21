@@ -87,6 +87,7 @@ from rss2discord.transports import RSSStrategy, ScraperStrategy, XenForoStrategy
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
     PriceMonitorDependencies,
+    price_scan_timing,
 )
 
 logger = logging.getLogger(__name__)
@@ -211,7 +212,8 @@ class BackgroundPriceMonitor:
                             is_shutdown_requested=self._is_shutdown_requested,
                         ),
                     )
-                    self._factory(self._feed, worker_dependencies).scan()
+                    with price_scan_timing():
+                        self._factory(self._feed, worker_dependencies).scan()
                     store.record_job_timing(
                         self._feed.id,
                         "price",
