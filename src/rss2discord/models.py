@@ -42,6 +42,8 @@ class EntryData:
     image_url: str | None = None
     categories: tuple[str, ...] = ()
     source_metrics: tuple[SourceMetric, ...] = ()
+    # Source-assigned popularity score, when the adapter can provide one.
+    source_score: int | None = None
     price_direction: PriceDirection | None = None
     # Ordered media gallery URLs. When non-empty, renderers prefer this over
     # the single image_url thumbnail.

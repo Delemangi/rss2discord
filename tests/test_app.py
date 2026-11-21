@@ -1,3 +1,5 @@
+import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -352,6 +354,80 @@ def test_hackernews_adapter_requests_are_bounded_per_feed(tmp_path: Path) -> Non
 
     # Then
     assert len(adapter.entries) == 5
+    assert len(sender.messages) == len(entries)
+
+
+def _scored_entry(entry_id: str, score: int) -> FakeEntry:
+    entry = make_entry(entry_id)
+    return FakeEntry(id=entry.id, data=replace(entry.data, source_score=score))
+
+
+def test_hackernews_min_score_skips_low_scoring_entries(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://news.ycombinator.com/rss",
+        webhook="https://discord.test/news",
+        adapter="hackernews",
+        hackernews_min_score=500,
+        digest_threshold=None,
+    )
+    entries = [
+        _scored_entry("low", 200),
+        _scored_entry("borderline", 500),
+        _scored_entry("high", 900),
+    ]
+    sender = FakeSender([True, True])
+    strategy = FakeStrategy(entries)
+
+    class PassthroughAdapter:
+        def adapt(self, entry: Any, data: EntryData) -> EntryData:  # noqa: ANN401
+            del entry
+            return data
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["hackernews"] = PassthroughAdapter()
+        with caplog.at_level(logging.INFO, logger="rss2discord.app"):
+            app.process_feed(feed)
+
+    # Then
+    assert [message.entry.title for message in sender.messages] == [
+        "borderline",
+        "high",
+    ]
+    assert "below_score=1" in caplog.text
+
+
+def test_filtered_hackernews_feed_enriches_every_candidate(tmp_path: Path) -> None:
+    # Given
+    feed = FeedConfig(
+        id="news",
+        name="News",
+        url="https://news.ycombinator.com/rss",
+        webhook="https://discord.test/news",
+        adapter="hackernews",
+        hackernews_min_score=500,
+        digest_threshold=None,
+    )
+    entries = [make_entry(f"entry-{index}") for index in range(7)]
+    sender = FakeSender([True] * len(entries))
+    strategy = FakeStrategy(entries)
+    adapter = FakeAdapter()
+
+    # When
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+        app._adapters["hackernews"] = adapter
+        app.process_feed(feed)
+
+    # Then
+    assert len(adapter.entries) == len(entries)
     assert len(sender.messages) == len(entries)
 
 

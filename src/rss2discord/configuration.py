@@ -67,6 +67,7 @@ class FeedConfig(BaseModel):
     strategy: FeedStrategyName = "rss"
     seed_existing_on_first_fetch: bool = False
     adapter: FeedAdapterName | None = None
+    hackernews_min_score: Annotated[int, Field(ge=1)] | None = None
     webhook_name: WebhookName | None = None
     webhook_avatar: str | None = None
     embed_color: Annotated[int, Field(ge=0, le=0xFFFFFF)] | None = None
@@ -112,6 +113,9 @@ class FeedConfig(BaseModel):
     def validate_strategy_options(self) -> Self:
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
+            raise ValueError(msg)
+        if self.hackernews_min_score is not None and self.adapter != "hackernews":
+            msg = "hackernews_min_score requires the hackernews adapter"
             raise ValueError(msg)
         if self.price_check_interval is not None:
             if (

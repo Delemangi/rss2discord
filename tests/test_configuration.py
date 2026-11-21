@@ -286,6 +286,65 @@ def test_load_config_parses_hackernews_adapter(tmp_path: Path) -> None:
     assert config.feeds[0].adapter == "hackernews"
 
 
+def test_load_config_parses_hackernews_min_score(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: hacker-news\n"
+        "    url: https://news.ycombinator.com/rss\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    adapter: hackernews\n"
+        "    hackernews_min_score: 500\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert config.feeds[0].hackernews_min_score == 500
+
+
+def test_load_config_rejects_hackernews_min_score_without_adapter(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: news\n"
+        "    url: https://example.test/feed.xml\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    hackernews_min_score: 500\n",
+    )
+
+    # When / Then
+    with pytest.raises(
+        ValidationError,
+        match="hackernews_min_score requires",
+    ):
+        load_config(config_path)
+
+
+def test_load_config_rejects_non_positive_hackernews_min_score(
+    tmp_path: Path,
+) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        "  - id: hacker-news\n"
+        "    url: https://news.ycombinator.com/rss\n"
+        "    webhook: https://discord.test/webhook\n"
+        "    adapter: hackernews\n"
+        "    hackernews_min_score: 0\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_load_config_rejects_unknown_adapter(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"

@@ -34,6 +34,8 @@ from .transports import FeedFetchError, ScraperStrategy
 
 logger = logging.getLogger(__name__)
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
+# Filtered feeds need a score for every candidate, not just the first few.
+MAX_HACKER_NEWS_ENRICHMENTS_PER_FILTERED_FEED: Final = 50
 
 
 class EntryProcessingOutcome(StrEnum):
@@ -54,6 +56,7 @@ class DiscoveryScanCounters:
     delivered: int = 0
     failed: int = 0
     too_old: int = 0
+    below_score: int = 0
     duplicates: int = 0
     missing_id: int = 0
     seeded: bool = False
@@ -194,8 +197,9 @@ class RSSToDiscord:
     ) -> None:
         logger.info(
             "Discovery scan feed=%s strategy=%s entries=%d unhandled=%d "
-            "pending=%d delivered=%d failed=%d too_old=%d duplicates=%d "
-            "missing_id=%d seeded=%s digest=%s state=%s duration_ms=%d",
+            "pending=%d delivered=%d failed=%d too_old=%d below_score=%d "
+            "duplicates=%d missing_id=%d seeded=%s digest=%s state=%s "
+            "duration_ms=%d",
             feed.id,
             feed.strategy,
             counters.entries,
@@ -204,6 +208,7 @@ class RSSToDiscord:
             counters.delivered,
             counters.failed,
             counters.too_old,
+            counters.below_score,
             counters.duplicates,
             counters.missing_id,
             str(counters.seeded).lower(),
@@ -227,11 +232,13 @@ class RSSToDiscord:
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
-        hacker_news_enrichments_remaining = (
-            MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED
-            if feed.adapter == "hackernews"
-            else None
-        )
+        hacker_news_enrichments_remaining: int | None = None
+        if feed.adapter == "hackernews":
+            hacker_news_enrichments_remaining = (
+                MAX_HACKER_NEWS_ENRICHMENTS_PER_FILTERED_FEED
+                if feed.hackernews_min_score is not None
+                else MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED
+            )
         enrichment_limit_logged = False
         pending: list[tuple[EntryId, EntryData]] = []
 
@@ -259,6 +266,14 @@ class RSSToDiscord:
                     enrichment_limit_logged=enrichment_limit_logged,
                 )
             )
+            # Fail open when enrichment could not provide a score.
+            if (
+                feed.hackernews_min_score is not None
+                and entry_data.source_score is not None
+                and entry_data.source_score < feed.hackernews_min_score
+            ):
+                counters.below_score += 1
+                continue
             if self._is_too_old(
                 entry_data,
                 feed.id,
