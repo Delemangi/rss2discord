@@ -117,13 +117,21 @@ class RSSToDiscord:
         if self.is_shutdown_requested():
             return JobOutcome.ATTEMPTED
         health_state = "healthy" if entries else "empty"
+        health_cause: str | None = None
+        if entries and feed.stale_after_days is not None:
+            newest_at = self._newest_entry_at(strategy, entries)
+            if newest_at is not None and newest_at < (
+                datetime.now(UTC) - timedelta(days=feed.stale_after_days)
+            ):
+                health_state = "stale"
+                health_cause = "NoRecentEntries"
         record_runtime_health(
             self._store,
             HealthUpdate(
                 feed_id=feed.id,
                 job_kind="ordinary",
                 state=health_state,
-                cause=None,
+                cause=health_cause,
                 attempted_at=attempted_at,
                 success=True,
                 nonempty=bool(entries),
@@ -133,6 +141,22 @@ class RSSToDiscord:
             ),
         )
         return JobOutcome.ATTEMPTED
+
+    @staticmethod
+    def _newest_entry_at(
+        strategy: ScraperStrategy,
+        entries: list[Any],
+    ) -> datetime | None:
+        timestamp = strategy.get_entry_timestamp(entries[-1])
+        if timestamp is None:
+            return None
+        try:
+            parsed = datetime.fromisoformat(timestamp)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed
 
     def _process_entries(
         self,

@@ -12,7 +12,7 @@ from rss2discord.models import (
     HealthUpdate,
 )
 
-HEALTH_STATES: Final = frozenset({"healthy", "empty", "failed", "blocked"})
+HEALTH_STATES: Final = frozenset({"healthy", "empty", "stale", "failed", "blocked"})
 FEED_WHERE_CLAUSE: Final = " WHERE feed_id = ?"
 
 

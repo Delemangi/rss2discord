@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 MAX_SUMMARY_CHARACTERS: Final = 1_900
 MAX_PROBLEM_LINES: Final = 12
-KNOWN_STATES: Final = frozenset({"healthy", "empty", "failed", "blocked"})
-STATE_ORDER: Final = {"failed": 0, "blocked": 1, "empty": 2, "healthy": 4}
+KNOWN_STATES: Final = frozenset({"healthy", "empty", "stale", "failed", "blocked"})
+STATE_ORDER: Final = {"failed": 0, "blocked": 1, "empty": 2, "stale": 3, "healthy": 4}
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,11 +31,14 @@ class HealthSummary:
     total_feeds: int
     healthy: int
     empty: int
+    stale: int
     failed: int
     blocked: int
     other: int
     pending_price_notifications: int
     database_bytes: int
+    database_file_bytes: int
+    wal_bytes: int
     problems: tuple[HealthRecord, ...]
 
 
@@ -68,6 +71,7 @@ def build_health_summary(store: DeliveryStore, database_path: Path) -> HealthSum
         total_feeds=len(by_feed),
         healthy=counts.get("healthy", 0),
         empty=counts.get("empty", 0),
+        stale=counts.get("stale", 0),
         failed=counts.get("failed", 0),
         blocked=counts.get("blocked", 0),
         other=sum(
@@ -75,6 +79,8 @@ def build_health_summary(store: DeliveryStore, database_path: Path) -> HealthSum
         ),
         pending_price_notifications=store.count_pending_price_notifications_total(),
         database_bytes=_database_bytes(database_path),
+        database_file_bytes=_file_bytes(database_path),
+        wal_bytes=_file_bytes(Path(f"{database_path}-wal")),
         problems=problems,
     )
 
@@ -106,16 +112,19 @@ def _summary_severity(record: HealthRecord) -> int:
 def format_health_summary(summary: HealthSummary) -> str:
     state_line = (
         f"{summary.total_feeds} feeds: {summary.healthy} healthy, "
-        f"{summary.empty} empty, {summary.failed} failed, "
-        f"{summary.blocked} blocked"
+        f"{summary.empty} empty, {summary.stale} stale, "
+        f"{summary.failed} failed, {summary.blocked} blocked"
     )
     if summary.other:
         state_line += f", {summary.other} other"
+    database_line = f"Database: {_format_bytes(summary.database_file_bytes)}"
+    if summary.wal_bytes:
+        database_line += f" (WAL {_format_bytes(summary.wal_bytes)})"
     lines = [
         "**rss2discord health**",
         state_line,
         f"Pending price notifications: {summary.pending_price_notifications}",
-        f"Database: {_format_bytes(summary.database_bytes)}",
+        database_line,
     ]
     if summary.problems:
         lines.append("")
@@ -154,14 +163,16 @@ def _format_bytes(value: int) -> str:
 
 
 def _database_bytes(database_path: Path) -> int:
-    total = 0
-    for suffix in ("", "-wal", "-shm"):
-        candidate = database_path.parent / f"{database_path.name}{suffix}"
-        try:
-            total += candidate.stat().st_size
-        except FileNotFoundError:
-            continue
-    return total
+    return sum(
+        _file_bytes(Path(f"{database_path}{suffix}")) for suffix in ("", "-wal", "-shm")
+    )
+
+
+def _file_bytes(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 class HealthSummaryReporter:

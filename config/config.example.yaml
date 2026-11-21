@@ -39,6 +39,7 @@ feeds:
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
     embed_color: 5814783 # Optional: Components v2 accent color (default: 5814783 = blue)
     digest_threshold: 100 # Optional: max new entries posted individually; above this, one digest. null disables the digest.
+    # stale_after_days: 7 # Optional: mark the feed stale when its newest entry is older than this
 
   # Hacker News RSS with official API enrichment: points, comments, domain,
   # front-page rank, the top comment for link posts, and Ask HN text.
@@ -425,6 +426,9 @@ feeds:
 #   more new entries than this, one digest with HTML/CSV attachments is sent
 #   instead of individual cards. Set to null to always post individual cards;
 #   recommended for news feeds.
+# - stale_after_days: Optional positive integer. When set, a feed whose newest
+#   source entry is older than this is reported as stale instead of healthy.
+#   Useful for detecting dead or paused upstream feeds.
 # - price_inline_limit: Optional integer 1-1000, default 100, valid only for
 #   price strategies. Price scans with up to this many changes send individual
 #   cards; above it, one digest with HTML/CSV attachments. The pending outbox

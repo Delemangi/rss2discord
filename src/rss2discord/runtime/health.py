@@ -73,7 +73,12 @@ def record_runtime_health(store: DeliveryStore, update: HealthUpdate) -> None:
         )
         return
     if notice.should_log:
-        level = logging.ERROR if update.state in {"failed", "blocked"} else logging.INFO
+        if update.state in {"failed", "blocked"}:
+            level = logging.ERROR
+        elif update.state == "stale":
+            level = logging.WARNING
+        else:
+            level = logging.INFO
         logger.log(
             level,
             "Feed %s %s health=%s cause=%s recovered=%s",
