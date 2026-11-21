@@ -29,6 +29,7 @@ from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
+from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from rss2discord.providers.neksio.strategy import NeksioStrategy
@@ -76,6 +77,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "emsc": EmscStrategy,
     "fakulteti_mk": FakultetiMkStrategy,
     "gjirafa50": Gjirafa50Strategy,
+    "hetzner_auction": HetznerAuctionStrategy,
     "hivetec": HivetecStrategy,
     "itmk_oglasnik": ITMkOglasnikStrategy,
     "neksio": NeksioStrategy,

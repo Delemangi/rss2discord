@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'arctic_shift_nsfw', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'arctic_shift_nsfw', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hetzner_auction', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -50,6 +50,20 @@ feeds:
     strategy: "rss"
     adapter: "hackernews"
     # hackernews_min_score: 500 # Optional: only deliver stories at or above this score
+
+  # Hetzner server auction. Optional query filters control which listings match:
+  # max_price_eur, min_ram_gb, require_ecc, disk_type (nvme/sata/hdd),
+  # min_disk_gb, location, cpu_search, include_fixed.
+  - id: "hetzner-auction"
+    name: "Hetzner Server Auction"
+    url: "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json?max_price_eur=150&min_ram_gb=64&disk_type=nvme&min_disk_gb=512"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "hetzner_auction"
+    ordinary_check_interval: 300
+    seed_existing_on_first_fetch: true
+    webhook_name: "Hetzner Auction"
+    webhook_avatar: "https://www.hetzner.com/_resources/themes/hetzner/images/favicons/android-icon-192x192.png"
+    digest_threshold: null
 
   # Reddit RSS was discontinued in November 2026. Use the 'arctic_shift'
   # strategy below instead. The 'reddit' adapter still works for any RSS feed
