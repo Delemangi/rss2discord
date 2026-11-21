@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -49,13 +49,9 @@ feeds:
     strategy: "rss"
     adapter: "hackernews"
 
-  # Reddit RSS with outbound/discussion link separation
-  - id: "reddit-python"
-    name: "r/Python"
-    url: "https://www.reddit.com/r/python/.rss"
-    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss"
-    adapter: "reddit"
+  # Reddit RSS was discontinued in November 2026. Use the 'arctic_shift'
+  # strategy below instead. The 'reddit' adapter still works for any RSS feed
+  # that exposes separate outbound and discussion links.
 
   # Public GitHub repository releases feed
   - id: "github-cli-releases"
@@ -237,18 +233,17 @@ feeds:
     webhook_name: "OpenCode Tweets"
     digest_threshold: null
 
-  # Reddit posts through the official Data API. Access requires an approved
-  # Reddit OAuth application; until approval the strategy fails with
-  # MissingCredentials. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in the
-  # environment and use REDDIT_USER_AGENT to describe the bot. The strategy
-  # reads at most 300 newest posts from /r/<subreddit>/<sort>, returns them
-  # oldest-first, and skips stickied, NSFW, and spoiler posts. Optional
-  # ?t=hour|day|week|month|year|all applies to top and controversial only.
+  # Reddit posts through the public Arctic Shift archive. Reddit's official
+  # Data API is closed to new apps and RSS was discontinued in November 2026.
+  # The strategy reads at most 300 newest posts from /r/<subreddit>/new,
+  # returns them oldest-first, and skips stickied, NSFW, spoiler, removed, and
+  # deleted posts. Only the /new listing is supported. Arctic Shift is an
+  # independent archive; keep polling low-volume and respect 429 responses.
   # - id: "reddit-python"
   #   name: "r/python"
-  #   url: "https://www.reddit.com/r/python/top?t=day"
+  #   url: "https://www.reddit.com/r/python/new"
   #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-  #   strategy: "reddit"
+  #   strategy: "arctic_shift"
   #   webhook_name: "Reddit"
 
   # EMSC earthquake alerts for the Macedonia/Balkans region. The URL must be an
@@ -378,8 +373,8 @@ feeds:
 # - name: A friendly name for the feed (optional, will use feed/forum title if not provided)
 # - url: The RSS/Atom feed, XenForo thread, marketplace page, Pazar3 listing URL,
 #   Reklama5 search URL, or product catalog URL (required).
-#   Reddit feeds use https://www.reddit.com/r/<subreddit>/<sort> or the
-#   old.reddit.com equivalent, with an optional ?t= window for top/controversial.
+#   Reddit feeds use https://www.reddit.com/r/<subreddit>/new with the
+#   'arctic_shift' strategy; only the /new listing is supported.
 #   Public GitHub release feeds use https://github.com/OWNER/REPOSITORY/releases.atom
 #   and render with a GitHub source label. GitLab project commit Atom feeds use
 #   https://HOST/NAMESPACE/PROJECT/-/commits/BRANCH.atom and render with a GitLab
@@ -391,9 +386,10 @@ feeds:
 #   - 'itmk_oglasnik': For IT.mk Oglasnik index and category pages
 #   - 'pazar3': For bounded discovery and optional scoped price monitoring from Macedonian public listing URLs
 #   - 'reklama5': For new ads and optional complete-category price monitoring from any Reklama5 search URL
-#   - 'reddit': For posts from one subreddit listing through the official Reddit
-#     Data API; requires an approved OAuth client and REDDIT_CLIENT_ID /
-#     REDDIT_CLIENT_SECRET, with an optional descriptive REDDIT_USER_AGENT.
+#   - 'reddit': Legacy official Data API; requires an approved OAuth client and
+#     REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET. New access is no longer accepted.
+#   - 'arctic_shift': Reddit /new posts through the public Arctic Shift archive;
+#     no OAuth credentials required, only the /new listing is supported.
 #   - 'ananas': For new products and optional price monitoring from any Ananas category URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
@@ -525,7 +521,8 @@ feeds:
 #   process-wide host pacer. At most 10,000 snapshots are retained and 100 changes delivered.
 # - adapter: Optional source-specific enrichment for RSS feeds
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
-#   - 'reddit': Outbound/discussion links and normalized authors without OAuth
+#   - 'reddit': Outbound/discussion links and normalized authors for RSS feeds
+#     that expose both an outbound link and a discussion URL
 # - webhook_name: Custom name for the webhook bot (optional)
 # - webhook_avatar: HTTPS URL for the webhook avatar, up to 2,048 encoded
 #   characters. Localhost, non-global IP literals, malformed hosts, and

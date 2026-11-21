@@ -1,8 +1,9 @@
-"""Official Reddit Data API discovery strategy."""
+"""Reddit subreddit discovery over a listing client."""
 
 from datetime import UTC, datetime
 from html import unescape
 from typing import Final, Protocol, final, override
+from urllib.parse import urlsplit
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.providers.reddit.bounds import (
@@ -17,6 +18,12 @@ from rss2discord.transports.base import ScraperStrategy
 from rss2discord.url_normalization import normalize_remote_media_url
 
 THUMBNAIL_SENTINELS: Final = frozenset({"self", "default", "nsfw", "spoiler"})
+REMOVED_TITLE_SENTINELS: Final = frozenset(
+    {"[removedbymoderator]", "[removedbyreddit]", "[deleted]"},
+)
+REMOVED_BODY_SENTINELS: Final = frozenset({"[removed]", "[deleted]"})
+REMOVED_AUTHOR_SENTINELS: Final = frozenset({"[deleted]", "[removed]"})
+DIRECT_IMAGE_HOSTS: Final = frozenset({"i.redd.it", "preview.redd.it"})
 
 
 class RedditListingClient(Protocol):
@@ -41,8 +48,14 @@ class RedditStrategy(ScraperStrategy):
     seed_existing_on_first_fetch = True
     require_entries_for_initialization = True
 
-    def __init__(self, client: RedditListingClient | None = None) -> None:
+    def __init__(
+        self,
+        client: RedditListingClient | None = None,
+        *,
+        show_engagement: bool = True,
+    ) -> None:
         self._client = client if client is not None else RedditClient()
+        self._show_engagement = show_engagement
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[RedditPost], str]:
@@ -98,12 +111,33 @@ class RedditStrategy(ScraperStrategy):
             image_url=image_urls[0] if image_urls else None,
             image_urls=image_urls,
             categories=(entry.link_flair_text,) if entry.link_flair_text else (),
-            source_metrics=_metrics(entry),
+            source_metrics=_metrics(
+                entry,
+                include_engagement=self._show_engagement,
+            ),
         )
 
 
 def _is_excluded(post: RedditPost) -> bool:
-    return post.stickied or post.pinned or post.over_18 or post.spoiler
+    if post.stickied or post.pinned or post.over_18 or post.spoiler:
+        return True
+    return _is_removed(post)
+
+
+def _is_removed(post: RedditPost) -> bool:
+    """Reject archived posts whose title, body, or author marks them removed."""
+    title = "".join((post.title or "").split()).casefold()
+    if title in REMOVED_TITLE_SENTINELS:
+        return True
+    permalink = (post.permalink or "").rstrip("/").casefold()
+    if permalink.endswith("/removed_by_moderator"):
+        return True
+    if post.is_self:
+        body = "".join((post.selftext or "").split()).casefold()
+        if body in REMOVED_BODY_SENTINELS:
+            return True
+    author = "".join((post.author or "").split()).casefold()
+    return author in REMOVED_AUTHOR_SENTINELS
 
 
 def _discussion_url(post: RedditPost) -> str | None:
@@ -121,11 +155,15 @@ def _timestamp(created_utc: float | None) -> str | None:
         return None
 
 
-def _metrics(post: RedditPost) -> tuple[SourceMetric, ...]:
+def _metrics(
+    post: RedditPost,
+    *,
+    include_engagement: bool = True,
+) -> tuple[SourceMetric, ...]:
     metrics: list[SourceMetric] = []
-    if post.score is not None:
+    if include_engagement and post.score is not None:
         metrics.append(SourceMetric("Score", str(post.score)))
-    if post.num_comments is not None:
+    if include_engagement and post.num_comments is not None:
         metrics.append(SourceMetric("Comments", str(post.num_comments)))
     if post.domain and not post.domain.casefold().startswith("self."):
         metrics.append(SourceMetric("Domain", post.domain))
@@ -137,7 +175,11 @@ def _image_urls(post: RedditPost) -> tuple[str, ...]:
         return _gallery_image_urls(post)
     if post.post_hint != "image":
         return ()
-    image_url = _preview_image_url(post) or _thumbnail_image_url(post.thumbnail)
+    image_url = (
+        _preview_image_url(post)
+        or _thumbnail_image_url(post.thumbnail)
+        or _direct_image_url(post)
+    )
     return (image_url,) if image_url is not None else ()
 
 
@@ -155,6 +197,17 @@ def _thumbnail_image_url(thumbnail: str | None) -> str | None:
     if thumbnail is None or thumbnail.casefold() in THUMBNAIL_SENTINELS:
         return None
     return _safe_image_url(thumbnail)
+
+
+def _direct_image_url(post: RedditPost) -> str | None:
+    """Recover an image URL when the archive omitted the preview object."""
+    for value in (post.url_overridden_by_dest, post.url):
+        image_url = _safe_image_url(value)
+        if image_url is None:
+            continue
+        if urlsplit(image_url).hostname in DIRECT_IMAGE_HOSTS:
+            return image_url
+    return None
 
 
 def _gallery_image_urls(post: RedditPost) -> tuple[str, ...]:

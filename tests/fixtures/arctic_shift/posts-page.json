@@ -1,0 +1,152 @@
+{
+  "data": [
+    {
+      "id": "malformed",
+      "title": 123
+    },
+    {
+      "name": "t3_stickied",
+      "id": "stickied",
+      "title": "Stickied post",
+      "author": "mod",
+      "created_utc": 1700000800,
+      "permalink": "/r/python/comments/stickied/stickied_post/",
+      "is_self": true,
+      "selftext": "Read me",
+      "stickied": true,
+      "score": 1,
+      "num_comments": 0
+    },
+    {
+      "name": "t3_nsfw",
+      "id": "nsfw",
+      "title": "NSFW post",
+      "author": "grace",
+      "created_utc": 1700000700,
+      "permalink": "/r/python/comments/nsfw/nsfw_post/",
+      "is_self": true,
+      "selftext": "Not for work",
+      "over_18": true,
+      "score": 1,
+      "num_comments": 0
+    },
+    {
+      "name": "t3_deleted_author",
+      "id": "deleted_author",
+      "title": "Deleted author",
+      "author": "[deleted]",
+      "created_utc": 1700000600,
+      "permalink": "/r/python/comments/deleted_author/deleted_author/",
+      "url": "https://example.com/deleted",
+      "is_self": false,
+      "post_hint": "link",
+      "score": 1,
+      "num_comments": 0,
+      "domain": "example.com"
+    },
+    {
+      "name": "t3_removed2",
+      "id": "removed2",
+      "title": "Removed self post",
+      "author": "frank",
+      "created_utc": 1700000500,
+      "permalink": "/r/python/comments/removed2/removed_self_post/",
+      "selftext": "[removed]",
+      "is_self": true,
+      "score": 1,
+      "num_comments": 0
+    },
+    {
+      "name": "t3_removed1",
+      "id": "removed1",
+      "title": "[ Removed by moderator ]",
+      "author": "eve",
+      "created_utc": 1700000400,
+      "permalink": "/r/python/comments/removed1/removed_by_moderator/",
+      "url": "https://www.reddit.com/r/python/comments/removed1/removed_by_moderator/",
+      "is_self": false,
+      "post_hint": "link",
+      "score": 1,
+      "num_comments": 0
+    },
+    {
+      "name": "t3_gallery1",
+      "id": "gallery1",
+      "title": "Chart gallery",
+      "author": "dave",
+      "created_utc": 1700000300,
+      "permalink": "/r/python/comments/gallery1/chart_gallery/",
+      "is_gallery": true,
+      "post_hint": "image",
+      "gallery_data": {
+        "items": [
+          {
+            "media_id": "m1"
+          },
+          {
+            "media_id": "m2"
+          }
+        ]
+      },
+      "media_metadata": {
+        "m1": {
+          "status": "valid",
+          "s": {
+            "u": "https://i.redd.it/m1.png?width=640&format=png"
+          }
+        },
+        "m2": {
+          "status": "valid",
+          "s": {
+            "u": "https://i.redd.it/m2.png?width=640&format=png"
+          }
+        }
+      },
+      "score": 20,
+      "num_comments": 4
+    },
+    {
+      "name": "t3_image1",
+      "id": "image1",
+      "title": "Screenshot",
+      "author": "carol",
+      "created_utc": 1700000200,
+      "permalink": "/r/python/comments/image1/screenshot/",
+      "post_hint": "image",
+      "url": "https://i.redd.it/image1.jpg",
+      "url_overridden_by_dest": "https://i.redd.it/image1.jpg",
+      "thumbnail": "self",
+      "score": 5,
+      "num_comments": 1,
+      "domain": "i.redd.it"
+    },
+    {
+      "name": "t3_self1",
+      "id": "self1",
+      "title": "Ask about Python",
+      "author": "bob",
+      "created_utc": 1700000100,
+      "permalink": "/r/python/comments/self1/ask_about_python/",
+      "selftext": "Hello &amp; welcome to the thread",
+      "is_self": true,
+      "score": 10,
+      "num_comments": 3
+    },
+    {
+      "name": "t3_link1",
+      "id": "link1",
+      "title": "Interesting link",
+      "author": "alice",
+      "created_utc": 1700000000,
+      "permalink": "/r/python/comments/link1/interesting_link/",
+      "url": "https://example.com/article",
+      "url_overridden_by_dest": "https://example.com/article",
+      "is_self": false,
+      "post_hint": "link",
+      "score": 42,
+      "num_comments": 7,
+      "domain": "example.com",
+      "link_flair_text": "News"
+    }
+  ]
+}

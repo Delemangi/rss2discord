@@ -8,6 +8,7 @@ import pytest
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
+from rss2discord.providers.arctic_shift.client import ArcticShiftClient
 from rss2discord.providers.reddit.client import RedditClient, parse_reddit_listing
 from rss2discord.providers.reddit.models import (
     RedditGalleryData,
@@ -31,6 +32,10 @@ from tests.reddit_helpers import (
 
 def fixture_page(name: str) -> RedditPage:
     return parse_reddit_listing(fixture_bytes(name))
+
+
+def arctic_fixture_bytes(name: str) -> bytes:
+    return (Path(__file__).parent / "fixtures" / "arctic_shift" / name).read_bytes()
 
 
 def make_post(name: str, **overrides: object) -> RedditPost:
@@ -192,6 +197,81 @@ def test_fetch_skips_pinned_posts() -> None:
     assert [entry.name for entry in entries] == ["t3_normal"]
 
 
+def test_fetch_skips_removed_and_deleted_posts() -> None:
+    # Given
+    page = RedditPage(
+        posts=(
+            make_post("t3_normal"),
+            make_post(
+                "t3_removed_title",
+                title="[ Removed by moderator ]",
+                permalink="/r/python/comments/removed/removed_by_moderator/",
+            ),
+            make_post(
+                "t3_removed_self",
+                is_self=True,
+                selftext="[removed]",
+            ),
+            make_post("t3_deleted_author", author="[deleted]"),
+        ),
+        after=None,
+    )
+    strategy = RedditStrategy(client=FakeListingClient([page]))
+
+    # When
+    entries, _ = strategy.fetch_entries("https://www.reddit.com/r/python/new")
+
+    # Then
+    assert [entry.name for entry in entries] == ["t3_normal"]
+
+
+def test_arctic_shift_filters_removed_posts_and_maps_media() -> None:
+    # Given
+    session = FakeSession(
+        [FakeResponse(200, arctic_fixture_bytes("posts-page.json"))],
+    )
+    strategy = RedditStrategy(
+        client=ArcticShiftClient(session=session),
+        show_engagement=False,
+    )
+
+    # When
+    entries, source_title = strategy.fetch_entries(
+        "https://www.reddit.com/r/python/new",
+    )
+
+    # Then
+    assert source_title == "r/python"
+    assert [entry.name for entry in entries] == [
+        "t3_link1",
+        "t3_self1",
+        "t3_image1",
+        "t3_gallery1",
+    ]
+    by_name = {
+        entry.name: strategy.get_entry_data(entry)
+        for entry in entries
+        if entry.name is not None
+    }
+    assert by_name["t3_link1"].link == "https://example.com/article"
+    assert by_name["t3_link1"].discussion_url == (
+        "https://www.reddit.com/r/python/comments/link1/interesting_link/"
+    )
+    assert {
+        metric.label: metric.value for metric in by_name["t3_link1"].source_metrics
+    } == {"Domain": "example.com"}
+    assert by_name["t3_image1"].image_url == "https://i.redd.it/image1.jpg"
+    assert by_name["t3_gallery1"].image_urls == (
+        "https://i.redd.it/m1.png?width=640&format=png",
+        "https://i.redd.it/m2.png?width=640&format=png",
+    )
+    assert session.calls[0][2]["params"] == {
+        "subreddit": "python",
+        "limit": 100,
+        "sort": "desc",
+    }
+
+
 def test_link_post_maps_outbound_link_and_discussion() -> None:
     # Given
     strategy = RedditStrategy(client=FakeListingClient([]))
@@ -307,6 +387,64 @@ def test_image_post_ignores_unsafe_thumbnail_sentinels(thumbnail: str) -> None:
     # Then
     assert data.image_url is None
     assert data.image_urls == ()
+
+
+def test_image_post_falls_back_to_a_direct_i_redd_it_url() -> None:
+    # Given
+    strategy = RedditStrategy(client=FakeListingClient([]))
+    entry = make_post(
+        "t3_image",
+        post_hint="image",
+        thumbnail="self",
+        url_overridden_by_dest="https://i.redd.it/direct.jpg",
+    )
+
+    # When
+    data = strategy.get_entry_data(entry)
+
+    # Then
+    assert data.image_url == "https://i.redd.it/direct.jpg"
+    assert data.image_urls == (data.image_url,)
+
+
+def test_image_post_direct_fallback_rejects_other_hosts() -> None:
+    # Given
+    strategy = RedditStrategy(client=FakeListingClient([]))
+    entry = make_post(
+        "t3_image",
+        post_hint="image",
+        thumbnail="self",
+        url_overridden_by_dest="https://example.com/image.jpg",
+    )
+
+    # When
+    data = strategy.get_entry_data(entry)
+
+    # Then
+    assert data.image_url is None
+    assert data.image_urls == ()
+
+
+def test_arctic_shift_metrics_omit_archive_engagement_counts() -> None:
+    # Given
+    strategy = RedditStrategy(
+        client=FakeListingClient([]),
+        show_engagement=False,
+    )
+    entry = make_post(
+        "t3_link",
+        domain="example.com",
+        score=1,
+        num_comments=0,
+    )
+
+    # When
+    data = strategy.get_entry_data(entry)
+
+    # Then
+    assert {metric.label: metric.value for metric in data.source_metrics} == {
+        "Domain": "example.com",
+    }
 
 
 def test_gallery_omits_missing_or_odd_image_metadata() -> None:

@@ -35,6 +35,7 @@ FeedStrategyName = Literal[
     "proxnet",
     "reklama5",
     "reddit",
+    "arctic_shift",
     "setec",
     "cccenter",
     "technomarket",
