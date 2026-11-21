@@ -159,6 +159,7 @@ class HackerNewsAdapter:
             image_url=data.image_url,
             categories=data.categories,
             source_metrics=tuple(metrics),
+            source_score=item.score,
         )
 
     def _rank_for(self, item_id: int) -> int | None:

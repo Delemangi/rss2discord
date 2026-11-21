@@ -56,6 +56,7 @@ def test_hackernews_adapter_enriches_external_story() -> None:
         SourceMetric(label="Comments", value="71"),
         SourceMetric(label="Domain", value="example.test"),
     )
+    assert result.source_score == 111
 
 
 def test_hackernews_adapter_uses_self_post_text() -> None:

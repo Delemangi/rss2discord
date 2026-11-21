@@ -49,6 +49,7 @@ feeds:
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "rss"
     adapter: "hackernews"
+    # hackernews_min_score: 500 # Optional: only deliver stories at or above this score
 
   # Reddit RSS was discontinued in November 2026. Use the 'arctic_shift'
   # strategy below instead. The 'reddit' adapter still works for any RSS feed
@@ -532,6 +533,8 @@ feeds:
 #   - 'hackernews': Author, points, comments, self-post text, and article domain
 #   - 'reddit': Outbound/discussion links and normalized authors for RSS feeds
 #     that expose both an outbound link and a discussion URL
+# - hackernews_min_score: Minimum Hacker News score for the 'hackernews' adapter.
+#   Stories below it are skipped before delivery.
 # - webhook_name: Custom name for the webhook bot (optional)
 # - webhook_avatar: HTTPS URL for the webhook avatar, up to 2,048 encoded
 #   characters. Localhost, non-global IP literals, malformed hosts, and
