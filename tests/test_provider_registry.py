@@ -84,6 +84,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "proxnet": ProxnetStrategy,
     "reddit": RedditStrategy,
     "arctic_shift": RedditStrategy,
+    "arctic_shift_nsfw": RedditStrategy,
     "reklama5": Reklama5Strategy,
     "rss": RSSStrategy,
     "setec": SetecStrategy,

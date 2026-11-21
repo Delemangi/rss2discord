@@ -54,10 +54,12 @@ class RedditStrategy(ScraperStrategy):
         *,
         show_engagement: bool = True,
         filter_removed: bool = False,
+        allow_nsfw: bool = False,
     ) -> None:
         self._client = client if client is not None else RedditClient()
         self._show_engagement = show_engagement
         self._filter_removed = filter_removed
+        self._allow_nsfw = allow_nsfw
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[RedditPost], str]:
@@ -75,7 +77,7 @@ class RedditStrategy(ScraperStrategy):
             )
             pages += 1
             for post in page.posts:
-                if _is_excluded(post):
+                if _is_excluded(post, allow_nsfw=self._allow_nsfw):
                     continue
                 if self._filter_removed and _is_removed(post):
                     continue
@@ -131,8 +133,10 @@ class RedditStrategy(ScraperStrategy):
         )
 
 
-def _is_excluded(post: RedditPost) -> bool:
-    return post.stickied or post.pinned or post.over_18 or post.spoiler
+def _is_excluded(post: RedditPost, *, allow_nsfw: bool = False) -> bool:
+    if post.stickied or post.pinned or post.spoiler:
+        return True
+    return post.over_18 and not allow_nsfw
 
 
 def _is_removed(post: RedditPost) -> bool:

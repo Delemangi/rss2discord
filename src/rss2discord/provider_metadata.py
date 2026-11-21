@@ -20,6 +20,7 @@ STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
         "ananas": StrategyMetadata("Ananas", price=True, restock=True),
         "anhoch": StrategyMetadata("Anhoch", price=True, restock=True),
         "arctic_shift": StrategyMetadata("Reddit"),
+        "arctic_shift_nsfw": StrategyMetadata("Reddit"),
         "cccenter": StrategyMetadata("CCCenter", price=True, restock=True),
         "ddstore": StrategyMetadata("DDStore", price=True, restock=True),
         "emsc": StrategyMetadata("EMSC"),

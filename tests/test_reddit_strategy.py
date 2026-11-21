@@ -208,6 +208,27 @@ def test_fetch_skips_stickied_nsfw_and_spoiler_posts() -> None:
     }
 
 
+def test_fetch_allows_nsfw_posts_when_enabled() -> None:
+    # Given a page containing an NSFW post
+    page = RedditPage(
+        posts=(
+            make_post("t3_nsfw", over_18=True),
+            make_post("t3_normal"),
+        ),
+        after=None,
+    )
+    strategy = RedditStrategy(
+        client=FakeListingClient([page]),
+        allow_nsfw=True,
+    )
+
+    # When
+    entries, _ = strategy.fetch_entries("https://www.reddit.com/r/python/new")
+
+    # Then
+    assert {entry.name for entry in entries} == {"t3_nsfw", "t3_normal"}
+
+
 def test_fetch_skips_pinned_posts() -> None:
     # Given
     page = RedditPage(

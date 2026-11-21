@@ -437,6 +437,16 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
             filter_removed=True,
         ),
     ),
+    "arctic_shift_nsfw": StrategySpec(
+        discovery=lambda dependencies: RedditStrategy(
+            client=ArcticShiftClient(
+                is_shutdown_requested=dependencies.is_shutdown_requested,
+            ),
+            show_engagement=False,
+            filter_removed=True,
+            allow_nsfw=True,
+        ),
+    ),
     "proxnet": StrategySpec(
         discovery=lambda dependencies: ProxnetStrategy(
             dependencies.is_shutdown_requested,
