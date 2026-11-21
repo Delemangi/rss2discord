@@ -27,6 +27,7 @@ from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
 from rss2discord.providers.anhoch.strategy import AnhochStrategy
+from rss2discord.providers.arctic_shift.client import ArcticShiftClient
 from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
 from rss2discord.providers.cccenter.prices import CCCenterPriceMonitor
 from rss2discord.providers.cccenter.strategy import CCCenterStrategy
@@ -425,6 +426,15 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
         ),
     ),
     "reddit": StrategySpec(discovery=lambda dependencies: RedditStrategy()),
+    "arctic_shift": StrategySpec(
+        discovery=lambda dependencies: RedditStrategy(
+            client=ArcticShiftClient(
+                is_shutdown_requested=dependencies.is_shutdown_requested,
+            ),
+            show_engagement=False,
+            filter_removed=True,
+        ),
+    ),
     "proxnet": StrategySpec(
         discovery=lambda dependencies: ProxnetStrategy(
             dependencies.is_shutdown_requested,
