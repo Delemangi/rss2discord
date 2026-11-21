@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Final, Literal
@@ -43,6 +44,22 @@ class EntryProcessingOutcome(StrEnum):
     DELIVERY_FAILED = "delivery_failed"
 
 
+@dataclass(slots=True)
+class DiscoveryScanCounters:
+    """Counters reported once per discovery scan."""
+
+    entries: int = 0
+    unhandled: int = 0
+    pending: int = 0
+    delivered: int = 0
+    failed: int = 0
+    too_old: int = 0
+    duplicates: int = 0
+    missing_id: int = 0
+    seeded: bool = False
+    digest: bool = False
+
+
 class RSSToDiscord:
     def __init__(
         self,
@@ -79,20 +96,27 @@ class RSSToDiscord:
         if feed_is_blocked(feed, self._config.feeds, self._store, attempted_at):
             return JobOutcome.SKIPPED
         started_at = time.monotonic()
+        counters = DiscoveryScanCounters()
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
         strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
+        counters.entries = len(entries)
         if self.is_shutdown_requested():
+            self._log_discovery_scan(feed, counters, "interrupted", started_at)
             return JobOutcome.ATTEMPTED
         baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
+        if baseline_state == "initialized":
+            counters.seeded = True
         if baseline_state == "ready":
             outcome = self._process_entries(
                 feed,
                 strategy,
                 entries,
                 fetched_source_title,
+                counters,
             )
             if outcome is EntryProcessingOutcome.INTERRUPTED:
+                self._log_discovery_scan(feed, counters, "interrupted", started_at)
                 return JobOutcome.ATTEMPTED
             if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
                 record_runtime_health(
@@ -113,8 +137,10 @@ class RSSToDiscord:
                         scheduler_lag_ms=0,
                     ),
                 )
+                self._log_discovery_scan(feed, counters, "failed", started_at)
                 return JobOutcome.ATTEMPTED
         if self.is_shutdown_requested():
+            self._log_discovery_scan(feed, counters, "interrupted", started_at)
             return JobOutcome.ATTEMPTED
         health_state = "healthy" if entries else "empty"
         health_cause: str | None = None
@@ -140,6 +166,7 @@ class RSSToDiscord:
                 scheduler_lag_ms=0,
             ),
         )
+        self._log_discovery_scan(feed, counters, health_state, started_at)
         return JobOutcome.ATTEMPTED
 
     @staticmethod
@@ -158,15 +185,44 @@ class RSSToDiscord:
             parsed = parsed.replace(tzinfo=UTC)
         return parsed
 
+    @staticmethod
+    def _log_discovery_scan(
+        feed: FeedConfig,
+        counters: DiscoveryScanCounters,
+        state: str,
+        started_at: float,
+    ) -> None:
+        logger.info(
+            "Discovery scan feed=%s strategy=%s entries=%d unhandled=%d "
+            "pending=%d delivered=%d failed=%d too_old=%d duplicates=%d "
+            "missing_id=%d seeded=%s digest=%s state=%s duration_ms=%d",
+            feed.id,
+            feed.strategy,
+            counters.entries,
+            counters.unhandled,
+            counters.pending,
+            counters.delivered,
+            counters.failed,
+            counters.too_old,
+            counters.duplicates,
+            counters.missing_id,
+            str(counters.seeded).lower(),
+            str(counters.digest).lower(),
+            state,
+            max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
     def _process_entries(
         self,
         feed: FeedConfig,
         strategy: ScraperStrategy,
         entries: list[Any],
         fetched_source_title: str,
+        counters: DiscoveryScanCounters,
     ) -> EntryProcessingOutcome:
         """Process pending entries, reporting completion, interruption, or failure."""
         if self._seed_existing_entries(feed, strategy, entries):
+            counters.seeded = True
             return EntryProcessingOutcome.COMPLETED
         source_title = feed.name or fetched_source_title
         seen_entry_ids: set[EntryId] = set()
@@ -183,7 +239,13 @@ class RSSToDiscord:
             if self.is_shutdown_requested():
                 return EntryProcessingOutcome.INTERRUPTED
 
-            entry_id = self._unhandled_entry_id(feed, strategy, entry, seen_entry_ids)
+            entry_id = self._unhandled_entry_id(
+                feed,
+                strategy,
+                entry,
+                seen_entry_ids,
+                counters,
+            )
             if entry_id is None:
                 continue
             entry_data = strategy.get_entry_data(entry)
@@ -203,10 +265,12 @@ class RSSToDiscord:
                 allow_missing_timestamp=strategy.allow_missing_timestamp_after_complete_baseline
                 and self._store.is_feed_initialized(feed.id),
             ):
+                counters.too_old += 1
                 continue
 
             pending.append((entry_id, entry_data))
 
+        counters.pending = len(pending)
         if not pending:
             return EntryProcessingOutcome.COMPLETED
         digest_threshold = feed.digest_threshold
@@ -224,13 +288,22 @@ class RSSToDiscord:
                 if outcome is EntryProcessingOutcome.INTERRUPTED:
                     return EntryProcessingOutcome.INTERRUPTED
                 if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+                    counters.failed += 1
                     had_failure = True
+                else:
+                    counters.delivered += 1
             return (
                 EntryProcessingOutcome.DELIVERY_FAILED
                 if had_failure
                 else EntryProcessingOutcome.COMPLETED
             )
-        return self._deliver_discovery_digest(feed, pending, source_title)
+        counters.digest = True
+        outcome = self._deliver_discovery_digest(feed, pending, source_title)
+        if outcome is EntryProcessingOutcome.COMPLETED:
+            counters.delivered = len(pending)
+        elif outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+            counters.failed = len(pending)
+        return outcome
 
     def _deliver_discovery_digest(
         self,
@@ -292,17 +365,21 @@ class RSSToDiscord:
         strategy: ScraperStrategy,
         entry: EntryT,
         seen_entry_ids: set[EntryId],
+        counters: DiscoveryScanCounters,
     ) -> EntryId | None:
         entry_id = strategy.get_entry_id(entry)
         if entry_id is None:
+            counters.missing_id += 1
             logger.warning("Skipping entry without a stable ID in feed %s", feed.id)
             return None
         is_seen = entry_id in seen_entry_ids
         seen_entry_ids.add(entry_id)
 
         if is_seen or self._store.has_delivered(feed.id, entry_id):
+            counters.duplicates += 1
             return None
 
+        counters.unhandled += 1
         return entry_id
 
     @staticmethod
