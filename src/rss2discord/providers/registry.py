@@ -42,6 +42,7 @@ from rss2discord.providers.gjirafa50.background_monitor import (
 from rss2discord.providers.gjirafa50.catalog import Gjirafa50CatalogClient
 from rss2discord.providers.gjirafa50.prices import Gjirafa50PriceMonitorDependencies
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
+from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
 from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
@@ -367,6 +368,9 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
                 cooldown_peer_feed_ids=dependencies.cooldown_peer_feed_ids,
             ),
         ),
+    ),
+    "hetzner_auction": StrategySpec(
+        discovery=lambda dependencies: HetznerAuctionStrategy(),
     ),
     "hivetec": StrategySpec(
         discovery=lambda dependencies: HivetecStrategy(
