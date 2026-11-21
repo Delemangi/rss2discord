@@ -53,15 +53,18 @@ class RedditStrategy(ScraperStrategy):
         client: RedditListingClient | None = None,
         *,
         show_engagement: bool = True,
+        filter_removed: bool = False,
     ) -> None:
         self._client = client if client is not None else RedditClient()
         self._show_engagement = show_engagement
+        self._filter_removed = filter_removed
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[RedditPost], str]:
         scope = parse_reddit_scope(url)
         posts: list[RedditPost] = []
         seen_cursors: set[str] = set()
+        seen_entries: set[str] = set()
         cursor: str | None = None
         pages = 0
         while pages < MAX_REDDIT_PAGES and len(posts) < MAX_REDDIT_POSTS:
@@ -71,7 +74,17 @@ class RedditStrategy(ScraperStrategy):
                 count=len(posts),
             )
             pages += 1
-            posts.extend(post for post in page.posts if not _is_excluded(post))
+            for post in page.posts:
+                if _is_excluded(post):
+                    continue
+                if self._filter_removed and _is_removed(post):
+                    continue
+                entry_key = post.name or post.id or post.permalink
+                if entry_key is not None:
+                    if entry_key in seen_entries:
+                        continue
+                    seen_entries.add(entry_key)
+                posts.append(post)
             if len(posts) > MAX_REDDIT_POSTS:
                 del posts[MAX_REDDIT_POSTS:]
             if page.after is None or page.after in seen_cursors:
@@ -119,9 +132,7 @@ class RedditStrategy(ScraperStrategy):
 
 
 def _is_excluded(post: RedditPost) -> bool:
-    if post.stickied or post.pinned or post.over_18 or post.spoiler:
-        return True
-    return _is_removed(post)
+    return post.stickied or post.pinned or post.over_18 or post.spoiler
 
 
 def _is_removed(post: RedditPost) -> bool:

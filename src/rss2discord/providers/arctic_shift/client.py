@@ -62,6 +62,10 @@ class ArcticShiftClient:
     ) -> None:
         if page_size < 1:
             raise ValueError("page_size must be positive")
+        if page_size > ARCTIC_SHIFT_PAGE_SIZE:
+            raise ValueError(
+                f"page_size must not exceed {ARCTIC_SHIFT_PAGE_SIZE}",
+            )
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         if max_response_bytes < 1:
@@ -171,9 +175,11 @@ class ArcticShiftClient:
             if isinstance(created_utc, bool):
                 continue
             if isinstance(created_utc, int | float):
-                return str(int(created_utc))
+                # before= is exclusive. Advance one second so posts sharing
+                # the boundary second are fetched; the strategy dedupes them.
+                return str(int(created_utc) + 1)
             if isinstance(created_utc, str) and created_utc.isdigit():
-                return created_utc
+                return str(int(created_utc) + 1)
         return None
 
 
@@ -182,7 +188,7 @@ def _http_error(status_code: int, headers: Mapping[str, str]) -> FeedFetchError:
         ARCTIC_SHIFT_LABEL,
         "HTTPError",
         status_code=status_code,
-        retryable=status_code == 429 or 500 <= status_code < 600,
+        retryable=status_code in {422, 429} or 500 <= status_code < 600,
         retry_after=_retry_after(headers) if status_code == 429 else None,
     )
 

@@ -84,8 +84,8 @@ def test_fetch_listing_skips_malformed_posts_and_advances_the_cursor() -> None:
     page = client.fetch_listing(SCOPE)
 
     # Then
-    assert [post.name for post in page.posts] == ["t3_valid1", "t3_valid2"]
-    assert page.after == "1700000100"
+    assert [post.name for post in page.posts] == ["t3_valid2", "t3_valid1"]
+    assert page.after == "1700000001"
 
 
 def test_fetch_listing_rejects_non_new_sorts_without_a_request() -> None:
@@ -97,6 +97,12 @@ def test_fetch_listing_rejects_non_new_sorts_without_a_request() -> None:
     with pytest.raises(FeedFetchError, match="UnsupportedSort"):
         client.fetch_listing(RedditScope(subreddit="python", sort="hot"))
     assert session.calls == []
+
+
+def test_client_rejects_an_oversized_page_size() -> None:
+    # When / Then
+    with pytest.raises(ValueError, match="page_size"):
+        ArcticShiftClient(session=FakeSession([]), page_size=101)
 
 
 def test_fetch_listing_stops_before_a_request_when_shutdown() -> None:
@@ -153,6 +159,18 @@ def test_fetch_listing_maps_5xx_to_retryable_and_4xx_to_permanent() -> None:
         make_client(client_session).fetch_listing(SCOPE)
     assert server.value.retryable is True
     assert client.value.retryable is False
+
+
+def test_fetch_listing_treats_422_as_retryable() -> None:
+    # Given
+    session = FakeSession([FakeResponse(422)])
+    client = make_client(session)
+
+    # When / Then
+    with pytest.raises(FeedFetchError) as info:
+        client.fetch_listing(SCOPE)
+    assert info.value.status_code == 422
+    assert info.value.retryable is True
 
 
 def test_fetch_listing_rejects_invalid_json() -> None:

@@ -432,6 +432,7 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
                 is_shutdown_requested=dependencies.is_shutdown_requested,
             ),
             show_engagement=False,
+            filter_removed=True,
         ),
     ),
     "proxnet": StrategySpec(

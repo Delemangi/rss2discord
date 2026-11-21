@@ -145,6 +145,35 @@ def test_fetch_stops_on_a_repeated_after_cursor() -> None:
     assert [call[1] for call in client.calls] == [None, "same-cursor"]
 
 
+def test_fetch_dedupes_posts_across_pages() -> None:
+    # Given a boundary post repeated on the next page
+    shared = make_post("t3_shared")
+    client = FakeListingClient(
+        [
+            RedditPage(
+                posts=(make_post("t3_newer"), shared),
+                after="cursor-1",
+            ),
+            RedditPage(
+                posts=(shared, make_post("t3_older")),
+                after=None,
+            ),
+        ],
+    )
+    strategy = RedditStrategy(client=client)
+
+    # When
+    entries, _ = strategy.fetch_entries("https://www.reddit.com/r/python/new")
+
+    # Then
+    assert [entry.name for entry in entries] == [
+        "t3_older",
+        "t3_shared",
+        "t3_newer",
+    ]
+    assert len(client.calls) == 2
+
+
 def test_fetch_returns_empty_listing() -> None:
     # Given
     client = FakeListingClient([fixture_page("listing_empty.json")])
@@ -216,7 +245,10 @@ def test_fetch_skips_removed_and_deleted_posts() -> None:
         ),
         after=None,
     )
-    strategy = RedditStrategy(client=FakeListingClient([page]))
+    strategy = RedditStrategy(
+        client=FakeListingClient([page]),
+        filter_removed=True,
+    )
 
     # When
     entries, _ = strategy.fetch_entries("https://www.reddit.com/r/python/new")
@@ -233,6 +265,7 @@ def test_arctic_shift_filters_removed_posts_and_maps_media() -> None:
     strategy = RedditStrategy(
         client=ArcticShiftClient(session=session),
         show_engagement=False,
+        filter_removed=True,
     )
 
     # When
