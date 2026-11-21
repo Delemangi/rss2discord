@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -75,6 +76,7 @@ class SetecPriceMonitor:
 
     def _scan(self) -> None:
         """Compare prices, persist silent updates, then alert on changed products."""
+        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         price_entries = self._dependencies.catalog.fetch_price_index(
@@ -106,6 +108,7 @@ class SetecPriceMonitor:
             snapshot_limit=NO_SNAPSHOT_LIMIT,
             confirm=self._confirm_observations,
             confirmation_limit=2000,
+            started_at=started_at,
         )
 
     def _confirm_observations(

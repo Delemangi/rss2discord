@@ -1,5 +1,6 @@
 """Opt-in CCCenter catalog price monitoring."""
 
+import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
@@ -58,6 +59,7 @@ class CCCenterPriceMonitor:
         self._scan()
 
     def _scan(self) -> None:
+        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -91,6 +93,7 @@ class CCCenterPriceMonitor:
             snapshot_limit=MAX_CCCENTER_RETAINED_SNAPSHOTS,
             confirm=self._confirm_observations,
             confirmation_limit=100,
+            started_at=started_at,
         )
 
     def _confirm_observations(

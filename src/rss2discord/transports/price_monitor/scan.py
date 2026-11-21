@@ -153,9 +153,10 @@ def run_price_scan[ProductT](
     | None = None,
     confirmation_limit: int | None = None,
     allow_currency_changes: bool = False,
+    started_at: float | None = None,
 ) -> None:
     """Load baselines, diff observations, confirm, and deliver one provider scan."""
-    started = time.perf_counter()
+    started = time.perf_counter() if started_at is None else started_at
     counters = _ScanCounters()
     try:
         outcome = _run_price_scan(

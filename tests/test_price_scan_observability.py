@@ -1,6 +1,8 @@
 """Per-scan price observability evidence."""
 
 import logging
+import re
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -42,6 +44,7 @@ def run_scan(
     *,
     configured_feed: FeedConfig | None = None,
     limit: int = 100,
+    started_at: float | None = None,
 ) -> None:
     run_price_scan(
         feed=configured_feed or feed(),
@@ -51,6 +54,7 @@ def run_scan(
         observations=observations,
         message_for=message_for,
         snapshot_limit=limit,
+        started_at=started_at,
     )
 
 
@@ -125,6 +129,30 @@ def test_scan_log_counts_alerts_restocks_filters_and_unavailable(
         assert "bulk=false" in caplog.text
         assert "outcome=delivered" in caplog.text
         assert "elapsed_ms=" in caplog.text
+
+
+def test_scan_log_uses_the_provider_start_time(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given a scan that started two seconds before run_price_scan
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed(store, (snapshot("1"),))
+        sender = RecordingSender([])
+
+        # When
+        with caplog.at_level(logging.INFO, logger=SCAN_LOGGER):
+            run_scan(
+                store,
+                sender,
+                [PriceObservation("1", snapshot("1"))],
+                started_at=time.perf_counter() - 2.0,
+            )
+
+        # Then
+        match = re.search(r"elapsed_ms=(\d+)", caplog.text)
+        assert match is not None
+        assert int(match.group(1)) >= 1_900
 
 
 def test_scan_log_marks_bulk_delivery(

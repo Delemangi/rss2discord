@@ -1,5 +1,6 @@
 """Opt-in PROXNet category price monitoring."""
 
+import time
 from collections.abc import Callable
 from typing import Protocol
 
@@ -49,6 +50,7 @@ class ProxnetPriceMonitor:
         self._scan()
 
     def _scan(self) -> None:
+        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -68,6 +70,7 @@ class ProxnetPriceMonitor:
             observations=observations,
             message_for=self.message_for,
             snapshot_limit=MAX_PROXNET_RETAINED_SNAPSHOTS,
+            started_at=started_at,
         )
 
     @staticmethod

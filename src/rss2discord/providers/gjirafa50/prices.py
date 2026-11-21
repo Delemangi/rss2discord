@@ -1,5 +1,6 @@
 """Delivery-safe Gjirafa50 price monitoring."""
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -64,6 +65,7 @@ class Gjirafa50PriceMonitor:
         self._scan()
 
     def _scan(self) -> None:
+        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.catalog.fetch_catalog(
@@ -95,6 +97,7 @@ class Gjirafa50PriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=MAX_GJIRAFA50_RETAINED_SNAPSHOTS,
+            started_at=started_at,
         )
 
     def _message_for(

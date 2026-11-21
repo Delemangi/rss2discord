@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
@@ -53,6 +54,7 @@ class NeksioPriceMonitor:
 
     def _scan(self) -> None:
         """Fetch, classify, persist silent updates, then deliver changed prices in order."""
+        started_at = time.perf_counter()
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
         products = self._dependencies.fetch_retry_policy.execute(
@@ -74,6 +76,7 @@ class NeksioPriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=MAX_NEKSIO_RETAINED_SNAPSHOTS,
+            started_at=started_at,
         )
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:
