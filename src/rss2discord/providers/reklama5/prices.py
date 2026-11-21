@@ -5,22 +5,14 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Final, Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import PriceSnapshot
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.reklama5.parser import Reklama5Listing
 from rss2discord.providers.reklama5.scope import REKLAMA5_LABEL
 from rss2discord.providers.reklama5.strategy import Reklama5Strategy
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-)
-from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
-    PriceObservation,
-    build_price_change_message,
-    run_price_scan,
-)
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.price_monitor import build_price_change_message
 
 MAX_REKLAMA5_RETAINED_SNAPSHOTS: Final = 10_000
 _MAX_PRICE_DIGITS: Final = 10
@@ -45,41 +37,14 @@ class Reklama5Catalog(Protocol):
     ) -> tuple[Reklama5Listing, ...]: ...
 
 
-class Reklama5PriceMonitor:
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[Reklama5Catalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
+class Reklama5PriceMonitor(CatalogPriceMonitor[Reklama5Listing]):
+    provider = "reklama5"
+    label = REKLAMA5_LABEL
+    allow_currency_changes = True
 
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        listings = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations: list[PriceObservation[Reklama5Listing]] = []
-        for listing in listings:
-            current = self._snapshot(listing)
-            if current is not None:
-                observations.append(PriceObservation(listing, current))
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="reklama5",
-            label=REKLAMA5_LABEL,
-            observations=observations,
-            message_for=self._message_for,
-            snapshot_limit=MAX_REKLAMA5_RETAINED_SNAPSHOTS,
-            allow_currency_changes=True,
-        )
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_REKLAMA5_RETAINED_SNAPSHOTS
 
     def _snapshot(self, listing: Reklama5Listing) -> PriceSnapshot | None:
         for pattern, currency in (

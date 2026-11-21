@@ -7,21 +7,13 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Final, Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import WebhookMessage
 from rss2discord.models import PriceSnapshot, SourceMetric
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.neksio.client import NEKSIO_LABEL
 from rss2discord.providers.neksio.models import NeksioProduct
 from rss2discord.providers.neksio.strategy import _entry_data
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-)
-from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
-    PriceObservation,
-    price_direction,
-    run_price_scan,
-)
+from rss2discord.transports.price_monitor import price_direction
 
 MAX_NEKSIO_RETAINED_SNAPSHOTS: Final = 50_000
 
@@ -37,43 +29,24 @@ class NeksioCatalog(Protocol):
     ) -> tuple[NeksioProduct, ...]: ...
 
 
-class NeksioPriceMonitor:
+class NeksioPriceMonitor(CatalogPriceMonitor[NeksioProduct]):
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[NeksioCatalog],
-    ) -> None:
-        self._feed: FeedConfig = feed
-        self._dependencies: PriceMonitorDependencies[NeksioCatalog] = dependencies
+    provider = "neksio"
+    label = NEKSIO_LABEL
 
-    def scan(self) -> None:
-        self._scan()
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_NEKSIO_RETAINED_SNAPSHOTS
 
-    def _scan(self) -> None:
-        """Fetch, classify, persist silent updates, then deliver changed prices in order."""
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.fetch_retry_policy.execute(
+    def _fetch_catalog(self) -> tuple[NeksioProduct, ...]:
+        return self._dependencies.fetch_retry_policy.execute(
             lambda: self._dependencies.catalog.fetch_catalog(
                 self._feed.url,
                 is_shutdown_requested=(
                     self._dependencies.delivery.is_shutdown_requested
                 ),
             ),
-        )
-        observations = tuple(
-            PriceObservation(product, self._snapshot(product)) for product in products
-        )
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="neksio",
-            label=NEKSIO_LABEL,
-            observations=observations,
-            message_for=self._message_for,
-            snapshot_limit=MAX_NEKSIO_RETAINED_SNAPSHOTS,
         )
 
     def _snapshot(self, product: NeksioProduct) -> PriceSnapshot:

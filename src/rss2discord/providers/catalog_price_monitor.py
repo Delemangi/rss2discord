@@ -23,6 +23,7 @@ class CatalogPriceMonitor[ProductT](ABC):
     label: str
     empty_catalog_cause: str | None = None
     positive_prices_only: bool = False
+    allow_currency_changes: bool = False
 
     @property
     @abstractmethod
@@ -43,11 +44,7 @@ class CatalogPriceMonitor[ProductT](ABC):
     def _scan(self) -> None:
         if self._dependencies.delivery.is_shutdown_requested():
             raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
+        products = self._fetch_catalog()
         observations = self._observations(products)
         if not observations and self.empty_catalog_cause is not None:
             raise FeedFetchError(self.label, self.empty_catalog_cause)
@@ -59,6 +56,14 @@ class CatalogPriceMonitor[ProductT](ABC):
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=self.snapshot_limit,
+            allow_currency_changes=self.allow_currency_changes,
+        )
+
+    def _fetch_catalog(self) -> tuple[ProductT, ...]:
+        return self._dependencies.catalog.fetch_catalog(
+            self._feed.url,
+            retry_policy=self._dependencies.fetch_retry_policy,
+            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
         )
 
     def _observations(
