@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'arctic_shift_nsfw', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hivetec', 'neksio', 'neptun', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -246,6 +246,9 @@ feeds:
   #   webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
   #   strategy: "arctic_shift"
   #   webhook_name: "Reddit"
+  #
+  # Use strategy: "arctic_shift_nsfw" for subreddits whose posts are all
+  # over_18, such as adult community feeds.
 
   # EMSC earthquake alerts for the Macedonia/Balkans region. The URL must be an
   # EMSC FDSN event query; event links use the EMSC event ID. Use orderby=time
@@ -391,6 +394,8 @@ feeds:
 #     REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET. New access is no longer accepted.
 #   - 'arctic_shift': Reddit /new posts through the public Arctic Shift archive;
 #     no OAuth credentials required, only the /new listing is supported.
+#   - 'arctic_shift_nsfw': Same as arctic_shift but includes over_18 posts for
+#     adult subreddits; spoilers and stickied/pinned posts are still skipped.
 #   - 'ananas': For new products and optional price monitoring from any Ananas category URL
 #   - 'anhoch': For new products from Anhoch's public catalog
 #   - 'cccenter': For new products from CCCenter's public WooCommerce catalog
