@@ -14,6 +14,7 @@ from rss2discord.providers.arctic_shift.bounds import (
     ARCTIC_SHIFT_LABEL,
     ARCTIC_SHIFT_ORIGIN,
     ARCTIC_SHIFT_PAGE_SIZE,
+    ARCTIC_SHIFT_RATE_LIMIT_BACKOFF_SECONDS,
     ARCTIC_SHIFT_REQUEST_SECONDS,
     ARCTIC_SHIFT_SEARCH_PATH,
     ARCTIC_SHIFT_STREAM_CHUNK_BYTES,
@@ -184,12 +185,19 @@ class ArcticShiftClient:
 
 
 def _http_error(status_code: int, headers: Mapping[str, str]) -> FeedFetchError:
+    if status_code == 429:
+        retry_after = _retry_after(headers)
+    elif status_code == 422:
+        # Arctic Shift uses 422 for "Timeout. Maybe slow down a bit".
+        retry_after = ARCTIC_SHIFT_RATE_LIMIT_BACKOFF_SECONDS
+    else:
+        retry_after = None
     return FeedFetchError(
         ARCTIC_SHIFT_LABEL,
         "HTTPError",
         status_code=status_code,
         retryable=status_code in {422, 429} or 500 <= status_code < 600,
-        retry_after=_retry_after(headers) if status_code == 429 else None,
+        retry_after=retry_after,
     )
 
 

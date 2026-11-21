@@ -171,6 +171,7 @@ def test_fetch_listing_treats_422_as_retryable() -> None:
         client.fetch_listing(SCOPE)
     assert info.value.status_code == 422
     assert info.value.retryable is True
+    assert info.value.retry_after == 30.0
 
 
 def test_fetch_listing_rejects_invalid_json() -> None:
