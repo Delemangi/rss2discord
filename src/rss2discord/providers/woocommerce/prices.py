@@ -4,10 +4,10 @@ from collections.abc import Callable
 from typing import Protocol
 from urllib.parse import urlsplit
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot
 from rss2discord.price_amount import discount_percentage
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.woocommerce.bounds import (
     MAX_WOOCOMMERCE_PRODUCTS,
     WOOCOMMERCE_LABEL,
@@ -20,14 +20,8 @@ from rss2discord.providers.woocommerce.strategy import (
     format_woocommerce_price,
     woocommerce_product_metrics,
 )
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.base import FeedFetchError
-from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
-    PriceObservation,
-    price_direction,
-    run_price_scan,
-)
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.price_monitor import price_direction
 
 MAX_WOOCOMMERCE_RETAINED_SNAPSHOTS = MAX_WOOCOMMERCE_PRODUCTS
 
@@ -42,42 +36,15 @@ class WooCommerceCatalog(Protocol):
     ) -> tuple[WooCommerceProduct, ...]: ...
 
 
-class WooCommercePriceMonitor:
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[WooCommerceCatalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
+class WooCommercePriceMonitor(CatalogPriceMonitor[WooCommerceProduct]):
+    provider = "woocommerce"
+    label = WOOCOMMERCE_LABEL
+    empty_catalog_cause = "EmptyCatalog"
+    positive_prices_only = True
 
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations = tuple(
-            PriceObservation(product, self._snapshot(product))
-            for product in products
-            if product.prices.current_amount > 0
-        )
-        if not observations:
-            raise FeedFetchError(WOOCOMMERCE_LABEL, "EmptyCatalog")
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="woocommerce",
-            label=WOOCOMMERCE_LABEL,
-            observations=observations,
-            message_for=self._message_for,
-            snapshot_limit=MAX_WOOCOMMERCE_RETAINED_SNAPSHOTS,
-        )
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_WOOCOMMERCE_RETAINED_SNAPSHOTS
 
     def _snapshot(self, product: WooCommerceProduct) -> PriceSnapshot:
         prices = product.prices

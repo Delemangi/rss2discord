@@ -1,26 +1,21 @@
 """Opt-in Wolfinet shop price monitoring."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import PriceSnapshot
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.wolfinet.bounds import (
     MAX_WOLFINET_RETAINED_SNAPSHOTS,
     WOLFINET_LABEL,
 )
 from rss2discord.providers.wolfinet.models import WolfinetProduct
 from rss2discord.providers.wolfinet.strategy import WolfinetStrategy
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-)
+from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
     PriceObservation,
     build_price_change_message,
-    run_price_scan,
 )
 
 
@@ -34,40 +29,23 @@ class WolfinetCatalog(Protocol):
     ) -> tuple[WolfinetProduct, ...]: ...
 
 
-class WolfinetPriceMonitor:
+class WolfinetPriceMonitor(CatalogPriceMonitor[WolfinetProduct]):
     """Compare the complete Wolfinet shop against persisted snapshots."""
 
-    def __init__(
+    provider = "wolfinet"
+    label = WOLFINET_LABEL
+
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_WOLFINET_RETAINED_SNAPSHOTS
+
+    def _observations(
         self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[WolfinetCatalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
-
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations = tuple(
+        products: Iterable[WolfinetProduct],
+    ) -> tuple[PriceObservation[WolfinetProduct], ...]:
+        return tuple(
             PriceObservation(product, self._snapshot(product))
-            for product in self._priced_products(products)
-        )
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="wolfinet",
-            label=WOLFINET_LABEL,
-            observations=observations,
-            message_for=self.message_for,
-            snapshot_limit=MAX_WOLFINET_RETAINED_SNAPSHOTS,
+            for product in self._priced_products(tuple(products))
         )
 
     @staticmethod
@@ -95,7 +73,7 @@ class WolfinetPriceMonitor:
             currency=product.currency,
         )
 
-    def message_for(
+    def _message_for(
         self,
         product: WolfinetProduct,
         previous: PriceSnapshot,

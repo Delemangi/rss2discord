@@ -4,7 +4,6 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.price_amount import discount_percentage
@@ -17,13 +16,9 @@ from rss2discord.providers.ananas.strategy import (
     format_ananas_mkd,
     format_ananas_timestamp,
 )
-from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
-from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
-    PriceObservation,
-    price_direction,
-    run_price_scan,
-)
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.price_monitor import price_direction
 
 
 class AnanasCatalog(Protocol):
@@ -38,44 +33,16 @@ class AnanasCatalog(Protocol):
     ) -> tuple[AnanasProduct, ...]: ...
 
 
-class AnanasPriceMonitor:
+class AnanasPriceMonitor(CatalogPriceMonitor[AnanasProduct]):
     """Compare in-stock Ananas offers against persisted slug snapshots."""
 
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[AnanasCatalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
+    provider = "ananas"
+    label = ANANAS_LABEL
+    positive_prices_only = True
 
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        # Out-of-stock products with a valid price are still observed so a later
-        # restock can be detected; non-positive prices are never observed.
-        observations = tuple(
-            PriceObservation(product, self._snapshot(product))
-            for product in products
-            if product.price > 0
-        )
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="ananas",
-            label=ANANAS_LABEL,
-            observations=observations,
-            message_for=self._message,
-            snapshot_limit=MAX_ANANAS_RETAINED_SNAPSHOTS,
-        )
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_ANANAS_RETAINED_SNAPSHOTS
 
     def _snapshot(self, product: AnanasProduct) -> PriceSnapshot:
         return PriceSnapshot(
@@ -87,7 +54,7 @@ class AnanasPriceMonitor:
             available=product.in_stock,
         )
 
-    def _message(
+    def _message_for(
         self,
         product: AnanasProduct,
         previous: PriceSnapshot,

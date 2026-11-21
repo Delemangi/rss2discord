@@ -1,26 +1,21 @@
 """Opt-in PROXNet category price monitoring."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import PriceSnapshot
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.proxnet.bounds import (
     MAX_PROXNET_RETAINED_SNAPSHOTS,
     PROXNET_LABEL,
 )
 from rss2discord.providers.proxnet.models import ProxnetProduct
 from rss2discord.providers.proxnet.strategy import ProxnetStrategy
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-)
+from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
     PriceObservation,
     build_price_change_message,
-    run_price_scan,
 )
 
 
@@ -34,40 +29,23 @@ class ProxnetCatalog(Protocol):
     ) -> tuple[ProxnetProduct, ...]: ...
 
 
-class ProxnetPriceMonitor:
+class ProxnetPriceMonitor(CatalogPriceMonitor[ProxnetProduct]):
     """Compare one complete PROXNet category against persisted snapshots."""
 
-    def __init__(
+    provider = "proxnet"
+    label = PROXNET_LABEL
+
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_PROXNET_RETAINED_SNAPSHOTS
+
+    def _observations(
         self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[ProxnetCatalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
-
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations = tuple(
+        products: Iterable[ProxnetProduct],
+    ) -> tuple[PriceObservation[ProxnetProduct], ...]:
+        return tuple(
             PriceObservation(product, self._snapshot(product))
-            for product in self._priced_products(products)
-        )
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="proxnet",
-            label=PROXNET_LABEL,
-            observations=observations,
-            message_for=self.message_for,
-            snapshot_limit=MAX_PROXNET_RETAINED_SNAPSHOTS,
+            for product in self._priced_products(tuple(products))
         )
 
     @staticmethod
@@ -95,7 +73,7 @@ class ProxnetPriceMonitor:
             currency=product.currency,
         )
 
-    def message_for(
+    def _message_for(
         self,
         product: ProxnetProduct,
         previous: PriceSnapshot,

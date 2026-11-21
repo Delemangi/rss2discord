@@ -5,21 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.client import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
 from rss2discord.providers.anhoch.catalog import ANHOCH_LABEL, ANHOCH_PRODUCT_BASE_URL
 from rss2discord.providers.anhoch.models import AnhochProduct
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-)
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
+from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.price_monitor import (
     NO_SNAPSHOT_LIMIT,
-    PriceMonitorDependencies,
-    PriceObservation,
     price_direction,
-    run_price_scan,
 )
 
 
@@ -35,41 +29,15 @@ class AnhochCatalog(Protocol):
     ) -> tuple[AnhochProduct, ...]: ...
 
 
-class AnhochPriceMonitor:
+class AnhochPriceMonitor(CatalogPriceMonitor[AnhochProduct]):
     """Compare one full catalog against persisted snapshots and alert on changes."""
 
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[AnhochCatalog],
-    ) -> None:
-        self._feed: FeedConfig = feed
-        self._dependencies: PriceMonitorDependencies[AnhochCatalog] = dependencies
+    provider = "anhoch"
+    label = ANHOCH_LABEL
 
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        """Fetch, classify, persist silent updates, then deliver changed prices in order."""
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations = tuple(
-            PriceObservation(product, self._snapshot(product)) for product in products
-        )
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="anhoch",
-            label=ANHOCH_LABEL,
-            observations=observations,
-            message_for=self._message_for,
-            snapshot_limit=NO_SNAPSHOT_LIMIT,
-        )
+    @property
+    def snapshot_limit(self) -> int:
+        return NO_SNAPSHOT_LIMIT
 
     def _snapshot(self, product: AnhochProduct) -> PriceSnapshot:
         return PriceSnapshot(

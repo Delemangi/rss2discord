@@ -4,22 +4,14 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Final, Protocol
 
-from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import PriceSnapshot, SourceMetric
+from rss2discord.providers.catalog_price_monitor import CatalogPriceMonitor
 from rss2discord.providers.neptun.http import NEPTUN_LABEL
 from rss2discord.providers.neptun.models import NeptunProduct
 from rss2discord.providers.neptun.strategy import NeptunStrategy, format_neptun_mkd
-from rss2discord.retries import (
-    FeedFetchInterruptedError,
-    FetchRetryPolicy,
-)
-from rss2discord.transports.price_monitor import (
-    PriceMonitorDependencies,
-    PriceObservation,
-    price_direction,
-    run_price_scan,
-)
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.price_monitor import price_direction
 
 MAX_NEPTUN_RETAINED_SNAPSHOTS: Final = 10_000
 
@@ -34,42 +26,15 @@ class NeptunCatalog(Protocol):
     ) -> tuple[NeptunProduct, ...]: ...
 
 
-class NeptunPriceMonitor:
+class NeptunPriceMonitor(CatalogPriceMonitor[NeptunProduct]):
     """Compare positive actual prices and persist changes after Discord delivery."""
 
-    def __init__(
-        self,
-        feed: FeedConfig,
-        dependencies: PriceMonitorDependencies[NeptunCatalog],
-    ) -> None:
-        self._feed = feed
-        self._dependencies = dependencies
+    provider = "neptun"
+    label = NEPTUN_LABEL
 
-    def scan(self) -> None:
-        self._scan()
-
-    def _scan(self) -> None:
-        if self._dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-        products = self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
-        )
-        observations: list[PriceObservation[NeptunProduct]] = []
-        for product in products:
-            current = self._snapshot(product)
-            if current is not None:
-                observations.append(PriceObservation(product, current))
-        run_price_scan(
-            feed=self._feed,
-            dependencies=self._dependencies,
-            provider="neptun",
-            label=NEPTUN_LABEL,
-            observations=observations,
-            message_for=self._message_for,
-            snapshot_limit=MAX_NEPTUN_RETAINED_SNAPSHOTS,
-        )
+    @property
+    def snapshot_limit(self) -> int:
+        return MAX_NEPTUN_RETAINED_SNAPSHOTS
 
     def _snapshot(self, product: NeptunProduct) -> PriceSnapshot | None:
         if product.actual_price <= 0:
