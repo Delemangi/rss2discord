@@ -1,6 +1,8 @@
 """Per-scan price observability evidence."""
 
 import logging
+import re
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,7 +13,12 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceSnapshot
-from rss2discord.transports.price_monitor import PriceObservation, run_price_scan
+from rss2discord.transports.price_monitor import (
+    PriceObservation,
+    current_scan_started_at,
+    price_scan_timing,
+    run_price_scan,
+)
 from tests.setec_price_monitor_helpers import RecordingSender
 from tests.test_price_scan_pipeline import (
     dependencies,
@@ -42,6 +49,7 @@ def run_scan(
     *,
     configured_feed: FeedConfig | None = None,
     limit: int = 100,
+    started_at: float | None = None,
 ) -> None:
     run_price_scan(
         feed=configured_feed or feed(),
@@ -51,6 +59,7 @@ def run_scan(
         observations=observations,
         message_for=message_for,
         snapshot_limit=limit,
+        started_at=started_at,
     )
 
 
@@ -125,6 +134,43 @@ def test_scan_log_counts_alerts_restocks_filters_and_unavailable(
         assert "bulk=false" in caplog.text
         assert "outcome=delivered" in caplog.text
         assert "elapsed_ms=" in caplog.text
+
+
+def test_price_scan_timing_context_sets_and_resets_the_start() -> None:
+    # Given no active timing context
+    assert current_scan_started_at() is None
+
+    # When / Then
+    before = time.perf_counter()
+    with price_scan_timing():
+        started = current_scan_started_at()
+        assert started is not None
+        assert started >= before
+    assert current_scan_started_at() is None
+
+
+def test_scan_log_uses_the_provider_start_time(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given a scan that started two seconds before run_price_scan
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed(store, (snapshot("1"),))
+        sender = RecordingSender([])
+
+        # When
+        with caplog.at_level(logging.INFO, logger=SCAN_LOGGER):
+            run_scan(
+                store,
+                sender,
+                [PriceObservation("1", snapshot("1"))],
+                started_at=time.perf_counter() - 2.0,
+            )
+
+        # Then
+        match = re.search(r"elapsed_ms=(\d+)", caplog.text)
+        assert match is not None
+        assert int(match.group(1)) >= 1_900
 
 
 def test_scan_log_marks_bulk_delivery(

@@ -30,3 +30,5 @@ from .scan import NO_SNAPSHOT_LIMIT as NO_SNAPSHOT_LIMIT
 from .scan import PriceChangeView as PriceChangeView
 from .scan import PriceObservation as PriceObservation
 from .scan import run_price_scan as run_price_scan
+from .timing import current_scan_started_at as current_scan_started_at
+from .timing import price_scan_timing as price_scan_timing

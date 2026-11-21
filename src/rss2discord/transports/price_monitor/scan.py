@@ -31,6 +31,7 @@ from .planning import (
     validate_price_currencies,
 )
 from .presentation import with_price_change_percentage, with_restock
+from .timing import current_scan_started_at
 
 NO_SNAPSHOT_LIMIT: Final = 1_000_000
 logger = logging.getLogger(__name__)
@@ -153,9 +154,12 @@ def run_price_scan[ProductT](
     | None = None,
     confirmation_limit: int | None = None,
     allow_currency_changes: bool = False,
+    started_at: float | None = None,
 ) -> None:
     """Load baselines, diff observations, confirm, and deliver one provider scan."""
-    started = time.perf_counter()
+    started = started_at if started_at is not None else current_scan_started_at()
+    if started is None:
+        started = time.perf_counter()
     counters = _ScanCounters()
     try:
         outcome = _run_price_scan(
