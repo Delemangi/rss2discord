@@ -33,6 +33,7 @@ def test_restock_strategies_are_the_stock_aware_providers() -> None:
         "anhoch",
         "cccenter",
         "ddstore",
+        "hetzner_cloud",
         "neptun",
         "woocommerce",
     }

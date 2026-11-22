@@ -46,6 +46,7 @@ FeedStrategyName = Literal[
     "air_quality",
     "emsc",
     "hetzner_auction",
+    "hetzner_cloud",
     "tweets",
     "wolfinet",
     "woocommerce",

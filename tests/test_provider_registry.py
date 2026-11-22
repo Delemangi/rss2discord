@@ -31,6 +31,8 @@ from rss2discord.providers.gjirafa50.background_monitor import (
 )
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
+from rss2discord.providers.hetzner_cloud.prices import HetznerCloudPriceMonitor
+from rss2discord.providers.hetzner_cloud.strategy import HetznerCloudStrategy
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from rss2discord.providers.neksio.strategy import NeksioStrategy
@@ -83,6 +85,7 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "fakulteti_mk": FakultetiMkStrategy,
     "gjirafa50": Gjirafa50Strategy,
     "hetzner_auction": HetznerAuctionStrategy,
+    "hetzner_cloud": HetznerCloudStrategy,
     "hivetec": HivetecStrategy,
     "itmk_oglasnik": ITMkOglasnikStrategy,
     "neksio": NeksioStrategy,
@@ -109,6 +112,7 @@ EXPECTED_MONITOR_TYPES: dict[str, type[object]] = {
     "cccenter": CCCenterPriceMonitor,
     "ddstore": DDStorePriceMonitor,
     "gjirafa50": Gjirafa50BackgroundPriceMonitor,
+    "hetzner_cloud": HetznerCloudPriceMonitor,
     "hivetec": BackgroundPriceMonitor,
     "neksio": BackgroundPriceMonitor,
     "neptun": NeptunPriceMonitor,
