@@ -15,6 +15,7 @@ from rss2discord.provider_metadata import (
     STRATEGY_LABELS,
     STRATEGY_METADATA,
 )
+from rss2discord.providers.air_quality.strategy import AirQualityStrategy
 from rss2discord.providers.ananas.prices import AnanasPriceMonitor
 from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
@@ -28,7 +29,6 @@ from rss2discord.providers.fakulteti_mk.strategy import FakultetiMkStrategy
 from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
-from rss2discord.providers.air_quality.strategy import AirQualityStrategy
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
