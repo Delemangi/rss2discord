@@ -308,6 +308,56 @@ def test_tweets_clips_long_title_and_keeps_full_text(
     assert data.description == long_text
 
 
+def test_tweets_does_not_repeat_retweet_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "RT by @opencode: Same text"
+    entries[0]["summary"] = "<p>Same text</p>"
+    strategy = TweetsStrategy(include_retweets=True)
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title == "RT by @opencode: Same text"
+    assert data.description == ""
+
+
+def test_tweets_does_not_repeat_old_style_retweet_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "RT @other: Same text"
+    entries[0]["summary"] = "<p>RT @other: Same text</p>"
+    strategy = TweetsStrategy(include_retweets=True)
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title == "RT @other: Same text"
+    assert data.description == ""
+
+
 def test_tweets_uses_link_card_without_repeating_tweet(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

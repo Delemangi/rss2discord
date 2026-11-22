@@ -180,6 +180,17 @@ def _normalized(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def _retweet_payload(title: str) -> str:
+    """Return the tweet text embedded in a retweet title, without attribution."""
+    for prefix in RETWEET_TITLE_PREFIXES:
+        if not title.startswith(prefix):
+            continue
+        remainder = title[len(prefix) :]
+        _, separator, payload = remainder.partition(": ")
+        return payload if separator else remainder
+    return title
+
+
 def _tweet_body(
     title_source: str,
     tweet_text: str,
@@ -189,10 +200,12 @@ def _tweet_body(
 ) -> str:
     """Keep only content the title does not already carry."""
     parts: list[str] = []
-    if tweet_text and (
-        title_clipped or _normalized(title_source) != _normalized(tweet_text)
+    title_payload = _retweet_payload(title_source)
+    tweet_payload = _retweet_payload(tweet_text)
+    if tweet_payload and (
+        title_clipped or _normalized(title_payload) != _normalized(tweet_payload)
     ):
-        parts.append(tweet_text)
+        parts.append(tweet_payload)
     if card_text:
         parts.append(card_text)
     return "\n\n".join(parts).strip()
