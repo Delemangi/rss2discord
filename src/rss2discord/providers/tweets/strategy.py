@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 TWEETS_FALLBACK_LABEL: Final = "Tweets"
 TWEETS_MEDIA_TITLE: Final = "Media tweet"
 TWEET_TITLE_LIMIT: Final = 160
-EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "RT by @", "Pinned: ")
+ALWAYS_EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "Pinned: ")
+RETWEET_TITLE_PREFIXES: Final = ("RT by @", "RT @")
+EXCLUDED_TITLE_PREFIXES: Final = (
+    *ALWAYS_EXCLUDED_TITLE_PREFIXES,
+    *RETWEET_TITLE_PREFIXES,
+)
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
     r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
@@ -210,8 +215,9 @@ class TweetsStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch = True
 
-    def __init__(self) -> None:
+    def __init__(self, *, include_retweets: bool = False) -> None:
         self._rss = RSSStrategy()
+        self._include_retweets = include_retweets
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
@@ -263,7 +269,10 @@ class TweetsStrategy(ScraperStrategy):
             image_urls=images,
         )
 
-    @staticmethod
-    def _is_excluded(entry: Any) -> bool:  # noqa: ANN401
+    def _is_excluded(self, entry: Any) -> bool:  # noqa: ANN401
         title = str(entry.get("title", "")).strip()
-        return title.startswith(EXCLUDED_TITLE_PREFIXES)
+        if title.startswith(ALWAYS_EXCLUDED_TITLE_PREFIXES):
+            return True
+        return not self._include_retweets and title.startswith(
+            RETWEET_TITLE_PREFIXES,
+        )
