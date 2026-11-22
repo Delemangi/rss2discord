@@ -28,6 +28,11 @@ STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
         "fakulteti_mk": StrategyMetadata("Fakulteti.mk"),
         "gjirafa50": StrategyMetadata("Gjirafa50", price=True),
         "hetzner_auction": StrategyMetadata("Hetzner Auction"),
+        "hetzner_cloud": StrategyMetadata(
+            "Hetzner Cloud",
+            price=True,
+            restock=True,
+        ),
         "hivetec": StrategyMetadata("Hivetec", price=True),
         "itmk_oglasnik": StrategyMetadata("IT.mk Oglasnik"),
         "neksio": StrategyMetadata("Neksio", price=True),
