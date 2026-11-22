@@ -61,6 +61,31 @@ def test_latest_products_reads_two_pages_and_returns_oldest_first(
     assert all(params["orderby"] == 16 for params in get.params)
 
 
+def test_latest_products_falls_back_to_first_page_on_total_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Given
+    page_one = [(product_id, 1_000 + product_id) for product_id in range(30, 6, -1)]
+    page_two = [(product_id, 1_000 + product_id) for product_id in range(6, 0, -1)]
+    get = RecordingGet(
+        [
+            StubResponse(catalog_payload(30, page_one, total_pages=2)),
+            StubResponse(catalog_payload(31, page_two, total_pages=2)),
+        ],
+    )
+    monkeypatch.setattr(gjirafa50_http, "_create_session", lambda: get)
+    caplog.set_level("INFO")
+
+    # When
+    products = Gjirafa50CatalogClient().fetch_latest_products(ROOT_URL)
+
+    # Then
+    assert [product.id for product in products] == list(range(7, 31))
+    assert [params["pagenumber"] for params in get.params] == [1, 2]
+    assert "returning the first page" in caplog.text
+
+
 def test_latest_products_stops_before_request_when_shutdown_is_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -252,11 +252,18 @@ class Gjirafa50CatalogClient:
                 if expected_total is None:
                     expected_total = page.total_hits
                 elif page.total_hits != expected_total:
-                    raise FeedFetchError(
-                        GJIRAFA50_LABEL,
-                        "CatalogChanged",
-                        retryable=True,
+                    # The live catalog can change between page requests. The
+                    # first page is still a valid latest window, so keep it
+                    # instead of failing the entire discovery scan.
+                    logger.info(
+                        "Gjirafa50 latest window changed during scan "
+                        "(page 1 total=%d, page %d total=%d); "
+                        "returning the first page",
+                        expected_total,
+                        page_number,
+                        page.total_hits,
                     )
+                    break
                 expected_count = min(
                     GJIRAFA50_PAGE_SIZE,
                     max(page.total_hits - seen_cards, 0),
