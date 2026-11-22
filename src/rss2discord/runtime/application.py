@@ -12,6 +12,7 @@ from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordSender
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
+from rss2discord.providers.registry import has_discovery_strategy
 from rss2discord.retries import FeedFetchInterruptedError, SQLiteRetryInterruptedError
 
 from .health import record_fetch_failure
@@ -62,11 +63,14 @@ class ApplicationRuntime:
             len(config.feeds),
             config.refresh_interval,
         )
+        discovery_feeds = tuple(
+            feed for feed in config.feeds if has_discovery_strategy(feed.strategy)
+        )
         ordinary_intervals = tuple(
             feed.ordinary_check_interval
             if feed.ordinary_check_interval is not None
             else config.refresh_interval
-            for feed in config.feeds
+            for feed in discovery_feeds
         )
         gap_utilization = config.delay_between_feeds * sum(
             1 / interval for interval in ordinary_intervals
@@ -88,7 +92,7 @@ class ApplicationRuntime:
                     partial(_process_feed_safely, feed, process_feed, store),
                 )
                 for feed, interval in zip(
-                    config.feeds,
+                    discovery_feeds,
                     ordinary_intervals,
                     strict=True,
                 )

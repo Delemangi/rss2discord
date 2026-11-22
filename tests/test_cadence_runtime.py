@@ -107,6 +107,50 @@ def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
     assert "cadence is best-effort" not in caplog.text
 
 
+def test_price_only_feed_has_no_ordinary_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    normal = make_feed("normal")
+    price_only = FeedConfig.model_validate(
+        make_feed("price").model_dump()
+        | {
+            "strategy": "openrouter_prices",
+            "url": "https://openrouter.ai/api/v1/models",
+            "price_check_interval": 3600,
+        },
+    )
+    captured: list[SchedulerJobs] = []
+
+    class CaptureScheduler:
+        def __init__(
+            self,
+            jobs: SchedulerJobs,
+            *_args: object,
+            **_kwargs: object,
+        ) -> None:
+            captured.append(jobs)
+
+        def run(self) -> None:
+            return
+
+    monkeypatch.setattr(
+        "rss2discord.runtime.application.RuntimeScheduler",
+        CaptureScheduler,
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(
+            AppConfig(feeds=(normal, price_only), refresh_interval=300),
+            store,
+            FakeSender([]),
+        )
+        app.run()
+
+    jobs = captured[0]
+    assert [job.name for job in jobs.ordinary] == ["normal"]
+    assert [(job.name, job.interval) for job in jobs.prices] == [("price", 3600)]
+
+
 def test_per_feed_gap_capacity_warns_at_one_or_more(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

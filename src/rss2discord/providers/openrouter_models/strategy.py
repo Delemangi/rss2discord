@@ -38,7 +38,7 @@ class OpenRouterModelsStrategy(ScraperStrategy):
     def fetch_entries(self, url: str) -> tuple[list[OpenRouterModel], str]:
         models = self._client.fetch_models(url)
         return (
-            [model for model in models if _is_model_entry(model)],
+            [model for model in models if is_model_entry(model)],
             OPENROUTER_SOURCE_TITLE,
         )
 
@@ -55,12 +55,12 @@ class OpenRouterModelsStrategy(ScraperStrategy):
     def get_entry_data(self, entry: OpenRouterModel) -> EntryData:
         pricing = entry.pricing
         metrics = [
-            SourceMetric("Input", _price_text(pricing.prompt)),
-            SourceMetric("Output", _price_text(pricing.completion)),
+            SourceMetric("Input", format_price(pricing.prompt)),
+            SourceMetric("Output", format_price(pricing.completion)),
         ]
         if pricing.input_cache_read is not None:
             metrics.append(
-                SourceMetric("Cache read", _price_text(pricing.input_cache_read)),
+                SourceMetric("Cache read", format_price(pricing.input_cache_read)),
             )
         if entry.context_length is not None and entry.context_length > 0:
             metrics.append(
@@ -110,7 +110,7 @@ class OpenRouterModelsStrategy(ScraperStrategy):
         )
 
 
-def _is_model_entry(entry: OpenRouterModel) -> bool:
+def is_model_entry(entry: OpenRouterModel) -> bool:
     """Keep interactive tool-capable models, not aliases, batch, or routers."""
     return bool(
         entry.id.strip()
@@ -160,7 +160,7 @@ def _price_tier(price: Decimal | None) -> str:
     return "paid"
 
 
-def _price_text(price: Decimal | None) -> str:
+def format_price(price: Decimal | None) -> str:
     if price is None:
         return "Unknown"
     if price < 0:
