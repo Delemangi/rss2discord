@@ -43,6 +43,14 @@ def catalog_model(**overrides: object) -> dict[str, object]:
         },
         "supported_parameters": ["tools", "tool_choice", "reasoning"],
         "expiration_date": None,
+        "hugging_face_id": "openai/gpt-6.2-astra-pro",
+        "benchmarks": {
+            "artificial_analysis": {
+                "intelligence_index": 42.1,
+                "coding_index": 38.0,
+                "agentic_index": None,
+            },
+        },
     }
     entry.update(overrides)
     return entry
@@ -77,6 +85,10 @@ def test_client_parses_model_catalog() -> None:
     assert model.top_provider is not None
     assert model.top_provider.max_completion_tokens == 65_536
     assert "tools" in model.supported_parameters
+    assert model.hugging_face_id == "openai/gpt-6.2-astra-pro"
+    assert model.benchmarks is not None
+    assert model.benchmarks.artificial_analysis is not None
+    assert model.benchmarks.artificial_analysis.intelligence_index == 42.1
 
 
 @pytest.mark.parametrize(
@@ -138,6 +150,10 @@ def test_strategy_keeps_tool_capable_interactive_models() -> None:
                     name="OpenRouter: Auto",
                     pricing={"prompt": "-1", "completion": "-1"},
                 ),
+                catalog_model(
+                    id="~z-ai/glm-flash-latest",
+                    name="Z.ai: GLM Flash Latest",
+                ),
                 catalog_model(id="", name="Broken"),
             ),
         ),
@@ -152,7 +168,7 @@ def test_strategy_keeps_tool_capable_interactive_models() -> None:
     ]
 
 
-def test_entry_id_changes_with_price_and_deprecation() -> None:
+def test_entry_id_is_stable_across_price_changes_and_tracks_tier() -> None:
     strategy = OpenRouterModelsStrategy()
     base = parse_model()
     same = parse_model()
@@ -170,12 +186,15 @@ def test_entry_id_changes_with_price_and_deprecation() -> None:
             "input_cache_read": "0.0000001",
         },
     )
+    free = parse_model(pricing={"prompt": "0", "completion": "0"})
     deprecating = parse_model(expiration_date="2026-12-11")
 
     base_id = strategy.get_entry_id(base)
+    assert base_id == "openai/gpt-6.2-astra-pro:paid:none"
     assert strategy.get_entry_id(same) == base_id
-    assert strategy.get_entry_id(cheaper) != base_id
-    assert strategy.get_entry_id(cached) != base_id
+    assert strategy.get_entry_id(cheaper) == base_id
+    assert strategy.get_entry_id(cached) == base_id
+    assert strategy.get_entry_id(free) != base_id
     assert strategy.get_entry_id(deprecating) != base_id
 
 
@@ -189,6 +208,10 @@ def test_entry_data_contains_pricing_metrics() -> None:
     assert data.link == "https://openrouter.ai/openai/gpt-6.2-astra-pro"
     assert data.author == "OpenAI"
     assert data.categories == ("model",)
+    assert "Benchmarks: Intelligence 42.1 · Coding 38" in data.description
+    assert (
+        "Weights: https://huggingface.co/openai/gpt-6.2-astra-pro" in data.description
+    )
     assert "A frontier model for agents & tools." in data.description
     assert "Model ID: `openai/gpt-6.2-astra-pro`" in data.description
     assert [metric.label for metric in data.source_metrics] == [
@@ -221,9 +244,7 @@ def test_free_model_prices_are_labelled_free() -> None:
 
     assert data.source_metrics[0].value == "Free"
     assert data.source_metrics[1].value == "Free"
-    assert strategy.get_entry_id(entry) == (
-        "inclusionai/ling-3.2-flash:free:free:free:na:none"
-    )
+    assert strategy.get_entry_id(entry) == ("inclusionai/ling-3.2-flash:free:free:none")
 
 
 def test_variable_price_is_labelled_variable() -> None:
@@ -238,7 +259,7 @@ def test_variable_price_is_labelled_variable() -> None:
 
     assert data.source_metrics[0].value == "Variable"
     assert data.source_metrics[1].value == "Variable"
-    assert "variable" in strategy.get_entry_id(entry)
+    assert strategy.get_entry_id(entry) == "openrouter/fusion:variable:none"
 
 
 def test_entry_data_tolerates_missing_optional_fields() -> None:
@@ -251,6 +272,8 @@ def test_entry_data_tolerates_missing_optional_fields() -> None:
         pricing={},
         top_provider=None,
         expiration_date=None,
+        hugging_face_id=None,
+        benchmarks=None,
     )
 
     data = strategy.get_entry_data(entry)
@@ -264,7 +287,9 @@ def test_entry_data_tolerates_missing_optional_fields() -> None:
         "Unknown",
     ]
     assert data.description == "Model ID: `openai/gpt-6.2-astra-pro`"
-    assert strategy.get_entry_id(entry).endswith(":na:na:na:none")
+    assert "Benchmarks:" not in data.description
+    assert "Weights:" not in data.description
+    assert strategy.get_entry_id(entry) == ("openai/gpt-6.2-astra-pro:unknown:none")
 
 
 def test_config_accepts_openrouter_models_strategy() -> None:
