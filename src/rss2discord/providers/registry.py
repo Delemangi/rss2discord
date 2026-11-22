@@ -54,6 +54,9 @@ from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.catalog import NeptunCatalogClient
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
+from rss2discord.providers.openrouter_models.strategy import (
+    OpenRouterModelsStrategy,
+)
 from rss2discord.providers.pazar3.catalog import Pazar3CatalogClient
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.prices import Pazar3PriceMonitor
@@ -417,6 +420,9 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
             feed,
             _monitor_dependencies(NeptunCatalogClient(), dependencies),
         ),
+    ),
+    "openrouter_models": StrategySpec(
+        discovery=lambda dependencies: OpenRouterModelsStrategy(),
     ),
     "pazar3": StrategySpec(
         discovery=lambda dependencies: Pazar3Strategy(
