@@ -28,6 +28,7 @@ from rss2discord.providers.fakulteti_mk.strategy import FakultetiMkStrategy
 from rss2discord.providers.gjirafa50.background_monitor import (
     Gjirafa50BackgroundPriceMonitor,
 )
+from rss2discord.providers.air_quality.strategy import AirQualityStrategy
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
@@ -70,6 +71,7 @@ from tests.runtime_helpers import FakeClock
 DEFAULT_PRICE_INTERVAL = 3_600
 PRICE_INTERVAL_FOR: dict[str, int] = {"gjirafa50": 21_600}
 EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
+    "air_quality": AirQualityStrategy,
     "ananas": AnanasStrategy,
     "anhoch": AnhochStrategy,
     "cccenter": CCCenterStrategy,

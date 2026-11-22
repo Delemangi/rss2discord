@@ -21,6 +21,7 @@ from rss2discord.discord.client import (
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import HealthUpdate
+from rss2discord.providers.air_quality.strategy import AirQualityStrategy
 from rss2discord.providers.ananas.catalog import AnanasCatalogClient
 from rss2discord.providers.ananas.prices import AnanasPriceMonitor
 from rss2discord.providers.ananas.strategy import AnanasStrategy
@@ -313,6 +314,9 @@ class StrategySpec:
 
 
 _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
+    "air_quality": StrategySpec(
+        discovery=lambda dependencies: AirQualityStrategy(),
+    ),
     "ananas": StrategySpec(
         discovery=lambda dependencies: AnanasStrategy(
             dependencies.is_shutdown_requested,
