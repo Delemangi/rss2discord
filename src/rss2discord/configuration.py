@@ -42,6 +42,7 @@ FeedStrategyName = Literal[
     "technomarket",
     "time_mk",
     "fakulteti_mk",
+    "air_quality",
     "emsc",
     "hetzner_auction",
     "tweets",

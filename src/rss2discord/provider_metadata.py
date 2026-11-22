@@ -17,6 +17,7 @@ class StrategyMetadata:
 
 STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
     {
+        "air_quality": StrategyMetadata("Air Quality"),
         "ananas": StrategyMetadata("Ananas", price=True, restock=True),
         "anhoch": StrategyMetadata("Anhoch", price=True, restock=True),
         "arctic_shift": StrategyMetadata("Reddit"),

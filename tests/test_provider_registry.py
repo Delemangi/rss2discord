@@ -15,6 +15,7 @@ from rss2discord.provider_metadata import (
     STRATEGY_LABELS,
     STRATEGY_METADATA,
 )
+from rss2discord.providers.air_quality.strategy import AirQualityStrategy
 from rss2discord.providers.ananas.prices import AnanasPriceMonitor
 from rss2discord.providers.ananas.strategy import AnanasStrategy
 from rss2discord.providers.anhoch.prices import AnhochPriceMonitor
@@ -70,6 +71,7 @@ from tests.runtime_helpers import FakeClock
 DEFAULT_PRICE_INTERVAL = 3_600
 PRICE_INTERVAL_FOR: dict[str, int] = {"gjirafa50": 21_600}
 EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
+    "air_quality": AirQualityStrategy,
     "ananas": AnanasStrategy,
     "anhoch": AnhochStrategy,
     "cccenter": CCCenterStrategy,
