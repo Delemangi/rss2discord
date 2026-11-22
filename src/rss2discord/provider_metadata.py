@@ -38,6 +38,10 @@ STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
         "neksio": StrategyMetadata("Neksio", price=True),
         "neptun": StrategyMetadata("Neptun", price=True, restock=True),
         "openrouter_models": StrategyMetadata("OpenRouter"),
+        "openrouter_prices": StrategyMetadata(
+            "OpenRouter",
+            price=True,
+        ),
         "pazar3": StrategyMetadata("Pazar3", price=True),
         "proxnet": StrategyMetadata("PROXNet", price=True),
         "reklama5": StrategyMetadata("Reklama5", price=True),

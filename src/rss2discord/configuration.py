@@ -32,6 +32,7 @@ FeedStrategyName = Literal[
     "neksio",
     "neptun",
     "openrouter_models",
+    "openrouter_prices",
     "pazar3",
     "proxnet",
     "reklama5",

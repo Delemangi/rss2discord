@@ -18,7 +18,6 @@ from rss2discord.providers.hetzner_cloud.client import (
 )
 from rss2discord.providers.hetzner_cloud.models import HetznerCloudOffer
 from rss2discord.providers.hetzner_cloud.prices import HetznerCloudPriceMonitor
-from rss2discord.providers.hetzner_cloud.strategy import HetznerCloudStrategy
 from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
@@ -332,19 +331,6 @@ def test_price_monitor_reports_price_change(tmp_path: Path) -> None:
         assert message.entry.price_direction is PriceDirection.DECREASE
         assert message.entry.source_metrics[0].value == "€4.99/mo"
         assert message.entry.source_metrics[1].value == "€5.99/mo"
-
-
-def test_discovery_summary_is_stable_and_silent() -> None:
-    strategy = HetznerCloudStrategy()
-
-    entries, title = strategy.fetch_entries(FEED_URL)
-
-    assert title == "Hetzner Cloud"
-    assert len(entries) == 1
-    assert strategy.get_entry_id(entries[0]) == "hetzner-cloud:summary"
-    data = strategy.get_entry_data(entries[0])
-    assert data.title == "Hetzner Cloud availability"
-    assert data.link == "https://console.hetzner.cloud/"
 
 
 def test_config_accepts_hetzner_cloud_strategy() -> None:

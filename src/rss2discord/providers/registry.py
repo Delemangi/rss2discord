@@ -48,7 +48,6 @@ from rss2discord.providers.hetzner_cloud.client import (
     HetznerCloudCatalogClient,
 )
 from rss2discord.providers.hetzner_cloud.prices import HetznerCloudPriceMonitor
-from rss2discord.providers.hetzner_cloud.strategy import HetznerCloudStrategy
 from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.providers.hivetec.prices import HivetecPriceMonitor
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
@@ -59,6 +58,10 @@ from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.catalog import NeptunCatalogClient
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
+from rss2discord.providers.openrouter_models.client import OpenRouterModelsClient
+from rss2discord.providers.openrouter_models.prices import (
+    OpenRouterPriceMonitor,
+)
 from rss2discord.providers.openrouter_models.strategy import (
     OpenRouterModelsStrategy,
 )
@@ -317,7 +320,7 @@ class BackgroundPriceMonitor:
 class StrategySpec:
     """Construction entry for one feed strategy."""
 
-    discovery: DiscoveryFactory
+    discovery: DiscoveryFactory | None = None
     price_monitor: PriceMonitorFactory | None = None
 
 
@@ -385,7 +388,6 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
         discovery=lambda dependencies: HetznerAuctionStrategy(),
     ),
     "hetzner_cloud": StrategySpec(
-        discovery=lambda dependencies: HetznerCloudStrategy(),
         price_monitor=lambda feed, dependencies: HetznerCloudPriceMonitor(
             feed,
             _monitor_dependencies(HetznerCloudCatalogClient(), dependencies),
@@ -435,6 +437,12 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     ),
     "openrouter_models": StrategySpec(
         discovery=lambda dependencies: OpenRouterModelsStrategy(),
+    ),
+    "openrouter_prices": StrategySpec(
+        price_monitor=lambda feed, dependencies: OpenRouterPriceMonitor(
+            feed,
+            _monitor_dependencies(OpenRouterModelsClient(), dependencies),
+        ),
     ),
     "pazar3": StrategySpec(
         discovery=lambda dependencies: Pazar3Strategy(
@@ -540,6 +548,12 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
 STRATEGY_SPECS: Final[Mapping[str, StrategySpec]] = MappingProxyType(_STRATEGY_SPECS)
 
 
+def has_discovery_strategy(strategy: str) -> bool:
+    """Return whether a configured strategy produces ordinary feed entries."""
+    spec = STRATEGY_SPECS.get(strategy)
+    return spec is not None and spec.discovery is not None
+
+
 def build_discovery_strategies(
     *,
     is_shutdown_requested: Callable[[], bool],
@@ -551,7 +565,12 @@ def build_discovery_strategies(
         sleep=sleep,
         pazar3_pacer=pazar3_pacer,
     )
-    return {name: spec.discovery(dependencies) for name, spec in STRATEGY_SPECS.items()}
+    strategies: dict[str, ScraperStrategy] = {}
+    for name, spec in STRATEGY_SPECS.items():
+        if spec.discovery is None:
+            continue
+        strategies[name] = spec.discovery(dependencies)
+    return strategies
 
 
 def build_provider_price_monitor(

@@ -33,7 +33,7 @@ feeds:
     name: "Example Tech Blog"
     url: "https://example.com/feed.xml"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'arctic_shift_nsfw', 'air_quality', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hetzner_auction', 'hetzner_cloud', 'hivetec', 'neksio', 'neptun', 'openrouter_models', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
+    strategy: "rss" # Optional: 'rss' (default), 'xenforo', 'itmk_oglasnik', 'pazar3', 'proxnet', 'reklama5', 'reddit', 'arctic_shift', 'arctic_shift_nsfw', 'air_quality', 'ananas', 'anhoch', 'cccenter', 'ddstore', 'fakulteti_mk', 'gjirafa50', 'hetzner_auction', 'hetzner_cloud', 'hivetec', 'neksio', 'neptun', 'openrouter_models', 'openrouter_prices', 'setec', 'technomarket', 'time_mk', 'tweets', 'emsc', 'wolfinet', or 'woocommerce'
     # ordinary_check_interval: 3600 # Optional seconds between discovery checks; omit/null inherits refresh_interval
     webhook_name: "RSS Bot" # Optional: Custom name for the webhook
     webhook_avatar: "https://example.com/avatar.png" # Optional: Custom avatar URL
@@ -65,16 +65,15 @@ feeds:
     webhook_avatar: "https://www.hetzner.com/_resources/themes/hetzner/images/favicons/android-icon-192x192.png"
     digest_threshold: null
 
-  # Hetzner Cloud server-type availability. This is a restock monitor: it
-  # alerts when a server type becomes available in a location, not when it
-  # sells out. Requires HETZNER_CLOUD_TOKEN in the environment. The URL query
-  # filters locations and/or server types; omit them to track everything.
+  # Hetzner Cloud server-type availability. This is a price-only restock
+  # monitor: it alerts when a server type becomes available in a location, not
+  # when it sells out. Requires HETZNER_CLOUD_TOKEN in the environment. The URL
+  # query filters locations and/or server types; omit them to track everything.
   - id: "hetzner-cloud-availability"
     name: "Hetzner Cloud Availability"
     url: "https://api.hetzner.cloud/v1/server_types?locations=fsn1,nbg1,hel1"
     webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     strategy: "hetzner_cloud"
-    ordinary_check_interval: 3600
     price_check_interval: 120
     restock_alerts: true
     price_ignore_increases: true
@@ -96,9 +95,9 @@ feeds:
     webhook_avatar: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f32b.png"
     digest_threshold: null
 
-  # OpenRouter model catalog. Posts tool-capable models and again whenever a
-  # model's price or deprecation date changes. Batch endpoints and routers are
-  # skipped; the first fetch is a silent baseline.
+  # OpenRouter model catalog. Posts new tool-capable models, plus paid/free
+  # tier changes and deprecation dates. Batch endpoints, aliases, and routers
+  # are skipped; the first fetch is a silent baseline.
   - id: "openrouter-models"
     name: "OpenRouter Models"
     url: "https://openrouter.ai/api/v1/models"
@@ -106,6 +105,20 @@ feeds:
     strategy: "openrouter_models"
     ordinary_check_interval: 3600
     seed_existing_on_first_fetch: true
+    webhook_name: "OpenRouter"
+    webhook_avatar: "https://openrouter.ai/icon.png"
+    digest_threshold: null
+
+  # OpenRouter significant input-price drops. Price-only: no discovery job.
+  # Increases and moves below 10% are ignored.
+  - id: "openrouter-price-drops"
+    name: "Price Drops"
+    url: "https://openrouter.ai/api/v1/models"
+    webhook: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    strategy: "openrouter_prices"
+    price_check_interval: 3600
+    price_min_change_percentage: 10
+    price_ignore_increases: true
     webhook_name: "OpenRouter"
     webhook_avatar: "https://openrouter.ai/icon.png"
     digest_threshold: null

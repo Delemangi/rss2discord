@@ -32,12 +32,12 @@ from rss2discord.providers.gjirafa50.background_monitor import (
 from rss2discord.providers.gjirafa50.strategy import Gjirafa50Strategy
 from rss2discord.providers.hetzner_auction.strategy import HetznerAuctionStrategy
 from rss2discord.providers.hetzner_cloud.prices import HetznerCloudPriceMonitor
-from rss2discord.providers.hetzner_cloud.strategy import HetznerCloudStrategy
 from rss2discord.providers.hivetec.strategy import HivetecStrategy
 from rss2discord.providers.itmk_oglasnik.strategy import ITMkOglasnikStrategy
 from rss2discord.providers.neksio.strategy import NeksioStrategy
 from rss2discord.providers.neptun.prices import NeptunPriceMonitor
 from rss2discord.providers.neptun.strategy import NeptunStrategy
+from rss2discord.providers.openrouter_models.prices import OpenRouterPriceMonitor
 from rss2discord.providers.openrouter_models.strategy import (
     OpenRouterModelsStrategy,
 )
@@ -85,7 +85,6 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "fakulteti_mk": FakultetiMkStrategy,
     "gjirafa50": Gjirafa50Strategy,
     "hetzner_auction": HetznerAuctionStrategy,
-    "hetzner_cloud": HetznerCloudStrategy,
     "hivetec": HivetecStrategy,
     "itmk_oglasnik": ITMkOglasnikStrategy,
     "neksio": NeksioStrategy,
@@ -116,6 +115,7 @@ EXPECTED_MONITOR_TYPES: dict[str, type[object]] = {
     "hivetec": BackgroundPriceMonitor,
     "neksio": BackgroundPriceMonitor,
     "neptun": NeptunPriceMonitor,
+    "openrouter_prices": OpenRouterPriceMonitor,
     "pazar3": Pazar3PriceMonitor,
     "proxnet": ProxnetPriceMonitor,
     "reklama5": BackgroundPriceMonitor,
@@ -171,6 +171,11 @@ def test_strategy_specs_cover_configuration_and_metadata() -> None:
     assert {
         name for name, spec in STRATEGY_SPECS.items() if spec.price_monitor is not None
     } == set(PRICE_STRATEGIES)
+
+
+def test_price_only_strategies_have_no_discovery() -> None:
+    assert STRATEGY_SPECS["hetzner_cloud"].discovery is None
+    assert STRATEGY_SPECS["openrouter_prices"].discovery is None
 
 
 def test_build_discovery_strategies_covers_every_strategy() -> None:

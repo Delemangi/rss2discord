@@ -100,8 +100,14 @@ class RSSToDiscord:
             return JobOutcome.SKIPPED
         started_at = time.monotonic()
         counters = DiscoveryScanCounters()
+        strategy = self._strategies.get(feed.strategy)
+        if strategy is None:
+            logger.warning(
+                "No discovery strategy for feed %s; skipping ordinary scan",
+                feed.id,
+            )
+            return JobOutcome.SKIPPED
         logger.info("Processing feed %s with strategy %s", feed.id, feed.strategy)
-        strategy = self._strategies[feed.strategy]
         entries, fetched_source_title = self._fetch_entries(feed, strategy)
         counters.entries = len(entries)
         if self.is_shutdown_requested():

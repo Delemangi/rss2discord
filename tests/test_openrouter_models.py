@@ -14,6 +14,7 @@ from rss2discord.providers.openrouter_models.models import OpenRouterModel
 from rss2discord.providers.openrouter_models.strategy import (
     OpenRouterModelsStrategy,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 
 
 def catalog_model(**overrides: object) -> dict[str, object]:
@@ -89,6 +90,22 @@ def test_client_parses_model_catalog() -> None:
     assert model.benchmarks is not None
     assert model.benchmarks.artificial_analysis is not None
     assert model.benchmarks.artificial_analysis.intelligence_index == 42.1
+
+
+def test_client_catalog_interface_returns_models() -> None:
+    result = client_with(payload(catalog_model())).fetch_catalog(
+        OPENROUTER_MODELS_URL,
+    )
+
+    assert [model.id for model in result] == ["openai/gpt-6.2-astra-pro"]
+
+
+def test_client_catalog_interface_honors_shutdown() -> None:
+    with pytest.raises(FeedFetchInterruptedError):
+        client_with(payload(catalog_model())).fetch_catalog(
+            OPENROUTER_MODELS_URL,
+            is_shutdown_requested=lambda: True,
+        )
 
 
 @pytest.mark.parametrize(

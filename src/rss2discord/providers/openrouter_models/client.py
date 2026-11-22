@@ -21,7 +21,11 @@ from rss2discord.providers.openrouter_models.models import (
     OpenRouterModel,
     OpenRouterModelsResponse,
 )
-from rss2discord.retries import parse_retry_after
+from rss2discord.retries import (
+    FeedFetchInterruptedError,
+    FetchRetryPolicy,
+    parse_retry_after,
+)
 from rss2discord.transports.bounded_http import read_bounded_content
 
 FetchBytes = Callable[[str], bytes]
@@ -36,6 +40,24 @@ class OpenRouterModelsClient:
     def fetch_models(self, url: str) -> tuple[OpenRouterModel, ...]:
         validate_openrouter_models_url(url)
         return _parse_models(self._fetch(url))
+
+    def fetch_catalog(
+        self,
+        url: str,
+        *,
+        retry_policy: FetchRetryPolicy | None = None,
+        is_shutdown_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[OpenRouterModel, ...]:
+        """Fetch the catalog through the shared price-monitor interface."""
+        if is_shutdown_requested():
+            raise FeedFetchInterruptedError
+
+        def operation() -> tuple[OpenRouterModel, ...]:
+            return self.fetch_models(url)
+
+        return (
+            retry_policy.execute(operation) if retry_policy is not None else operation()
+        )
 
 
 def validate_openrouter_models_url(url: str) -> str:
