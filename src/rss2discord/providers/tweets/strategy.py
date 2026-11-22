@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 TWEETS_FALLBACK_LABEL: Final = "Tweets"
 TWEETS_MEDIA_TITLE: Final = "Media tweet"
+TWEET_TITLE_LIMIT: Final = 160
 EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "RT by @", "Pinned: ")
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
@@ -126,6 +127,72 @@ def _clean_description(description: str) -> str:
     return cleaned.rstrip(" \t\r\n·•—–-\ufffd").strip()
 
 
+def _clean_card(text: str) -> str:
+    """Drop Nitter's generic Link label from a link-card body."""
+    cleaned = re.sub(r"(?im)^\s*link\s*$", "", text)
+    cleaned = re.sub(r"\n+", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _split_summary(entry: Any, rss: RSSStrategy) -> tuple[str, str]:  # noqa: ANN401
+    """Return the tweet text and any link-card text from Nitter's summary."""
+    raw = entry.get("summary", entry.get("description", ""))
+    if not raw:
+        return "", ""
+    parts = re.split(
+        r"<hr\s*/?>",
+        str(raw),
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )
+    tweet_text = _clean_description(rss.clean_description(parts[0]))
+    card_text = (
+        _clean_card(_clean_description(rss.clean_description(parts[1])))
+        if len(parts) > 1
+        else ""
+    )
+    return tweet_text, card_text
+
+
+def _clip_title(title: str) -> tuple[str, bool]:
+    """Compact the title and clip only when the full tweet needs a body."""
+    compact = " ".join(title.split())
+    if len(compact) <= TWEET_TITLE_LIMIT:
+        return compact, False
+    clipped = (
+        compact[: TWEET_TITLE_LIMIT - 1]
+        .rsplit(" ", 1)[0]
+        .rstrip(
+            " .,;:!?-",
+        )
+    )
+    if not clipped:
+        clipped = compact[: TWEET_TITLE_LIMIT - 1].rstrip()
+    return f"{clipped}…", True
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _tweet_body(
+    title_source: str,
+    tweet_text: str,
+    card_text: str,
+    *,
+    title_clipped: bool,
+) -> str:
+    """Keep only content the title does not already carry."""
+    parts: list[str] = []
+    if tweet_text and (
+        title_clipped or _normalized(title_source) != _normalized(tweet_text)
+    ):
+        parts.append(tweet_text)
+    if card_text:
+        parts.append(card_text)
+    return "\n\n".join(parts).strip()
+
+
 def _fallback_title(title: str, description: str) -> str:
     stripped = title.strip()
     if stripped not in EMPTY_TITLES:
@@ -174,13 +241,22 @@ class TweetsStrategy(ScraperStrategy):
     @override
     def get_entry_data(self, entry: Any) -> EntryData:
         data = self._rss.get_entry_data(entry)
-        description = _clean_description(data.description)
+        tweet_text, card_text = _split_summary(entry, self._rss)
+        tweet_text = tweet_text or _clean_description(data.description)
+        title_source = _fallback_title(data.title, tweet_text)
+        title, title_clipped = _clip_title(title_source)
+        description = _tweet_body(
+            title_source,
+            tweet_text,
+            card_text,
+            title_clipped=title_clipped,
+        )
         images = _tweet_image_urls(entry, self._rss)
         if not images and data.image_url is not None:
             images = (data.image_url,)
         return replace(
             data,
-            title=_fallback_title(data.title, description),
+            title=title,
             description=description,
             link=_public_tweet_link(data.link),
             image_url=images[0] if images else None,

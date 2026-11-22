@@ -362,6 +362,10 @@ class RSSStrategy(ScraperStrategy):
                 break
         return tuple(categories)
 
+    def clean_description(self, text: str) -> str:
+        """Clean provider-supplied summary HTML with the RSS rules."""
+        return self._clean_rss_description(text)
+
     def _clean_rss_description(self, text: str) -> str:
         """Clean HTML and Reddit-specific markup from RSS description."""
         text = self._clean_html(text)

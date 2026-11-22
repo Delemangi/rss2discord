@@ -7,6 +7,7 @@ import pytest
 
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.providers.tweets.strategy import (
+    TWEET_TITLE_LIMIT,
     TWEETS_FALLBACK_LABEL,
     TWEETS_MEDIA_TITLE,
     TweetsStrategy,
@@ -227,6 +228,94 @@ def test_tweets_exposes_every_attached_image(
         "https://pbs.twimg.com/media/first.jpg",
         "https://pbs.twimg.com/media/second.jpg",
     )
+
+
+def test_tweets_drops_description_that_repeats_the_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "Identical text"
+    entries[0]["summary"] = "<p>Identical text</p>"
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title == "Identical text"
+    assert data.description == ""
+
+
+def test_tweets_clips_long_title_and_keeps_full_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    long_text = " ".join(["word"] * 40)
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = long_text
+    entries[0]["summary"] = f"<p>{long_text}</p>"
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title.endswith("…")
+    assert len(data.title) <= TWEET_TITLE_LIMIT
+    assert data.description == long_text
+
+
+def test_tweets_uses_link_card_without_repeating_tweet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "Check this"
+    entries[0]["summary"] = (
+        "<p>Check this</p>"
+        "<hr />"
+        "<b>Link</b><br />"
+        "<b>Card title</b>"
+        "<p>Card description</p>"
+        '<footer>— <a href="http://nitter.kareem.one/opencode/status/111#m">'
+        "http://nitter.kareem.one/opencode/status/111#m</a></footer>"
+    )
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title == "Check this"
+    assert data.description == "Card title\n\nCard description"
+    assert "Check this" not in data.description
+    assert "Link" not in data.description
+    assert "status" not in data.description
 
 
 def test_tweets_cleans_nitter_labels_and_status_links(
