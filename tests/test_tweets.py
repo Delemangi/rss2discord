@@ -116,6 +116,32 @@ def test_tweets_keeps_only_original_tweets(
     assert strategy.seed_existing_on_first_fetch is True
 
 
+def test_tweets_can_include_retweets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    entries = feedparser.parse(FEED).entries
+    strategy = TweetsStrategy(include_retweets=True)
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries("https://nitter.kareem.one/opencode/rss")
+
+    # Then
+    assert [strategy.get_entry_id(entry) for entry in filtered] == [
+        "111",
+        "333",
+        "555",
+        "666",
+        "777",
+        "888",
+    ]
+
+
 def test_tweets_keeps_public_nitter_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

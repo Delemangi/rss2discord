@@ -525,6 +525,9 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     ),
     "time_mk": StrategySpec(discovery=lambda dependencies: TimeMkStrategy()),
     "tweets": StrategySpec(discovery=lambda dependencies: TweetsStrategy()),
+    "tweets_retweets": StrategySpec(
+        discovery=lambda dependencies: TweetsStrategy(include_retweets=True),
+    ),
     "wolfinet": StrategySpec(
         discovery=lambda dependencies: WolfinetStrategy(
             dependencies.is_shutdown_requested,
