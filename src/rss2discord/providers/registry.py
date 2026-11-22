@@ -528,6 +528,13 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
     "tweets_retweets": StrategySpec(
         discovery=lambda dependencies: TweetsStrategy(include_retweets=True),
     ),
+    "tweets_all": StrategySpec(
+        discovery=lambda dependencies: TweetsStrategy(
+            include_retweets=True,
+            include_replies=True,
+            include_pinned=True,
+        ),
+    ),
     "wolfinet": StrategySpec(
         discovery=lambda dependencies: WolfinetStrategy(
             dependencies.is_shutdown_requested,

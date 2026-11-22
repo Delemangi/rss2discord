@@ -18,12 +18,9 @@ logger = logging.getLogger(__name__)
 TWEETS_FALLBACK_LABEL: Final = "Tweets"
 TWEETS_MEDIA_TITLE: Final = "Media tweet"
 TWEET_TITLE_LIMIT: Final = 160
-ALWAYS_EXCLUDED_TITLE_PREFIXES: Final = ("R to @", "Pinned: ")
+REPLY_TITLE_PREFIX: Final = "R to @"
+PINNED_TITLE_PREFIX: Final = "Pinned: "
 RETWEET_TITLE_PREFIXES: Final = ("RT by @", "RT @")
-EXCLUDED_TITLE_PREFIXES: Final = (
-    *ALWAYS_EXCLUDED_TITLE_PREFIXES,
-    *RETWEET_TITLE_PREFIXES,
-)
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
     r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
@@ -181,13 +178,15 @@ def _normalized(text: str) -> str:
 
 
 def _retweet_payload(title: str) -> str:
-    """Return the tweet text embedded in a retweet title, without attribution."""
-    for prefix in RETWEET_TITLE_PREFIXES:
+    """Return the tweet text embedded in a retweet or reply title."""
+    for prefix in (*RETWEET_TITLE_PREFIXES, REPLY_TITLE_PREFIX):
         if not title.startswith(prefix):
             continue
         remainder = title[len(prefix) :]
         _, separator, payload = remainder.partition(": ")
         return payload if separator else remainder
+    if title.startswith(PINNED_TITLE_PREFIX):
+        return title[len(PINNED_TITLE_PREFIX) :].strip()
     return title
 
 
@@ -228,9 +227,17 @@ class TweetsStrategy(ScraperStrategy):
 
     seed_existing_on_first_fetch = True
 
-    def __init__(self, *, include_retweets: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        include_retweets: bool = False,
+        include_replies: bool = False,
+        include_pinned: bool = False,
+    ) -> None:
         self._rss = RSSStrategy()
         self._include_retweets = include_retweets
+        self._include_replies = include_replies
+        self._include_pinned = include_pinned
 
     @override
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:
@@ -284,7 +291,9 @@ class TweetsStrategy(ScraperStrategy):
 
     def _is_excluded(self, entry: Any) -> bool:  # noqa: ANN401
         title = str(entry.get("title", "")).strip()
-        if title.startswith(ALWAYS_EXCLUDED_TITLE_PREFIXES):
+        if not self._include_replies and title.startswith(REPLY_TITLE_PREFIX):
+            return True
+        if not self._include_pinned and title.startswith(PINNED_TITLE_PREFIX):
             return True
         return not self._include_retweets and title.startswith(
             RETWEET_TITLE_PREFIXES,

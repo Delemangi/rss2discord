@@ -50,6 +50,7 @@ FeedStrategyName = Literal[
     "hetzner_cloud",
     "tweets",
     "tweets_retweets",
+    "tweets_all",
     "wolfinet",
     "woocommerce",
 ]
