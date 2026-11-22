@@ -29,6 +29,16 @@ class OpenRouterTopProvider(_OpenRouterModel):
     max_completion_tokens: int | None = None
 
 
+class OpenRouterArtificialAnalysis(_OpenRouterModel):
+    intelligence_index: float | None = None
+    coding_index: float | None = None
+    agentic_index: float | None = None
+
+
+class OpenRouterBenchmarks(_OpenRouterModel):
+    artificial_analysis: OpenRouterArtificialAnalysis | None = None
+
+
 class OpenRouterModel(_OpenRouterModel):
     id: str = ""
     canonical_slug: str | None = None
@@ -41,6 +51,8 @@ class OpenRouterModel(_OpenRouterModel):
     top_provider: OpenRouterTopProvider | None = None
     supported_parameters: tuple[str, ...] = ()
     expiration_date: str | None = None
+    hugging_face_id: str | None = None
+    benchmarks: OpenRouterBenchmarks | None = None
 
 
 class OpenRouterModelsResponse(_OpenRouterModel):
