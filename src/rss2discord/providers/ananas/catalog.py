@@ -808,8 +808,9 @@ def _optional_available(value: object) -> int | None:
         return None
     if not _is_int(value):
         raise FeedFetchError(ANANAS_LABEL, "MalformedProduct")
+    # Ananas uses -1 for inventory whose availability is not tracked.
     if value < 0:
-        raise FeedFetchError(ANANAS_LABEL, "MalformedProduct")
+        return None
     return value
 
 

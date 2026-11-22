@@ -346,6 +346,13 @@ def test_ananas_parses_hit_fields_and_builds_product_url(
     assert product.has_variations is False
 
 
+def test_ananas_treats_negative_available_as_unknown() -> None:
+    product = AnanasCatalogClient._parse_hit(_hit(1, available=-1))
+
+    assert product.available is None
+    assert product.in_stock is True
+
+
 def test_ananas_groups_offers_by_slug_choosing_lowest_in_stock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
