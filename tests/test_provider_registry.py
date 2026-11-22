@@ -101,6 +101,8 @@ EXPECTED_DISCOVERY_TYPES: dict[str, type[object]] = {
     "technomarket": TechnomarketStrategy,
     "time_mk": TimeMkStrategy,
     "tweets": TweetsStrategy,
+    "tweets_retweets": TweetsStrategy,
+    "tweets_all": TweetsStrategy,
     "wolfinet": WolfinetStrategy,
     "woocommerce": WooCommerceStrategy,
     "xenforo": XenForoStrategy,

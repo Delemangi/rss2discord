@@ -51,6 +51,8 @@ STRATEGY_METADATA: Final[Mapping[str, StrategyMetadata]] = MappingProxyType(
         "technomarket": StrategyMetadata("Technomarket", price=True),
         "time_mk": StrategyMetadata("Time.mk"),
         "tweets": StrategyMetadata("Tweets"),
+        "tweets_retweets": StrategyMetadata("Tweets"),
+        "tweets_all": StrategyMetadata("Tweets"),
         "wolfinet": StrategyMetadata("Wolfinet", price=True),
         "woocommerce": StrategyMetadata("WooCommerce", price=True, restock=True),
         "xenforo": StrategyMetadata("Forum"),
