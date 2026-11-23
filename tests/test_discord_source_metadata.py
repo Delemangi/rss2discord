@@ -194,7 +194,10 @@ def test_price_change_is_labeled_without_product_age(
     payload = build_payload(message)
     contents = json.dumps(payload)
 
-    assert "## [Price change: Headphones]" in contents
+    expected_title = (
+        "Price drop" if direction is PriceDirection.DECREASE else "Price rise"
+    )
+    assert f"## [{expected_title}: Headphones]" in contents
     assert "1999" in contents
     assert "~~2499~~" in contents
     assert "<t:1784548800:R>" not in contents

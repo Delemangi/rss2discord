@@ -159,7 +159,10 @@ def _digest_cards(
             feed,
             entry,
             source_title,
-            entry.description[:description_limit],
+            _bounded_description(
+                entry.description,
+                description_limit,
+            ),
         )
     )
 
@@ -299,6 +302,19 @@ def _bounded(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 1] + "…"
+
+
+def _bounded_description(description: str, limit: int) -> str:
+    """Bound a feed description without leaving a dangling Markdown escape.
+
+    The digest divides its character budget across cards before rendering, so
+    the cut happens here rather than inside the card builder.
+    """
+    if limit <= 0:
+        return ""
+    if len(description) <= limit:
+        return description
+    return description[: limit - 1].rstrip("\\") + "…"
 
 
 def _safe_filename_part(value: str) -> str:

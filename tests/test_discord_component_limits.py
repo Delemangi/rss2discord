@@ -418,11 +418,11 @@ def test_price_change_card_without_history_fields_is_unchanged() -> None:
                 "accent_color": 3908957,
                 "components": [
                     {
-                        "content": "## [Price change: Item](https://example.test/item)",
+                        "content": "## [Price drop: Item](https://example.test/item)",
                         "type": 10,
                     },
                     {
-                        "content": "Price: **80 MKD** ~~90 MKD~~\n-# \u200b\n-# Change: -11.1%\n-# Original: 100 MKD\n-# Discount: 20% off",
+                        "content": "Price: **80 MKD** ~~90 MKD~~\n-# \u200b\n-# Change: -11.1%\n-# List price: 100 MKD\n-# Discount: 20% off",
                         "type": 10,
                     },
                     {"content": "Description", "type": 10},
@@ -499,11 +499,11 @@ def test_restocked_false_price_change_card_is_unchanged() -> None:
                 "accent_color": 3908957,
                 "components": [
                     {
-                        "content": "## [Price change: Item](https://example.test/item)",
+                        "content": "## [Price drop: Item](https://example.test/item)",
                         "type": 10,
                     },
                     {
-                        "content": "Price: **80 MKD** ~~90 MKD~~\n-# \u200b\n-# Change: -11.1%\n-# Original: 100 MKD\n-# Discount: 20% off",
+                        "content": "Price: **80 MKD** ~~90 MKD~~\n-# \u200b\n-# Change: -11.1%\n-# List price: 100 MKD\n-# Discount: 20% off",
                         "type": 10,
                     },
                     {"content": "Description", "type": 10},

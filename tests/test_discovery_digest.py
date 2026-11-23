@@ -10,7 +10,10 @@ from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult, SleepCallback
-from rss2discord.discord.discovery_digest import build_discovery_digest
+from rss2discord.discord.discovery_digest import (
+    _bounded_description,
+    build_discovery_digest,
+)
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData
 from rss2discord.runtime.scheduler import JobOutcome
@@ -191,6 +194,16 @@ def test_digest_clears_image_urls_for_gallery_entries() -> None:
         not isinstance(component, dict) or component.get("type") != 12
         for component in message.components
     )
+
+
+def test_bounded_description_truncates_without_a_dangling_escape() -> None:
+    assert _bounded_description("short", 10) == "short"
+    assert _bounded_description("abcdef", 4) == "abc…"
+    assert _bounded_description("abc\\def", 5) == "abc…"
+    assert _bounded_description("abcdef", 1) == "…"
+    assert _bounded_description("abcdef", 0) == ""
+    # A complete trailing escape is content, not a truncation artifact.
+    assert _bounded_description("abc\\", 4) == "abc\\"
 
 
 def test_failed_digest_leaves_entries_unmarked_then_retries(tmp_path: Path) -> None:
