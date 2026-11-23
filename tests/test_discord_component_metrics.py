@@ -66,7 +66,7 @@ def test_dense_alert_stacks_every_supporting_metric_on_its_own_line() -> None:
     assert metrics == (
         "Price: **11.450 ден** ~~9.990 ден~~\n"
         f"{METRICS_GAP}\n"
-        "-# Original: 13.990 ден\n"
+        "-# List price: 13.990 ден\n"
         "-# Product code: KF560C36-32\n"
         "-# Manufacturer: Kingston\n"
         "-# Stock: 7"
@@ -159,7 +159,7 @@ def test_prior_metric_renders_struck_through_beside_the_headline() -> None:
     # Then - the strike-through says "was", so the prior label is dropped, and
     # the prior value does not also appear in the supporting line
     assert metrics == (
-        f"Price: **7.990 ден** ~~9.490 ден~~\n{METRICS_GAP}\n-# Original: 10.990 ден"
+        f"Price: **7.990 ден** ~~9.490 ден~~\n{METRICS_GAP}\n-# List price: 10.990 ден"
     )
 
 
@@ -175,7 +175,7 @@ def test_prior_metric_is_the_only_one_promoted_beside_the_headline() -> None:
     metrics = get_metrics_content(message)
 
     # Then
-    assert metrics == f"Price: **5** ~~9~~\n{METRICS_GAP}\n-# Original: 12"
+    assert metrics == f"Price: **5** ~~9~~\n{METRICS_GAP}\n-# List price: 12"
 
 
 def test_prior_flag_on_the_headline_metric_is_ignored() -> None:
@@ -1009,7 +1009,7 @@ def test_period_range_skips_when_crowding_existing_metrics() -> None:
     lines = metrics.splitlines()
     assert lines[0] == "Price: **11.450 ден** ~~12.450 ден~~"
     assert "-# Change: -8.0%" in metrics
-    assert "-# Original: 13.990 ден" in metrics
+    assert "-# List price: 13.990 ден" in metrics
     assert "-# Product code: KF560C36-32" in metrics
     assert "-# Manufacturer: Kingston" in metrics
     assert "-# Stock: 7" in metrics

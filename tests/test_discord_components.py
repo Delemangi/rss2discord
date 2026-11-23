@@ -3,7 +3,11 @@ from dataclasses import replace
 
 import pytest
 
-from rss2discord.discord.components import JSONValue, build_components_v2_payload
+from rss2discord.discord.components import (
+    MAX_THUMBNAIL_DESCRIPTION_CHARACTERS,
+    JSONValue,
+    build_components_v2_payload,
+)
 from tests.discord_components_helpers import (
     build_payload,
     get_all_components,
@@ -315,7 +319,10 @@ def test_components_v2_payload_renders_single_image_gallery_full_width() -> None
     # Then - gallery replaces the thumbnail and sits before separator/footer
     assert [child["type"] for child in children] == [10, 10, 12, 14, 10]
     assert len(items) == 1
-    assert items[0] == {"media": {"url": GALLERY_URL_ONE}}
+    assert items[0] == {
+        "description": "Entry",
+        "media": {"url": GALLERY_URL_ONE},
+    }
     assert all(component.get("type") != 11 for component in get_all_components(message))
     # Then - the first gallery image is not duplicated as a section thumbnail
     assert THUMBNAIL_URL not in json.dumps(payload)
@@ -339,9 +346,18 @@ def test_components_v2_payload_renders_multi_image_gallery_grid() -> None:
     # Then
     assert [child["type"] for child in children] == [10, 10, 12, 14, 10]
     assert len(items) == 3
-    assert items[0] == {"media": {"url": GALLERY_URL_ONE}}
-    assert items[1] == {"media": {"url": GALLERY_URL_TWO}}
-    assert items[2] == {"media": {"url": GALLERY_URL_THREE}}
+    assert items[0] == {
+        "description": "Entry",
+        "media": {"url": GALLERY_URL_ONE},
+    }
+    assert items[1] == {
+        "description": "Entry",
+        "media": {"url": GALLERY_URL_TWO},
+    }
+    assert items[2] == {
+        "description": "Entry",
+        "media": {"url": GALLERY_URL_THREE},
+    }
 
 
 def test_components_v2_payload_deduplicates_and_caps_gallery_items() -> None:
@@ -526,4 +542,8 @@ def test_components_v2_payload_gallery_text_budget_still_respected() -> None:
     # Then - text stays within budget and gallery still renders
     assert sum(map(len, contents)) <= 4000
     assert len(galleries) == 1
-    assert get_media_gallery_items(message)[0] == {"media": {"url": GALLERY_URL_ONE}}
+    item = get_media_gallery_items(message)[0]
+    assert item["media"] == {"url": GALLERY_URL_ONE}
+    description = item["description"]
+    assert isinstance(description, str)
+    assert len(description) <= MAX_THUMBNAIL_DESCRIPTION_CHARACTERS

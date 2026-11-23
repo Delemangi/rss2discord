@@ -108,8 +108,10 @@ def build_components_v2_payload(
     title = entry.title
     if presentation is not None:
         title = presentation.title
-    elif entry.price_direction is not None:
-        title = f"Price change: {entry.title}"
+    elif entry.price_direction is PriceDirection.DECREASE:
+        title = f"Price drop: {entry.title}"
+    elif entry.price_direction is PriceDirection.INCREASE:
+        title = f"Price rise: {entry.title}"
     heading = _build_heading(title, link)
     severity = presentation.severity if presentation is not None else None
     badge = f"**{severity.upper()} SEVERITY**" if severity else None
@@ -272,7 +274,7 @@ def _resolve_image_presentation(
         if attachment_filename in ATTACHMENT_FILENAMES:
             return f"attachment://{attachment_filename}", None
         return None, None
-    gallery = _build_media_gallery(entry.image_urls)
+    gallery = _build_media_gallery(entry.image_urls, entry.title)
     if gallery is not None:
         return None, gallery
     return _resolve_image_url(entry), None
@@ -282,10 +284,14 @@ def _resolve_image_url(entry: EntryData) -> str | None:
     return _safe_remote_media_url(entry.image_url) if entry.image_url else None
 
 
-def _build_media_gallery(image_urls: tuple[str, ...]) -> dict[str, JSONValue] | None:
+def _build_media_gallery(
+    image_urls: tuple[str, ...],
+    title: str,
+) -> dict[str, JSONValue] | None:
     """Build a Discord Media Gallery component from up to ten safe URLs."""
     if not image_urls:
         return None
+    description = _thumbnail_description(title)
     seen: set[str] = set()
     items: list[JSONValue] = []
     for url in image_urls:
@@ -295,7 +301,12 @@ def _build_media_gallery(image_urls: tuple[str, ...]) -> dict[str, JSONValue] | 
         if safe_url is None or safe_url in seen:
             continue
         seen.add(safe_url)
-        items.append({"media": {"url": safe_url}})
+        items.append(
+            {
+                "description": description,
+                "media": {"url": safe_url},
+            },
+        )
     if not items:
         return None
     return {"items": items, "type": MEDIA_GALLERY_COMPONENT}
@@ -394,7 +405,30 @@ def _metrics_with_price_details(
     headline_badge = (
         HEADLINE_BADGE_SEPARATOR.join(headline_badges) if headline_badges else None
     )
-    return tuple(metrics), headline_badge
+    return tuple(_disambiguate_reference_price(metrics)), headline_badge
+
+
+def _disambiguate_reference_price(
+    metrics: list[SourceMetric],
+) -> list[SourceMetric]:
+    """Name the list price once a struck-through previous price is also shown.
+
+    Current price, previous price, and ``Original`` on one card are three
+    different numbers with two indistinguishable labels. ``Original`` is the
+    catalogue's own reference price, so call it that when the comparison price
+    already occupies the headline.
+    """
+    has_visible_prior = any(metric.prior for metric in metrics[:MAX_RENDERED_METRICS])
+    if not has_visible_prior or not any(
+        metric.label == "Original" for metric in metrics
+    ):
+        return metrics
+    return [
+        SourceMetric("List price", metric.value, metric.prior)
+        if metric.label == "Original"
+        else metric
+        for metric in metrics
+    ]
 
 
 def _remove_restock_noise(entry: EntryData, metrics: list[SourceMetric]) -> None:
