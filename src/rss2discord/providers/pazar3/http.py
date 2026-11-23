@@ -14,7 +14,7 @@ from rss2discord.transports.listing_http import ListingHttpConfig, fetch_listing
 MAX_PAZAR3_RESPONSE_BYTES: Final = 2_097_152
 MAX_PAZAR3_ATTEMPT_BYTES: Final = 6_291_456
 MAX_PAZAR3_REDIRECTS: Final = 10
-MAX_PAZAR3_ATTEMPT_SECONDS: Final = 120.0
+MAX_PAZAR3_ATTEMPT_SECONDS: Final = 180.0
 MAX_PAZAR3_CATALOG_ATTEMPT_BYTES: Final = 20 * 1024 * 1024
 MAX_PAZAR3_CATALOG_ATTEMPT_SECONDS: Final = 300.0
 PAZAR3_USER_AGENT: Final = "rss2discord/0.1 (+https://github.com/Delemangi/rss2discord)"

@@ -20,6 +20,23 @@ def test_pazar3_pacer_allows_first_request_then_waits_between_starts() -> None:
     assert sleeps == [15.0]
 
 
+def test_pazar3_pacer_defers_to_the_server_retry_window() -> None:
+    now = [100.0]
+    sleeps: list[float] = []
+    pacer = Pazar3RequestPacer(lambda: now[0])
+
+    def record_sleep(seconds: float) -> bool:
+        sleeps.append(seconds)
+        now[0] += seconds
+        return True
+
+    pacer.wait(record_sleep, lambda: False)
+    pacer.defer(30.0)
+    pacer.wait(record_sleep, lambda: False)
+
+    assert sleeps == [30.0]
+
+
 def test_pazar3_pacer_stops_before_first_request_when_shutdown_requested() -> None:
     pacer = Pazar3RequestPacer(lambda: 100.0)
 
