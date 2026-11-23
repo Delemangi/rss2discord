@@ -78,6 +78,28 @@ def _append_price_history(
     )
 
 
+def touch_price_snapshots(
+    connection: sqlite3.Connection,
+    feed_id: str,
+    product_ids: Iterable[str],
+    *,
+    seen_at: int | None = None,
+) -> None:
+    """Mark observed products as seen inside the caller's transaction."""
+    ids = tuple(product_ids)
+    if not ids:
+        return
+    observed_at = int(time.time()) if seen_at is None else seen_at
+    for start in range(0, len(ids), _SNAPSHOT_LOOKUP_CHUNK):
+        chunk = ids[start : start + _SNAPSHOT_LOOKUP_CHUNK]
+        placeholders = ", ".join("?" for _ in chunk)
+        connection.execute(
+            "UPDATE price_snapshots SET last_seen_at = ? "  # noqa: S608
+            f"WHERE feed_id = ? AND product_id IN ({placeholders})",
+            (observed_at, feed_id, *chunk),
+        )
+
+
 def upsert_price_snapshots(
     connection: sqlite3.Connection,
     snapshots: Iterable[PriceSnapshot],

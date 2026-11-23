@@ -127,6 +127,31 @@ def seed(store: DeliveryStore, items: tuple[PriceSnapshot, ...]) -> None:
     store.upsert_price_snapshots(items)
 
 
+def test_scan_touches_last_seen_for_current_products(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        seed(store, (snapshot("1"), snapshot("2")))
+        with store._connection:
+            store._connection.execute(
+                "UPDATE price_snapshots SET last_seen_at = 0",
+            )
+
+        sender = RecordingSender([])
+        run(
+            store,
+            sender,
+            [PriceObservation("1", snapshot("1"))],
+        )
+
+        seen = dict(
+            store._connection.execute(
+                "SELECT product_id, last_seen_at FROM price_snapshots",
+            ),
+        )
+
+    assert seen["1"] > 0
+    assert seen["2"] == 0
+
+
 def test_snapshot_limit_rejects_before_any_delivery(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         seed(store, tuple(snapshot(str(index)) for index in range(3)))

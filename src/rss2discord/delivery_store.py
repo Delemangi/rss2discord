@@ -44,10 +44,16 @@ class RetentionResult:
     delivered_entries: int = 0
     price_notifications: int = 0
     price_history: int = 0
+    price_snapshots: int = 0
 
     @property
     def total(self) -> int:
-        return self.delivered_entries + self.price_notifications + self.price_history
+        return (
+            self.delivered_entries
+            + self.price_notifications
+            + self.price_history
+            + self.price_snapshots
+        )
 
 
 class DeliveryStore:
@@ -183,6 +189,13 @@ class DeliveryStore:
 
     def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
         self._prices.upsert_price_snapshots(snapshots)
+
+    def touch_price_snapshots(
+        self,
+        feed_id: str,
+        product_ids: Iterable[str],
+    ) -> None:
+        self._prices.touch_price_snapshots(feed_id, product_ids)
 
     def load_price_history_context(
         self,
@@ -344,10 +357,15 @@ class DeliveryStore:
                 "AND newer.observed_at > price_history.observed_at)",
                 (cutoff,),
             ).rowcount
+            snapshots = self._connection.execute(
+                "DELETE FROM price_snapshots WHERE last_seen_at < ?",
+                (cutoff,),
+            ).rowcount
         return RetentionResult(
             delivered_entries=max(0, delivered),
             price_notifications=max(0, notifications),
             price_history=max(0, history),
+            price_snapshots=max(0, snapshots),
         )
 
     def vacuum(self) -> None:

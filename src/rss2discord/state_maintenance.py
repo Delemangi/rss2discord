@@ -68,11 +68,12 @@ class StateRetentionReporter:
         if result.total:
             logger.info(
                 "Periodic state retention removed %d rows "
-                "(delivered=%d notifications=%d history=%d)",
+                "(delivered=%d notifications=%d history=%d snapshots=%d)",
                 result.total,
                 result.delivered_entries,
                 result.price_notifications,
                 result.price_history,
+                result.price_snapshots,
             )
         return result.total
 

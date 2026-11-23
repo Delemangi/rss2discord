@@ -45,6 +45,7 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             "product_id TEXT NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
             "currency TEXT NOT NULL, available INTEGER, "
             "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+            "last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()), "
             "PRIMARY KEY (feed_id, product_id)) WITHOUT ROWID",
         )
         snapshot_columns = {
@@ -55,6 +56,14 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             connection.execute(
                 "ALTER TABLE price_snapshots ADD COLUMN available INTEGER",
             )
+        if "last_seen_at" not in snapshot_columns:
+            connection.execute(
+                "ALTER TABLE price_snapshots ADD COLUMN last_seen_at INTEGER",
+            )
+        connection.execute(
+            "UPDATE price_snapshots SET last_seen_at = unixepoch() "
+            "WHERE last_seen_at IS NULL",
+        )
         connection.execute(
             "CREATE TABLE IF NOT EXISTS price_notifications ("
             "notification_id INTEGER PRIMARY KEY AUTOINCREMENT, "
