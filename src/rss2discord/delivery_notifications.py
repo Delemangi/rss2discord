@@ -19,6 +19,7 @@ from rss2discord.price_notifications import (
 
 BEGIN_IMMEDIATE: Final = "BEGIN IMMEDIATE"
 MAX_PRICE_NOTIFICATION_ERROR_CHARACTERS: Final = 200
+MAX_PRICE_NOTIFICATION_ATTEMPTS: Final = 6
 
 
 def sanitize_price_notification_error(error: str | None) -> str | None:
@@ -141,6 +142,7 @@ class PriceNotificationRepository:
         row = self._connection.execute(
             "SELECT group_id FROM price_notifications "
             "WHERE feed_id = ? AND status = 'pending' "
+            "AND dead_lettered_at IS NULL "
             "ORDER BY notification_id LIMIT 1",
             (feed_id,),
         ).fetchone()
@@ -155,6 +157,7 @@ class PriceNotificationRepository:
                 "currency, entry_json, source_title, "
                 "observed_at, attempts FROM price_notifications "
                 "WHERE feed_id = ? AND group_id = ? AND status = 'pending' "
+                "AND dead_lettered_at IS NULL "
                 "ORDER BY notification_id",
                 (feed_id, group_id),
             )
@@ -202,7 +205,8 @@ class PriceNotificationRepository:
             self._connection.execute(
                 "UPDATE price_notifications SET status = 'sent', "  # noqa: S608
                 "sent_at = unixepoch(), entry_json = '{}' "
-                f"WHERE status = 'pending' AND notification_id IN ({placeholders})",
+                "WHERE status = 'pending' AND dead_lettered_at IS NULL "
+                f"AND notification_id IN ({placeholders})",
                 ids,
             )
 
@@ -222,18 +226,44 @@ class PriceNotificationRepository:
                 f"last_error = ? WHERE notification_id IN ({placeholders})",
                 (sanitize_price_notification_error(error), *ids),
             )
+            self._connection.execute(
+                "UPDATE price_notifications "  # noqa: S608
+                "SET dead_lettered_at = unixepoch(), entry_json = '{}' "
+                "WHERE status = 'pending' AND dead_lettered_at IS NULL "
+                "AND attempts >= ? "
+                f"AND notification_id IN ({placeholders})",
+                (MAX_PRICE_NOTIFICATION_ATTEMPTS, *ids),
+            )
 
     def count_pending_price_notifications(self, feed_id: str) -> int:
         row = self._connection.execute(
             "SELECT COUNT(*) FROM price_notifications "
-            "WHERE feed_id = ? AND status = 'pending'",
+            "WHERE feed_id = ? AND status = 'pending' "
+            "AND dead_lettered_at IS NULL",
             (feed_id,),
         ).fetchone()
         return 0 if row is None else int(row[0])
 
     def count_pending_price_notifications_total(self) -> int:
         row = self._connection.execute(
-            "SELECT COUNT(*) FROM price_notifications WHERE status = 'pending'",
+            "SELECT COUNT(*) FROM price_notifications "
+            "WHERE status = 'pending' AND dead_lettered_at IS NULL",
+        ).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def count_dead_lettered_price_notifications(self, feed_id: str) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM price_notifications "
+            "WHERE feed_id = ? AND status = 'pending' "
+            "AND dead_lettered_at IS NOT NULL",
+            (feed_id,),
+        ).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def count_dead_lettered_price_notifications_total(self) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM price_notifications "
+            "WHERE status = 'pending' AND dead_lettered_at IS NOT NULL",
         ).fetchone()
         return 0 if row is None else int(row[0])
 
@@ -246,20 +276,23 @@ class PriceNotificationRepository:
         """Return outbox rows for read-only inspection."""
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
-        if status not in {None, "pending", "sent"}:
-            raise ValueError("status must be pending, sent, or omitted")
+        if status not in {None, "pending", "sent", "dead_lettered"}:
+            raise ValueError("status must be pending, sent, dead_lettered, or omitted")
         where: list[str] = []
         parameters: list[object] = []
         if feed_id is not None:
             where.append("feed_id = ?")
             parameters.append(feed_id)
-        if status is not None:
-            where.append("status = ?")
-            parameters.append(status)
+        if status == "pending":
+            where.append("status = 'pending' AND dead_lettered_at IS NULL")
+        elif status == "sent":
+            where.append("status = 'sent'")
+        elif status == "dead_lettered":
+            where.append("status = 'pending' AND dead_lettered_at IS NOT NULL")
         query = (
             "SELECT notification_id, feed_id, group_id, title, previous_price, "
-            "current_price, currency, status, attempts, observed_at, sent_at, last_error "
-            "FROM price_notifications"
+            "current_price, currency, status, attempts, observed_at, sent_at, "
+            "last_error, dead_lettered_at FROM price_notifications"
         )
         if where:
             query += " WHERE " + " AND ".join(where)
@@ -274,11 +307,12 @@ class PriceNotificationRepository:
                 "previous_price": row[4],
                 "current_price": row[5],
                 "currency": row[6],
-                "status": row[7],
+                "status": "dead_lettered" if row[12] is not None else row[7],
                 "attempts": int(row[8]),
                 "observed_at": row[9],
                 "sent_at": row[10],
                 "last_error": row[11],
+                "dead_lettered_at": row[12],
             }
             for row in self._connection.execute(query, parameters)
         )

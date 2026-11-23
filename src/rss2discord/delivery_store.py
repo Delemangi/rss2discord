@@ -246,6 +246,12 @@ class DeliveryStore:
     def count_pending_price_notifications_total(self) -> int:
         return self._notifications.count_pending_price_notifications_total()
 
+    def count_dead_lettered_price_notifications(self, feed_id: str) -> int:
+        return self._notifications.count_dead_lettered_price_notifications(feed_id)
+
+    def count_dead_lettered_price_notifications_total(self) -> int:
+        return self._notifications.count_dead_lettered_price_notifications_total()
+
     def list_price_notifications(
         self,
         feed_id: str | None = None,
@@ -323,8 +329,9 @@ class DeliveryStore:
                 (cutoff,),
             ).rowcount
             notifications = self._connection.execute(
-                "DELETE FROM price_notifications WHERE status = 'sent' "
-                "AND COALESCE(sent_at, last_attempt_at, observed_at) < ?",
+                "DELETE FROM price_notifications "
+                "WHERE (status = 'sent' OR dead_lettered_at IS NOT NULL) "
+                "AND COALESCE(dead_lettered_at, sent_at, last_attempt_at, observed_at) < ?",
                 (cutoff,),
             ).rowcount
             # Keep each product's newest observation so a long-unchanged price

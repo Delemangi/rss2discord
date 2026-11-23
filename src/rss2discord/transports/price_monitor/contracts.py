@@ -65,6 +65,8 @@ class PriceRecoveryStore(PriceSnapshotStore, Protocol):
 
     def count_pending_price_notifications(self, feed_id: str) -> int: ...
 
+    def count_dead_lettered_price_notifications(self, feed_id: str) -> int: ...
+
     def load_price_history_context(
         self,
         feed_id: str,

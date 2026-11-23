@@ -66,7 +66,7 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             "observed_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' "
             "CHECK(status IN ('pending','sent')), "
             "attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER, "
-            "sent_at INTEGER, last_error TEXT)",
+            "sent_at INTEGER, last_error TEXT, dead_lettered_at INTEGER)",
         )
         notification_columns = {
             str(row[1])
@@ -79,9 +79,18 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
                 connection.execute(
                     f"ALTER TABLE price_notifications ADD COLUMN {column} TEXT",
                 )
+        if "dead_lettered_at" not in notification_columns:
+            connection.execute(
+                "ALTER TABLE price_notifications ADD COLUMN dead_lettered_at INTEGER",
+            )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS price_notifications_pending "
             "ON price_notifications(feed_id, status, notification_id)",
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS price_notifications_live_pending "
+            "ON price_notifications(feed_id, notification_id) "
+            "WHERE status = 'pending' AND dead_lettered_at IS NULL",
         )
         legacy = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anhoch_price_snapshots'",

@@ -456,12 +456,27 @@ def drain_pending_price_notifications(
                 feed.id,
             ),
         )
+        dead_lettered = dependencies.sqlite_retry_policy.execute(
+            partial(
+                dependencies.snapshots.count_dead_lettered_price_notifications,
+                feed.id,
+            ),
+        )
+        if pending:
+            cause = "DeliveryRetryPending"
+            item_count = pending
+        elif dead_lettered:
+            cause = "DeadLetteredAlerts"
+            item_count = dead_lettered
+        else:
+            cause = "DeliveryRetryPending"
+            item_count = 0
         record_price_health(
             dependencies.snapshots,
             feed.id,
             "failed",
-            "DeliveryRetryPending",
-            pending,
+            cause,
+            item_count,
         )
         return PriceDeliveryOutcome.FAILED
     if result is PriceNotificationDeliveryResult.DRAINED:
