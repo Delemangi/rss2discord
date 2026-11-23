@@ -298,13 +298,10 @@ def test_reklama5_rate_limit_sleep_is_interruptible(
         sleeps.append(seconds)
         return False
 
+    request = search_scope().page_request(1)
+    budget = scan_budget()
     with pytest.raises(FeedFetchInterruptedError):
-        fetch_reklama5_page(
-            search_scope().page_request(1),
-            scan_budget(),
-            stop_sleep,
-            lambda: False,
-        )
+        fetch_reklama5_page(request, budget, stop_sleep, lambda: False)
 
     assert sleeps == [1.5]
 

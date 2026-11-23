@@ -98,8 +98,7 @@ class WooCommerceCatalogClient:
         for page in range(1, MAX_WOOCOMMERCE_PAGES + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
-            if time.monotonic() >= deadline:
-                raise FeedFetchError(WOOCOMMERCE_LABEL, "ScanTimeLimitExceeded")
+            _require_scan_time(deadline)
             fetched = client.fetch_products_page(
                 WooCommercePageRequest(
                     page=page,
@@ -137,6 +136,11 @@ class WooCommerceCatalogClient:
                 _require_complete_catalog(len(products), expected_total)
                 return tuple(products)
         raise FeedFetchError(WOOCOMMERCE_LABEL, "PageLimitExceeded")
+
+
+def _require_scan_time(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise FeedFetchError(WOOCOMMERCE_LABEL, "ScanTimeLimitExceeded")
 
 
 def _append_unique_products(
