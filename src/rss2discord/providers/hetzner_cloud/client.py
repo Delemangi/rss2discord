@@ -4,6 +4,7 @@ import json
 import os
 import re
 from collections.abc import Callable, Mapping
+from decimal import Decimal
 from typing import Final
 from urllib.parse import parse_qs, urlsplit
 
@@ -24,6 +25,7 @@ from rss2discord.providers.hetzner_cloud.bounds import (
 )
 from rss2discord.providers.hetzner_cloud.models import (
     HetznerCloudFilters,
+    HetznerCloudLocation,
     HetznerCloudOffer,
     HetznerCloudServerType,
     HetznerCloudServerTypesResponse,
@@ -203,31 +205,55 @@ def _build_offers(
 ) -> tuple[HetznerCloudOffer, ...]:
     offers: list[HetznerCloudOffer] = []
     for server_type in server_types:
-        if not server_type.name:
-            continue
-        if (
-            filters.server_types is not None
-            and server_type.name not in filters.server_types
-        ):
-            continue
-        prices = {
-            price.location: price.price_monthly.gross
-            for price in server_type.prices
-            if price.location
-        }
-        for location in server_type.locations:
-            if not location.name:
-                continue
-            if filters.locations is not None and location.name not in filters.locations:
-                continue
-            price = prices.get(location.name)
-            if price is None or price <= 0:
-                continue
-            offers.append(
-                HetznerCloudOffer(
-                    server_type=server_type,
-                    location=location,
-                    price=price,
-                ),
-            )
+        offers.extend(_offers_for_server_type(server_type, filters))
     return tuple(offers)
+
+
+def _offers_for_server_type(
+    server_type: HetznerCloudServerType,
+    filters: HetznerCloudFilters,
+) -> tuple[HetznerCloudOffer, ...]:
+    if not _is_eligible_server_type(server_type, filters):
+        return ()
+    prices = {
+        price.location: price.price_monthly.gross
+        for price in server_type.prices
+        if price.location
+    }
+    offers: list[HetznerCloudOffer] = []
+    for location in server_type.locations:
+        price = _offer_price(location, prices, filters)
+        if price is None:
+            continue
+        offers.append(
+            HetznerCloudOffer(
+                server_type=server_type,
+                location=location,
+                price=price,
+            ),
+        )
+    return tuple(offers)
+
+
+def _is_eligible_server_type(
+    server_type: HetznerCloudServerType,
+    filters: HetznerCloudFilters,
+) -> bool:
+    if not server_type.name:
+        return False
+    return filters.server_types is None or server_type.name in filters.server_types
+
+
+def _offer_price(
+    location: HetznerCloudLocation,
+    prices: Mapping[str, Decimal],
+    filters: HetznerCloudFilters,
+) -> Decimal | None:
+    if not location.name:
+        return None
+    if filters.locations is not None and location.name not in filters.locations:
+        return None
+    price = prices.get(location.name)
+    if price is None or price <= 0:
+        return None
+    return price

@@ -80,7 +80,7 @@ def test_reklama5_strategy_stops_before_next_page_when_shutdown_is_requested(
             _response(2, [Reklama5Card(ad_id="1")], page_links=[1, 2]),
         ],
     )
-    shutdown_checks = iter((False, True))
+    shutdown_checks = iter((False, False, True))
     monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
     strategy = reklama5_transport.Reklama5Strategy(
         is_shutdown_requested=lambda: next(shutdown_checks),

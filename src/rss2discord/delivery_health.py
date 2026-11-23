@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from typing import Final
 
 from rss2discord.models import (
@@ -186,6 +187,20 @@ class HealthRepository:
                 "WHERE feed_id = ? AND job_kind = ?",
                 (duration_ms, scheduler_lag_ms, feed_id, job_kind),
             )
+
+    def prune_unconfigured(self, feed_ids: Iterable[str]) -> int:
+        """Delete health rows whose feed is no longer configured."""
+        configured = tuple(feed_ids)
+        if not configured:
+            return 0
+        placeholders = ", ".join("?" for _ in configured)
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM health_state "  # noqa: S608
+                f"WHERE feed_id NOT IN ({placeholders})",
+                configured,
+            )
+        return max(0, cursor.rowcount)
 
     def list_health(self, feed_id: str | None = None) -> tuple[HealthRecord, ...]:
         where = FEED_WHERE_CLAUSE if feed_id is not None else ""

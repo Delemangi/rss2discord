@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from .app import RSSToDiscord
-from .configuration import load_config
+from .configuration import AppConfig, FeedConfig, load_config
 from .database_ownership import DatabaseOwnership, DatabaseOwnershipError
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordWebhookClient
@@ -23,28 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SAFE_VALIDATION_FIELDS = frozenset(
-    {
-        "adapter",
-        "delay_between_feeds",
-        "delay_between_posts",
-        "embed_color",
-        "feeds",
-        "health_summary_interval",
-        "health_webhook",
-        "id",
-        "max_post_age_days",
-        "name",
-        "ordinary_check_interval",
-        "price_check_interval",
-        "refresh_interval",
-        "state_retention_days",
-        "strategy",
-        "url",
-        "webhook",
-        "webhook_avatar",
-        "webhook_name",
-    },
+SAFE_VALIDATION_FIELDS = frozenset(AppConfig.model_fields) | frozenset(
+    FeedConfig.model_fields,
 )
 
 
@@ -55,6 +35,14 @@ def main() -> int:
     try:
         config = load_config(config_path)
         with DatabaseOwnership(database_path), DeliveryStore(database_path) as store:
+            removed_health = store.prune_unconfigured_health(
+                feed.id for feed in config.feeds
+            )
+            if removed_health:
+                logger.info(
+                    "Removed %d health rows for unconfigured feeds",
+                    removed_health,
+                )
             _prune_state(store, config.state_retention_days)
             application = RSSToDiscord(
                 config=config,

@@ -7,9 +7,12 @@ Monitor feeds, forums, marketplaces, and product catalogs; send new-item and opt
 - RSS/Atom (including GitHub releases and GitLab commits), Hacker News and Reddit adapters
 - XenForo and IT.mk Oglasnik
 - Pazar3 and Reklama5 listings
-- Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Setec, Technomarket, and any public WooCommerce Store API shop
+- Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, PROXNet, Setec, Technomarket, Wolfinet, and any public WooCommerce Store API shop
+- Hetzner Auction and Hetzner Cloud offers, including Cloud availability changes
+- OpenRouter model catalogs and price drops
 - Time.mk aggregated Macedonian news with configurable category subsets and Open Graph summaries/images
 - Fakulteti.mk student news from a configurable education/science/technology/career category subset
+- EMSC earthquakes, Open-Meteo air quality, and tweets through a Nitter RSS profile
 
 See [`config/config.example.yaml`](config/config.example.yaml) for provider URLs, examples, and configuration options. Some discovery feeds cover only recent products and can miss additions between checks. The Hacker News adapter adds points, comments, domain, front-page rank, the top comment for link posts, and Ask HN text. The Fakulteti.mk provider reads its public JSON API; the root URL fetches all posts, while `/category/<slug>,<slug>` restricts the feed to a category subset. The `tweets` strategy reads a Nitter RSS profile feed, keeps original tweets only (no replies, retweets, or pinned tweets), and rewrites links to x.com using the handle in each status link. The `emsc` strategy reads an EMSC FDSN event query and posts earthquake alerts with magnitude, depth, region, and an event link. The `arctic_shift` strategy reads one subreddit's `/new` listing through the public Arctic Shift archive; no OAuth credentials are required. It fetches at most 300 newest posts, delivers them oldest-first, and skips stickied, NSFW, spoiler, removed, and deleted posts. Use `arctic_shift_nsfw` for adult subreddits whose posts are all `over_18`; spoilers and stickied/pinned posts are still skipped. The legacy `reddit` strategy still uses the official Data API for already-approved OAuth apps; Reddit closed new API access and discontinued RSS in November 2026. Price scans send individual cards for up to 100 changes per feed by default; set `price_inline_limit` to raise or lower that threshold. Gjirafa50 price scans are best-effort against a live search index; products added or moved during a scan may be missed. Reklama5 access can be blocked by upstream challenges. Ananas uses a public Algolia proxy, requires `ANANAS_ALGOLIA_SEARCH_KEY` in the environment, and supports any category URL under `https://ananas.mk/kategorii/`; the category filter is resolved from the live category tree. Its full scans are best-effort against a live marketplace index and require at least 95% inventory coverage.
 
@@ -84,14 +87,22 @@ Upgrading from a database that still contains the retired approval, hold, or rec
 
 ## Inspecting state
 
-The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. Both commands are read-only:
+The admin CLI uses `data/state.db` by default, or `STATE_DB_PATH`; put `--database` before the command. All commands are read-only:
 
 ```sh
 python -m rss2discord.admin --database data/state.db health list
 python -m rss2discord.admin --database data/state.db notifications list --status pending --limit 50
+python -m rss2discord.admin --database data/state.db summary
+python -m rss2discord.admin --database data/state.db summary --json
 ```
 
 Before any offline database operation, stop every writer and back up the database safely, including WAL/SHM sidecars; do not delete a WAL or the retained `.writer.lock` file.
+
+## Maintenance and retries
+
+`state_retention_days` prunes delivered entries, sent price notifications, and all but each product's newest price-history row at startup. If anything was removed, the database is vacuumed in the same startup pass; a retention failure is logged and startup continues. Use `0` to disable retention. When `max_post_age_days` is `0` (no age filter), retention must also be `0`; otherwise retention must be at least `max_post_age_days`. Configuration validation enforces that pairing. Startup also removes health rows for feeds no longer in the configuration.
+
+Fetch jobs retry up to three times and honor `Retry-After` up to 300 seconds. Transient SQLite busy/locked errors retry up to 12 times at 5-second intervals; after that the job fails and the scheduler continues with the remaining feeds. Optional daily health reporting is configured with `health_webhook` and `health_summary_interval`.
 
 ## Runtime and development
 

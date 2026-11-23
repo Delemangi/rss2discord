@@ -108,31 +108,56 @@ class HackerNewsAdapter:
         if item is None or item.deleted or item.dead:
             return data
 
-        candidate_link = normalize_http_url(item.url) if item.url else None
-        link = candidate_link or data.link
-        description = data.description
+        link = _resolved_link(item, data.link)
+        return EntryData(
+            title=data.title,
+            link=link,
+            description=self._resolved_description(item, data.description),
+            author=item.by or data.author,
+            timestamp=self._resolved_timestamp(item, data.timestamp),
+            discussion_url=data.discussion_url,
+            image_url=data.image_url,
+            categories=data.categories,
+            source_metrics=self._source_metrics(item, link),
+            source_score=item.score,
+        )
+
+    def _resolved_description(self, item: HackerNewsItem, description: str) -> str:
         if item.text:
             description = _clean_hacker_news_text(item.text)
         elif description.strip().casefold() == "comments":
             description = ""
-        if not description:
-            top_comment = self._top_comment(item)
-            if top_comment is not None and top_comment.text:
-                comment_text = _clean_hacker_news_text(top_comment.text)
-                if comment_text:
-                    author = f" — {top_comment.by}" if top_comment.by else ""
-                    description = _truncate(
-                        f"Top comment: {comment_text}{author}",
-                        MAX_HACKER_NEWS_COMMENT_LENGTH,
-                    )
+        if description:
+            return description
+        return self._top_comment_description(item)
 
-        timestamp = data.timestamp
-        if item.time is not None:
-            try:
-                timestamp = datetime.fromtimestamp(item.time, tz=UTC).isoformat()
-            except (OSError, OverflowError, ValueError):
-                timestamp = data.timestamp
+    def _top_comment_description(self, item: HackerNewsItem) -> str:
+        top_comment = self._top_comment(item)
+        if top_comment is None or not top_comment.text:
+            return ""
+        comment_text = _clean_hacker_news_text(top_comment.text)
+        if not comment_text:
+            return ""
+        author = f" — {top_comment.by}" if top_comment.by else ""
+        return _truncate(
+            f"Top comment: {comment_text}{author}",
+            MAX_HACKER_NEWS_COMMENT_LENGTH,
+        )
 
+    @staticmethod
+    def _resolved_timestamp(item: HackerNewsItem, fallback: str | None) -> str | None:
+        if item.time is None:
+            return fallback
+        try:
+            return datetime.fromtimestamp(item.time, tz=UTC).isoformat()
+        except (OSError, OverflowError, ValueError):
+            return fallback
+
+    def _source_metrics(
+        self,
+        item: HackerNewsItem,
+        link: str,
+    ) -> tuple[SourceMetric, ...]:
         metrics: list[SourceMetric] = []
         rank = self._rank_for(item.id)
         if rank is not None:
@@ -148,19 +173,7 @@ class HackerNewsAdapter:
             metrics.append(SourceMetric(label="Domain", value=domain))
         if item.type != "story":
             metrics.append(SourceMetric(label="Type", value=item.type.title()))
-
-        return EntryData(
-            title=data.title,
-            link=link,
-            description=description,
-            author=item.by or data.author,
-            timestamp=timestamp,
-            discussion_url=data.discussion_url,
-            image_url=data.image_url,
-            categories=data.categories,
-            source_metrics=tuple(metrics),
-            source_score=item.score,
-        )
+        return tuple(metrics)
 
     def _rank_for(self, item_id: int) -> int | None:
         if self._fetch_topstories is None:
@@ -186,6 +199,11 @@ class HackerNewsAdapter:
         if comment is None or comment.deleted or comment.dead:
             return None
         return comment
+
+
+def _resolved_link(item: HackerNewsItem, fallback: str) -> str:
+    candidate = normalize_http_url(item.url) if item.url else None
+    return candidate or fallback
 
 
 def _item_id(discussion_url: str | None, link: str) -> int | None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from decimal import Decimal
 from typing import Final
 
@@ -31,6 +31,60 @@ def sanitize_price_notification_error(error: str | None) -> str | None:
     return " ".join(cleaned.split())[:MAX_PRICE_NOTIFICATION_ERROR_CHARACTERS]
 
 
+def _validate_price_scan(
+    feed_id: str,
+    group_id: str,
+    baselines: Sequence[PriceSnapshot],
+    pending: Sequence[PriceNotification],
+) -> None:
+    if not group_id:
+        raise ValueError("notification group ID must be non-empty")
+    for snapshot in baselines:
+        if snapshot.feed_id != feed_id:
+            raise ValueError("baseline feed mismatch")
+    for notification in pending:
+        if notification.current.feed_id != feed_id:
+            raise ValueError("notification feed mismatch")
+        if notification.previous is not None and (
+            notification.previous.feed_id != feed_id
+        ):
+            raise ValueError("notification previous feed mismatch")
+        if notification.product_id != notification.current.product_id:
+            raise ValueError("notification product mismatch")
+
+
+def _price_notification_rows(
+    feed_id: str,
+    group_id: str,
+    observed_at: int,
+    pending: Sequence[PriceNotification],
+) -> Iterator[tuple[object, ...]]:
+    for notification in pending:
+        yield (
+            feed_id,
+            group_id,
+            notification.product_id,
+            notification.entry.title,
+            notification.entry.link,
+            (
+                None
+                if notification.previous is None
+                else notification.previous.formatted
+            ),
+            notification.current.formatted,
+            (
+                None
+                if notification.previous is None
+                else canonicalize_price_amount(notification.previous.amount)
+            ),
+            canonicalize_price_amount(notification.current.amount),
+            notification.current.currency,
+            entry_to_json(notification.entry),
+            notification.source_title,
+            observed_at,
+        )
+
+
 class PriceNotificationRepository:
     """Persist and read the durable price-notification outbox."""
 
@@ -49,20 +103,18 @@ class PriceNotificationRepository:
         """Atomically advance baselines and persist one scan's notifications."""
         baselines = tuple(baseline_updates)
         pending = tuple(notifications)
-        if not group_id:
-            raise ValueError("notification group ID must be non-empty")
-        for snapshot in baselines:
-            if snapshot.feed_id != feed_id:
-                raise ValueError("baseline feed mismatch")
-        for notification in pending:
-            if notification.current.feed_id != feed_id:
-                raise ValueError("notification feed mismatch")
-            if notification.previous is not None and (
-                notification.previous.feed_id != feed_id
-            ):
-                raise ValueError("notification previous feed mismatch")
-            if notification.product_id != notification.current.product_id:
-                raise ValueError("notification product mismatch")
+        _validate_price_scan(feed_id, group_id, baselines, pending)
+        self._write_price_scan(feed_id, group_id, observed_at, baselines, pending)
+        return len(pending)
+
+    def _write_price_scan(
+        self,
+        feed_id: str,
+        group_id: str,
+        observed_at: int,
+        baselines: Sequence[PriceSnapshot],
+        pending: Sequence[PriceNotification],
+    ) -> None:
         with self._connection:
             self._connection.execute(BEGIN_IMMEDIATE)
             try:
@@ -73,41 +125,13 @@ class PriceNotificationRepository:
                     "current_price, previous_amount, current_amount, currency, "
                     "entry_json, source_title, observed_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        (
-                            feed_id,
-                            group_id,
-                            notification.product_id,
-                            notification.entry.title,
-                            notification.entry.link,
-                            (
-                                None
-                                if notification.previous is None
-                                else notification.previous.formatted
-                            ),
-                            notification.current.formatted,
-                            (
-                                None
-                                if notification.previous is None
-                                else canonicalize_price_amount(
-                                    notification.previous.amount,
-                                )
-                            ),
-                            canonicalize_price_amount(notification.current.amount),
-                            notification.current.currency,
-                            entry_to_json(notification.entry),
-                            notification.source_title,
-                            observed_at,
-                        )
-                        for notification in pending
-                    ),
+                    _price_notification_rows(feed_id, group_id, observed_at, pending),
                 )
             except BaseException:
                 self._connection.rollback()
                 raise
             else:
                 self._connection.commit()
-        return len(pending)
 
     def load_pending_price_group(
         self,
@@ -176,7 +200,8 @@ class PriceNotificationRepository:
         placeholders = ", ".join("?" for _ in ids)
         with self._connection:
             self._connection.execute(
-                "UPDATE price_notifications SET status = 'sent', sent_at = unixepoch() "  # noqa: S608
+                "UPDATE price_notifications SET status = 'sent', "  # noqa: S608
+                "sent_at = unixepoch(), entry_json = '{}' "
                 f"WHERE status = 'pending' AND notification_id IN ({placeholders})",
                 ids,
             )

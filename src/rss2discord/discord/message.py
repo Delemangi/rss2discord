@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass, replace
+from typing import cast
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.attachments import ReportFile
@@ -60,7 +61,8 @@ def prepare_delivery(
     fallback_request: DiscordRequest | None = None
     if image is not None:
         fallback_payload = _render_payload(
-            replace(message, components=None),
+            # dataclasses.replace preserves the concrete dataclass type.
+            cast(WebhookMessage, replace(message, components=None)),
             rendered_entry,
             None,
         )

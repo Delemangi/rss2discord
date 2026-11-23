@@ -19,6 +19,25 @@ from tests.woocommerce_helpers import (
 )
 
 
+def test_catalog_enforces_the_wall_clock_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    times = iter((0.0, 301.0))
+    monkeypatch.setattr(
+        "rss2discord.providers.woocommerce.catalog.time.monotonic",
+        lambda: next(times),
+    )
+
+    with pytest.raises(FeedFetchError) as error:
+        WooCommerceCatalogClient().fetch_catalog(
+            SHOP_URL,
+            retry_policy=no_wait_fetch_retry_policy(),
+            is_shutdown_requested=lambda: False,
+        )
+
+    assert error.value.cause_type == "ScanTimeLimitExceeded"
+
+
 def catalog(
     monkeypatch: pytest.MonkeyPatch,
     responses: list[StubResponse],
@@ -89,14 +108,12 @@ def test_woocommerce_catalog_rejects_incomplete_page(
 def test_woocommerce_catalog_rejects_duplicate_product_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pages = [
+        _page(list(range(1, 101)), total=101, pages=2),
+        _page([1], total=101, pages=2),
+    ]
     with pytest.raises(FeedFetchError, match="DuplicateProductId"):
-        catalog(
-            monkeypatch,
-            [
-                _page(list(range(1, 101)), total=101, pages=2),
-                _page([1], total=101, pages=2),
-            ],
-        )
+        catalog(monkeypatch, pages)
 
 
 def test_woocommerce_catalog_rejects_pagination_drift(
@@ -111,31 +128,23 @@ def test_woocommerce_catalog_rejects_pagination_drift(
 def test_woocommerce_catalog_rejects_product_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    response = StubResponse(
+        products_payload([]),
+        headers={"X-WP-Total": "5001", "X-WP-TotalPages": "51"},
+    )
     with pytest.raises(FeedFetchError, match="ProductLimitExceeded"):
-        catalog(
-            monkeypatch,
-            [
-                StubResponse(
-                    products_payload([]),
-                    headers={"X-WP-Total": "5001", "X-WP-TotalPages": "51"},
-                ),
-            ],
-        )
+        catalog(monkeypatch, [response])
 
 
 def test_woocommerce_catalog_rejects_page_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    response = StubResponse(
+        products_payload([]),
+        headers={"X-WP-Total": "100", "X-WP-TotalPages": "51"},
+    )
     with pytest.raises(FeedFetchError, match="PageLimitExceeded"):
-        catalog(
-            monkeypatch,
-            [
-                StubResponse(
-                    products_payload([]),
-                    headers={"X-WP-Total": "100", "X-WP-TotalPages": "51"},
-                ),
-            ],
-        )
+        catalog(monkeypatch, [response])
 
 
 def test_woocommerce_catalog_rejects_unknown_category(

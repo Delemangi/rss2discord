@@ -8,7 +8,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Self
+from typing import Final, Self
 
 from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
 from rss2discord.delivery_health import HealthRepository
@@ -28,6 +28,8 @@ from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationRecord,
 )
+
+STATE_JOURNAL_SIZE_LIMIT_BYTES: Final = 64 * 1024 * 1024
 
 
 def _is_transient_lock(error: sqlite3.OperationalError) -> bool:
@@ -69,6 +71,14 @@ class DeliveryStore:
             self._connection = sqlite3.connect(database_path)
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute("PRAGMA busy_timeout = 5000")
+        if not read_only:
+            # Per-connection settings must survive worker stores that skip
+            # schema initialization.
+            self._connection.execute("PRAGMA synchronous = NORMAL")
+            self._connection.execute("PRAGMA temp_store = MEMORY")
+            self._connection.execute(
+                f"PRAGMA journal_size_limit = {STATE_JOURNAL_SIZE_LIMIT_BYTES}",
+            )
         try:
             if not read_only and initialize:
                 self._initialize_with_retry()
@@ -297,6 +307,10 @@ class DeliveryStore:
         return self._health.list_health(feed_id)
 
     # Maintenance ---------------------------------------------------------
+
+    def prune_unconfigured_health(self, feed_ids: Iterable[str]) -> int:
+        """Drop health rows for feeds no longer present in configuration."""
+        return self._health.prune_unconfigured(feed_ids)
 
     def prune_old_records(self, *, retention_days: int) -> RetentionResult:
         """Delete delivered entries, sent notifications, and old price history."""

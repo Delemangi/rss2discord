@@ -113,6 +113,8 @@ def test_wolfinet_product_id_comes_from_the_final_path_segment() -> None:
         ("2,364.41 ден", Decimal("2364.41")),
         ("9,500.00 ден", Decimal("9500.00")),
         ("1,234", Decimal(1234)),
+        ("1,234.5", Decimal("1234.5")),
+        ("0.99", Decimal("0.99")),
         ("100 MKD", Decimal(100)),
     ],
 )
@@ -125,7 +127,7 @@ def test_wolfinet_parse_price_accepts_supported_formats(
 
 @pytest.mark.parametrize(
     "value",
-    ["", "цена", "0.00", "10,31.00", "10.315.00"],
+    ["", "цена", "0.00", "10,31.00", "10.315.00", "1,23.45", "1,234.567"],
 )
 def test_wolfinet_parse_price_rejects_invalid_or_non_positive_values(
     value: str,

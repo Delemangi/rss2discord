@@ -37,8 +37,9 @@ def test_main_runs_application_with_environment_paths(
         state_retention_days=0,
         health_webhook=None,
         health_summary_interval=86_400,
+        feeds=(),
     )
-    store = object()
+    store = SimpleNamespace(prune_unconfigured_health=lambda feeds: 0)
     sender = object()
     application = _Application()
     seen: dict[str, object] = {}
@@ -93,8 +94,9 @@ def test_main_starts_and_stops_health_reporter(
         state_retention_days=0,
         health_webhook="https://discord.test/webhooks/id/token",
         health_summary_interval=60,
+        feeds=(),
     )
-    store = object()
+    store = SimpleNamespace(prune_unconfigured_health=lambda feeds: 0)
     sender = object()
     application = _Application()
     events: list[tuple[str, object]] = []

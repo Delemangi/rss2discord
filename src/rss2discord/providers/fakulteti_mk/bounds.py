@@ -6,12 +6,6 @@ FAKULTETI_MK_LABEL: Final = "Fakulteti.mk"
 FAKULTETI_MK_ORIGIN: Final = "https://fakulteti.mk"
 FAKULTETI_MK_HOSTS: Final = frozenset({"fakulteti.mk", "www.fakulteti.mk"})
 FAKULTETI_MK_API_PATH: Final = "/webui/api/v1/PostManagementHandler.ashx"
-FAKULTETI_MK_DEFAULT_CATEGORIES: Final = (
-    "obrazovanie",
-    "nauka",
-    "tehnologija",
-    "kariera",
-)
 FAKULTETI_MK_ALL_CATEGORIES: Final = (
     "nasha-tema",
     "obrazovanie",

@@ -1,5 +1,6 @@
 """Newest-window and complete-category Neptun catalog traversal."""
 
+import time
 from collections.abc import Callable
 from typing import Final
 
@@ -18,6 +19,7 @@ NEPTUN_CATALOG_PAGE_SIZE: Final = 50
 MAX_NEPTUN_CATALOG_PAGES: Final = 100
 MAX_NEPTUN_CATALOG_PRODUCTS: Final = 5_000
 MAX_NEPTUN_CATALOG_SCAN_BYTES: Final = 500 * 1024 * 1024
+MAX_NEPTUN_SCAN_SECONDS: Final = 600.0
 
 
 class NeptunCatalogClient:
@@ -78,9 +80,12 @@ class NeptunCatalogClient:
         seen: dict[int, NeptunProduct] = {}
         scanned_count = 0
         expected_total: int | None = None
+        deadline = time.monotonic() + MAX_NEPTUN_SCAN_SECONDS
         for page in range(1, MAX_NEPTUN_CATALOG_PAGES + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
+            if time.monotonic() >= deadline:
+                raise FeedFetchError(NEPTUN_LABEL, "ScanTimeLimitExceeded")
             fetched = http.fetch_products(
                 category_url=category_url,
                 category_id=model.category_id,

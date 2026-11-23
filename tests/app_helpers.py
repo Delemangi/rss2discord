@@ -115,7 +115,12 @@ def make_app(
     feeds: tuple[FeedConfig, ...],
 ) -> RSSToDiscord:
     app = RSSToDiscord(
-        config=AppConfig(delay_between_posts=0, max_post_age_days=0, feeds=feeds),
+        config=AppConfig(
+            delay_between_posts=0,
+            max_post_age_days=0,
+            state_retention_days=0,
+            feeds=feeds,
+        ),
         store=store,
         sender=sender,
     )

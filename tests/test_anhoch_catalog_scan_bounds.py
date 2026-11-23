@@ -28,6 +28,24 @@ def test_full_catalog_scan_budget_covers_every_bounded_page() -> None:
     )
 
 
+def test_anhoch_latest_scan_enforces_the_wall_clock_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def clock() -> float:
+        nonlocal calls
+        calls += 1
+        return 0.0 if calls == 1 else 601.0
+
+    monkeypatch.setattr(anhoch_catalog.time, "monotonic", clock)
+
+    with pytest.raises(FeedFetchError) as error:
+        AnhochCatalogClient().fetch_latest_products(CATALOG_URL)
+
+    assert error.value.cause_type == "ScanTimeLimitExceeded"
+
+
 def test_anhoch_latest_scan_counts_redirect_body_bytes_and_stops_before_following(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -74,6 +74,7 @@ REJECTED_URLS = [
     "https://www.reddit.com/r/python//new",
     "https://www.reddit.com/r/abcdefghijklmnopqrstuvwxyz/new",
     "https://www.reddit.com/r/some-subreddit/new",
+    "https://www.reddit.com/r/pythön/new",
     "https://www.reddit.com/r/python/new/extra",
     "https://www.reddit.com/",
 ]

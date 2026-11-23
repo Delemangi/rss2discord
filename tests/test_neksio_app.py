@@ -62,7 +62,12 @@ def test_neksio_first_fetch_seeds_current_products_before_later_delivery(
         strategy="neksio",
     )
     sender = FakeSender([True])
-    config = AppConfig(delay_between_posts=0, max_post_age_days=0, feeds=(feed,))
+    config = AppConfig(
+        delay_between_posts=0,
+        max_post_age_days=0,
+        state_retention_days=0,
+        feeds=(feed,),
+    )
 
     # When
     with DeliveryStore(tmp_path / "state.db") as store:

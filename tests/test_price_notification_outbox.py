@@ -199,6 +199,20 @@ def test_pending_groups_load_oldest_only_and_are_marked_sent(tmp_path: Path) -> 
         assert store.count_pending_price_notifications("feed") == 0
 
 
+def test_mark_sent_clears_the_entry_payload(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        record_scan(store, ("1",))
+        group = store.load_pending_price_group("feed")
+        assert group is not None
+        store.mark_price_notifications_sent(item.notification_id for item in group[1])
+
+        row = store._connection.execute(
+            "SELECT status, entry_json FROM price_notifications",
+        ).fetchone()
+
+    assert row == ("sent", "{}")
+
+
 def test_attempt_records_sanitized_bounded_error(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         record_scan(store, ("1",))

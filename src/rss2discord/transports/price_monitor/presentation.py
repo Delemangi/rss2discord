@@ -1,6 +1,7 @@
 """Shared presentation for provider price-change messages."""
 
 from dataclasses import replace
+from typing import cast
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
@@ -51,22 +52,28 @@ def with_price_change_percentage(
     percentage = price_change_percentage(previous, current)
     if percentage is None:
         return message
-    return replace(
-        message,
-        entry=replace(
-            message.entry,
-            price_change_percentage=percentage,
+    return cast(
+        WebhookMessage,
+        replace(
+            message,
+            entry=replace(
+                message.entry,
+                price_change_percentage=percentage,
+            ),
         ),
     )
 
 
 def with_restock(message: WebhookMessage) -> WebhookMessage:
     """Mark a message as a stock alert instead of a price move."""
-    return replace(
-        message,
-        entry=replace(
-            message.entry,
-            restocked=True,
-            price_direction=None,
+    return cast(
+        WebhookMessage,
+        replace(
+            message,
+            entry=replace(
+                message.entry,
+                restocked=True,
+                price_direction=None,
+            ),
         ),
     )

@@ -12,7 +12,11 @@ from rss2discord.providers.pazar3.http import (
 from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.parser import parse_pazar3_page
-from rss2discord.providers.pazar3.scope import PAZAR3_LABEL, Pazar3SearchScope
+from rss2discord.providers.pazar3.scope import (
+    PAZAR3_LABEL,
+    Pazar3PageRequest,
+    Pazar3SearchScope,
+)
 from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError, ScraperStrategy
 
@@ -57,28 +61,7 @@ class Pazar3Strategy(ScraperStrategy):
             if self._is_shutdown_requested():
                 raise FeedFetchInterruptedError
             request = scope.page_request(page_number)
-            for attempt in range(1, PAZAR3_PAGE_ATTEMPTS + 1):
-                try:
-                    content = fetch_pazar3_page(
-                        request,
-                        budget,
-                        self._pacer,
-                        self._sleep,
-                        self._is_shutdown_requested,
-                    )
-                except FeedFetchError as error:
-                    if not error.retryable or attempt == PAZAR3_PAGE_ATTEMPTS:
-                        raise
-                    if error.retry_after is not None:
-                        self._pacer.defer(error.retry_after)
-                    logger.warning(
-                        "Pazar3 page %d failed on attempt %d (%s); retrying",
-                        page_number,
-                        attempt,
-                        error.cause_type,
-                    )
-                else:
-                    break
+            content = self._fetch_page_content(request, budget, page_number)
             page = parse_pazar3_page(content, request, now)
             _validate_discovery_page(page, page_number, seen_ids)
             for listing in page.listings:
@@ -89,18 +72,38 @@ class Pazar3Strategy(ScraperStrategy):
                 break
         if self._is_shutdown_requested():
             raise FeedFetchInterruptedError
-        entries = [
-            listing
-            for listing, _position in sorted(
-                retained.values(),
-                key=lambda retained_listing: (
-                    retained_listing[0].activity_at,
-                    retained_listing[1],
-                ),
-            )
-        ]
+        entries = _retained_listings(retained)
         self._observed_organic_ids = frozenset(seen_ids)
         return entries, PAZAR3_LABEL
+
+    def _fetch_page_content(
+        self,
+        request: Pazar3PageRequest,
+        budget: Pazar3ScanBudget,
+        page_number: int,
+    ) -> bytes:
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return fetch_pazar3_page(
+                    request,
+                    budget,
+                    self._pacer,
+                    self._sleep,
+                    self._is_shutdown_requested,
+                )
+            except FeedFetchError as error:
+                if not error.retryable or attempt >= PAZAR3_PAGE_ATTEMPTS:
+                    raise
+                if error.retry_after is not None:
+                    self._pacer.defer(error.retry_after)
+                logger.warning(
+                    "Pazar3 page %d failed on attempt %d (%s); retrying",
+                    page_number,
+                    attempt,
+                    error.cause_type,
+                )
 
     def get_initialization_entry_ids(
         self,
@@ -132,6 +135,21 @@ class Pazar3Strategy(ScraperStrategy):
             categories=(entry.category,) if entry.category else (),
             source_metrics=metrics,
         )
+
+
+def _retained_listings(
+    retained: dict[EntryId, tuple[Pazar3Listing, int]],
+) -> list[Pazar3Listing]:
+    return [
+        listing
+        for listing, _position in sorted(
+            retained.values(),
+            key=lambda retained_listing: (
+                retained_listing[0].activity_at,
+                retained_listing[1],
+            ),
+        )
+    ]
 
 
 def _validate_discovery_page(

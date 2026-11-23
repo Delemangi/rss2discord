@@ -1,9 +1,7 @@
 """OpenRouter significant price-drop monitor."""
 
-from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
-from typing import Protocol
 
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import PriceSnapshot, SourceMetric
@@ -18,22 +16,9 @@ from rss2discord.providers.openrouter_models.strategy import (
     format_price,
     is_model_entry,
 )
-from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.price_monitor import price_direction
 
 _PRICE_UNIT = Decimal(1_000_000)
-
-
-class OpenRouterCatalog(Protocol):
-    """Retrieve the OpenRouter catalog through the price-monitor interface."""
-
-    def fetch_catalog(
-        self,
-        url: str,
-        *,
-        retry_policy: FetchRetryPolicy,
-        is_shutdown_requested: Callable[[], bool],
-    ) -> tuple[OpenRouterModel, ...]: ...
 
 
 class OpenRouterPriceMonitor(CatalogPriceMonitor[OpenRouterModel]):

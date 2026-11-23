@@ -68,7 +68,12 @@ def _app(
 ) -> RSSToDiscord:
     feed = _feed()
     app = RSSToDiscord(
-        AppConfig(delay_between_posts=0, max_post_age_days=0, feeds=(feed,)),
+        AppConfig(
+            delay_between_posts=0,
+            max_post_age_days=0,
+            state_retention_days=0,
+            feeds=(feed,),
+        ),
         store,
         sender,
     )
@@ -194,7 +199,7 @@ def test_reklama5_shutdown_during_final_page_does_not_initialize_feed(
             ),
         ],
     )
-    shutdown_checks = iter((False, True))
+    shutdown_checks = iter((False, False, True))
     monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
     strategy = Reklama5Strategy(
         clock=lambda: FIXED_NOW,

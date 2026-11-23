@@ -1,5 +1,6 @@
 """Newest-window and complete-catalog WooCommerce Store API traversal."""
 
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -8,6 +9,7 @@ from rss2discord.providers.woocommerce.bounds import (
     MAX_WOOCOMMERCE_DISCOVERY_SCAN_BYTES,
     MAX_WOOCOMMERCE_PAGES,
     MAX_WOOCOMMERCE_PRODUCTS,
+    MAX_WOOCOMMERCE_SCAN_SECONDS,
     WOOCOMMERCE_LABEL,
     WOOCOMMERCE_PAGE_SIZE,
     WOOCOMMERCE_WINDOW_SIZE,
@@ -92,9 +94,11 @@ class WooCommerceCatalogClient:
         remaining_bytes = MAX_WOOCOMMERCE_CATALOG_SCAN_BYTES
         expected_total: int | None = None
         expected_pages: int | None = None
+        deadline = time.monotonic() + MAX_WOOCOMMERCE_SCAN_SECONDS
         for page in range(1, MAX_WOOCOMMERCE_PAGES + 1):
             if is_shutdown_requested():
                 raise FeedFetchInterruptedError
+            _require_scan_time(deadline)
             fetched = client.fetch_products_page(
                 WooCommercePageRequest(
                     page=page,
@@ -132,6 +136,11 @@ class WooCommerceCatalogClient:
                 _require_complete_catalog(len(products), expected_total)
                 return tuple(products)
         raise FeedFetchError(WOOCOMMERCE_LABEL, "PageLimitExceeded")
+
+
+def _require_scan_time(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise FeedFetchError(WOOCOMMERCE_LABEL, "ScanTimeLimitExceeded")
 
 
 def _append_unique_products(

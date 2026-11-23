@@ -139,10 +139,12 @@ def test_fetch_listing_parses_a_rate_limit_delta_but_ignores_an_epoch() -> None:
     )
 
     # When / Then
+    delta_client = make_client(delta_session)
+    epoch_client = make_client(epoch_session)
     with pytest.raises(FeedFetchError) as delta:
-        make_client(delta_session).fetch_listing(SCOPE)
+        delta_client.fetch_listing(SCOPE)
     with pytest.raises(FeedFetchError) as epoch:
-        make_client(epoch_session).fetch_listing(SCOPE)
+        epoch_client.fetch_listing(SCOPE)
     assert delta.value.retry_after == 30.0
     assert epoch.value.retry_after is None
 
@@ -153,10 +155,12 @@ def test_fetch_listing_maps_5xx_to_retryable_and_4xx_to_permanent() -> None:
     client_session = FakeSession([FakeResponse(404)])
 
     # When / Then
+    retryable_client = make_client(server_session)
+    permanent_client = make_client(client_session)
     with pytest.raises(FeedFetchError) as server:
-        make_client(server_session).fetch_listing(SCOPE)
+        retryable_client.fetch_listing(SCOPE)
     with pytest.raises(FeedFetchError) as client:
-        make_client(client_session).fetch_listing(SCOPE)
+        permanent_client.fetch_listing(SCOPE)
     assert server.value.retryable is True
     assert client.value.retryable is False
 

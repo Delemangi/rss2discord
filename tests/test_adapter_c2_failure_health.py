@@ -69,13 +69,13 @@ def test_fetch_failure_surfaces_without_pausing_or_hiding_changes(
         (
             FeedFetchError("Gjirafa50", "AccessChallenge", status_code=503),
             "blocked",
-            "AccessChallenge",
+            "AccessChallenge HTTP 503",
         ),
         (FeedFetchError("Gjirafa50", "BotChallenge"), "blocked", "BotChallenge"),
         (
             FeedFetchError("Gjirafa50", "HTTPError", status_code=403),
             "blocked",
-            "HTTPError",
+            "HTTPError HTTP 403",
         ),
         (sqlite3.OperationalError("hidden-secret"), "failed", "OperationalError"),
         (RuntimeError("hidden-secret"), "failed", "RuntimeError"),

@@ -104,9 +104,38 @@ def _parse_feature(feature: object) -> EarthquakeEvent | None:
     properties = feature.get("properties")
     if not isinstance(properties, Mapping):
         return None
-    event_type = str(properties.get("evtype") or "").strip().casefold()
-    if event_type and event_type not in EMSC_EVENT_TYPES:
+    if not _has_supported_event_type(properties):
         return None
+    identity = _event_identity(feature, properties)
+    if identity is None:
+        return None
+    event_id, timestamp = identity
+    magnitude = _magnitude(properties)
+    if magnitude is None:
+        return None
+    latitude, longitude = _coordinates(feature, properties)
+    return EarthquakeEvent(
+        event_id=event_id,
+        magnitude=magnitude,
+        depth_km=_depth_km(properties),
+        region=str(properties.get("flynn_region") or "").strip() or "Unknown region",
+        time=timestamp.astimezone(UTC).isoformat(),
+        latitude=latitude,
+        longitude=longitude,
+        author=str(properties.get("auth") or "").strip(),
+        magnitude_type=str(properties.get("magtype") or "").strip(),
+    )
+
+
+def _has_supported_event_type(properties: Mapping[Any, Any]) -> bool:
+    event_type = str(properties.get("evtype") or "").strip().casefold()
+    return not event_type or event_type in EMSC_EVENT_TYPES
+
+
+def _event_identity(
+    feature: Mapping[Any, Any],
+    properties: Mapping[Any, Any],
+) -> tuple[str, datetime] | None:
     event_id = str(properties.get("unid") or feature.get("id") or "").strip()
     if not event_id:
         return None
@@ -119,26 +148,21 @@ def _parse_feature(feature: object) -> EarthquakeEvent | None:
         return None
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=UTC)
+    return event_id, timestamp
+
+
+def _magnitude(properties: Mapping[Any, Any]) -> float | None:
     try:
-        magnitude = float(properties["mag"])
+        return float(properties["mag"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _depth_km(properties: Mapping[Any, Any]) -> float:
     try:
-        depth_km = float(properties.get("depth") or 0.0)
+        return float(properties.get("depth") or 0.0)
     except (TypeError, ValueError):
-        depth_km = 0.0
-    latitude, longitude = _coordinates(feature, properties)
-    return EarthquakeEvent(
-        event_id=event_id,
-        magnitude=magnitude,
-        depth_km=depth_km,
-        region=str(properties.get("flynn_region") or "").strip() or "Unknown region",
-        time=timestamp.astimezone(UTC).isoformat(),
-        latitude=latitude,
-        longitude=longitude,
-        author=str(properties.get("auth") or "").strip(),
-        magnitude_type=str(properties.get("magtype") or "").strip(),
-    )
+        return 0.0
 
 
 def _coordinates(

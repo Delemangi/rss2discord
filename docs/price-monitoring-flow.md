@@ -66,10 +66,12 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   cards; deferred changes are re-detected on a later scan.
 - Delivery is at-least-once. A crash after Discord accepts a message but before
   the local `sent` update can produce a duplicate.
+- A sent notification keeps its metadata but replaces the serialized entry
+  payload with an empty object; delivered card bodies are not retained.
 - Reports contain every row: title, link, category, previous price, current
   price, currency, and observation time. Files are capped at 50,000 rows and
-  8 MiB; overflow is marked explicitly in the final line rather than truncated
-  silently.
+  4,000,000 characters (at most 16 MiB); overflow is marked explicitly in the
+  final line rather than truncated silently.
 - The HTML report is self-contained: filter by text or direction and sort any
   column without a network request. CSV fields that begin with `=`, `+`, `-`, or
   `@` are prefixed to prevent spreadsheet formula execution.
@@ -106,7 +108,7 @@ new-entry or delivery-history caps that can stop a feed permanently.
 - Keep shutdown checks around interruptible work, including message preparation
   and inter-message waits.
 - SQLite transactions remain owned by the persistence layer; no database
-  transaction spans a Discord send.
+  transaction spans a Discord send. Writable connections cap the WAL at 64 MiB.
 - Provider request, byte, and time budgets, redirect rules, and pacing remain
   provider-owned and unchanged.
 - Discord transport retry policy is separate from price notification selection.

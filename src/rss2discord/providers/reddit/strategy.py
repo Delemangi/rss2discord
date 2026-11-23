@@ -18,11 +18,12 @@ from rss2discord.transports.base import ScraperStrategy
 from rss2discord.url_normalization import normalize_remote_media_url
 
 THUMBNAIL_SENTINELS: Final = frozenset({"self", "default", "nsfw", "spoiler"})
+DELETED_SENTINEL: Final = "[deleted]"
 REMOVED_TITLE_SENTINELS: Final = frozenset(
-    {"[removedbymoderator]", "[removedbyreddit]", "[deleted]"},
+    {"[removedbymoderator]", "[removedbyreddit]", DELETED_SENTINEL},
 )
-REMOVED_BODY_SENTINELS: Final = frozenset({"[removed]", "[deleted]"})
-REMOVED_AUTHOR_SENTINELS: Final = frozenset({"[deleted]", "[removed]"})
+REMOVED_BODY_SENTINELS: Final = frozenset({"[removed]", DELETED_SENTINEL})
+REMOVED_AUTHOR_SENTINELS: Final = frozenset({DELETED_SENTINEL, "[removed]"})
 DIRECT_IMAGE_HOSTS: Final = frozenset({"i.redd.it", "preview.redd.it"})
 
 
@@ -76,17 +77,7 @@ class RedditStrategy(ScraperStrategy):
                 count=len(posts),
             )
             pages += 1
-            for post in page.posts:
-                if _is_excluded(post, allow_nsfw=self._allow_nsfw):
-                    continue
-                if self._filter_removed and _is_removed(post):
-                    continue
-                entry_key = post.name or post.id or post.permalink
-                if entry_key is not None:
-                    if entry_key in seen_entries:
-                        continue
-                    seen_entries.add(entry_key)
-                posts.append(post)
+            self._append_page_posts(page.posts, posts, seen_entries)
             if len(posts) > MAX_REDDIT_POSTS:
                 del posts[MAX_REDDIT_POSTS:]
             if page.after is None or page.after in seen_cursors:
@@ -96,6 +87,21 @@ class RedditStrategy(ScraperStrategy):
         # Pages and their children arrive newest-first; reverse the collected
         # range so delivery follows the RSS strategy's oldest-first order.
         return list(reversed(posts)), f"r/{scope.subreddit}"
+
+    def _append_page_posts(
+        self,
+        page_posts: tuple[RedditPost, ...],
+        posts: list[RedditPost],
+        seen_entries: set[str],
+    ) -> None:
+        for post in page_posts:
+            if _is_excluded(post, allow_nsfw=self._allow_nsfw):
+                continue
+            if self._filter_removed and _is_removed(post):
+                continue
+            if not _remember_entry_key(post, seen_entries):
+                continue
+            posts.append(post)
 
     @override
     def get_entry_id(self, entry: RedditPost) -> EntryId | None:
@@ -137,6 +143,17 @@ def _is_excluded(post: RedditPost, *, allow_nsfw: bool = False) -> bool:
     if post.stickied or post.pinned or post.spoiler:
         return True
     return post.over_18 and not allow_nsfw
+
+
+def _remember_entry_key(post: RedditPost, seen_entries: set[str]) -> bool:
+    """Return whether the post key is new, remembering it when present."""
+    entry_key = post.name or post.id or post.permalink
+    if entry_key is None:
+        return True
+    if entry_key in seen_entries:
+        return False
+    seen_entries.add(entry_key)
+    return True
 
 
 def _is_removed(post: RedditPost) -> bool:

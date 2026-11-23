@@ -81,11 +81,11 @@ class FeedConfig(BaseModel):
     ordinary_check_interval: (
         Annotated[
             float,
-            Field(gt=0, allow_inf_nan=False),
+            Field(ge=1, allow_inf_nan=False),
         ]
         | None
     ) = None
-    price_check_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None = (
+    price_check_interval: Annotated[float, Field(ge=1, allow_inf_nan=False)] | None = (
         None
     )
     price_inline_limit: Annotated[int, Field(ge=1, le=1000)] = (
@@ -118,23 +118,35 @@ class FeedConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_strategy_options(self) -> Self:
+        self._validate_adapter_options()
+        self._validate_price_interval()
+        self._validate_price_options()
+        self._validate_restock_alerts()
+        return self
+
+    def _validate_adapter_options(self) -> None:
         if self.adapter is not None and self.strategy != "rss":
             msg = "feed adapters require the rss strategy"
             raise ValueError(msg)
         if self.hackernews_min_score is not None and self.adapter != "hackernews":
             msg = "hackernews_min_score requires the hackernews adapter"
             raise ValueError(msg)
-        if self.price_check_interval is not None:
-            if (
-                self.strategy == "gjirafa50"
-                and self.price_check_interval < MIN_GJIRAFA50_PRICE_CHECK_INTERVAL
-            ):
-                msg = "gjirafa50 price_check_interval must be at least 21600 seconds"
-                raise ValueError(msg)
-            if self.strategy not in PRICE_STRATEGIES:
-                supported = ", ".join(sorted(PRICE_STRATEGIES))
-                msg = f"price_check_interval requires a price strategy: {supported}"
-                raise ValueError(msg)
+
+    def _validate_price_interval(self) -> None:
+        if self.price_check_interval is None:
+            return
+        if (
+            self.strategy == "gjirafa50"
+            and self.price_check_interval < MIN_GJIRAFA50_PRICE_CHECK_INTERVAL
+        ):
+            msg = "gjirafa50 price_check_interval must be at least 21600 seconds"
+            raise ValueError(msg)
+        if self.strategy not in PRICE_STRATEGIES:
+            supported = ", ".join(sorted(PRICE_STRATEGIES))
+            msg = f"price_check_interval requires a price strategy: {supported}"
+            raise ValueError(msg)
+
+    def _validate_price_options(self) -> None:
         if (
             self.price_inline_limit != DEFAULT_PRICE_INLINE_LIMIT
             and self.strategy not in PRICE_STRATEGIES
@@ -154,11 +166,12 @@ class FeedConfig(BaseModel):
                 supported = ", ".join(sorted(PRICE_STRATEGIES))
                 msg = f"{field_name} requires a price strategy: {supported}"
                 raise ValueError(msg)
+
+    def _validate_restock_alerts(self) -> None:
         if self.restock_alerts and self.strategy not in RESTOCK_STRATEGIES:
             supported = ", ".join(sorted(RESTOCK_STRATEGIES))
             msg = f"restock_alerts requires a stock-aware price strategy: {supported}"
             raise ValueError(msg)
-        return self
 
 
 class AppConfig(BaseModel):
@@ -168,13 +181,13 @@ class AppConfig(BaseModel):
         hide_input_in_errors=True,
     )
 
-    refresh_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 300
+    refresh_interval: Annotated[float, Field(ge=1, allow_inf_nan=False)] = 300
     delay_between_feeds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0
     delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
     state_retention_days: Annotated[int, Field(ge=0)] = 90
     health_webhook: NonEmptyString | None = None
-    health_summary_interval: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 86_400
+    health_summary_interval: Annotated[float, Field(ge=1, allow_inf_nan=False)] = 86_400
     feeds: tuple[FeedConfig, ...] = ()
 
     @model_validator(mode="after")
@@ -182,6 +195,20 @@ class AppConfig(BaseModel):
         feed_ids = [feed.id for feed in self.feeds]
         if len(feed_ids) != len(set(feed_ids)):
             msg = "feed IDs must be unique"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def require_retention_covers_post_age(self) -> Self:
+        if self.state_retention_days == 0:
+            return self
+        if self.max_post_age_days == 0 or (
+            self.state_retention_days < self.max_post_age_days
+        ):
+            msg = (
+                "state_retention_days must be 0 when max_post_age_days is 0, "
+                "and otherwise at least max_post_age_days"
+            )
             raise ValueError(msg)
         return self
 

@@ -11,6 +11,7 @@ from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
     fetch_reklama5_page,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports import FeedFetchError, listing_http
 from tests.reklama5_helpers import RecordingGet, StubResponse, scan_budget, search_scope
 
@@ -276,6 +277,33 @@ def test_reklama5_fetch_classifies_http_statuses(
     assert fetch_error.value.retryable is (
         status_code in {408, 429} or 500 <= status_code < 600
     )
+
+
+def test_reklama5_rate_limit_sleep_is_interruptible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get = RecordingGet(
+        [
+            StubResponse(
+                b"busy",
+                status_code=429,
+                headers={"Retry-After": "1.5"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(listing_http, "create_listing_session", lambda: get)
+    sleeps: list[float] = []
+
+    def stop_sleep(seconds: float) -> bool:
+        sleeps.append(seconds)
+        return False
+
+    request = search_scope().page_request(1)
+    budget = scan_budget()
+    with pytest.raises(FeedFetchInterruptedError):
+        fetch_reklama5_page(request, budget, stop_sleep, lambda: False)
+
+    assert sleeps == [1.5]
 
 
 @pytest.mark.parametrize("status_code", [200, 403])

@@ -19,6 +19,32 @@ from tests.neptun_helpers import (
 )
 
 
+def test_catalog_scan_enforces_the_wall_clock_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        neptun_catalog.NeptunHttpClient,
+        "fetch_category_model",
+        lambda *_args, **_kwargs: (
+            type("Model", (), {"category_id": 1, "sort": ""})(),
+            0,
+        ),
+    )
+    calls = 0
+
+    def clock() -> float:
+        nonlocal calls
+        calls += 1
+        return 0.0 if calls == 1 else 601.0
+
+    monkeypatch.setattr(neptun_catalog.time, "monotonic", clock)
+
+    with pytest.raises(FeedFetchError) as error:
+        NeptunCatalogClient()._scan_catalog(CATEGORY_URL, never_shutdown)
+
+    assert error.value.cause_type == "ScanTimeLimitExceeded"
+
+
 def test_latest_products_requests_newest_thirty_and_returns_oldest_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

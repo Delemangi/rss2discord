@@ -324,69 +324,13 @@ class Gjirafa50CatalogClient:
         outcome = "success"
         cause_type = "none"
         try:
-            root_total = scan.fetch(1, phase="root_probe").total_hits
-            if root_total > MAX_GJIRAFA50_PRODUCTS:
-                logger.warning(
-                    "Gjirafa50 catalog exceeds unique product capacity: "
-                    "reported=%d limit=%d",
-                    root_total,
-                    MAX_GJIRAFA50_PRODUCTS,
-                )
-                raise FeedFetchError(  # noqa: TRY301
-                    GJIRAFA50_LABEL,
-                    "ProductLimitExceeded",
-                )
+            root_total = _probe_root_total(scan)
             entire_range = Gjirafa50PriceRange(
                 0,
                 MAX_GJIRAFA50_PRICE_EXCLUSIVE_CENTS,
             )
-            priced_total = scan.fetch(
-                1,
-                entire_range,
-                phase="whole_range_probe",
-            ).total_hits
+            priced_total = _probe_priced_total(scan, entire_range, root_total)
             catalog_total = max(root_total, priced_total)
-            if priced_total > root_total:
-                inversion = priced_total - root_total
-                tolerance = max(
-                    GJIRAFA50_COUNT_INVERSION_FLOOR,
-                    ceil(root_total * GJIRAFA50_COUNT_INVERSION_RATIO),
-                )
-                logger.warning(
-                    "Gjirafa50 priced range exceeds root count: phase=whole_range "
-                    "range=%s parent_count=%d range_count=%d inversion=%d "
-                    "tolerance=%d",
-                    entire_range,
-                    root_total,
-                    priced_total,
-                    inversion,
-                    tolerance,
-                )
-                if inversion > tolerance:
-                    raise FeedFetchError(  # noqa: TRY301
-                        GJIRAFA50_LABEL,
-                        "IncompletePriceRange",
-                        retryable=True,
-                    )
-            if priced_total > MAX_GJIRAFA50_PRODUCTS:
-                logger.warning(
-                    "Gjirafa50 priced catalog exceeds unique product capacity: "
-                    "reported=%d limit=%d",
-                    priced_total,
-                    MAX_GJIRAFA50_PRODUCTS,
-                )
-                raise FeedFetchError(  # noqa: TRY301
-                    GJIRAFA50_LABEL,
-                    "ProductLimitExceeded",
-                )
-            if priced_total < root_total:
-                logger.warning(
-                    "Gjirafa50 unpriced products excluded from scan: "
-                    "root_total=%d priced_total=%d excluded=%d",
-                    root_total,
-                    priced_total,
-                    root_total - priced_total,
-                )
             shards = self._build_shards(scan, entire_range, priced_total)
             planned_leaves = len(shards)
             planned_enumeration_pages = sum(
@@ -403,47 +347,12 @@ class Gjirafa50CatalogClient:
                     worker_pool=worker_pool,
                 )
                 completed_leaves += 1
-            root_recount = scan.fetch(1, phase="root_recount").total_hits
-            if root_recount != root_total:
-                logger.warning(
-                    "Gjirafa50 catalog root count changed: phase=root_recount "
-                    "page=1 expected=%d actual=%d; continuing best-effort scan",
-                    root_total,
-                    root_recount,
-                )
-            for price_range, shard_total in shards:
-                post_count = scan.fetch(
-                    1,
-                    price_range,
-                    phase="leaf_recount",
-                ).total_hits
-                if post_count != shard_total:
-                    logger.warning(
-                        "Gjirafa50 leaf count changed: phase=leaf_recount page=1 "
-                        "price_range=%s expected=%d actual=%d; continuing "
-                        "best-effort scan",
-                        price_range,
-                        shard_total,
-                        post_count,
-                    )
-            coverage = (
-                1.0 if priced_total == 0 else (len(products) + skipped) / priced_total
+            _verify_recounts(scan, shards, root_total)
+            coverage = _checked_coverage(
+                priced_total,
+                len(products),
+                skipped,
             )
-            if coverage < GJIRAFA50_MIN_COVERAGE_RATIO:
-                logger.warning(
-                    "Gjirafa50 catalog coverage below minimum: priced_total=%d "
-                    "unique_ids=%d skipped=%d coverage=%.4f minimum=%.2f",
-                    priced_total,
-                    len(products),
-                    skipped,
-                    coverage,
-                    GJIRAFA50_MIN_COVERAGE_RATIO,
-                )
-                raise FeedFetchError(  # noqa: TRY301
-                    GJIRAFA50_LABEL,
-                    "IncompleteCatalog",
-                    retryable=True,
-                )
             logger.info(
                 "Gjirafa50 best-effort catalog coverage: root_total=%d "
                 "priced_total=%d unique_ids=%d skipped=%d coverage=%.4f",
@@ -810,3 +719,116 @@ class Gjirafa50CatalogClient:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
             seen.add(product.id)
             products.append(product)
+
+
+def _probe_root_total(scan: _CatalogScan) -> int:
+    root_total = scan.fetch(1, phase="root_probe").total_hits
+    if root_total > MAX_GJIRAFA50_PRODUCTS:
+        logger.warning(
+            "Gjirafa50 catalog exceeds unique product capacity: reported=%d limit=%d",
+            root_total,
+            MAX_GJIRAFA50_PRODUCTS,
+        )
+        raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+    return root_total
+
+
+def _probe_priced_total(
+    scan: _CatalogScan,
+    entire_range: Gjirafa50PriceRange,
+    root_total: int,
+) -> int:
+    priced_total = scan.fetch(
+        1,
+        entire_range,
+        phase="whole_range_probe",
+    ).total_hits
+    if priced_total > root_total:
+        inversion = priced_total - root_total
+        tolerance = max(
+            GJIRAFA50_COUNT_INVERSION_FLOOR,
+            ceil(root_total * GJIRAFA50_COUNT_INVERSION_RATIO),
+        )
+        logger.warning(
+            "Gjirafa50 priced range exceeds root count: phase=whole_range "
+            "range=%s parent_count=%d range_count=%d inversion=%d "
+            "tolerance=%d",
+            entire_range,
+            root_total,
+            priced_total,
+            inversion,
+            tolerance,
+        )
+        if inversion > tolerance:
+            raise FeedFetchError(
+                GJIRAFA50_LABEL,
+                "IncompletePriceRange",
+                retryable=True,
+            )
+    if priced_total > MAX_GJIRAFA50_PRODUCTS:
+        logger.warning(
+            "Gjirafa50 priced catalog exceeds unique product capacity: "
+            "reported=%d limit=%d",
+            priced_total,
+            MAX_GJIRAFA50_PRODUCTS,
+        )
+        raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
+    if priced_total < root_total:
+        logger.warning(
+            "Gjirafa50 unpriced products excluded from scan: "
+            "root_total=%d priced_total=%d excluded=%d",
+            root_total,
+            priced_total,
+            root_total - priced_total,
+        )
+    return priced_total
+
+
+def _verify_recounts(
+    scan: _CatalogScan,
+    shards: tuple[tuple[Gjirafa50PriceRange, int], ...],
+    root_total: int,
+) -> None:
+    root_recount = scan.fetch(1, phase="root_recount").total_hits
+    if root_recount != root_total:
+        logger.warning(
+            "Gjirafa50 catalog root count changed: phase=root_recount "
+            "page=1 expected=%d actual=%d; continuing best-effort scan",
+            root_total,
+            root_recount,
+        )
+    for price_range, shard_total in shards:
+        post_count = scan.fetch(
+            1,
+            price_range,
+            phase="leaf_recount",
+        ).total_hits
+        if post_count != shard_total:
+            logger.warning(
+                "Gjirafa50 leaf count changed: phase=leaf_recount page=1 "
+                "price_range=%s expected=%d actual=%d; continuing "
+                "best-effort scan",
+                price_range,
+                shard_total,
+                post_count,
+            )
+
+
+def _checked_coverage(priced_total: int, unique_ids: int, skipped: int) -> float:
+    coverage = 1.0 if priced_total == 0 else (unique_ids + skipped) / priced_total
+    if coverage < GJIRAFA50_MIN_COVERAGE_RATIO:
+        logger.warning(
+            "Gjirafa50 catalog coverage below minimum: priced_total=%d "
+            "unique_ids=%d skipped=%d coverage=%.4f minimum=%.2f",
+            priced_total,
+            unique_ids,
+            skipped,
+            coverage,
+            GJIRAFA50_MIN_COVERAGE_RATIO,
+        )
+        raise FeedFetchError(
+            GJIRAFA50_LABEL,
+            "IncompleteCatalog",
+            retryable=True,
+        )
+    return coverage

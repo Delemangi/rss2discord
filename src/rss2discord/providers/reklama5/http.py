@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
+from rss2discord.discord.client import SleepCallback
 from rss2discord.providers.reklama5.scope import (
     REKLAMA5_LABEL,
     Reklama5PageRequest,
@@ -11,6 +13,7 @@ from rss2discord.providers.reklama5.scope import (
 from rss2discord.providers.reklama5.scope import (
     Reklama5SearchScope as _Reklama5SearchScope,
 )
+from rss2discord.retries import FeedFetchInterruptedError
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.listing_http import ListingHttpConfig, fetch_listing_page
 
@@ -90,12 +93,23 @@ class Reklama5ScanBudget:
         self.bytes_remaining -= size
 
 
+def blocking_sleep(seconds: float) -> bool:
+    time.sleep(seconds)
+    return True
+
+
 def fetch_reklama5_page(
     request: Reklama5PageRequest,
     budget: Reklama5ScanBudget,
+    sleep: SleepCallback | None = None,
+    is_shutdown_requested: Callable[[], bool] | None = None,
 ) -> bytes:
     """Fetch one trusted search page within a caller-owned attempt budget."""
+    wait = sleep or blocking_sleep
+    shutdown = is_shutdown_requested or (lambda: False)
     for attempt in range(1, MAX_REKLAMA5_RATE_LIMIT_RETRIES + 1):
+        if shutdown():
+            raise FeedFetchInterruptedError
         try:
             return fetch_listing_page(
                 url=request.url,
@@ -107,14 +121,33 @@ def fetch_reklama5_page(
                 ),
             )
         except FeedFetchError as error:
-            if (
-                error.cause_type != "HTTPError"
-                or error.status_code != 429
-                or attempt == MAX_REKLAMA5_RATE_LIMIT_RETRIES
-            ):
+            delay = _rate_limit_delay(error, attempt)
+            if delay is None:
                 raise
-            delay = error.retry_after or REKLAMA5_DEFAULT_RETRY_AFTER_SECONDS
-            if time.monotonic() + delay >= budget.expires_at:
-                raise
-            time.sleep(delay)
+            _wait_for_rate_limit(error, delay, budget, wait, shutdown)
     raise AssertionError
+
+
+def _rate_limit_delay(error: FeedFetchError, attempt: int) -> float | None:
+    if (
+        error.cause_type != "HTTPError"
+        or error.status_code != 429
+        or attempt == MAX_REKLAMA5_RATE_LIMIT_RETRIES
+    ):
+        return None
+    return error.retry_after or REKLAMA5_DEFAULT_RETRY_AFTER_SECONDS
+
+
+def _wait_for_rate_limit(
+    error: FeedFetchError,
+    delay: float,
+    budget: Reklama5ScanBudget,
+    wait: SleepCallback,
+    shutdown: Callable[[], bool],
+) -> None:
+    if time.monotonic() + delay >= budget.expires_at:
+        raise error
+    if not wait(delay):
+        raise FeedFetchInterruptedError from None
+    if shutdown():
+        raise FeedFetchInterruptedError from None

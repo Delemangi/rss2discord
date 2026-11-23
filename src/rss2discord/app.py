@@ -113,53 +113,117 @@ class RSSToDiscord:
         if self.is_shutdown_requested():
             self._log_discovery_scan(feed, counters, "interrupted", started_at)
             return JobOutcome.ATTEMPTED
-        baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
-        if baseline_state == "initialized":
-            counters.seeded = True
-        if baseline_state == "ready":
-            outcome = self._process_entries(
-                feed,
-                strategy,
-                entries,
-                fetched_source_title,
-                counters,
-            )
-            if outcome is EntryProcessingOutcome.INTERRUPTED:
-                self._log_discovery_scan(feed, counters, "interrupted", started_at)
-                return JobOutcome.ATTEMPTED
-            if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
-                record_runtime_health(
-                    self._store,
-                    HealthUpdate(
-                        feed_id=feed.id,
-                        job_kind="ordinary",
-                        state="failed",
-                        cause="DeliveryRetryPending",
-                        attempted_at=attempted_at,
-                        success=False,
-                        nonempty=bool(entries),
-                        item_count=len(entries),
-                        duration_ms=max(
-                            0,
-                            int((time.monotonic() - started_at) * 1000),
-                        ),
-                        scheduler_lag_ms=0,
-                    ),
-                )
-                self._log_discovery_scan(feed, counters, "failed", started_at)
-                return JobOutcome.ATTEMPTED
+        if not self._process_scan_entries(
+            feed,
+            strategy,
+            entries,
+            fetched_source_title,
+            counters=counters,
+            attempted_at=attempted_at,
+            started_at=started_at,
+        ):
+            return JobOutcome.ATTEMPTED
         if self.is_shutdown_requested():
             self._log_discovery_scan(feed, counters, "interrupted", started_at)
             return JobOutcome.ATTEMPTED
-        health_state = "healthy" if entries else "empty"
-        health_cause: str | None = None
-        if entries and feed.stale_after_days is not None:
-            newest_at = self._newest_entry_at(strategy, entries)
-            if newest_at is not None and newest_at < (
-                datetime.now(UTC) - timedelta(days=feed.stale_after_days)
-            ):
-                health_state = "stale"
-                health_cause = "NoRecentEntries"
+        health_state, health_cause = self._health_state(feed, strategy, entries)
+        self._record_scan_health(
+            feed,
+            entries,
+            attempted_at=attempted_at,
+            started_at=started_at,
+            health_state=health_state,
+            health_cause=health_cause,
+        )
+        self._log_discovery_scan(feed, counters, health_state, started_at)
+        return JobOutcome.ATTEMPTED
+
+    def _process_scan_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+        fetched_source_title: str,
+        *,
+        counters: DiscoveryScanCounters,
+        attempted_at: int,
+        started_at: float,
+    ) -> bool:
+        """Run baseline seeding and delivery; return False once a terminal state is logged."""
+        baseline_state = self._prepare_complete_baseline(feed, strategy, entries)
+        if baseline_state == "initialized":
+            counters.seeded = True
+        if baseline_state != "ready":
+            return True
+        outcome = self._process_entries(
+            feed,
+            strategy,
+            entries,
+            fetched_source_title,
+            counters,
+        )
+        if outcome is EntryProcessingOutcome.INTERRUPTED:
+            self._log_discovery_scan(feed, counters, "interrupted", started_at)
+            return False
+        if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+            self._record_delivery_failure(feed, entries, attempted_at, started_at)
+            self._log_discovery_scan(feed, counters, "failed", started_at)
+            return False
+        return True
+
+    def _health_state(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+    ) -> tuple[str, str | None]:
+        if not entries:
+            return "empty", None
+        if feed.stale_after_days is None:
+            return "healthy", None
+        newest_at = self._newest_entry_at(strategy, entries)
+        if newest_at is None:
+            return "healthy", None
+        if newest_at < datetime.now(UTC) - timedelta(days=feed.stale_after_days):
+            return "stale", "NoRecentEntries"
+        return "healthy", None
+
+    def _record_delivery_failure(
+        self,
+        feed: FeedConfig,
+        entries: list[Any],
+        attempted_at: int,
+        started_at: float,
+    ) -> None:
+        record_runtime_health(
+            self._store,
+            HealthUpdate(
+                feed_id=feed.id,
+                job_kind="ordinary",
+                state="failed",
+                cause="DeliveryRetryPending",
+                attempted_at=attempted_at,
+                success=False,
+                nonempty=bool(entries),
+                item_count=len(entries),
+                duration_ms=max(
+                    0,
+                    int((time.monotonic() - started_at) * 1000),
+                ),
+                scheduler_lag_ms=0,
+            ),
+        )
+
+    def _record_scan_health(
+        self,
+        feed: FeedConfig,
+        entries: list[Any],
+        *,
+        attempted_at: int,
+        started_at: float,
+        health_state: str,
+        health_cause: str | None,
+    ) -> None:
         record_runtime_health(
             self._store,
             HealthUpdate(
@@ -175,24 +239,25 @@ class RSSToDiscord:
                 scheduler_lag_ms=0,
             ),
         )
-        self._log_discovery_scan(feed, counters, health_state, started_at)
-        return JobOutcome.ATTEMPTED
 
     @staticmethod
     def _newest_entry_at(
         strategy: ScraperStrategy,
         entries: list[Any],
     ) -> datetime | None:
-        timestamp = strategy.get_entry_timestamp(entries[-1])
-        if timestamp is None:
-            return None
-        try:
-            parsed = datetime.fromisoformat(timestamp)
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed
+        parsed_timestamps: list[datetime] = []
+        for entry in entries:
+            timestamp = strategy.get_entry_timestamp(entry)
+            if timestamp is None:
+                continue
+            try:
+                parsed = datetime.fromisoformat(timestamp)
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            parsed_timestamps.append(parsed)
+        return max(parsed_timestamps, default=None)
 
     @staticmethod
     def _log_discovery_scan(
@@ -236,6 +301,22 @@ class RSSToDiscord:
             counters.seeded = True
             return EntryProcessingOutcome.COMPLETED
         source_title = feed.name or fetched_source_title
+        pending = self._collect_pending_entries(feed, strategy, entries, counters)
+        if pending is None:
+            return EntryProcessingOutcome.INTERRUPTED
+        counters.pending = len(pending)
+        if not pending:
+            return EntryProcessingOutcome.COMPLETED
+        return self._deliver_pending_entries(feed, source_title, pending, counters)
+
+    def _collect_pending_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+        counters: DiscoveryScanCounters,
+    ) -> list[tuple[EntryId, EntryData]] | None:
+        """Collect entries worth delivering, or None when shutdown interrupted the scan."""
         seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
         hacker_news_enrichments_remaining: int | None = None
@@ -250,7 +331,7 @@ class RSSToDiscord:
 
         for entry in entries:
             if self.is_shutdown_requested():
-                return EntryProcessingOutcome.INTERRUPTED
+                return None
 
             entry_id = self._unhandled_entry_id(
                 feed,
@@ -273,50 +354,52 @@ class RSSToDiscord:
                 )
             )
             # Fail open when enrichment could not provide a score.
-            if (
-                feed.hackernews_min_score is not None
-                and entry_data.source_score is not None
-                and entry_data.source_score < feed.hackernews_min_score
-            ):
+            if self._below_score(feed, entry_data):
                 counters.below_score += 1
                 continue
-            if self._is_too_old(
-                entry_data,
-                feed.id,
-                allow_missing_timestamp=strategy.allow_missing_timestamp_after_complete_baseline
-                and self._store.is_feed_initialized(feed.id),
-            ):
+            if self._entry_is_too_old(feed, strategy, entry_data):
                 counters.too_old += 1
                 continue
 
             pending.append((entry_id, entry_data))
+        return pending
 
-        counters.pending = len(pending)
-        if not pending:
-            return EntryProcessingOutcome.COMPLETED
+    @staticmethod
+    def _below_score(feed: FeedConfig, entry_data: EntryData) -> bool:
+        """Return whether a known enrichment score fails the feed's threshold."""
+        return (
+            feed.hackernews_min_score is not None
+            and entry_data.source_score is not None
+            and entry_data.source_score < feed.hackernews_min_score
+        )
+
+    def _entry_is_too_old(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entry_data: EntryData,
+    ) -> bool:
+        return self._is_too_old(
+            entry_data,
+            feed.id,
+            allow_missing_timestamp=strategy.allow_missing_timestamp_after_complete_baseline
+            and self._store.is_feed_initialized(feed.id),
+        )
+
+    def _deliver_pending_entries(
+        self,
+        feed: FeedConfig,
+        source_title: str,
+        pending: list[tuple[EntryId, EntryData]],
+        counters: DiscoveryScanCounters,
+    ) -> EntryProcessingOutcome:
         digest_threshold = feed.digest_threshold
         if digest_threshold is None or len(pending) <= digest_threshold:
-            had_failure = False
-            for entry_id, entry_data in pending:
-                if self.is_shutdown_requested():
-                    return EntryProcessingOutcome.INTERRUPTED
-                outcome = self._deliver_entry(
-                    feed,
-                    entry_data,
-                    source_title,
-                    entry_id,
-                )
-                if outcome is EntryProcessingOutcome.INTERRUPTED:
-                    return EntryProcessingOutcome.INTERRUPTED
-                if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
-                    counters.failed += 1
-                    had_failure = True
-                else:
-                    counters.delivered += 1
-            return (
-                EntryProcessingOutcome.DELIVERY_FAILED
-                if had_failure
-                else EntryProcessingOutcome.COMPLETED
+            return self._deliver_entries_individually(
+                feed,
+                source_title,
+                pending,
+                counters,
             )
         counters.digest = True
         outcome = self._deliver_discovery_digest(feed, pending, source_title)
@@ -325,6 +408,36 @@ class RSSToDiscord:
         elif outcome is EntryProcessingOutcome.DELIVERY_FAILED:
             counters.failed = len(pending)
         return outcome
+
+    def _deliver_entries_individually(
+        self,
+        feed: FeedConfig,
+        source_title: str,
+        pending: list[tuple[EntryId, EntryData]],
+        counters: DiscoveryScanCounters,
+    ) -> EntryProcessingOutcome:
+        had_failure = False
+        for entry_id, entry_data in pending:
+            if self.is_shutdown_requested():
+                return EntryProcessingOutcome.INTERRUPTED
+            outcome = self._deliver_entry(
+                feed,
+                entry_data,
+                source_title,
+                entry_id,
+            )
+            if outcome is EntryProcessingOutcome.INTERRUPTED:
+                return EntryProcessingOutcome.INTERRUPTED
+            if outcome is EntryProcessingOutcome.DELIVERY_FAILED:
+                counters.failed += 1
+                had_failure = True
+            else:
+                counters.delivered += 1
+        return (
+            EntryProcessingOutcome.DELIVERY_FAILED
+            if had_failure
+            else EntryProcessingOutcome.COMPLETED
+        )
 
     def _deliver_discovery_digest(
         self,

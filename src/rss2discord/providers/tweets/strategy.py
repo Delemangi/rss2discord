@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import replace
-from typing import Any, Final, final, override
+from typing import Any, Final, cast, final, override
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from rss2discord.fetch_errors import FeedFetchError
@@ -280,13 +280,16 @@ class TweetsStrategy(ScraperStrategy):
         images = _tweet_image_urls(entry, self._rss)
         if not images and data.image_url is not None:
             images = (data.image_url,)
-        return replace(
-            data,
-            title=title,
-            description=description,
-            link=_public_tweet_link(data.link),
-            image_url=images[0] if images else None,
-            image_urls=images,
+        return cast(
+            EntryData,
+            replace(
+                data,
+                title=title,
+                description=description,
+                link=_public_tweet_link(data.link),
+                image_url=images[0] if images else None,
+                image_urls=images,
+            ),
         )
 
     def _is_excluded(self, entry: Any) -> bool:  # noqa: ANN401

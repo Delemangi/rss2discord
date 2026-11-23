@@ -1,7 +1,7 @@
 [project]
 name = "rss2discord"
 version = "0.1.0"
-description = "Add your description here"
+description = "Monitor feeds, forums, marketplaces, and product catalogs and deliver updates to Discord."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

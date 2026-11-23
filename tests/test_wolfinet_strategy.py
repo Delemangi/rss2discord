@@ -288,8 +288,9 @@ def test_wolfinet_catalog_uses_the_polite_inter_page_delay(
 
 
 def test_wolfinet_catalog_observes_shutdown_before_fetching() -> None:
+    client = WolfinetCatalogClient(sleep=lambda _seconds: None)
     with pytest.raises(FeedFetchInterruptedError):
-        WolfinetCatalogClient(sleep=lambda _seconds: None).fetch_catalog(
+        client.fetch_catalog(
             BASE_URL,
             is_shutdown_requested=lambda: True,
         )

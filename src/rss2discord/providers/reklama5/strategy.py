@@ -4,10 +4,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryData, EntryId, SourceMetric
 from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
     Reklama5SearchScope,
+    blocking_sleep,
     fetch_reklama5_page,
 )
 from rss2discord.providers.reklama5.parser import (
@@ -41,9 +43,11 @@ class Reklama5Strategy(ScraperStrategy):
         self,
         clock: Reklama5Clock | None = None,
         is_shutdown_requested: Callable[[], bool] = lambda: False,
+        sleep: SleepCallback | None = None,
     ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._is_shutdown_requested = is_shutdown_requested
+        self._sleep = sleep or blocking_sleep
         self._observed_organic_ids: frozenset[EntryId] = frozenset()
 
     def fetch_entries(self, url: str) -> tuple[list[Reklama5Listing], str]:
@@ -61,7 +65,12 @@ class Reklama5Strategy(ScraperStrategy):
                 raise FeedFetchInterruptedError
             request = scope.page_request(page_number)
             page = parse_reklama5_page(
-                fetch_reklama5_page(request, budget),
+                fetch_reklama5_page(
+                    request,
+                    budget,
+                    self._sleep,
+                    self._is_shutdown_requested,
+                ),
                 request,
                 now,
             )

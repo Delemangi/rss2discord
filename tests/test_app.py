@@ -45,6 +45,7 @@ def test_run_waits_between_feeds(
         delay_between_feeds=61,
         delay_between_posts=0,
         max_post_age_days=0,
+        state_retention_days=0,
         feeds=feeds,
     )
     sender = FakeSender([])

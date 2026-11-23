@@ -116,20 +116,34 @@ def fetch_listing_page(
                     status_code=response.status_code,
                 )
             if 300 <= response.status_code < 400:
-                location = header_value(response.headers, "location")
-                if location is None or "#" in location:
-                    raise FeedFetchError(config.label, "InvalidRedirect")
-                target_url = urljoin(response.url, location)
-                if not accepts_redirect(target_url):
-                    raise FeedFetchError(config.label, "InvalidRedirect")
-                budget.consume_redirect()
-                current_url = target_url
+                current_url = _redirect_target(
+                    response,
+                    budget,
+                    config,
+                    accepts_redirect,
+                )
                 continue
             if 400 <= response.status_code < 600:
                 raise http_error(config.label, response)
             return content
     finally:
         session.close()
+
+
+def _redirect_target(
+    response: ListingHttpResponse,
+    budget: ListingBudget,
+    config: ListingHttpConfig,
+    accepts_redirect: Callable[[str], bool],
+) -> str:
+    location = header_value(response.headers, "location")
+    if location is None or "#" in location:
+        raise FeedFetchError(config.label, "InvalidRedirect")
+    target_url = urljoin(response.url, location)
+    if not accepts_redirect(target_url):
+        raise FeedFetchError(config.label, "InvalidRedirect")
+    budget.consume_redirect()
+    return target_url
 
 
 def _get_response(

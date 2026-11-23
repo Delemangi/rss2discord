@@ -82,12 +82,13 @@ def test_record_price_scan_rejects_empty_group(store: DeliveryStore) -> None:
 def test_record_price_scan_rejects_baseline_feed_mismatch(
     store: DeliveryStore,
 ) -> None:
+    baseline = _snapshot(feed_id="other")
     with pytest.raises(ValueError, match="baseline feed mismatch"):
         store.record_price_scan(
             feed_id="feed",
             group_id="group",
             observed_at=1,
-            baseline_updates=(_snapshot(feed_id="other"),),
+            baseline_updates=(baseline,),
             notifications=(),
         )
 
@@ -95,37 +96,40 @@ def test_record_price_scan_rejects_baseline_feed_mismatch(
 def test_record_price_scan_rejects_notification_feed_mismatch(
     store: DeliveryStore,
 ) -> None:
+    notification = _notification(current_feed="other")
     with pytest.raises(ValueError, match="notification feed mismatch"):
         store.record_price_scan(
             feed_id="feed",
             group_id="group",
             observed_at=1,
             baseline_updates=(),
-            notifications=(_notification(current_feed="other"),),
+            notifications=(notification,),
         )
 
 
 def test_record_price_scan_rejects_previous_feed_mismatch(
     store: DeliveryStore,
 ) -> None:
+    notification = _notification(previous_feed="other")
     with pytest.raises(ValueError, match="notification previous feed mismatch"):
         store.record_price_scan(
             feed_id="feed",
             group_id="group",
             observed_at=1,
             baseline_updates=(),
-            notifications=(_notification(previous_feed="other"),),
+            notifications=(notification,),
         )
 
 
 def test_record_price_scan_rejects_product_mismatch(store: DeliveryStore) -> None:
+    notification = _notification(notification_product_id="2")
     with pytest.raises(ValueError, match="notification product mismatch"):
         store.record_price_scan(
             feed_id="feed",
             group_id="group",
             observed_at=1,
             baseline_updates=(),
-            notifications=(_notification(notification_product_id="2"),),
+            notifications=(notification,),
         )
 
 

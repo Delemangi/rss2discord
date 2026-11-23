@@ -380,96 +380,113 @@ def _metrics_with_price_details(
     headline_badges: list[str] = []
 
     if entry.restocked:
-        # Equal-price restocks should not echo the same figure as a previous
-        # price, and the badge already says the item is back; drop a literal
-        # "In stock" stock line so it does not read twice.
-        previous_index = next(
-            (index for index, item in enumerate(metrics) if item.label == "Previous"),
-            None,
-        )
-        if previous_index is not None and entry.price_change_percentage is None:
-            price_index = next(
-                (index for index, item in enumerate(metrics) if item.label == "Price"),
-                None,
-            )
-            if (
-                price_index is not None
-                and metrics[price_index].value == metrics[previous_index].value
-            ):
-                metrics.pop(previous_index)
-                if previous_index < price_index:
-                    price_index -= 1
-        metrics = [
-            metric
-            for metric in metrics
-            if not (
-                metric.label == "Stock"
-                and metric.value.strip().casefold() == "in stock"
-            )
-        ]
+        _remove_restock_noise(entry, metrics)
         headline_badges.append("**Back in stock**")
         if entry.price_is_period_low:
             _append_period_low_badge(entry, headline_badges)
         else:
             _append_period_range_metric(entry, metrics)
 
-    is_price_change = entry.price_change_percentage is not None
-
-    percentage = entry.price_change_percentage
-    if percentage is not None and not any(
-        metric.label == "Change" for metric in metrics
-    ):
-        prior_index = next(
-            (index for index, item in enumerate(metrics) if item.prior),
-            None,
-        )
-        metrics.insert(
-            prior_index + 1 if prior_index is not None else 1,
-            SourceMetric("Change", percentage),
-        )
-
-    discount = entry.discount_percentage
-    if discount is not None and not any(
-        metric.label == "Discount" for metric in metrics
-    ):
-        formatted = _format_discount_percentage(discount)
-        if entry.price_change_percentage is None:
-            # Discovery card: badge the headline instead of burying it in details.
-            headline_badges.append(f"**{formatted}**")
-        else:
-            # Price-change card: keep discount readable in the supporting line.
-            original_index = next(
-                (
-                    index
-                    for index, item in enumerate(metrics)
-                    if item.label == "Original"
-                ),
-                None,
-            )
-            if original_index is not None:
-                insert_at = original_index + 1
-            else:
-                price_index = next(
-                    (
-                        index
-                        for index, item in enumerate(metrics)
-                        if item.label == "Price"
-                    ),
-                    None,
-                )
-                insert_at = price_index + 1 if price_index is not None else len(metrics)
-            metrics.insert(insert_at, SourceMetric("Discount", formatted))
-
-    if is_price_change:
-        if entry.price_is_period_low and _is_price_decrease(entry):
-            _append_period_low_badge(entry, headline_badges)
-        elif not entry.price_is_period_low:
-            _append_period_range_metric(entry, metrics)
+    _insert_change_metric(entry, metrics)
+    _insert_discount_metric(entry, metrics, headline_badges)
+    _apply_period_history(entry, metrics, headline_badges)
 
     headline_badge = (
         HEADLINE_BADGE_SEPARATOR.join(headline_badges) if headline_badges else None
     )
     return tuple(metrics), headline_badge
+
+
+def _remove_restock_noise(entry: EntryData, metrics: list[SourceMetric]) -> None:
+    """Drop details a restock card would otherwise repeat."""
+    _drop_duplicate_previous_price(entry, metrics)
+    metrics[:] = [
+        metric
+        for metric in metrics
+        if not (
+            metric.label == "Stock" and metric.value.strip().casefold() == "in stock"
+        )
+    ]
+
+
+def _drop_duplicate_previous_price(
+    entry: EntryData,
+    metrics: list[SourceMetric],
+) -> None:
+    """Drop a previous price equal to the current one on an equal-price restock."""
+    if entry.price_change_percentage is not None:
+        return
+    previous_index = next(
+        (index for index, item in enumerate(metrics) if item.label == "Previous"),
+        None,
+    )
+    if previous_index is None:
+        return
+    price_index = next(
+        (index for index, item in enumerate(metrics) if item.label == "Price"),
+        None,
+    )
+    if price_index is None:
+        return
+    if metrics[price_index].value != metrics[previous_index].value:
+        return
+    metrics.pop(previous_index)
+
+
+def _insert_change_metric(entry: EntryData, metrics: list[SourceMetric]) -> None:
+    percentage = entry.price_change_percentage
+    if percentage is None or any(metric.label == "Change" for metric in metrics):
+        return
+    prior_index = next(
+        (index for index, item in enumerate(metrics) if item.prior),
+        None,
+    )
+    metrics.insert(
+        prior_index + 1 if prior_index is not None else 1,
+        SourceMetric("Change", percentage),
+    )
+
+
+def _insert_discount_metric(
+    entry: EntryData,
+    metrics: list[SourceMetric],
+    headline_badges: list[str],
+) -> None:
+    discount = entry.discount_percentage
+    if discount is None or any(metric.label == "Discount" for metric in metrics):
+        return
+    formatted = _format_discount_percentage(discount)
+    if entry.price_change_percentage is None:
+        # Discovery card: badge the headline instead of burying it in details.
+        headline_badges.append(f"**{formatted}**")
+        return
+    # Price-change card: keep discount readable in the supporting line.
+    original_index = next(
+        (index for index, item in enumerate(metrics) if item.label == "Original"),
+        None,
+    )
+    if original_index is not None:
+        insert_at = original_index + 1
+    else:
+        price_index = next(
+            (index for index, item in enumerate(metrics) if item.label == "Price"),
+            None,
+        )
+        insert_at = price_index + 1 if price_index is not None else len(metrics)
+    metrics.insert(insert_at, SourceMetric("Discount", formatted))
+
+
+def _apply_period_history(
+    entry: EntryData,
+    metrics: list[SourceMetric],
+    headline_badges: list[str],
+) -> None:
+    if entry.price_change_percentage is None:
+        return
+    if entry.price_is_period_low and _is_price_decrease(entry):
+        _append_period_low_badge(entry, headline_badges)
+    elif not entry.price_is_period_low:
+        _append_period_range_metric(entry, metrics)
 
 
 def _append_period_low_badge(
