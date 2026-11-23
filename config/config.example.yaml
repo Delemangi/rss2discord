@@ -18,10 +18,10 @@ delay_between_posts: 2
 # Set to 0 or omit to process all posts regardless of age
 max_post_age_days: 7
 
-# Prune delivered entries, sent price notifications, and old price history at
-# startup. Set to 0 to disable retention. If max_post_age_days is 0, this must
-# also be 0; otherwise it must be at least max_post_age_days. Configuration
-# validation enforces that pairing.
+# Prune delivered entries, sent or dead-lettered price notifications, and old
+# price history at startup and once per day. Set to 0 to disable retention. If
+# max_post_age_days is 0, this must also be 0; otherwise it must be at least
+# max_post_age_days. Configuration validation enforces that pairing.
 state_retention_days: 90
 
 # Optional daily health summary. Leave health_webhook unset to disable.

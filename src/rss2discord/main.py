@@ -15,6 +15,7 @@ from .database_ownership import DatabaseOwnership, DatabaseOwnershipError
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordWebhookClient
 from .health_report import HealthSummaryReporter
+from .state_maintenance import StateRetentionReporter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +51,11 @@ def main() -> int:
                 sender=DiscordWebhookClient(),
             )
             _install_signal_handlers(application)
+            retention_reporter = StateRetentionReporter(
+                database_path=database_path,
+                retention_days=config.state_retention_days,
+            )
+            retention_reporter.start()
             reporter: HealthSummaryReporter | None = None
             if config.health_webhook:
                 reporter = HealthSummaryReporter(
@@ -63,6 +69,7 @@ def main() -> int:
             finally:
                 if reporter is not None:
                     reporter.stop()
+                retention_reporter.stop()
     except DatabaseOwnershipError as error:
         logger.log(logging.ERROR, "Database writer startup refused: %s", error)
         return 1
