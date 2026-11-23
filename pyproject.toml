@@ -35,6 +35,10 @@ dev = [
 
 [tool.mypy]
 python_version = "3.12"
+check_untyped_defs = true
+warn_return_any = true
+no_implicit_optional = true
+strict_equality = true
 
 [[tool.mypy.overrides]]
 module = "feedparser.*"

@@ -255,7 +255,7 @@ class DiscordWebhookClient:
 
     @staticmethod
     def _retry_delay(attempt: int) -> float:
-        return BASE_RETRY_DELAY_SECONDS * (2**attempt)
+        return float(BASE_RETRY_DELAY_SECONDS * (2**attempt))
 
     @staticmethod
     def _log_request_error(action: str, feed_id: str, error: Exception) -> None:

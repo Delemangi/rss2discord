@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, assert_never
+from typing import Any, assert_never, cast
 
 from rss2discord.app import RSSToDiscord
 from rss2discord.configuration import AppConfig, FeedConfig
@@ -27,10 +27,10 @@ class FakeStrategy(ScraperStrategy):
         return list(self.entries), "Source"
 
     def get_entry_id(self, entry: Any) -> EntryId | None:  # noqa: ANN401
-        return entry.id
+        return cast(EntryId, entry.id)
 
     def get_entry_data(self, entry: Any) -> EntryData:  # noqa: ANN401
-        return entry.data
+        return cast(EntryData, entry.data)
 
 
 class FakeAdapter:

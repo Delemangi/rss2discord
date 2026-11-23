@@ -1,0 +1,39 @@
+name: Docker smoke
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".python-version"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/**"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".python-version"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Import package in the runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t rss2discord:smoke .
+
+      - name: Import package
+        run: |
+          docker run --rm --entrypoint python rss2discord:smoke \
+            -c "import rss2discord; print(rss2discord.__file__)"
