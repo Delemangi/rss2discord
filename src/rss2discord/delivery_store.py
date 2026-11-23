@@ -357,6 +357,14 @@ class DeliveryStore:
                 "AND newer.observed_at > price_history.observed_at)",
                 (cutoff,),
             ).rowcount
+            evicted_history = self._connection.execute(
+                "DELETE FROM price_history WHERE EXISTS ("
+                "SELECT 1 FROM price_snapshots AS snapshot "
+                "WHERE snapshot.feed_id = price_history.feed_id "
+                "AND snapshot.product_id = price_history.product_id "
+                "AND snapshot.last_seen_at < ?)",
+                (cutoff,),
+            ).rowcount
             snapshots = self._connection.execute(
                 "DELETE FROM price_snapshots WHERE last_seen_at < ?",
                 (cutoff,),
@@ -364,7 +372,7 @@ class DeliveryStore:
         return RetentionResult(
             delivered_entries=max(0, delivered),
             price_notifications=max(0, notifications),
-            price_history=max(0, history),
+            price_history=max(0, history + evicted_history),
             price_snapshots=max(0, snapshots),
         )
 
