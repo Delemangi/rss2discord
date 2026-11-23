@@ -430,6 +430,7 @@ def test_tweets_does_not_repeat_old_style_retweet_text(
     entries = feedparser.parse(FEED).entries
     entries[0]["title"] = "RT @other: Same text"
     entries[0]["summary"] = "<p>RT @other: Same text</p>"
+    entries[0]["link"] = "https://nitter.kareem.one/other/status/111#m"
     strategy = TweetsStrategy(include_retweets=True)
     monkeypatch.setattr(
         strategy._rss,
@@ -446,6 +447,57 @@ def test_tweets_does_not_repeat_old_style_retweet_text(
     data = strategy.get_entry_data(filtered[0])
     assert data.title == "RT @other: Same text"
     assert data.description == ""
+
+
+def test_tweets_treats_quote_tweets_as_originals_and_labels_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given - Nitter titles a quote tweet "RT @other" but links the profile status
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "RT @other: quoted text"
+    entries[0]["summary"] = "<p>RT @other: quoted text</p>"
+    entries[0]["link"] = "https://nitter.kareem.one/opencode/status/111#m"
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+
+    # When
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then - the quote tweet is an original post, not a retweet, and is relabeled
+    ids = [strategy.get_entry_id(entry) for entry in filtered]
+    assert "111" in ids
+    data = strategy.get_entry_data(filtered[0])
+    assert data.title == "Quoted @other: quoted text"
+    assert data.description == ""
+
+
+def test_tweets_excludes_legacy_retweets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given - a legacy "RT @other" entry that links the original author's status
+    entries = feedparser.parse(FEED).entries
+    entries[0]["title"] = "RT @other: retweeted text"
+    entries[0]["link"] = "https://nitter.kareem.one/other/status/111#m"
+
+    # When
+    strategy = TweetsStrategy()
+    monkeypatch.setattr(
+        strategy._rss,
+        "fetch_entries",
+        lambda _url: (entries, "OpenCode / @opencode"),
+    )
+    filtered, _title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then - the transport label confirms it is a retweet
+    assert "111" not in [strategy.get_entry_id(entry) for entry in filtered]
 
 
 def test_tweets_uses_link_card_without_repeating_tweet(
