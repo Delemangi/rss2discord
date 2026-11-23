@@ -11,7 +11,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY README.md ./
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
-FROM python:3.15-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 ENV CONFIG_PATH=/app/config/config.yaml \
     PATH=/app/.venv/bin:$PATH \
