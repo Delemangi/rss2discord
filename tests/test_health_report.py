@@ -88,6 +88,7 @@ def test_build_health_summary_counts_states_and_pending(tmp_path: Path) -> None:
     assert summary.blocked == 1
     assert summary.other == 0
     assert summary.pending_price_notifications == 1
+    assert summary.dead_lettered_price_notifications == 0
     assert summary.database_bytes > 0
     assert summary.database_file_bytes > 0
     assert summary.database_bytes >= summary.database_file_bytes + summary.wal_bytes
@@ -183,6 +184,7 @@ def test_format_health_summary_reports_database_and_wal_separately() -> None:
         blocked=0,
         other=0,
         pending_price_notifications=0,
+        dead_lettered_price_notifications=0,
         database_bytes=3_072,
         database_file_bytes=1_024,
         wal_bytes=2_048,

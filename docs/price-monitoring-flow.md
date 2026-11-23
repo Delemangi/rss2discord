@@ -66,6 +66,10 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   cards; deferred changes are re-detected on a later scan.
 - Delivery is at-least-once. A crash after Discord accepts a message but before
   the local `sent` update can produce a duplicate.
+- After six consecutive failed delivery attempts, the group is dead-lettered:
+  it stops blocking later groups, its payload is cleared, and the health summary
+  reports the dead-letter count. Dead letters are visible through
+  `notifications list --status dead_lettered` and are pruned by state retention.
 - A sent notification keeps its metadata but replaces the serialized entry
   payload with an empty object; delivered card bodies are not retained.
 - Reports contain every row: title, link, category, previous price, current

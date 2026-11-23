@@ -160,7 +160,10 @@ def test_empty_notification_id_batches_are_noops(store: DeliveryStore) -> None:
 def test_list_price_notifications_rejects_unknown_status(
     store: DeliveryStore,
 ) -> None:
-    with pytest.raises(ValueError, match="status must be pending, sent, or omitted"):
+    with pytest.raises(
+        ValueError,
+        match="status must be pending, sent, dead_lettered, or omitted",
+    ):
         store.list_price_notifications(status="unknown")
 
 

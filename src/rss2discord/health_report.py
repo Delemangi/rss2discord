@@ -36,6 +36,7 @@ class HealthSummary:
     blocked: int
     other: int
     pending_price_notifications: int
+    dead_lettered_price_notifications: int
     database_bytes: int
     database_file_bytes: int
     wal_bytes: int
@@ -78,6 +79,9 @@ def build_health_summary(store: DeliveryStore, database_path: Path) -> HealthSum
             count for state, count in counts.items() if state not in KNOWN_STATES
         ),
         pending_price_notifications=store.count_pending_price_notifications_total(),
+        dead_lettered_price_notifications=(
+            store.count_dead_lettered_price_notifications_total()
+        ),
         database_bytes=_database_bytes(database_path),
         database_file_bytes=_file_bytes(database_path),
         wal_bytes=_file_bytes(Path(f"{database_path}-wal")),
@@ -124,8 +128,13 @@ def format_health_summary(summary: HealthSummary) -> str:
         "**rss2discord health**",
         state_line,
         f"Pending price notifications: {summary.pending_price_notifications}",
-        database_line,
     ]
+    if summary.dead_lettered_price_notifications:
+        lines.append(
+            "Dead-lettered price notifications: "
+            f"{summary.dead_lettered_price_notifications}",
+        )
+    lines.append(database_line)
     if summary.problems:
         lines.append("")
         lines.extend(

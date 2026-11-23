@@ -6,6 +6,7 @@ from time import time
 
 import pytest
 
+from rss2discord.delivery_notifications import MAX_PRICE_NOTIFICATION_ATTEMPTS
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
@@ -235,6 +236,38 @@ def test_repeated_digest_failures_keep_rows_pending(
         assert all(item.attempts == scans for item in pending[1])
         assert store.count_pending_price_notifications(provider) == 101
         assert all(p.amount == 90 for p in store.load_price_snapshots(provider))
+
+
+@pytest.mark.parametrize("provider", ["ddstore", "hivetec"])
+def test_repeated_digest_failures_dead_letter_after_the_limit(
+    tmp_path: Path,
+    provider: str,
+) -> None:
+    scans = MAX_PRICE_NOTIFICATION_ATTEMPTS
+    sender = RecordingSender([DiscordDeliveryResult.FAILED] * scans)
+    with DeliveryStore(tmp_path / "state.db") as store:
+        monitor = monitor_for(
+            provider,
+            [(100,) * 101, *([(90,) * 101] * scans)],
+            store,
+            sender,
+        )
+        monitor.scan()
+        for _ in range(scans):
+            monitor.scan()
+
+        assert len(sender.messages) == scans
+        assert store.count_pending_price_notifications(provider) == 0
+        assert store.count_dead_lettered_price_notifications(provider) == 101
+        dead = store.list_price_notifications(
+            provider,
+            status="dead_lettered",
+            limit=1000,
+        )
+        assert len(dead) == 101
+        assert all(row["status"] == "dead_lettered" for row in dead)
+        health = store.list_health(provider)[0]
+        assert health.cause == "DeadLetteredAlerts"
 
 
 def test_repeated_health_failure_transition_updates_without_binding_error(

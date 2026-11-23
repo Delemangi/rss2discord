@@ -74,6 +74,7 @@ Each price scan compares the validated catalog with the stored baseline.
 - The same limit applies when pending notifications are drained, so a retried group at or below the limit sends cards instead of the brief. CCCenter confirms at most 100 changes per scan, so `price_inline_limit` values above 100 do not increase its card count.
 - The baseline and the pending notification rows are written in one transaction before delivery. A failed or interrupted Discord send leaves the notification pending and retries on a later scan; changes are not lost.
 - Delivery is at-least-once. An ambiguous timeout or crash after Discord accepts a message can produce a duplicate.
+- A group that fails six consecutive delivery attempts is dead-lettered. It leaves the pending queue so later alerts can drain, its payload is cleared, and it remains inspectable with `notifications list --status dead_lettered`; the health summary reports the count.
 - There is no approval, quarantine, or pause step for price changes. Invalid or incomplete catalog evidence is rejected and retried; it never overwrites a valid price.
 
 ## New-item notifications
@@ -100,7 +101,7 @@ Before any offline database operation, stop every writer and back up the databas
 
 ## Maintenance and retries
 
-`state_retention_days` prunes delivered entries, sent price notifications, and all but each product's newest price-history row at startup. If anything was removed, the database is vacuumed in the same startup pass; a retention failure is logged and startup continues. Use `0` to disable retention. When `max_post_age_days` is `0` (no age filter), retention must also be `0`; otherwise retention must be at least `max_post_age_days`. Configuration validation enforces that pairing. Startup also removes health rows for feeds no longer in the configuration.
+`state_retention_days` prunes delivered entries, sent or dead-lettered price notifications, and all but each product's newest price-history row at startup. If anything was removed, the database is vacuumed in the same startup pass; a retention failure is logged and startup continues. Use `0` to disable retention. When `max_post_age_days` is `0` (no age filter), retention must also be `0`; otherwise retention must be at least `max_post_age_days`. Configuration validation enforces that pairing. Startup also removes health rows for feeds no longer in the configuration.
 
 Fetch jobs retry up to three times and honor `Retry-After` up to 300 seconds. Transient SQLite busy/locked errors retry up to 12 times at 5-second intervals; after that the job fails and the scheduler continues with the remaining feeds. Optional daily health reporting is configured with `health_webhook` and `health_summary_interval`.
 

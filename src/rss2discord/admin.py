@@ -38,7 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="list",
     )
     notifications.add_argument("--feed-id")
-    notifications.add_argument("--status", choices=("pending", "sent"))
+    notifications.add_argument(
+        "--status",
+        choices=("pending", "sent", "dead_lettered"),
+    )
     notifications.add_argument("--limit", type=int, default=100)
 
     return parser
