@@ -1,8 +1,8 @@
 import json
 from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 
 import requests
@@ -14,6 +14,7 @@ from rss2discord.providers.setec.catalog_bounds import (
     SETEC_SEARCH_PAGE_SIZE,
 )
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 CATALOG_URL = "https://setec.mk/e-prodazba"
 
@@ -112,25 +113,6 @@ def count_payload(amounts: Sequence[Amount]) -> bytes:
             "facetStats": facet_stats,
         },
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-    chunks: tuple[bytes, ...] | None = None
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        if self.chunks is None:
-            yield self.content
-            return
-        yield from self.chunks
 
 
 class RecordingPost:

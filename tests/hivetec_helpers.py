@@ -1,12 +1,12 @@
 import json
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable
 
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from pydantic import JsonValue
 
 from rss2discord.providers.hivetec.transport import HivetecCurlResponse
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 SHOP_URL = "https://hivetec.mk/shop/"
 
@@ -79,15 +79,6 @@ def dates_payload(product_ids: list[int]) -> bytes:
             for product_id in product_ids
         ],
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-    chunks: tuple[bytes, ...] | None = None
-    on_chunk: Callable[[], None] | None = None
 
 
 class RecordingGet:

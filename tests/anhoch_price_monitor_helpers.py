@@ -5,10 +5,8 @@ from decimal import Decimal
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
-    DiscordDeliveryResult,
     DiscordSender,
     SleepCallback,
-    WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceSnapshot
@@ -29,6 +27,9 @@ from rss2discord.transports.price_monitor import (
     PriceMonitorDependencies,
     PriceRecoveryStore,
 )
+from tests.fakes import RecordingSender, RetrySleepAdapter
+
+__all__ = ("RecordingSender", "RetrySleepAdapter")
 
 AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
@@ -64,33 +65,6 @@ class RetryingFailureCatalog:
     @staticmethod
     def _fail() -> tuple[AnhochProduct, ...]:
         raise FeedFetchError("Anhoch", "NetworkError", retryable=True)
-
-
-class RecordingSender:
-    def __init__(self, outcomes: list[bool]) -> None:
-        self._outcomes: list[bool] = outcomes
-        self.messages: list[WebhookMessage] = []
-
-    def send(
-        self,
-        message: WebhookMessage,
-        sleep: SleepCallback,
-    ) -> DiscordDeliveryResult:
-        del sleep
-        self.messages.append(message)
-        return (
-            DiscordDeliveryResult.DELIVERED
-            if self._outcomes.pop(0)
-            else DiscordDeliveryResult.FAILED
-        )
-
-
-class RetrySleepAdapter:
-    def __init__(self, sleep: SleepCallback) -> None:
-        self._sleep: SleepCallback = sleep
-
-    def __call__(self, seconds: float) -> bool:
-        return self._sleep(seconds)
 
 
 def make_feed() -> FeedConfig:

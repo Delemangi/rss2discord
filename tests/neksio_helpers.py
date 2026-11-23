@@ -1,10 +1,12 @@
 import json
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import NotRequired, TypedDict
 
 from curl_cffi import CurlOpt, requests
+
+from tests.fakes import StubResponse
 
 CATALOG_URL = "https://g.store.neksio.mk/not-the-homepage?ignored=true"
 PAGE_SIZE = 100
@@ -103,24 +105,6 @@ def page_payload(
             "productCards": product_cards,
         },
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict[str, str])
-    chunks: tuple[bytes, ...] | None = None
-    interruption: requests.RequestsError | None = None
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield from self.chunks if self.chunks is not None else (self.content,)
-        if self.interruption is not None:
-            raise self.interruption
-
-    def close(self) -> None:
-        return None
 
 
 class RecordingGet:

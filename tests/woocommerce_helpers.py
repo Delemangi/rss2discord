@@ -1,13 +1,12 @@
 import json
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import cast
 
-import requests
 from pydantic import JsonValue
 from requests.structures import CaseInsensitiveDict
 
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 SHOP_URL = "https://technosapien.mk/"
 CATEGORY_URL = "https://technosapien.mk/product-category/komponenti/ssd-hdd/"
@@ -73,32 +72,6 @@ def categories_payload(categories: list[dict[str, JsonValue]]) -> bytes:
 
 def category_payload(category_id: int, name: str, slug: str) -> dict[str, JsonValue]:
     return {"id": category_id, "name": name, "slug": slug}
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
-
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> None:
-        del exc_type, exc, traceback
 
 
 class RecordingGet:

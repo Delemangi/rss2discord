@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -21,6 +21,7 @@ from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
     Reklama5SearchScope,
 )
+from tests.fakes import StubResponse
 
 SEARCH_URL: Final = (
     "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1"
@@ -171,16 +172,6 @@ def scan_budget(
     expires_at: float = math.inf,
 ) -> Reklama5ScanBudget:
     return Reklama5ScanBudget(bytes_remaining, redirects_remaining, expires_at)
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict[str, str])
-    url: str = "https://reklama5.mk/Search"
-    chunks: tuple[bytes, ...] | None = None
-    interruption: curl_requests.RequestsError | None = None
 
 
 class RecordingGet:

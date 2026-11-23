@@ -5,10 +5,8 @@ from decimal import Decimal
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
-    DiscordDeliveryResult,
     DiscordSender,
     SleepCallback,
-    WebhookMessage,
 )
 from rss2discord.fetch_errors import FeedFetchError
 from rss2discord.models import PriceSnapshot
@@ -23,6 +21,9 @@ from rss2discord.transports.price_monitor import (
     PriceMonitorDependencies,
     PriceRecoveryStore,
 )
+from tests.fakes import RecordingSender, RetrySleepAdapter
+
+__all__ = ("RecordingSender", "RetrySleepAdapter")
 
 SetecPriceMonitorDependencies = PriceMonitorDependencies[SetecCatalog]
 
@@ -190,29 +191,6 @@ class RetryingProductFetchCatalog:
     @staticmethod
     def _fail() -> tuple[SetecProduct, ...]:
         raise FeedFetchError("Setec", "NetworkError", retryable=True)
-
-
-class RecordingSender:
-    def __init__(self, outcomes: list[DiscordDeliveryResult]) -> None:
-        self._outcomes = outcomes
-        self.messages: list[WebhookMessage] = []
-
-    def send(
-        self,
-        message: WebhookMessage,
-        sleep: SleepCallback,
-    ) -> DiscordDeliveryResult:
-        del sleep
-        self.messages.append(message)
-        return self._outcomes.pop(0)
-
-
-class RetrySleepAdapter:
-    def __init__(self, sleep: SleepCallback) -> None:
-        self._sleep = sleep
-
-    def __call__(self, seconds: float) -> bool:
-        return self._sleep(seconds)
 
 
 def make_feed() -> FeedConfig:
