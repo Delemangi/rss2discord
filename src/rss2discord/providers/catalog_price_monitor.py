@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.message import WebhookMessage
@@ -60,10 +60,17 @@ class CatalogPriceMonitor[ProductT](ABC):
         )
 
     def _fetch_catalog(self) -> tuple[ProductT, ...]:
-        return self._dependencies.catalog.fetch_catalog(
-            self._feed.url,
-            retry_policy=self._dependencies.fetch_retry_policy,
-            is_shutdown_requested=self._dependencies.delivery.is_shutdown_requested,
+        # The dependency is Any-typed for provider-specific catalog protocols;
+        # every implementation returns this product type.
+        return cast(
+            tuple[ProductT, ...],
+            self._dependencies.catalog.fetch_catalog(
+                self._feed.url,
+                retry_policy=self._dependencies.fetch_retry_policy,
+                is_shutdown_requested=(
+                    self._dependencies.delivery.is_shutdown_requested
+                ),
+            ),
         )
 
     def _observations(
