@@ -20,7 +20,10 @@ TWEETS_MEDIA_TITLE: Final = "Media tweet"
 TWEET_TITLE_LIMIT: Final = 160
 REPLY_TITLE_PREFIX: Final = "R to @"
 PINNED_TITLE_PREFIX: Final = "Pinned: "
-RETWEET_TITLE_PREFIXES: Final = ("RT by @", "RT @")
+RETWEET_BY_PREFIX: Final = "RT by @"
+LEGACY_RETWEET_PREFIX: Final = "RT @"
+RETWEET_TITLE_PREFIXES: Final = (RETWEET_BY_PREFIX, LEGACY_RETWEET_PREFIX)
+QUOTE_TITLE_LABEL: Final = "Quoted @"
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
     r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",
@@ -179,7 +182,7 @@ def _normalized(text: str) -> str:
 
 def _retweet_payload(title: str) -> str:
     """Return the tweet text embedded in a retweet or reply title."""
-    for prefix in (*RETWEET_TITLE_PREFIXES, REPLY_TITLE_PREFIX):
+    for prefix in (*RETWEET_TITLE_PREFIXES, QUOTE_TITLE_LABEL, REPLY_TITLE_PREFIX):
         if not title.startswith(prefix):
             continue
         remainder = title[len(prefix) :]
@@ -188,6 +191,53 @@ def _retweet_payload(title: str) -> str:
     if title.startswith(PINNED_TITLE_PREFIX):
         return title[len(PINNED_TITLE_PREFIX) :].strip()
     return title
+
+
+def _quoted_handle(title: str) -> str | None:
+    """Return the quoted account handle from a quote-tweet title."""
+    if not title.startswith(LEGACY_RETWEET_PREFIX):
+        return None
+    remainder = title[len(LEGACY_RETWEET_PREFIX) :]
+    handle = remainder.split(":", 1)[0].strip().lstrip("@")
+    return handle or None
+
+
+def _link_handle(link: str) -> str | None:
+    """Return the author segment from a Nitter status link."""
+    try:
+        parsed = urlsplit(link)
+    except ValueError:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) < 2 or "status" not in segments:
+        return None
+    author = segments[0].lstrip("@").strip()
+    if not author or author.casefold() == "i":
+        return None
+    return author
+
+
+def _is_quote_tweet(entry: Any) -> bool:  # noqa: ANN401
+    """Return whether a legacy RT title is a quote tweet, not a retweet.
+
+    Nitter labels quote tweets ``RT @quoted: text`` but keeps the profile's own
+    status link, while retweets point at the original author's status.
+    """
+    title = str(entry.get("title", "")).strip()
+    quoted = _quoted_handle(title)
+    if quoted is None:
+        return False
+    author = _link_handle(str(entry.get("link", "")))
+    return author is not None and author.casefold() != quoted.casefold()
+
+
+def _is_retweet(entry: Any) -> bool:  # noqa: ANN401
+    title = str(entry.get("title", "")).strip()
+    if title.startswith(RETWEET_BY_PREFIX):
+        return True
+    if title.startswith(LEGACY_RETWEET_PREFIX):
+        return not _is_quote_tweet(entry)
+    return False
 
 
 def _tweet_body(
@@ -270,6 +320,10 @@ class TweetsStrategy(ScraperStrategy):
         tweet_text, card_text = _split_summary(entry, self._rss)
         tweet_text = tweet_text or _clean_description(data.description)
         title_source = _fallback_title(data.title, tweet_text)
+        if _is_quote_tweet(entry) and title_source.startswith(LEGACY_RETWEET_PREFIX):
+            title_source = (
+                f"{QUOTE_TITLE_LABEL}{title_source[len(LEGACY_RETWEET_PREFIX) :]}"
+            )
         title, title_clipped = _clip_title(title_source)
         description = _tweet_body(
             title_source,
@@ -298,6 +352,4 @@ class TweetsStrategy(ScraperStrategy):
             return True
         if not self._include_pinned and title.startswith(PINNED_TITLE_PREFIX):
             return True
-        return not self._include_retweets and title.startswith(
-            RETWEET_TITLE_PREFIXES,
-        )
+        return not self._include_retweets and _is_retweet(entry)
