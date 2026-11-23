@@ -211,11 +211,10 @@ def test_wolfinet_price_monitor_rejects_a_catalog_above_the_snapshot_limit(
         ],
     )
 
-    with (
-        DeliveryStore(tmp_path / "state.db") as store,
-        pytest.raises(FeedFetchError) as error,
-    ):
-        monitor(catalog, store, sender).scan()
+    with DeliveryStore(tmp_path / "state.db") as store:
+        price_monitor = monitor(catalog, store, sender)
+        with pytest.raises(FeedFetchError) as error:
+            price_monitor.scan()
 
     assert error.value.cause_type == "SnapshotLimitExceeded"
     assert sender.messages == []

@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from functools import partial
-from typing import assert_never
+from typing import assert_never, cast
 from uuid import uuid4
 
 from rss2discord.configuration import FeedConfig
@@ -48,59 +48,137 @@ def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
             feed=feed,
             baseline_extra=baseline_extra,
         )
-    if feed is not None:
-        drained = drain_pending_price_notifications(dependencies, feed)
-        if drained is PriceDeliveryOutcome.FAILED:
-            return PriceDeliveryOutcome.FAILED
-        if drained is PriceDeliveryOutcome.INTERRUPTED:
-            return PriceDeliveryOutcome.INTERRUPTED
+    return _deliver_inline_price_changes(
+        materialized,
+        dependencies,
+        message_for,
+        plan=plan,
+        feed=feed,
+    )
+
+
+def _deliver_inline_price_changes[PriceChangeT: DeliverablePriceChange](
+    changes: Sequence[PriceChangeT],
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[PriceChangeT], WebhookMessage],
+    *,
+    plan: PriceDeliveryPlan,
+    feed: FeedConfig | None,
+) -> PriceDeliveryOutcome:
+    drained = _drain_before_inline(dependencies, feed)
+    if drained is not None:
+        return drained
     selected = set(plan.selected_ids)
     selected_changes = tuple(
-        change for change in materialized if change.current.product_id in selected
+        change for change in changes if change.current.product_id in selected
     )
     history_contexts: Mapping[tuple[str, str], PriceHistoryContext] | None = None
     delay_before_next = False
     had_failure = False
     for change in selected_changes:
-        if dependencies.delivery.is_shutdown_requested():
-            return PriceDeliveryOutcome.INTERRUPTED
-        if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
-            return PriceDeliveryOutcome.INTERRUPTED
-        delay_before_next = False
-        if dependencies.delivery.is_shutdown_requested():
-            return PriceDeliveryOutcome.INTERRUPTED
-        message = message_for(change)
-        if message.entry.price_change_percentage is not None or message.entry.restocked:
-            if history_contexts is None:
-                history_contexts = _load_price_history_contexts(
-                    dependencies,
-                    (candidate.current for candidate in selected_changes),
-                )
-            message = _with_price_history(
-                message,
-                history_contexts.get(
-                    (change.current.feed_id, change.current.product_id),
-                ),
-            )
-        if dependencies.delivery.is_shutdown_requested():
-            return PriceDeliveryOutcome.INTERRUPTED
-        result = dependencies.sender.send(message, dependencies.delivery.sleep)
-        if result is DiscordDeliveryResult.DELIVERED:
-            dependencies.sqlite_retry_policy.execute(
-                partial(
-                    dependencies.snapshots.upsert_price_snapshot,
-                    change.current,
-                ),
-            )
-            delay_before_next = True
-            continue
-        if result is DiscordDeliveryResult.INTERRUPTED:
-            return PriceDeliveryOutcome.INTERRUPTED
-        had_failure = True
-        if dependencies.delivery.is_shutdown_requested():
-            return PriceDeliveryOutcome.INTERRUPTED
+        outcome, history_contexts, delay_before_next = _deliver_inline_change(
+            change,
+            dependencies,
+            message_for,
+            selected_changes,
+            history_contexts=history_contexts,
+            delay_before_next=delay_before_next,
+        )
+        if outcome is PriceDeliveryOutcome.INTERRUPTED:
+            return outcome
+        if outcome is PriceDeliveryOutcome.FAILED:
+            had_failure = True
     return (
         PriceDeliveryOutcome.FAILED if had_failure else PriceDeliveryOutcome.DELIVERED
+    )
+
+
+def _drain_before_inline(
+    dependencies: PriceChangeDeliveryDependencies,
+    feed: FeedConfig | None,
+) -> PriceDeliveryOutcome | None:
+    if feed is None:
+        return None
+    drained = drain_pending_price_notifications(dependencies, feed)
+    return None if drained is PriceDeliveryOutcome.DELIVERED else drained
+
+
+def _deliver_inline_change[PriceChangeT: DeliverablePriceChange](
+    change: PriceChangeT,
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[PriceChangeT], WebhookMessage],
+    candidates: Sequence[PriceChangeT],
+    *,
+    history_contexts: Mapping[tuple[str, str], PriceHistoryContext] | None,
+    delay_before_next: bool,
+) -> tuple[
+    PriceDeliveryOutcome,
+    Mapping[tuple[str, str], PriceHistoryContext] | None,
+    bool,
+]:
+    """Deliver one price-change card and return the state for the next card."""
+    if dependencies.delivery.is_shutdown_requested():
+        return PriceDeliveryOutcome.INTERRUPTED, history_contexts, delay_before_next
+    if not _wait_between_price_deliveries(dependencies.delivery, delay_before_next):
+        return PriceDeliveryOutcome.INTERRUPTED, history_contexts, delay_before_next
+    message, history_contexts = _price_change_message(
+        change,
+        dependencies,
+        message_for,
+        candidates,
+        history_contexts,
+    )
+    if dependencies.delivery.is_shutdown_requested():
+        return PriceDeliveryOutcome.INTERRUPTED, history_contexts, False
+    result = dependencies.sender.send(message, dependencies.delivery.sleep)
+    if result is DiscordDeliveryResult.DELIVERED:
+        _persist_delivered_snapshot(change, dependencies)
+        return PriceDeliveryOutcome.DELIVERED, history_contexts, True
+    if result is DiscordDeliveryResult.INTERRUPTED:
+        return PriceDeliveryOutcome.INTERRUPTED, history_contexts, False
+    if dependencies.delivery.is_shutdown_requested():
+        return PriceDeliveryOutcome.INTERRUPTED, history_contexts, False
+    return PriceDeliveryOutcome.FAILED, history_contexts, False
+
+
+def _price_change_message[PriceChangeT: DeliverablePriceChange](
+    change: PriceChangeT,
+    dependencies: PriceChangeDeliveryDependencies,
+    message_for: Callable[[PriceChangeT], WebhookMessage],
+    candidates: Sequence[PriceChangeT],
+    history_contexts: Mapping[tuple[str, str], PriceHistoryContext] | None,
+) -> tuple[
+    WebhookMessage,
+    Mapping[tuple[str, str], PriceHistoryContext] | None,
+]:
+    message = message_for(change)
+    if message.entry.price_change_percentage is None and not message.entry.restocked:
+        return message, history_contexts
+    if history_contexts is None:
+        history_contexts = _load_price_history_contexts(
+            dependencies,
+            (candidate.current for candidate in candidates),
+        )
+    return (
+        _with_price_history(
+            message,
+            history_contexts.get(
+                (change.current.feed_id, change.current.product_id),
+            ),
+        ),
+        history_contexts,
+    )
+
+
+def _persist_delivered_snapshot[PriceChangeT: DeliverablePriceChange](
+    change: PriceChangeT,
+    dependencies: PriceChangeDeliveryDependencies,
+) -> None:
+    dependencies.sqlite_retry_policy.execute(
+        partial(
+            dependencies.snapshots.upsert_price_snapshot,
+            change.current,
+        ),
     )
 
 
@@ -315,14 +393,17 @@ def _with_price_history(
         return message
     if message.entry.price_change_percentage is None and not message.entry.restocked:
         return message
-    return replace(
-        message,
-        entry=replace(
-            message.entry,
-            price_period_low=context.low_formatted,
-            price_period_high=context.high_formatted,
-            price_period_days=PRICE_HISTORY_WINDOW_DAYS,
-            price_is_period_low=context.is_low,
+    return cast(
+        WebhookMessage,
+        replace(
+            message,
+            entry=replace(
+                message.entry,
+                price_period_low=context.low_formatted,
+                price_period_high=context.high_formatted,
+                price_period_days=PRICE_HISTORY_WINDOW_DAYS,
+                price_is_period_low=context.is_low,
+            ),
         ),
     )
 

@@ -1,14 +1,13 @@
 """Persist and report feed health and same-origin cooldowns."""
 
 import logging
-import re
 import sqlite3
 from typing import Literal
 from urllib.parse import urlsplit
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
-from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.fetch_errors import FeedFetchError, safe_error_cause
 from rss2discord.models import HealthUpdate
 
 logger = logging.getLogger("rss2discord.price_runtime")
@@ -119,18 +118,3 @@ def record_fetch_failure(
             scheduler_lag_ms=0,
         ),
     )
-
-
-def safe_error_cause(error: Exception) -> str:
-    cause = (
-        error.cause_type if isinstance(error, FeedFetchError) else type(error).__name__
-    )
-    if not re.fullmatch(r"[A-Za-z]\w{0,63}", cause, flags=re.ASCII):
-        return "FetchError"
-    if (
-        isinstance(error, FeedFetchError)
-        and isinstance(error.status_code, int)
-        and 100 <= error.status_code <= 599
-    ):
-        return f"{cause} HTTP {error.status_code}"
-    return cause

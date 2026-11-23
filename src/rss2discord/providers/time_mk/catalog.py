@@ -282,16 +282,20 @@ def _entry_category(entry: dict[str, object]) -> str | None:
         category = _clean_text(raw_category, MAX_TIME_MK_CATEGORY_LENGTH)
         if category:
             return category
-    tags = entry.get("tags")
-    if isinstance(tags, list):
-        for tag in tags:
-            if not isinstance(tag, dict):
-                continue
-            term = tag.get("term")
-            if isinstance(term, str):
-                category = _clean_text(term, MAX_TIME_MK_CATEGORY_LENGTH)
-                if category:
-                    return category
+    return _category_from_tags(entry.get("tags"))
+
+
+def _category_from_tags(tags: object) -> str | None:
+    if not isinstance(tags, list):
+        return None
+    for tag in tags:
+        if not isinstance(tag, dict):
+            continue
+        term = tag.get("term")
+        if isinstance(term, str):
+            category = _clean_text(term, MAX_TIME_MK_CATEGORY_LENGTH)
+            if category:
+                return category
     return None
 
 

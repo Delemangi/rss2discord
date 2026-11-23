@@ -616,6 +616,7 @@ def test_reddit_app_integration_seeds_then_delivers_one_new_post(
             config=AppConfig(
                 delay_between_posts=0,
                 max_post_age_days=0,
+                state_retention_days=0,
                 feeds=(feed,),
             ),
             store=store,

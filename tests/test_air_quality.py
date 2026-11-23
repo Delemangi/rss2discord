@@ -76,8 +76,9 @@ def test_client_parses_current_reading() -> None:
     ],
 )
 def test_client_rejects_invalid_urls(url: str) -> None:
+    client = client_with(payload())
     with pytest.raises(FeedFetchError) as error:
-        client_with(payload()).fetch_reading(url)
+        client.fetch_reading(url)
 
     assert error.value.cause_type == "InvalidUrl"
 
@@ -92,8 +93,9 @@ def test_client_rejects_invalid_urls(url: str) -> None:
     ],
 )
 def test_client_rejects_invalid_responses(data: dict[str, object]) -> None:
+    client = client_with(data)
     with pytest.raises(FeedFetchError) as error:
-        client_with(data).fetch_reading(AIR_QUALITY_URL)
+        client.fetch_reading(AIR_QUALITY_URL)
 
     assert error.value.cause_type == "InvalidResponse"
 

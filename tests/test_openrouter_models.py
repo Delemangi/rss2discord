@@ -101,8 +101,9 @@ def test_client_catalog_interface_returns_models() -> None:
 
 
 def test_client_catalog_interface_honors_shutdown() -> None:
+    client = client_with(payload(catalog_model()))
     with pytest.raises(FeedFetchInterruptedError):
-        client_with(payload(catalog_model())).fetch_catalog(
+        client.fetch_catalog(
             OPENROUTER_MODELS_URL,
             is_shutdown_requested=lambda: True,
         )
@@ -120,8 +121,9 @@ def test_client_catalog_interface_honors_shutdown() -> None:
     ],
 )
 def test_client_rejects_invalid_urls(url: str) -> None:
+    client = client_with(payload(catalog_model()))
     with pytest.raises(FeedFetchError) as error:
-        client_with(payload(catalog_model())).fetch_models(url)
+        client.fetch_models(url)
 
     assert error.value.cause_type == "InvalidUrl"
 
@@ -137,8 +139,9 @@ def test_client_rejects_invalid_urls(url: str) -> None:
     ],
 )
 def test_client_rejects_invalid_responses(data: dict[str, object]) -> None:
+    client = client_with(data)
     with pytest.raises(FeedFetchError) as error:
-        client_with(data).fetch_models(OPENROUTER_MODELS_URL)
+        client.fetch_models(OPENROUTER_MODELS_URL)
 
     assert error.value.cause_type == "InvalidResponse"
 

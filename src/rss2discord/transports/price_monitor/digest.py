@@ -6,6 +6,7 @@ import csv
 import io
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from html import escape
@@ -33,6 +34,7 @@ MAX_CATEGORY_NAME_CHARACTERS: Final = 40
 MAX_BRIEF_CHARACTERS: Final = 3_900
 
 type _Section = tuple[str, int, list[str]]
+type _Movement = tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]
 PLAUSIBLE_RATIO_MIN: Final = Decimal("0.1")
 PLAUSIBLE_RATIO_MAX: Final = Decimal(10)
 ATTACHMENT_NOTE: Final = "The complete searchable list is attached (HTML and CSV)."
@@ -274,8 +276,8 @@ def _move_line(
 def _split_changes(
     records: Sequence[PriceNotificationRecord],
 ) -> tuple[
-    list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]],
-    list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]],
+    list[_Movement],
+    list[_Movement],
     int,
     int,
     int,
@@ -289,56 +291,82 @@ def _split_changes(
     price move. Such a move stays eligible for the drops/rises lists, but a
     restock whose price is unchanged never looks like a price move.
     """
-    drop_count = rise_count = unchanged_count = new_count = extreme_count = 0
-    restocked_count = 0
-    drops: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
-    rises: list[tuple[PriceNotificationRecord, Decimal, Decimal, Decimal]] = []
-
+    tally = _ChangeTally()
     for record in records:
+        tally.add(record)
+    return tally.result()
+
+
+@dataclass(slots=True)
+class _ChangeTally:
+    """Disjoint per-scan counts plus the candidate movement lists."""
+
+    drops: list[_Movement] = field(default_factory=list)
+    rises: list[_Movement] = field(default_factory=list)
+    drop_count: int = 0
+    rise_count: int = 0
+    unchanged_count: int = 0
+    new_count: int = 0
+    extreme_count: int = 0
+    restocked_count: int = 0
+
+    def add(self, record: PriceNotificationRecord) -> None:
+        if record.entry.restocked:
+            self._add_restock(record)
+        else:
+            self._add_price_move(record)
+
+    def _add_restock(self, record: PriceNotificationRecord) -> None:
+        self.restocked_count += 1
         previous = record.previous_amount
         current = record.current_amount
-        if record.entry.restocked:
-            restocked_count += 1
-            if previous is not None and previous > 0 and current != previous:
-                ratio = current / previous
-                if ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX:
-                    extreme_count += 1
-                elif ratio < 1:
-                    drops.append((record, previous, current, ratio))
-                else:
-                    rises.append((record, previous, current, ratio))
-            continue
+        if previous is None or previous <= 0 or current == previous:
+            return
+        ratio = current / previous
+        if ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX:
+            self.extreme_count += 1
+        elif ratio < 1:
+            self.drops.append((record, previous, current, ratio))
+        else:
+            self.rises.append((record, previous, current, ratio))
+
+    def _add_price_move(self, record: PriceNotificationRecord) -> None:
+        previous = record.previous_amount
+        current = record.current_amount
         if previous is None or previous <= 0:
-            new_count += 1
-            continue
+            self.new_count += 1
+            return
         if current == previous:
-            unchanged_count += 1
-            continue
+            self.unchanged_count += 1
+            return
         ratio = current / previous
         extreme = ratio < PLAUSIBLE_RATIO_MIN or ratio > PLAUSIBLE_RATIO_MAX
         if extreme:
-            extreme_count += 1
+            self.extreme_count += 1
         if ratio < 1:
-            drop_count += 1
+            self.drop_count += 1
             if not extreme:
-                drops.append((record, previous, current, ratio))
+                self.drops.append((record, previous, current, ratio))
         else:
-            rise_count += 1
+            self.rise_count += 1
             if not extreme:
-                rises.append((record, previous, current, ratio))
+                self.rises.append((record, previous, current, ratio))
 
-    drops.sort(key=lambda item: (item[3], -(item[2] - item[1]).copy_abs()))
-    rises.sort(key=lambda item: (-item[3], -(item[2] - item[1]).copy_abs()))
-    return (
-        drops[:MAX_TOP_DROPS],
-        rises[:MAX_TOP_RISES],
-        drop_count,
-        rise_count,
-        extreme_count,
-        unchanged_count,
-        new_count,
-        restocked_count,
-    )
+    def result(
+        self,
+    ) -> tuple[list[_Movement], list[_Movement], int, int, int, int, int, int]:
+        self.drops.sort(key=lambda item: (item[3], -(item[2] - item[1]).copy_abs()))
+        self.rises.sort(key=lambda item: (-item[3], -(item[2] - item[1]).copy_abs()))
+        return (
+            self.drops[:MAX_TOP_DROPS],
+            self.rises[:MAX_TOP_RISES],
+            self.drop_count,
+            self.rise_count,
+            self.extreme_count,
+            self.unchanged_count,
+            self.new_count,
+            self.restocked_count,
+        )
 
 
 def _csv_report(

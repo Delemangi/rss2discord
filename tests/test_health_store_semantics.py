@@ -151,6 +151,12 @@ def test_existing_health_schema_gets_timestamp_columns_additively(
 
 
 def test_negative_health_reminder_is_rejected(tmp_path: Path) -> None:
+    update = _update(
+        state="healthy",
+        attempted_at=1,
+        success=True,
+        nonempty=True,
+    )
     with (
         DeliveryStore(tmp_path / "state.db") as store,
         pytest.raises(
@@ -158,12 +164,4 @@ def test_negative_health_reminder_is_rejected(tmp_path: Path) -> None:
             match="reminder_seconds must be non-negative",
         ),
     ):
-        store.record_health(
-            _update(
-                state="healthy",
-                attempted_at=1,
-                success=True,
-                nonempty=True,
-            ),
-            reminder_seconds=-1,
-        )
+        store.record_health(update, reminder_seconds=-1)

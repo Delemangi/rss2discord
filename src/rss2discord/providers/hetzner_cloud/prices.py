@@ -1,9 +1,7 @@
 """Hetzner Cloud restock-aware price monitor."""
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol
 
 from rss2discord.discord.message import WebhookMessage
 from rss2discord.models import EntryData, PriceSnapshot, SourceMetric
@@ -16,20 +14,7 @@ from rss2discord.providers.hetzner_cloud.bounds import (
     MAX_HETZNER_CLOUD_SNAPSHOTS,
 )
 from rss2discord.providers.hetzner_cloud.models import HetznerCloudOffer
-from rss2discord.retries import FetchRetryPolicy
 from rss2discord.transports.price_monitor import build_price_change_message
-
-
-class HetznerCloudCatalog(Protocol):
-    """Retrieve Hetzner Cloud offers with availability and prices."""
-
-    def fetch_catalog(
-        self,
-        url: str,
-        *,
-        retry_policy: FetchRetryPolicy,
-        is_shutdown_requested: Callable[[], bool],
-    ) -> tuple[HetznerCloudOffer, ...]: ...
 
 
 class HetznerCloudPriceMonitor(CatalogPriceMonitor[HetznerCloudOffer]):

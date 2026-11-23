@@ -18,6 +18,7 @@ FETCH_BASE_DELAY_SECONDS: Final = 2.0
 FETCH_MAX_DELAY_SECONDS: Final = 300.0
 FETCH_MAX_BACKOFF_SECONDS: Final = 30.0
 SQLITE_RETRY_DELAY_SECONDS: Final = 5.0
+SQLITE_MAX_ATTEMPTS: Final = 12
 SQLITE_TRANSIENT_ERROR_CODES: Final = frozenset(
     {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED},
 )
@@ -109,16 +110,19 @@ class SQLiteRetryPolicy:
     on_retry: SQLiteRetryLogger
 
     def execute[T](self, operation: Callable[[], T]) -> T:
-        """Run an operation until a transient SQLite failure clears or shutdown occurs."""
-        while True:
+        """Retry transient SQLite failures with a bounded attempt count."""
+        for attempt in range(1, SQLITE_MAX_ATTEMPTS + 1):
             try:
                 return operation()
             except sqlite3.Error as error:
                 if not _is_transient_sqlite_error(error):
                     raise
+                if attempt == SQLITE_MAX_ATTEMPTS:
+                    raise
                 self.on_retry(error, SQLITE_RETRY_DELAY_SECONDS)
                 if not self.sleep(SQLITE_RETRY_DELAY_SECONDS):
                     raise SQLiteRetryInterruptedError from None
+        raise AssertionError
 
 
 def _fetch_retry_delay(error: FeedFetchError, attempt: int) -> float:

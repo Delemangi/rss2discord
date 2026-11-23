@@ -15,7 +15,7 @@ from rss2discord.providers.reddit.bounds import (
     REDDIT_TIME_SORTS,
 )
 
-SUBREDDIT_PATTERN: Final = re.compile(r"[A-Za-z0-9_]{1,21}", flags=re.ASCII)
+SUBREDDIT_PATTERN: Final = re.compile(r"\w{1,21}", flags=re.ASCII)
 
 
 @dataclass(frozen=True, slots=True)

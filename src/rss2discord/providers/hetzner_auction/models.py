@@ -164,37 +164,46 @@ class HetznerAuctionFilters:
         """Return whether one listing satisfies every configured filter."""
         if not self.include_fixed and server.prices.fixed:
             return False
-        price = server.prices.monthly.eur
-        if self.max_price_eur is not None and price > self.max_price_eur:
+        if not self._matches_price(server.prices.monthly.eur):
             return False
         hardware = server.hardware
-        if self.min_ram_gb is not None and hardware.ram.size < self.min_ram_gb:
+        if not self._matches_ram(hardware.ram):
             return False
-        if self.require_ecc and not hardware.ram.ecc:
+        if not self._matches_cpu(hardware.cpu.name):
             return False
-        if (
-            self.cpu_search is not None
-            and self.cpu_search.casefold() not in hardware.cpu.name.casefold()
-        ):
+        if not self._matches_location(server.details.datacenter.name):
             return False
-        if (
-            self.location is not None
-            and self.location.casefold()
-            not in server.details.datacenter.name.casefold()
-        ):
+        return self._matches_storage(hardware.storage.details)
+
+    def _matches_price(self, price: Decimal) -> bool:
+        return self.max_price_eur is None or price <= self.max_price_eur
+
+    def _matches_ram(self, ram: HetznerRam) -> bool:
+        if self.min_ram_gb is not None and ram.size < self.min_ram_gb:
             return False
-        if self.disk_type is not None or self.min_disk_gb is not None:
-            details = hardware.storage.details
-            sizes = (
-                getattr(details, self.disk_type)
-                if self.disk_type is not None
-                else (*details.nvme, *details.sata, *details.hdd)
-            )
-            if self.disk_type is not None and not sizes:
-                return False
-            if self.min_disk_gb is not None and sum(sizes) < self.min_disk_gb:
-                return False
-        return True
+        return not self.require_ecc or ram.ecc
+
+    def _matches_cpu(self, cpu_name: str) -> bool:
+        return self.cpu_search is None or (
+            self.cpu_search.casefold() in cpu_name.casefold()
+        )
+
+    def _matches_location(self, datacenter_name: str) -> bool:
+        return self.location is None or (
+            self.location.casefold() in datacenter_name.casefold()
+        )
+
+    def _matches_storage(self, details: HetznerStorageDetails) -> bool:
+        if self.disk_type is None and self.min_disk_gb is None:
+            return True
+        sizes = (
+            getattr(details, self.disk_type)
+            if self.disk_type is not None
+            else (*details.nvme, *details.sata, *details.hdd)
+        )
+        if self.disk_type is not None and not sizes:
+            return False
+        return self.min_disk_gb is None or sum(sizes) >= self.min_disk_gb
 
 
 def _decimal(value: str) -> Decimal:

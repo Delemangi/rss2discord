@@ -5,7 +5,12 @@ from typing import get_args
 import pytest
 from pydantic import ValidationError
 
-from rss2discord.configuration import AppConfig, FeedStrategyName, load_config
+from rss2discord.configuration import (
+    AppConfig,
+    FeedConfig,
+    FeedStrategyName,
+    load_config,
+)
 from tests.configuration_helpers import write_config
 
 
@@ -496,6 +501,37 @@ def test_state_retention_days_defaults_and_rejects_negative() -> None:
 
     with pytest.raises(ValidationError):
         AppConfig(state_retention_days=-1)
+
+
+def test_intervals_require_at_least_one_second() -> None:
+    with pytest.raises(ValidationError):
+        AppConfig(refresh_interval=0.5)
+    with pytest.raises(ValidationError):
+        AppConfig(health_summary_interval=0.5)
+    with pytest.raises(ValidationError):
+        FeedConfig(
+            id="feed",
+            url="https://example.test/feed.xml",
+            webhook="https://discord.test/webhook",
+            ordinary_check_interval=0.5,
+        )
+    with pytest.raises(ValidationError):
+        FeedConfig(
+            id="feed",
+            url="https://example.test/feed.xml",
+            webhook="https://discord.test/webhook",
+            strategy="ananas",
+            price_check_interval=0.5,
+        )
+
+
+def test_retention_must_cover_max_post_age() -> None:
+    AppConfig(max_post_age_days=0, state_retention_days=0)
+    AppConfig(max_post_age_days=7, state_retention_days=7)
+    with pytest.raises(ValidationError):
+        AppConfig(max_post_age_days=0, state_retention_days=1)
+    with pytest.raises(ValidationError):
+        AppConfig(max_post_age_days=7, state_retention_days=6)
 
 
 def test_health_summary_config_defaults_and_validation() -> None:

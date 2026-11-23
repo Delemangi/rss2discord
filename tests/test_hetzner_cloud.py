@@ -173,6 +173,7 @@ def test_catalog_filters_server_types() -> None:
 
 def test_catalog_rejects_unknown_empty_and_malformed_filters() -> None:
     data = payload(server_type())
+    client = client_with(data)
     for query in (
         "?only_available=true",
         "?locations=",
@@ -181,7 +182,7 @@ def test_catalog_rejects_unknown_empty_and_malformed_filters() -> None:
         "?locations=Bogus",
     ):
         with pytest.raises(FeedFetchError) as error:
-            client_with(data).fetch_catalog(
+            client.fetch_catalog(
                 f"https://api.hetzner.cloud/v1/server_types{query}",
             )
         assert error.value.cause_type == "InvalidUrl"
@@ -214,19 +215,21 @@ def test_catalog_rejects_invalid_urls(url: str) -> None:
     ],
 )
 def test_catalog_rejects_invalid_responses(data: dict[str, object]) -> None:
+    client = client_with(data)
     with pytest.raises(FeedFetchError) as error:
-        client_with(data).fetch_catalog(FEED_URL)
+        client.fetch_catalog(FEED_URL)
 
     assert error.value.cause_type == "InvalidResponse"
 
 
 def test_catalog_requires_token() -> None:
+    client = HetznerCloudCatalogClient(
+        fetch=lambda _url, _token: b"{}",
+        token="",
+        environment={},
+    )
     with pytest.raises(FeedFetchError) as error:
-        HetznerCloudCatalogClient(
-            fetch=lambda _url, _token: b"{}",
-            token="",
-            environment={},
-        ).fetch_catalog(FEED_URL)
+        client.fetch_catalog(FEED_URL)
 
     assert error.value.cause_type == "MissingToken"
 

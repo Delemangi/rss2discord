@@ -9,7 +9,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from html import escape
-from typing import Final
+from typing import Final, cast
 
 from rss2discord.configuration import FeedConfig
 from rss2discord.discord.attachments import ReportFile
@@ -172,7 +172,11 @@ def _card_components(
 ) -> tuple[JSONValue, ...]:
     payload = build_components_v2_payload(
         feed,
-        replace(entry, description=description, image_url=None, image_urls=()),
+        # dataclasses.replace preserves the concrete dataclass type.
+        cast(
+            EntryData,
+            replace(entry, description=description, image_url=None, image_urls=()),
+        ),
         source_title,
     )
     components = payload.get("components")

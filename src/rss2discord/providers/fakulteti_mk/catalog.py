@@ -150,7 +150,7 @@ class FakultetiMkCatalogClient:
 
         try:
             payload = json.loads(content)
-        except (ValueError, UnicodeDecodeError):
+        except ValueError:
             raise FeedFetchError(FAKULTETI_MK_LABEL, "InvalidJson") from None
         if not isinstance(payload, list):
             raise FeedFetchError(FAKULTETI_MK_LABEL, "InvalidJson")

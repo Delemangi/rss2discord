@@ -4,3 +4,13 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    ignore:
+      # A minor release of a 0.x package may be breaking; review it manually.
+      - dependency-name: "curl-cffi"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "forumscraper"
+        update-types: ["version-update:semver-minor"]
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -122,6 +122,8 @@ def test_proxnet_product_id_comes_from_the_last_path_segment() -> None:
         ("10,315.00 ден", Decimal("10315.00")),
         ("8,950.01 ден", Decimal("8950.01")),
         ("1,234 ден", Decimal(1234)),
+        ("1,234.5 ден", Decimal("1234.5")),
+        ("0.99 ден", Decimal("0.99")),
         ("100 MKD", Decimal(100)),
     ],
 )
@@ -134,7 +136,15 @@ def test_proxnet_parse_mkd_price_accepts_supported_formats(
 
 @pytest.mark.parametrize(
     "value",
-    ["", "цена", "0.00 ден", "10,31.00 ден", "10.315.00 ден"],
+    [
+        "",
+        "цена",
+        "0.00 ден",
+        "10,31.00 ден",
+        "10.315.00 ден",
+        "1,23.45 ден",
+        "1,234.567 ден",
+    ],
 )
 def test_proxnet_parse_mkd_price_rejects_invalid_or_non_positive_values(
     value: str,

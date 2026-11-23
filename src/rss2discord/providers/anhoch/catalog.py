@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable
 from typing import Final
 from urllib.parse import urljoin
@@ -39,6 +40,7 @@ MAX_ANHOCH_CATALOG_SCAN_BYTES: Final = (
 )
 ANHOCH_STREAM_CHUNK_BYTES: Final = 65_536
 MAX_ANHOCH_REDIRECTS: Final = 10
+MAX_ANHOCH_SCAN_SECONDS: Final = 600.0
 
 
 class AnhochCatalogClient:
@@ -97,9 +99,12 @@ class AnhochCatalogClient:
             require_complete_catalog=require_complete_catalog,
         )
         totals = CatalogScanTotals(product_count=0, response_bytes=0)
+        deadline = time.monotonic() + MAX_ANHOCH_SCAN_SECONDS
         for page_number in range(1, max_pages + 1):
             if is_shutdown_requested is not None and is_shutdown_requested():
                 raise FeedFetchInterruptedError
+            if time.monotonic() >= deadline:
+                raise FeedFetchError(ANHOCH_LABEL, "ScanTimeLimitExceeded")
             if totals.response_bytes >= max_scan_bytes:
                 raise FeedFetchError(ANHOCH_LABEL, "ScanResponseTooLarge")
             fetched_page = self._fetch_page(

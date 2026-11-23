@@ -5,9 +5,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final
 
+from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryId
 from rss2discord.providers.reklama5.http import (
     Reklama5ScanBudget,
+    blocking_sleep,
     fetch_reklama5_page,
 )
 from rss2discord.providers.reklama5.parser import (
@@ -30,8 +32,13 @@ logger = logging.getLogger(__name__)
 
 
 class Reklama5CatalogClient:
-    def __init__(self, clock: Reklama5CatalogClock | None = None) -> None:
+    def __init__(
+        self,
+        clock: Reklama5CatalogClock | None = None,
+        sleep: SleepCallback | None = None,
+    ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._sleep = sleep or blocking_sleep
 
     def fetch_catalog(
         self,
@@ -64,7 +71,12 @@ class Reklama5CatalogClient:
                 raise FeedFetchInterruptedError
             request = scope.catalog_page_request(page_number)
             page = parse_reklama5_page(
-                fetch_reklama5_page(request, budget),
+                fetch_reklama5_page(
+                    request,
+                    budget,
+                    self._sleep,
+                    is_shutdown_requested,
+                ),
                 request,
                 now,
             )

@@ -60,9 +60,8 @@ def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
     price_interval: float,
 ) -> None:
     fast = make_feed("fast").model_copy(update={"ordinary_check_interval": 300})
-    slow = FeedConfig.model_validate(
-        make_feed("slow").model_dump()
-        | {
+    slow = make_feed("slow").model_copy(
+        update={
             "ordinary_check_interval": 3600,
             "strategy": "anhoch",
             "price_check_interval": price_interval,
@@ -191,16 +190,18 @@ def test_tiny_ordinary_interval_runs_peer_after_nonzero_callback(
     *,
     override: bool,
 ) -> None:
-    tiny = make_feed("tiny").model_dump() | {
-        "ordinary_check_interval": 1e-320 if override else None,
-    }
-    peer = make_feed("peer").model_dump() | {"ordinary_check_interval": 300}
-    config = AppConfig.model_validate(
-        {
-            "feeds": [tiny, peer],
-            "refresh_interval": 300 if override else 1e-320,
-            "delay_between_feeds": 1,
+    tiny = make_feed("tiny").model_copy(
+        update={
+            "ordinary_check_interval": 1e-320 if override else None,
         },
+    )
+    peer = make_feed("peer").model_copy(update={"ordinary_check_interval": 300})
+    # The scheduler must survive sub-ULP intervals even though configuration
+    # validation rejects them.
+    config = AppConfig.model_construct(
+        feeds=(tiny, peer),
+        refresh_interval=300 if override else 1e-320,
+        delay_between_feeds=1,
     )
     now = 0.0
     events: list[str] = []

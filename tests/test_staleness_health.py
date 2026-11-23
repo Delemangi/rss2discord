@@ -58,3 +58,30 @@ def test_recent_newest_entry_stays_healthy(tmp_path: Path) -> None:
         # Then
         health = store.list_health(feed.id)[0]
         assert health.state == "healthy"
+
+
+def test_newest_entry_need_not_be_last(tmp_path: Path) -> None:
+    # Given a newest-first strategy whose last entry is old
+    feed = make_feed("newest-first", stale_after_days=1)
+    sender = FakeSender([True, True])
+    fresh = FakeEntry(
+        id=EntryId("fresh-first"),
+        data=EntryData(
+            title="fresh-first",
+            link="https://example.test/fresh-first",
+            description="",
+            author="",
+            timestamp=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+        ),
+    )
+    strategy = FakeStrategy([fresh, make_entry("old-last")])
+
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = make_app(store, sender, strategy, (feed,))
+
+        # When
+        app.process_feed(feed)
+
+        # Then
+        health = store.list_health(feed.id)[0]
+        assert health.state == "healthy"

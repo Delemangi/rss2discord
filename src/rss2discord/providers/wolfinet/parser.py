@@ -32,7 +32,7 @@ __all__ = [
 
 _HTML_PARSER: Final = "html.parser"
 _AMOUNT_RE: Final = re.compile(
-    r"(?<!\d)(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\d)",
+    r"(?<!\d)((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?!\d)",
 )
 _CURRENCY_SUFFIX_RE: Final = re.compile(r"\s*(?:ден\.?|MKD\.?)\s*$", re.IGNORECASE)
 _DISPLAY_PRICE_RE: Final = re.compile(

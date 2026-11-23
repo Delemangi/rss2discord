@@ -267,21 +267,35 @@ class RSSStrategy(ScraperStrategy):
             attributes = cls._inline_image_attributes(match.group(0))
             if cls._is_tracking_pixel(attributes):
                 continue
-            for name in ("src", "data-src", "srcset"):
-                raw_url = attributes.get(name)
-                if raw_url is None:
-                    continue
-                if name == "srcset":
-                    raw_url = raw_url.split(",", 1)[0].strip().split(" ", 1)[0]
-                normalized = normalize_remote_media_url(unescape(raw_url))
-                if normalized is None and upgrade_http:
-                    normalized = cls._upgrade_http_media_url(raw_url)
-                if normalized is None or cls._is_placeholder_image_url(normalized):
-                    continue
-                if normalized not in urls:
-                    urls.append(normalized)
-                break
+            normalized = cls._resolved_inline_image_url(
+                attributes,
+                upgrade_http=upgrade_http,
+            )
+            if normalized is not None and normalized not in urls:
+                urls.append(normalized)
         return tuple(urls)
+
+    @classmethod
+    def _resolved_inline_image_url(
+        cls,
+        attributes: Mapping[str, str],
+        *,
+        upgrade_http: bool,
+    ) -> str | None:
+        """Return the first safe URL declared by one inline image tag."""
+        for name in ("src", "data-src", "srcset"):
+            raw_url = attributes.get(name)
+            if raw_url is None:
+                continue
+            if name == "srcset":
+                raw_url = raw_url.split(",", 1)[0].strip().split(" ", 1)[0]
+            normalized = normalize_remote_media_url(unescape(raw_url))
+            if normalized is None and upgrade_http:
+                normalized = cls._upgrade_http_media_url(raw_url)
+            if normalized is None or cls._is_placeholder_image_url(normalized):
+                continue
+            return normalized
+        return None
 
     @classmethod
     def _inline_image_url(cls, html: str) -> str | None:

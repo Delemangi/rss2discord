@@ -145,6 +145,7 @@ def test_itmk_oglasnik_first_fetch_seeds_existing_listings_without_sending(
             config=AppConfig(
                 delay_between_posts=0,
                 max_post_age_days=0,
+                state_retention_days=0,
                 feeds=(feed,),
             ),
             store=store,
@@ -182,6 +183,7 @@ def test_itmk_oglasnik_upgrade_delivers_unseen_listings_for_existing_feed(
             config=AppConfig(
                 delay_between_posts=0,
                 max_post_age_days=0,
+                state_retention_days=0,
                 feeds=(feed,),
             ),
             store=store,

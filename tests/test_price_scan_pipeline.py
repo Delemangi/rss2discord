@@ -406,11 +406,12 @@ def test_shutdown_checkpoints_stop_before_mutation(
             return checks == checkpoint
 
         sender = RecordingSender([])
+        observations = [PriceObservation("1", snapshot("1", 90))]
         with pytest.raises(FeedFetchInterruptedError):
             run(
                 store,
                 sender,
-                [PriceObservation("1", snapshot("1", 90))],
+                observations,
                 shutdown=shutdown,
             )
         assert sender.messages == []
@@ -422,11 +423,12 @@ def test_currency_mismatch_raises_before_delivery(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         seed(store, (snapshot("1"),))
         sender = RecordingSender([])
+        observations = [PriceObservation("1", snapshot("1", 90, currency="EUR"))]
         with pytest.raises(FeedFetchError, match="CurrencyChanged"):
             run(
                 store,
                 sender,
-                [PriceObservation("1", snapshot("1", 90, currency="EUR"))],
+                observations,
             )
         assert sender.messages == []
         assert all(item.amount == 100 for item in store.load_price_snapshots("feed"))

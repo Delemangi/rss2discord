@@ -109,6 +109,30 @@ class _ScanCounters:
     bulk: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _ScanDiff:
+    """One scan's classified changes before delivery planning."""
+
+    silent: tuple[PriceSnapshot, ...]
+    alerting: tuple[PriceChangeRecord, ...]
+    restock_records: tuple[PriceChangeRecord, ...]
+    restock_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ScanContext[ProductT]:
+    """Stable collaborators and observations shared by one scan's stages."""
+
+    feed: FeedConfig
+    dependencies: PriceChangeDeliveryDependencies
+    provider: str
+    current: Mapping[str, PriceSnapshot]
+    by_id: Mapping[str, PriceSnapshot]
+    observation_by_id: Mapping[str, PriceObservation[ProductT]]
+    message_for: Callable[[ProductT, PriceSnapshot, PriceSnapshot], WebhookMessage]
+    catalog_count: int
+
+
 def _log_scan(
     *,
     feed_id: str,
@@ -221,6 +245,74 @@ def _run_price_scan[ProductT](
     allow_currency_changes: bool = False,
     counters: _ScanCounters,
 ) -> PriceDeliveryOutcome:
+    by_id = _load_persisted_snapshots(dependencies, feed, snapshot_limit, label)
+    current, observation_by_id = _current_observations(
+        observations,
+        by_id,
+        provider=provider,
+        label=label,
+        snapshot_limit=snapshot_limit,
+        allow_currency_changes=allow_currency_changes,
+        counters=counters,
+    )
+    context = _ScanContext(
+        feed=feed,
+        dependencies=dependencies,
+        provider=provider,
+        current=current,
+        by_id=by_id,
+        observation_by_id=observation_by_id,
+        message_for=message_for,
+        catalog_count=len(observations),
+    )
+    diff = _collect_scan_diff(context, counters)
+    records, silent = _delivery_records(diff, current)
+    if not records:
+        return _finish_without_records(context, silent)
+    if dependencies.delivery.is_shutdown_requested():
+        raise FeedFetchInterruptedError
+
+    bulk = len(records) > feed.price_inline_limit
+    counters.bulk = bulk
+    if not bulk and silent:
+        dependencies.sqlite_retry_policy.execute(
+            lambda: dependencies.snapshots.upsert_price_snapshots(silent),
+        )
+        if dependencies.delivery.is_shutdown_requested():
+            raise FeedFetchInterruptedError
+    confirmation = _confirm_observations(
+        context,
+        confirm,
+        records,
+        bulk=bulk,
+        confirmation_limit=confirmation_limit,
+    )
+    if confirmation is None:
+        return PriceDeliveryOutcome.FAILED
+    confirmed, additional_pending = confirmation
+    counters.confirmed = len(confirmed)
+
+    if dependencies.delivery.is_shutdown_requested():
+        raise FeedFetchInterruptedError
+
+    return _deliver_confirmed_changes(
+        context,
+        records,
+        silent,
+        diff.restock_ids,
+        confirmed,
+        additional_pending=additional_pending,
+        bulk=bulk,
+        allow_currency_changes=allow_currency_changes,
+    )
+
+
+def _load_persisted_snapshots(
+    dependencies: PriceChangeDeliveryDependencies,
+    feed: FeedConfig,
+    snapshot_limit: int,
+    label: str,
+) -> dict[str, PriceSnapshot]:
     if snapshot_limit < 1:
         raise ValueError("snapshot_limit must be positive")
     if dependencies.delivery.is_shutdown_requested():
@@ -233,8 +325,19 @@ def _run_price_scan[ProductT](
     )
     if len(persisted) > snapshot_limit:
         raise FeedFetchError(label, "SnapshotLimitExceeded")
-    by_id = {snapshot.product_id: snapshot for snapshot in persisted}
+    return {snapshot.product_id: snapshot for snapshot in persisted}
 
+
+def _current_observations[ProductT](
+    observations: Sequence[PriceObservation[ProductT]],
+    by_id: Mapping[str, PriceSnapshot],
+    *,
+    provider: str,
+    label: str,
+    snapshot_limit: int,
+    allow_currency_changes: bool,
+    counters: _ScanCounters,
+) -> tuple[dict[str, PriceSnapshot], dict[str, PriceObservation[ProductT]]]:
     current: dict[str, PriceSnapshot] = {}
     observation_by_id: dict[str, PriceObservation[ProductT]] = {}
     for observation in observations:
@@ -249,17 +352,29 @@ def _run_price_scan[ProductT](
             current=current,
             persisted=by_id,
         )
+    return current, observation_by_id
 
-    silent, price_records = diff_price_snapshots(current.values(), by_id)
-    stock_silent, restock_records = diff_stock_snapshots(current.values(), by_id)
-    if dependencies.delivery.is_shutdown_requested():
+
+def _collect_scan_diff[ProductT](
+    context: _ScanContext[ProductT],
+    counters: _ScanCounters,
+) -> _ScanDiff:
+    silent, price_records = diff_price_snapshots(
+        context.current.values(),
+        context.by_id,
+    )
+    stock_silent, restock_records = diff_stock_snapshots(
+        context.current.values(),
+        context.by_id,
+    )
+    if context.dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
     silent = (*silent, *stock_silent)
-    if not feed.restock_alerts:
+    if not context.feed.restock_alerts:
         # Availability still advances the baseline, it just never alerts.
         silent = (*silent, *(record.current for record in restock_records))
         restock_records = ()
-    alerting, suppressed = split_price_alert_changes(price_records, feed)
+    alerting, suppressed = split_price_alert_changes(price_records, context.feed)
     restock_ids = {record.product_id for record in restock_records}
     # A restock carries the same current snapshot, so it takes precedence over
     # whatever the price diff detected for that product.
@@ -285,86 +400,119 @@ def _run_price_scan[ProductT](
     counters.restocks = len(restock_records)
     counters.suppressed = len(suppressed)
     counters.unavailable = len(unavailable)
+    return _ScanDiff(
+        silent=silent,
+        alerting=alerting,
+        restock_records=restock_records,
+        restock_ids=frozenset(restock_ids),
+    )
+
+
+def _delivery_records(
+    diff: _ScanDiff,
+    current: Mapping[str, PriceSnapshot],
+) -> tuple[tuple[PriceChangeRecord, ...], tuple[PriceSnapshot, ...]]:
     # Restocks bypass the price filters above and are never suppressed.
-    records = _in_observation_order((*alerting, *restock_records), current)
+    records = _in_observation_order(
+        (*diff.alerting, *diff.restock_records),
+        current,
+    )
     record_ids = {record.product_id for record in records}
     # A product that will alert persists through its delivery (or the outbox),
     # never as a pre-delivery baseline; otherwise a failed send would lose the
     # alert. One snapshot per product: the same product can be silent for
     # several reasons in one scan.
     silent = _dedupe_snapshots(
-        [snapshot for snapshot in silent if snapshot.product_id not in record_ids],
+        [snapshot for snapshot in diff.silent if snapshot.product_id not in record_ids],
     )
-    if not records:
-        if silent:
-            dependencies.sqlite_retry_policy.execute(
-                lambda: dependencies.snapshots.upsert_price_snapshots(silent),
-            )
-        outcome = drain_pending_price_notifications(dependencies, feed)
-        if outcome is PriceDeliveryOutcome.DELIVERED:
-            finish_price_delivery(
-                dependencies.snapshots,
-                feed.id,
-                len(current),
-            )
-        return outcome
+    return records, silent
 
-    if dependencies.delivery.is_shutdown_requested():
-        raise FeedFetchInterruptedError
 
-    records_by_id = {record.product_id: record for record in records}
-    change_observations = tuple(
-        observation_by_id[record.product_id] for record in records
-    )
-    bulk = len(records) > feed.price_inline_limit
-    counters.bulk = bulk
-    if not bulk and silent:
+def _finish_without_records[ProductT](
+    context: _ScanContext[ProductT],
+    silent: Sequence[PriceSnapshot],
+) -> PriceDeliveryOutcome:
+    dependencies = context.dependencies
+    if silent:
         dependencies.sqlite_retry_policy.execute(
             lambda: dependencies.snapshots.upsert_price_snapshots(silent),
         )
-        if dependencies.delivery.is_shutdown_requested():
-            raise FeedFetchInterruptedError
-    additional_pending = 0
+    outcome = drain_pending_price_notifications(dependencies, context.feed)
+    if outcome is PriceDeliveryOutcome.DELIVERED:
+        finish_price_delivery(
+            dependencies.snapshots,
+            context.feed.id,
+            len(context.current),
+        )
+    return outcome
+
+
+def _confirm_observations[ProductT](
+    context: _ScanContext[ProductT],
+    confirm: Callable[
+        [Sequence[PriceObservation[ProductT]]],
+        Sequence[PriceObservation[ProductT]],
+    ]
+    | None,
+    records: Sequence[PriceChangeRecord],
+    *,
+    bulk: bool,
+    confirmation_limit: int | None,
+) -> tuple[tuple[PriceObservation[ProductT], ...], int] | None:
+    observation_by_id = context.observation_by_id
+    change_observations = tuple(
+        observation_by_id[record.product_id] for record in records
+    )
     if confirm is None:
-        confirmed = change_observations
-    elif bulk and confirmation_limit is not None:
-        selected_ids = dependencies.sqlite_retry_policy.execute(
-            lambda: dependencies.snapshots.select_price_confirmation_subset(
-                feed_id=feed.id,
-                product_ids=tuple(record.product_id for record in records),
-                limit=confirmation_limit,
-            ),
-        )
-        candidates = tuple(
-            observation_by_id[product_id]
-            for product_id in selected_ids
-            if product_id in observation_by_id
-        )
-        confirmed = tuple(confirm(candidates))
-        additional_pending = len(records) - len(confirmed)
-        if not confirmed:
-            record_price_health(
-                dependencies.snapshots,
-                feed.id,
-                "failed",
-                "PriceConfirmationDeferred",
-                len(current),
-            )
-            return PriceDeliveryOutcome.FAILED
-    else:
-        confirmed = tuple(confirm(change_observations))
-        additional_pending = 0
-    counters.confirmed = len(confirmed)
+        return change_observations, 0
+    if not (bulk and confirmation_limit is not None):
+        return tuple(confirm(change_observations)), 0
+    dependencies = context.dependencies
+    selected_ids = dependencies.sqlite_retry_policy.execute(
+        lambda: dependencies.snapshots.select_price_confirmation_subset(
+            feed_id=context.feed.id,
+            product_ids=tuple(record.product_id for record in records),
+            limit=confirmation_limit,
+        ),
+    )
+    candidates = tuple(
+        observation_by_id[product_id]
+        for product_id in selected_ids
+        if product_id in observation_by_id
+    )
+    confirmed = tuple(confirm(candidates))
+    if confirmed:
+        return confirmed, len(records) - len(confirmed)
+    record_price_health(
+        dependencies.snapshots,
+        context.feed.id,
+        "failed",
+        "PriceConfirmationDeferred",
+        len(context.current),
+    )
+    return None
 
-    if dependencies.delivery.is_shutdown_requested():
-        raise FeedFetchInterruptedError
 
+def _deliver_confirmed_changes[ProductT](
+    context: _ScanContext[ProductT],
+    records: Sequence[PriceChangeRecord],
+    silent: Sequence[PriceSnapshot],
+    restock_ids: Collection[str],
+    confirmed: Sequence[PriceObservation[ProductT]],
+    *,
+    additional_pending: int,
+    bulk: bool,
+    allow_currency_changes: bool,
+) -> PriceDeliveryOutcome:
+    dependencies = context.dependencies
+    feed = context.feed
+    records_by_id = {record.product_id: record for record in records}
     views = tuple(
         _view_for(
             observation,
             records_by_id[observation.snapshot.product_id],
             restock_ids,
-            message_for,
+            context.message_for,
         )
         for observation in confirmed
     )
@@ -378,11 +526,11 @@ def _run_price_scan[ProductT](
     )
     plan = dependencies.sqlite_retry_policy.execute(
         lambda: prepare_price_delivery(
-            provider=provider,
+            provider=context.provider,
             changes=confirmed_records,
-            current=current,
-            persisted=by_id,
-            catalog_count=len(observations),
+            current=context.current,
+            persisted=context.by_id,
+            catalog_count=context.catalog_count,
             inline_limit=feed.price_inline_limit,
             force_summary=bulk,
             additional_pending=additional_pending,
@@ -427,12 +575,12 @@ def _run_price_scan[ProductT](
             feed.id,
             "failed",
             "PriceConfirmationDeferred",
-            len(current),
+            len(context.current),
         )
         return PriceDeliveryOutcome.FAILED
     finish_price_delivery(
         dependencies.snapshots,
         feed.id,
-        len(current),
+        len(context.current),
     )
     return PriceDeliveryOutcome.DELIVERED
