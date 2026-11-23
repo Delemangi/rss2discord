@@ -5,7 +5,7 @@ import pytest
 
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import PriceSnapshot
-from rss2discord.price_amount import PriceAmountValidationError
+from rss2discord.price_amount import PriceAmountValidationError, format_mkd
 
 
 def test_price_snapshot_persists_source_neutral_precision_limit(tmp_path: Path) -> None:
@@ -59,3 +59,17 @@ def test_price_snapshot_rejects_amounts_outside_source_neutral_bounds(
         pytest.raises(PriceAmountValidationError),
     ):
         store.upsert_price_snapshot(snapshot)
+
+
+def test_format_mkd_groups_whole_digits_and_trims_zeroes() -> None:
+    assert format_mkd(Decimal("1234567.50")) == "1.234.567,5 \u0434\u0435\u043d."
+    assert format_mkd(Decimal(1000)) == "1.000 \u0434\u0435\u043d."
+
+
+def test_format_mkd_can_force_a_fraction() -> None:
+    assert format_mkd(Decimal(1000), force_fraction=True) == (
+        "1.000,00 \u0434\u0435\u043d."
+    )
+    assert format_mkd(Decimal("1000.5"), force_fraction=True) == (
+        "1.000,5 \u0434\u0435\u043d."
+    )

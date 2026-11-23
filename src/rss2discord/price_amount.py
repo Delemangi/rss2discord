@@ -69,6 +69,17 @@ def canonicalize_anhoch_amount(amount: Decimal) -> str:
     return _canonicalize(amount, _ANHOCH_AMOUNT_RULES)
 
 
+def format_mkd(amount: int | Decimal, *, force_fraction: bool = False) -> str:
+    """Format MKD with dot-grouped whole digits and comma fractional digits."""
+    canonical_amount = canonicalize_price_amount(Decimal(amount))
+    whole_digits, _, fractional_digits = canonical_amount.partition(".")
+    grouped_whole_digits = f"{int(whole_digits):,}".replace(",", ".")
+    significant_fractional_digits = fractional_digits.rstrip("0")
+    if significant_fractional_digits or force_fraction:
+        return f"{grouped_whole_digits},{significant_fractional_digits or '00'} ден."
+    return f"{grouped_whole_digits} ден."
+
+
 def discount_percentage(original: Decimal, current: Decimal) -> str | None:
     """Return the percentage saved from an original price, if meaningful."""
     if original <= 0 or current <= 0 or current >= original:
