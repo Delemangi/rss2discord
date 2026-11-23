@@ -33,6 +33,13 @@ class Pazar3RequestPacer:
             raise FeedFetchInterruptedError
         self._next_request_at = self._monotonic() + PAZAR3_REQUEST_INTERVAL_SECONDS
 
+    def defer(self, seconds: float) -> None:
+        """Push the next request out to the server's retry window."""
+        if seconds <= 0:
+            return
+        now = self._monotonic()
+        self._next_request_at = max(self._next_request_at or now, now + seconds)
+
     def _sleep_until_request(
         self,
         sleep: SleepCallback,

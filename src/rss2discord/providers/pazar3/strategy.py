@@ -69,6 +69,8 @@ class Pazar3Strategy(ScraperStrategy):
                 except FeedFetchError as error:
                     if not error.retryable or attempt == PAZAR3_PAGE_ATTEMPTS:
                         raise
+                    if error.retry_after is not None:
+                        self._pacer.defer(error.retry_after)
                     logger.warning(
                         "Pazar3 page %d failed on attempt %d (%s); retrying",
                         page_number,

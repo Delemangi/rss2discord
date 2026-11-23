@@ -1,9 +1,12 @@
+from collections.abc import Callable
 from datetime import timedelta
 
 import pytest
 
+from rss2discord.discord.client import SleepCallback
 from rss2discord.models import EntryId
 from rss2discord.providers.pazar3 import strategy as pazar3
+from rss2discord.providers.pazar3.http import Pazar3ScanBudget
 from rss2discord.providers.pazar3.models import Pazar3Listing, Pazar3Page
 from rss2discord.providers.pazar3.pacing import Pazar3RequestPacer
 from rss2discord.providers.pazar3.scope import Pazar3PageRequest
@@ -206,4 +209,78 @@ def test_pazar3_strategy_retries_a_transient_page_failure(
     entries, _source = strategy.fetch_entries(SEARCH_URL)
 
     assert requested == [1, 2, 3, 3]
+    assert [entry.entry_id for entry in entries] == ["3", "2", "1"]
+
+
+def test_pazar3_strategy_honors_retry_after_before_retrying_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pages = {
+        1: Pazar3Page(
+            (listing("1", minutes=3),),
+            frozenset({EntryId("1")}),
+            1,
+            3,
+            False,
+        ),
+        2: Pazar3Page(
+            (listing("2", minutes=2),),
+            frozenset({EntryId("2")}),
+            1,
+            3,
+            False,
+        ),
+        3: Pazar3Page(
+            (listing("3", minutes=1),),
+            frozenset({EntryId("3")}),
+            1,
+            3,
+            True,
+        ),
+    }
+    now = [100.0]
+    sleeps: list[float] = []
+    remaining_failures = {3: 1}
+
+    def record_sleep(seconds: float) -> bool:
+        sleeps.append(seconds)
+        now[0] += seconds
+        return True
+
+    pacer = Pazar3RequestPacer(lambda: now[0])
+
+    def fetch_page(
+        request: Pazar3PageRequest,
+        _budget: Pazar3ScanBudget,
+        page_pacer: Pazar3RequestPacer,
+        sleep: SleepCallback,
+        is_shutdown_requested: Callable[[], bool],
+    ) -> bytes:
+        page_pacer.wait(sleep, is_shutdown_requested)
+        if request.page == 3 and remaining_failures[3]:
+            remaining_failures[3] -= 1
+            raise FeedFetchError(
+                "Pazar3",
+                "HTTPError",
+                status_code=503,
+                retryable=True,
+                retry_after=30.0,
+            )
+        return str(request.page).encode()
+
+    monkeypatch.setattr(pazar3, "fetch_pazar3_page", fetch_page)
+    monkeypatch.setattr(
+        pazar3,
+        "parse_pazar3_page",
+        lambda html, _request, _now: pages[int(html)],
+    )
+    strategy = pazar3.Pazar3Strategy(
+        clock=lambda: FIXED_NOW,
+        pacer=pacer,
+        sleep=record_sleep,
+    )
+
+    entries, _source = strategy.fetch_entries(SEARCH_URL)
+
+    assert sleeps == [20.0, 20.0, 30.0]
     assert [entry.entry_id for entry in entries] == ["3", "2", "1"]
