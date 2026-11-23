@@ -418,7 +418,7 @@ def _disambiguate_reference_price(
     catalogue's own reference price, so call it that when the comparison price
     already occupies the headline.
     """
-    has_visible_prior = any(metric.prior for metric in metrics[:MAX_RENDERED_METRICS])
+    has_visible_prior = any(metric.prior for metric in metrics[1:MAX_RENDERED_METRICS])
     if not has_visible_prior or not any(
         metric.label == "Original" for metric in metrics
     ):

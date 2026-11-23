@@ -192,6 +192,20 @@ def test_prior_flag_on_the_headline_metric_is_ignored() -> None:
     assert metrics == f"Price: **5**\n{METRICS_GAP}\n-# Stock: 2"
 
 
+def test_prior_flag_on_the_headline_does_not_rename_a_reference_price() -> None:
+    # Given - the headline cannot show a strike-through for itself
+    message = _with_metrics(
+        SourceMetric(label="Price", value="5", prior=True),
+        SourceMetric(label="Original", value="12"),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - without a visible previous price, the source label is kept
+    assert metrics == f"Price: **5**\n{METRICS_GAP}\n-# Original: 12"
+
+
 def test_prior_metric_without_a_value_leaves_no_empty_strike_through() -> None:
     # Given - a superseded figure the source never supplied
     message = _with_metrics(
