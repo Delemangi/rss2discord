@@ -134,6 +134,7 @@ class DDStorePriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=MAX_DDSTORE_RETAINED_SNAPSHOTS,
+            preloaded_snapshots=persisted,
         )
 
     def _message_for(

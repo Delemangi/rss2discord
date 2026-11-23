@@ -32,6 +32,7 @@ def make_dependencies(
 ) -> SharedPriceMonitorDependencies:
     return SharedPriceMonitorDependencies(
         snapshots=store,
+        database_path=store.database_path,
         sender=FakeSender([]),
         fetch_retry_policy=FetchRetryPolicy(
             sleep=clock.sleep,

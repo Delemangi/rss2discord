@@ -2,7 +2,7 @@
 
 from functools import partial
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
@@ -149,6 +149,7 @@ def make_shared_dependencies(
 ) -> SharedPriceMonitorDependencies:
     return SharedPriceMonitorDependencies(
         snapshots=store,
+        database_path=store.database_path,
         sender=FakeSender([]),
         fetch_retry_policy=FetchRetryPolicy(
             sleep=clock.sleep,
@@ -173,6 +174,21 @@ def test_strategy_specs_cover_configuration_and_metadata() -> None:
     assert {
         name for name, spec in STRATEGY_SPECS.items() if spec.price_monitor is not None
     } == set(PRICE_STRATEGIES)
+
+
+@pytest.mark.parametrize(
+    ("strategy", "monitor_type"),
+    [
+        (strategy, monitor_type)
+        for strategy, monitor_type in EXPECTED_MONITOR_TYPES.items()
+        if hasattr(monitor_type, "label")
+    ],
+)
+def test_price_monitor_labels_match_metadata(
+    strategy: str,
+    monitor_type: type[Any],
+) -> None:
+    assert monitor_type.label == STRATEGY_LABELS[strategy]
 
 
 def test_price_only_strategies_have_no_discovery() -> None:

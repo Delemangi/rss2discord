@@ -123,6 +123,7 @@ def test_default_factory_uses_background_gjirafa50_monitor(tmp_path: Path) -> No
             make_feed(interval=21_600),
             SharedPriceMonitorDependencies(
                 snapshots=store,
+                database_path=store.database_path,
                 sender=FakeSender([]),
                 fetch_retry_policy=FetchRetryPolicy(
                     sleep=clock.sleep,

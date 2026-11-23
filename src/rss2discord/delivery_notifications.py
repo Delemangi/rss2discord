@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from decimal import Decimal
 from typing import Final
 
-from rss2discord.delivery_prices import _upsert_price_snapshots
+from rss2discord.delivery_rows import upsert_price_snapshots
 from rss2discord.models import PriceSnapshot
 from rss2discord.price_amount import canonicalize_price_amount
 from rss2discord.price_notifications import (
@@ -118,7 +118,7 @@ class PriceNotificationRepository:
         with self._connection:
             self._connection.execute(BEGIN_IMMEDIATE)
             try:
-                _upsert_price_snapshots(self._connection, baselines)
+                upsert_price_snapshots(self._connection, baselines)
                 self._connection.executemany(
                     "INSERT INTO price_notifications "
                     "(feed_id, group_id, product_id, title, link, previous_price, "

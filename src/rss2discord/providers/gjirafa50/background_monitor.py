@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import cast
 
 from rss2discord.configuration import FeedConfig
-from rss2discord.delivery_store import DeliveryStore
 from rss2discord.providers.background import (
     BackgroundPriceMonitor,
     SharedPriceMonitorDependencies,
@@ -27,9 +25,8 @@ class Gjirafa50BackgroundPriceMonitor(BackgroundPriceMonitor):
         dependencies: Gjirafa50PriceMonitorDependencies,
     ) -> None:
         shared = SharedPriceMonitorDependencies(
-            # The registry always supplies its concrete store; the protocol
-            # only narrows the price-recovery surface.
-            snapshots=cast(DeliveryStore, dependencies.snapshots),
+            snapshots=dependencies.snapshots,
+            database_path=dependencies.database_path,
             sender=dependencies.sender,
             fetch_retry_policy=dependencies.fetch_retry_policy,
             sqlite_retry_policy=dependencies.sqlite_retry_policy,
@@ -51,7 +48,7 @@ class Gjirafa50BackgroundPriceMonitor(BackgroundPriceMonitor):
                     fetch_retry_policy=worker_dependencies.fetch_retry_policy,
                     sqlite_retry_policy=worker_dependencies.sqlite_retry_policy,
                     delivery=worker_dependencies.delivery,
-                    database_path=worker_dependencies.snapshots.database_path,
+                    database_path=worker_dependencies.database_path,
                     cooldown_peer_feed_ids=(worker_dependencies.cooldown_peer_feed_ids),
                 ),
             )

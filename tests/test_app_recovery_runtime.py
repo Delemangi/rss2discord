@@ -558,7 +558,7 @@ def test_interrupted_ordinary_processing_does_not_publish_health(
 
             monkeypatch.setattr(app._strategies["rss"], "fetch_entries", fetch)
         elif phase == "persistence":
-            monkeypatch.setattr(app, "_persist_delivery", lambda *_: False)
+            monkeypatch.setattr(app._discovery, "persist_delivery", lambda *_: False)
         else:
 
             def stop(_seconds: float) -> bool:

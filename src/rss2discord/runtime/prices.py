@@ -117,6 +117,7 @@ def _shared_monitor_dependencies(
 ) -> SharedPriceMonitorDependencies:
     return SharedPriceMonitorDependencies(
         snapshots=dependencies.store,
+        database_path=dependencies.store.database_path,
         sender=dependencies.sender,
         fetch_retry_policy=FetchRetryPolicy(
             sleep=retry_sleep,
