@@ -30,13 +30,14 @@ GITHUB_RELEASE_ATOM: Final = b"""\
 
 
 @pytest.mark.parametrize(
-    ("url", "expected_label"),
+    ("url", "expected_footer"),
     [
-        ("https://github.com/cli/cli/releases.atom", "GitHub"),
-        ("https://GitHub.com/cli/cli/releases.atom?source=discord", "GitHub"),
-        ("https://github.com/cli/cli/releases", "RSS"),
-        ("https://github.com/cli/releases.atom", "RSS"),
-        ("https://github.com.evil.test/cli/cli/releases.atom", "RSS"),
+        ("https://github.com/cli/cli/releases.atom", "-# GitHub • News"),
+        ("https://GitHub.com/cli/cli/releases.atom?source=discord", "-# GitHub • News"),
+        # A generic RSS feed leads with its own title, not the transport label.
+        ("https://github.com/cli/cli/releases", "-# News"),
+        ("https://github.com/cli/releases.atom", "-# News"),
+        ("https://github.com.evil.test/cli/cli/releases.atom", "-# News"),
     ],
     ids=[
         "release-feed",
@@ -48,7 +49,7 @@ GITHUB_RELEASE_ATOM: Final = b"""\
 )
 def test_components_v2_payload_identifies_github_release_feeds(
     url: str,
-    expected_label: str,
+    expected_footer: str,
 ) -> None:
     # Given
     message = make_message(
@@ -66,7 +67,7 @@ def test_components_v2_payload_identifies_github_release_feeds(
     metadata = get_metadata_content(message)
 
     # Then
-    assert metadata.startswith(f"-# {expected_label} • ")
+    assert metadata == expected_footer
 
 
 def test_rss_strategy_normalizes_github_release_atom_entry() -> None:

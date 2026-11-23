@@ -15,23 +15,28 @@ from tests.discord_components_helpers import (
 
 
 @pytest.mark.parametrize(
-    ("strategy", "url", "expected_label"),
+    ("strategy", "url", "expected_footer"),
     [
-        ("xenforo", "https://forum.example.com/threads/topic.12345/", "Forum"),
-        ("itmk_oglasnik", "https://forum.it.mk/oglasnik/", "IT.mk Oglasnik"),
-        ("anhoch", "https://www.anhoch.com/products", "Anhoch"),
-        ("setec", "https://setec.mk/e-prodazba", "Setec"),
+        (
+            "xenforo",
+            "https://forum.example.com/threads/topic.12345/",
+            "-# Forum • News",
+        ),
+        ("itmk_oglasnik", "https://forum.it.mk/oglasnik/", "-# IT.mk Oglasnik • News"),
+        ("anhoch", "https://www.anhoch.com/products", "-# Anhoch • News"),
+        ("setec", "https://setec.mk/e-prodazba", "-# Setec • News"),
         (
             "reklama5",
             "https://reklama5.mk/Search?cat=584&sell=1&buy=0&trade=0&includeOld=1&includeNew=1",
-            "Reklama5",
+            "-# Reklama5 • News",
         ),
-        ("rss", "https://www.reddit.com/r/python/.rss", "Reddit"),
-        ("rss", "https://reddit.com/r/python/.rss", "Reddit"),
-        ("rss", "https://old.reddit.com/r/python/.rss", "Reddit"),
-        ("rss", "https://news.ycombinator.com/rss", "Hacker News"),
-        ("rss", "https://example.test/feed.xml", "RSS"),
-        ("rss", "https://blog.example.com/feed.xml", "RSS"),
+        ("rss", "https://www.reddit.com/r/python/.rss", "-# Reddit • News"),
+        ("rss", "https://reddit.com/r/python/.rss", "-# Reddit • News"),
+        ("rss", "https://old.reddit.com/r/python/.rss", "-# Reddit • News"),
+        ("rss", "https://news.ycombinator.com/rss", "-# Hacker News • News"),
+        # A generic RSS feed leads with its own title, not the transport label.
+        ("rss", "https://example.test/feed.xml", "-# News"),
+        ("rss", "https://blog.example.com/feed.xml", "-# News"),
     ],
     ids=[
         "xenforo-forum",
@@ -50,7 +55,7 @@ from tests.discord_components_helpers import (
 def test_components_v2_payload_renders_source_label(
     strategy: FeedStrategyName,
     url: str,
-    expected_label: str,
+    expected_footer: str,
 ) -> None:
     # Given
     message = make_message(
@@ -69,7 +74,49 @@ def test_components_v2_payload_renders_source_label(
     metadata = get_metadata_content(message)
 
     # Then
-    assert metadata.startswith(f"-# {expected_label} • ")
+    assert metadata == expected_footer
+
+
+def test_generic_rss_footer_omits_the_transport_label() -> None:
+    # Given - a generic RSS feed with its own title
+    message = make_message(
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+            categories=("news",),
+        ),
+        source_title="Example Feed",
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then - the feed title replaces the generic transport label
+    assert metadata == "-# Example Feed • news"
+    assert "RSS" not in metadata
+
+
+def test_generic_rss_footer_keeps_transport_label_without_a_distinct_title() -> None:
+    # Given - a generic RSS feed whose title is the transport label itself
+    message = make_message(
+        entry=EntryData(
+            title="Entry",
+            link="https://example.test/entry",
+            description="",
+            author="",
+            timestamp=None,
+        ),
+        source_title="RSS",
+    )
+
+    # When
+    metadata = get_metadata_content(message)
+
+    # Then - the label is not dropped without a replacement
+    assert metadata == "-# RSS"
 
 
 def test_components_v2_payload_renders_hacker_news_discussion_link() -> None:
@@ -327,7 +374,7 @@ def test_components_v2_payload_renders_categories_without_discussion_link() -> N
 
     # Then - categories join the single provenance line, led by the source
     assert "\n" not in metadata
-    assert metadata.startswith("-# RSS • ")
+    assert metadata.startswith("-# News • ")
     assert "Discussion" not in metadata
     assert "news" in metadata
     assert "rss" in metadata
@@ -375,5 +422,5 @@ def test_line_breaks_cannot_escape_the_footer_subtext_block() -> None:
     metadata = get_metadata_content(message)
 
     # Then - the footer stays a single subtext line
-    assert metadata == "-# RSS • News • safe ## INJECTED HEADING"
+    assert metadata == "-# News • safe ## INJECTED HEADING"
     assert "\n" not in metadata
