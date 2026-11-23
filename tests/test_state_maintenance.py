@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 import time
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from rss2discord.delivery_store import STATE_JOURNAL_SIZE_LIMIT_BYTES, DeliveryStore
 from rss2discord.main import _prune_state
 from rss2discord.models import HealthUpdate
+from rss2discord.state_maintenance import StateRetentionReporter
 
 
 def _health(feed_id: str) -> HealthUpdate:
@@ -59,3 +61,65 @@ def test_prune_state_removes_old_delivered_rows(
         assert not store.has_delivered("feed", "old")
 
     assert "Pruned state older than 90 days" in caplog.text
+
+
+def test_periodic_retention_removes_rows_older_than_retention(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    old = int(time.time()) - 91 * 86_400
+    with DeliveryStore(database) as store:
+        store._connection.execute(
+            "INSERT INTO delivered_entries (feed_id, entry_id, delivered_at) "
+            "VALUES (?, ?, ?)",
+            ("feed", "old", old),
+        )
+        store._connection.commit()
+
+    reporter = StateRetentionReporter(
+        database_path=database,
+        retention_days=90,
+    )
+
+    assert reporter.prune_now() == 1
+
+    with DeliveryStore(database) as store:
+        assert not store.has_delivered("feed", "old")
+
+
+def test_disabled_periodic_retention_does_not_start_or_prune(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    reporter = StateRetentionReporter(
+        database_path=database,
+        retention_days=0,
+    )
+
+    reporter.start()
+    reporter.stop()
+
+    assert reporter.prune_now() == 0
+    assert not database.exists()
+
+
+def test_periodic_retention_failure_is_logged_without_raising(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fail(_path: Path, *, initialize: bool = True) -> DeliveryStore:
+        del initialize
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(
+        "rss2discord.state_maintenance.DeliveryStore",
+        fail,
+    )
+    reporter = StateRetentionReporter(
+        database_path=tmp_path / "state.db",
+        retention_days=90,
+    )
+
+    assert reporter.prune_now() == 0
+    assert "Periodic state retention failed" in caplog.text
