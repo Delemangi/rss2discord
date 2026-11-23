@@ -1,13 +1,14 @@
 import json
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 
 import requests
 
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 CATALOG_URL = (
     "https://www.anhoch.com/products?query=keyboard&inStockOnly=2&sort=price_asc"
@@ -82,25 +83,6 @@ def page_payload(
             },
         },
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict[str, str])
-    chunks: tuple[bytes, ...] | None = None
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        if self.chunks is None:
-            yield self.content
-            return
-        yield from self.chunks
 
 
 class RecordingGet:

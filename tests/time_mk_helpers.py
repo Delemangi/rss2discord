@@ -1,9 +1,9 @@
-from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
 from html import escape
 
-import requests
 from requests.structures import CaseInsensitiveDict
+
+from tests.fakes import StubResponse
 
 TIME_MK_URL = "https://time.mk/"
 TIME_MK_CATEGORY_URL = "https://time.mk/rss/tehnologija"
@@ -44,32 +44,6 @@ def details_payload(description: str, image: str | None) -> bytes:
     if image is not None:
         metas += f'<meta property="og:image" content="{escape(image)}">'
     return f"<html><head>{metas}</head><body></body></html>".encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
-
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> None:
-        del exc_type, exc, traceback
 
 
 class RecordingGet:

@@ -1,8 +1,10 @@
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import requests
+
+from tests.fakes import StubResponse
 
 INDEX_URL = "https://forum.it.mk/oglasnik/?token=secret-token"
 FINAL_URL = "https://forum.it.mk/whats-new/oglasnik/5395366/"
@@ -53,27 +55,6 @@ NEWER_CARD = """
 
 
 @dataclass(frozen=True, slots=True)
-class StubResponse:
-    text: str
-    status_code: int
-    url: str = FINAL_URL
-    headers: Mapping[str, str] = field(default_factory=dict)
-    chunks: tuple[bytes, ...] = ()
-
-    @property
-    def is_redirect(self) -> bool:
-        return 300 <= self.status_code < 400 and "Location" in self.headers
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield from self.chunks or (self.text.encode(),)
-
-
-@dataclass(frozen=True, slots=True)
 class StubGet:
     response: StubResponse
 
@@ -108,4 +89,4 @@ class RaisingGet:
 
 
 def make_response(html: str, status_code: int = 200) -> StubResponse:
-    return StubResponse(text=html, status_code=status_code)
+    return StubResponse(text=html, status_code=status_code, url=FINAL_URL)

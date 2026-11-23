@@ -1,11 +1,9 @@
 """EMSC earthquake strategy tests."""
 
 import json
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 
 import pytest
-import requests
 from requests.structures import CaseInsensitiveDict
 
 from rss2discord.fetch_errors import FeedFetchError
@@ -13,6 +11,7 @@ from rss2discord.providers.emsc import catalog as emsc_catalog
 from rss2discord.providers.emsc.bounds import MAX_EMSC_RESPONSE_BYTES
 from rss2discord.providers.emsc.catalog import EmscCatalogClient
 from rss2discord.providers.emsc.strategy import EmscStrategy
+from tests.fakes import StubResponse
 
 EMSC_URL = "https://www.seismicportal.eu/fdsnws/event/1/query?format=json"
 
@@ -51,27 +50,6 @@ def feature(
 
 def payload(features: list[dict[str, object]]) -> bytes:
     return json.dumps({"type": "FeatureCollection", "features": features}).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
-
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        del args
 
 
 def install(monkeypatch: pytest.MonkeyPatch, response: StubResponse) -> None:

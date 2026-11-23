@@ -1,13 +1,12 @@
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 
-import requests
 from curl_cffi import CurlOpt
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from pydantic import JsonValue
 
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 CATALOG_URL = "https://ddstore.mk/catalog"
 
@@ -83,19 +82,6 @@ def catalog_payload(
             },
         },
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-    chunks: tuple[bytes, ...] | None = None
-    on_chunk: Callable[[], None] | None = None
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
 
 
 class RecordingPost:

@@ -120,7 +120,7 @@ def test_itmk_oglasnik_strategy_rejects_streamed_oversized_response(
     response = StubResponse(
         text=f"<h1>Огласник</h1>{COMPLETE_CARD}",
         status_code=status_code,
-        headers=headers,
+        headers=dict(headers),
         chunks=(b"x" * 600_000, b"x" * 600_000),
     )
     monkeypatch.setattr(requests, "get", StubGet(response))

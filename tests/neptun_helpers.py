@@ -7,6 +7,7 @@ import requests
 from pydantic import JsonValue
 
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 CATEGORY_URL = "https://www.neptun.mk/KOMPJUTERI.nspx"
 
@@ -71,33 +72,6 @@ def category_html(*, models: int = 1, category_id: int = 2) -> bytes:
         for _ in range(models)
     )
     return f"<html><body>{elements}</body></html>".encode()
-
-
-class StubResponse:
-    def __init__(
-        self,
-        content: bytes,
-        *,
-        status_code: int = 200,
-        headers: Mapping[str, str] | None = None,
-    ) -> None:
-        self.content = content
-        self.status_code = status_code
-        self.headers = {} if headers is None else dict(headers)
-
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        del args
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError
 
 
 class TruncatedResponse(StubResponse):

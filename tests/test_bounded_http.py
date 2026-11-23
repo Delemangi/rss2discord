@@ -10,16 +10,7 @@ from rss2discord.transports.bounded_http import (
     read_bounded_content,
     validate_content_length,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
+from tests.fakes import StubResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +35,7 @@ def read(
     charge_before_check: bool = False,
 ) -> bytes:
     return read_bounded_content(
-        StubResponse(content, headers or {}),
+        StubResponse(content, headers=dict(headers or {})),
         label="Test",
         max_bytes=max_bytes,
         chunk_bytes=4,
@@ -188,7 +179,7 @@ def validate(
 ) -> None:
     headers = {} if content_length is None else {"Content-Length": content_length}
     validate_content_length(
-        StubResponse(b"", headers),
+        StubResponse(b"", headers=headers),
         label="Test",
         max_bytes=max_bytes,
         invalid_cause=invalid_cause,

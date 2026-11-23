@@ -2,19 +2,18 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from html import escape
 from typing import Final
 from zoneinfo import ZoneInfo
-
-from curl_cffi import requests as curl_requests
 
 from rss2discord.providers.pazar3.http import (
     MAX_PAZAR3_ATTEMPT_BYTES,
     Pazar3ScanBudget,
 )
 from rss2discord.providers.pazar3.scope import Pazar3PageRequest, Pazar3SearchScope
+from tests.fakes import StubResponse
 
 SEARCH_URL: Final = (
     "https://www.pazar3.mk/oglasi/elektronika/delovi-za-kompjuteri-dodatoci/prodazba"
@@ -111,16 +110,6 @@ def listing_page(
         f'<li class="active"><a data-key="SortingLinks" data-value="{active_sort}">'
         "Најновите први</a></li>"
     ).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict[str, str])
-    url: str = SEARCH_URL
-    chunks: tuple[bytes, ...] | None = None
-    interruption: curl_requests.RequestsError | None = None
 
 
 class RecordingGet:

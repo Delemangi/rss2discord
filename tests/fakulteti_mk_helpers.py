@@ -1,9 +1,9 @@
 import json
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 
-import requests
 from requests.structures import CaseInsensitiveDict
+
+from tests.fakes import StubResponse
 
 FAKULTETI_MK_URL = "https://fakulteti.mk/"
 FAKULTETI_MK_SUBSET_URL = (
@@ -41,32 +41,6 @@ def post(
 
 def json_payload(items: list[dict[str, object]]) -> bytes:
     return json.dumps(items).encode()
-
-
-@dataclass(frozen=True, slots=True)
-class StubResponse:
-    content: bytes
-    status_code: int = 200
-    headers: Mapping[str, str] = field(default_factory=dict)
-
-    def iter_content(self, chunk_size: int) -> Iterator[bytes]:
-        del chunk_size
-        yield self.content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
-
-    def __enter__(self) -> "StubResponse":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> None:
-        del exc_type, exc, traceback
 
 
 class RecordingGet:

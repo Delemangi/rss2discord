@@ -5,6 +5,7 @@ from decimal import Decimal
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 
 from rss2discord.retries import FetchRetryPolicy
+from tests.fakes import StubResponse
 
 ROOT_URL = "https://gjirafa50.mk/"
 
@@ -38,21 +39,6 @@ def catalog_payload(
             "html": "".join(product_card(*product) for product in products),
         },
     ).encode()
-
-
-class StubResponse:
-    def __init__(
-        self,
-        content: bytes,
-        *,
-        status_code: int = 200,
-        raw_header_lines: tuple[bytes, ...] | None = None,
-    ) -> None:
-        self.content = content
-        self.status_code = status_code
-        self.headers: dict[str, str] = {}
-        self.raw_header_lines = raw_header_lines
-        self.url = "https://gjirafa50.mk/product/search"
 
 
 class RecordingGet:
