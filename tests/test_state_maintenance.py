@@ -83,6 +83,13 @@ def test_prune_removes_idle_snapshots_only(tmp_path: Path) -> None:
                 "UPDATE price_snapshots SET last_seen_at = ? WHERE product_id = 'old'",
                 (old,),
             )
+            store._connection.execute("DELETE FROM price_history")
+            store._connection.executemany(
+                "INSERT INTO price_history "
+                "(feed_id, product_id, amount, formatted, currency, observed_at) "
+                "VALUES ('feed', ?, '90', '90 MKD', 'MKD', ?)",
+                (("old", old), ("new", old)),
+            )
 
         result = store.prune_old_records(retention_days=90)
 
@@ -92,9 +99,17 @@ def test_prune_removes_idle_snapshots_only(tmp_path: Path) -> None:
                 "SELECT product_id FROM price_snapshots",
             )
         }
+        history = {
+            str(row[0])
+            for row in store._connection.execute(
+                "SELECT product_id FROM price_history",
+            )
+        }
 
     assert result.price_snapshots == 1
+    assert result.price_history == 1
     assert remaining == {"new"}
+    assert history == {"new"}
 
 
 def test_snapshot_migration_backfills_last_seen_at(tmp_path: Path) -> None:
