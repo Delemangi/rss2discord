@@ -78,7 +78,7 @@ def test_components_v2_payload_preserves_entry_and_webhook_fields() -> None:
                     {"content": "Description", "type": 10},
                     {"divider": True, "spacing": 1, "type": 14},
                     {
-                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "content": "-# News • By Author • <t:1784548800:R>",
                         "type": 10,
                     },
                 ],
@@ -110,7 +110,7 @@ def test_components_v2_payload_omits_empty_optional_text() -> None:
     assert container["components"] == [
         {"content": "## [Entry](https://example.test/entry)", "type": 10},
         {"divider": True, "spacing": 1, "type": 14},
-        {"content": "-# RSS • News", "type": 10},
+        {"content": "-# News", "type": 10},
     ]
 
 
@@ -238,7 +238,7 @@ def test_components_v2_payload_omits_unsafe_remote_thumbnails(
             "[Official](https://evil.example)",
             "News",
             (
-                "-# RSS • News • By \\[Official\\]\\(h\u200bttps://evil.example\\) • "
+                "-# News • By \\[Official\\]\\(h\u200bttps://evil.example\\) • "
                 "<t:1784548800:R>"
             ),
         ),
@@ -246,7 +246,7 @@ def test_components_v2_payload_omits_unsafe_remote_thumbnails(
             "Author",
             "[Trusted Source](https://evil.example)",
             (
-                "-# RSS • \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • By Author • "
+                "-# \\[Trusted Source\\]\\(h\u200bttps://evil.example\\) • By Author • "
                 "<t:1784548800:R>"
             ),
         ),
@@ -254,7 +254,7 @@ def test_components_v2_payload_omits_unsafe_remote_thumbnails(
             "https://evil.example/author",
             "www.evil.example/source",
             (
-                "-# RSS • w\u200bww.evil.example/source • By h\u200bttps://evil.example/author • "
+                "-# w\u200bww.evil.example/source • By h\u200bttps://evil.example/author • "
                 "<t:1784548800:R>"
             ),
         ),
@@ -473,7 +473,7 @@ def test_components_v2_payload_keeps_single_thumbnail_when_image_urls_empty() ->
                     },
                     {"divider": True, "spacing": 1, "type": 14},
                     {
-                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "content": "-# News • By Author • <t:1784548800:R>",
                         "type": 10,
                     },
                 ],

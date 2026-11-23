@@ -12,6 +12,7 @@ from rss2discord.discord.pwn_watch import (
 )
 from rss2discord.discord.source_labels import source_label
 from rss2discord.models import EntryData, PriceDirection, SourceMetric
+from rss2discord.provider_metadata import STRATEGY_LABELS
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
     normalize_http_url,
@@ -678,12 +679,15 @@ def _build_footer(
 ) -> str:
     """Build the single provenance line, led by the source the entry came from.
 
-    The timestamp closes the line, after the categories.
+    A generic RSS feed leads with its own title instead of the transport label;
+    the timestamp closes the line, after the categories.
     """
     label = source_label(feed)
     parts: list[str] = [label]
+    source_part: str | None = None
     if source_title and source_title.strip().casefold() != label.casefold():
-        parts.append(_escape_metadata_text(source_title))
+        source_part = _escape_metadata_text(source_title)
+        parts.append(source_part)
     if entry.author:
         parts.append(f"By {_escape_metadata_text(entry.author)}")
     safe_discussion_url = (
@@ -710,6 +714,13 @@ def _build_footer(
     line = _bounded_join(parts, line_budget)
     if line is None:
         line = _truncate_rendered_text(label, max(0, line_budget))
+    elif source_part is not None and label == STRATEGY_LABELS["rss"]:
+        # The transport name says nothing when the feed's own title follows it.
+        # Strip it only when the title survived the budget join, so an oversized
+        # title still leaves the transport label behind.
+        source_prefix = f"{label}{METADATA_SEPARATOR}{source_part}"
+        if line.startswith(source_prefix):
+            line = line[len(label) + len(METADATA_SEPARATOR) :]
     if timestamp is not None:
         line = f"{line}{METADATA_SEPARATOR}{timestamp}" if line else timestamp
     return f"{SUBTEXT_PREFIX}{line}"

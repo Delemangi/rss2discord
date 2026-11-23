@@ -141,7 +141,7 @@ def test_metrics_render_outside_the_provenance_footer() -> None:
     assert contents == [
         "## [Entry](https://example.test/entry)",
         "Price: **7.990 ден**",
-        "-# RSS • News",
+        "-# News",
     ]
 
 
@@ -326,7 +326,7 @@ def test_entry_without_metrics_renders_no_metrics_block() -> None:
     contents = get_text_display_contents(message)
 
     # Then
-    assert contents == ["## [Entry](https://example.test/entry)", "-# RSS • News"]
+    assert contents == ["## [Entry](https://example.test/entry)", "-# News"]
 
 
 def test_description_moves_below_the_section_when_metrics_take_the_thumbnail_row() -> (
@@ -419,7 +419,7 @@ def test_blank_metric_emits_no_empty_text_display() -> None:
     contents = get_text_display_contents(message)
 
     # Then - Discord rejects an empty Text Display, so none is produced
-    assert contents == ["## [Entry](https://example.test/entry)", "-# RSS • News"]
+    assert contents == ["## [Entry](https://example.test/entry)", "-# News"]
     assert all(contents)
 
 

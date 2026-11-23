@@ -59,7 +59,7 @@ def test_components_v2_payload_recursively_collects_section_text_displays() -> N
     assert contents == [
         "## [Entry](https://example.test/entry)",
         "Description",
-        "-# RSS • News",
+        "-# News",
     ]
 
 
@@ -131,7 +131,7 @@ def test_components_v2_payload_caps_heading_without_starving_footer() -> None:
     # Then - the visible title is bounded, so the footer still renders
     assert len(contents[0]) == len("## ") + MAX_HEADING_TITLE_CHARACTERS
     assert contents[0].startswith("## ")
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
 
 
 def test_components_v2_payload_truncates_unbalanced_heading_between_escapes() -> None:
@@ -285,7 +285,7 @@ def test_components_v2_payload_skips_an_oversized_footer_part() -> None:
     contents = get_text_display_contents(message)
 
     # Then - the overlong one drops out without taking the rest with it
-    assert contents[-1] == "-# RSS • News • first • last"
+    assert contents[-1] == "-# News • first • last"
 
 
 def test_components_v2_payload_keeps_a_title_on_one_line() -> None:
@@ -350,7 +350,7 @@ def test_components_v2_payload_without_discount_is_unchanged() -> None:
                     {"content": "Description", "type": 10},
                     {"divider": True, "spacing": 1, "type": 14},
                     {
-                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "content": "-# News • By Author • <t:1784548800:R>",
                         "type": 10,
                     },
                 ],
@@ -382,7 +382,7 @@ def test_discount_badge_respects_text_limits() -> None:
     # Then - the badge is visible and every text block stays inside its budgets
     assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
     assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
     assert any("**20% off**" in content for content in contents)
 
@@ -427,7 +427,7 @@ def test_price_change_card_without_history_fields_is_unchanged() -> None:
                     },
                     {"content": "Description", "type": 10},
                     {"divider": True, "spacing": 1, "type": 14},
-                    {"content": "-# RSS • News • By Author", "type": 10},
+                    {"content": "-# News • By Author", "type": 10},
                 ],
                 "type": 17,
             },
@@ -462,7 +462,7 @@ def test_period_low_badge_respects_text_limits() -> None:
     # Then - the badge is visible and every text block stays inside its budgets
     assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
     assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
     assert any("**30-day low**" in content for content in contents)
 
@@ -508,7 +508,7 @@ def test_restocked_false_price_change_card_is_unchanged() -> None:
                     },
                     {"content": "Description", "type": 10},
                     {"divider": True, "spacing": 1, "type": 14},
-                    {"content": "-# RSS • News • By Author", "type": 10},
+                    {"content": "-# News • By Author", "type": 10},
                 ],
                 "type": 17,
             },
@@ -558,7 +558,7 @@ def test_restocked_false_discovery_card_is_unchanged() -> None:
                     {"content": "Description", "type": 10},
                     {"divider": True, "spacing": 1, "type": 14},
                     {
-                        "content": "-# RSS • News • By Author • <t:1784548800:R>",
+                        "content": "-# News • By Author • <t:1784548800:R>",
                         "type": 10,
                     },
                 ],
@@ -591,7 +591,7 @@ def test_restock_badge_respects_text_limits() -> None:
     # Then - the badge is visible and every text block stays inside its budgets
     assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
     assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
     assert any("**Back in stock**" in content for content in contents)
 
@@ -621,7 +621,7 @@ def test_combined_restock_and_period_low_badges_respect_text_limits() -> None:
     # Then - both badges are visible and every text block stays inside its budgets
     assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
     assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
     assert any("**Back in stock**" in content for content in contents)
     assert any("**30-day low**" in content for content in contents)
@@ -651,6 +651,6 @@ def test_period_range_respects_text_limits() -> None:
     # Then - the range line is visible and every text block stays inside its budgets
     assert sum(map(len, contents)) <= MAX_TEXT_DISPLAY_CHARACTERS
     assert len(contents[0]) <= MAX_HEADING_CHARACTERS
-    assert contents[-1] == "-# RSS • News"
+    assert contents[-1] == "-# News"
     assert len(contents[-1]) <= MAX_FOOTER_LINE_CHARACTERS
     assert any("30-day range: 80 MKD – 120 MKD" in content for content in contents)
