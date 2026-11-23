@@ -179,6 +179,7 @@ def run_price_scan[ProductT](
     confirmation_limit: int | None = None,
     allow_currency_changes: bool = False,
     started_at: float | None = None,
+    preloaded_snapshots: Sequence[PriceSnapshot] | None = None,
 ) -> None:
     """Load baselines, diff observations, confirm, and deliver one provider scan."""
     started = started_at if started_at is not None else current_scan_started_at()
@@ -198,6 +199,7 @@ def run_price_scan[ProductT](
             confirmation_limit=confirmation_limit,
             allow_currency_changes=allow_currency_changes,
             counters=counters,
+            preloaded_snapshots=preloaded_snapshots,
         )
     except FeedFetchInterruptedError:
         _log_scan(
@@ -244,8 +246,15 @@ def _run_price_scan[ProductT](
     confirmation_limit: int | None = None,
     allow_currency_changes: bool = False,
     counters: _ScanCounters,
+    preloaded_snapshots: Sequence[PriceSnapshot] | None = None,
 ) -> PriceDeliveryOutcome:
-    by_id = _load_persisted_snapshots(dependencies, feed, snapshot_limit, label)
+    by_id = _load_persisted_snapshots(
+        dependencies,
+        feed,
+        snapshot_limit,
+        label,
+        preloaded_snapshots,
+    )
     current, observation_by_id = _current_observations(
         observations,
         by_id,
@@ -312,17 +321,22 @@ def _load_persisted_snapshots(
     feed: FeedConfig,
     snapshot_limit: int,
     label: str,
+    preloaded: Sequence[PriceSnapshot] | None = None,
 ) -> dict[str, PriceSnapshot]:
     if snapshot_limit < 1:
         raise ValueError("snapshot_limit must be positive")
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
-    persisted = dependencies.sqlite_retry_policy.execute(
-        lambda: dependencies.snapshots.load_price_snapshots(
-            feed.id,
-            limit=snapshot_limit + 1,
-        ),
-    )
+    persisted: Sequence[PriceSnapshot]
+    if preloaded is None:
+        persisted = dependencies.sqlite_retry_policy.execute(
+            lambda: dependencies.snapshots.load_price_snapshots(
+                feed.id,
+                limit=snapshot_limit + 1,
+            ),
+        )
+    else:
+        persisted = preloaded
     if len(persisted) > snapshot_limit:
         raise FeedFetchError(label, "SnapshotLimitExceeded")
     return {snapshot.product_id: snapshot for snapshot in persisted}

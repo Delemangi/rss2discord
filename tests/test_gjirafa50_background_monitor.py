@@ -286,6 +286,7 @@ def _build_background_monitor(
             make_feed(interval=21_600).model_copy(update={"id": feed_id}),
             SharedPriceMonitorDependencies(
                 snapshots=store,
+                database_path=store.database_path,
                 sender=FakeSender([]),
                 fetch_retry_policy=FetchRetryPolicy(
                     sleep=clock.sleep,

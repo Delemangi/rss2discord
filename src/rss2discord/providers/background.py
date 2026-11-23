@@ -5,6 +5,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import ClassVar, Protocol
 
@@ -24,6 +25,7 @@ from rss2discord.retries import (
 )
 from rss2discord.transports.price_monitor import (
     PriceAlertDelivery,
+    PriceRecoveryStore,
     price_scan_timing,
 )
 
@@ -36,7 +38,8 @@ class PriceMonitor(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SharedPriceMonitorDependencies:
-    snapshots: DeliveryStore
+    snapshots: PriceRecoveryStore
+    database_path: Path
     sender: DiscordSender
     fetch_retry_policy: FetchRetryPolicy
     sqlite_retry_policy: SQLiteRetryPolicy
@@ -103,7 +106,7 @@ class BackgroundPriceMonitor:
             try:
                 with (
                     DeliveryStore(
-                        self._dependencies.snapshots.database_path,
+                        self._dependencies.database_path,
                         initialize=False,
                     ) as store,
                     requests.Session() as session,
@@ -166,7 +169,7 @@ class BackgroundPriceMonitor:
         )
         try:
             with DeliveryStore(
-                self._dependencies.snapshots.database_path,
+                self._dependencies.database_path,
                 initialize=False,
             ) as store:
                 notice = store.record_health(

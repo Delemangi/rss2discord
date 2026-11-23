@@ -59,7 +59,7 @@ feeds:
 
 ## Code boundaries
 
-Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics, including the shared listing HTTP path. The provider registry composes discovery strategies and price monitors from one set of provider names and labels, while the runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
+Provider packages own source strategies, catalog access, parsing, and price monitors; the transports package holds shared request mechanics, including the shared listing HTTP path. The provider registry composes discovery strategies and price monitors from one set of provider names and labels. `app.py` wires adapters, strategies, and the scheduler; `discovery.py` owns the per-feed baseline, dedupe, enrichment, delivery, and health flow. The runtime and scheduler handle generic jobs, cadence, shutdown, and health reporting. Persistence and administrative workflows remain separate from that composition path.
 
 See [price-monitoring flow](docs/price-monitoring-flow.md) for the comparison, planning, and delivery boundaries and their regression tests.
 

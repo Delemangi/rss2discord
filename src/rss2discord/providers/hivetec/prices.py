@@ -126,6 +126,7 @@ class HivetecPriceMonitor:
             observations=observations,
             message_for=self._message_for,
             snapshot_limit=MAX_HIVETEC_RETAINED_SNAPSHOTS,
+            preloaded_snapshots=persisted,
         )
 
     def _message_for(

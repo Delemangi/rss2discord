@@ -180,7 +180,7 @@ _STRATEGY_SPECS: Final[dict[str, StrategySpec]] = {
                 fetch_retry_policy=dependencies.fetch_retry_policy,
                 sqlite_retry_policy=dependencies.sqlite_retry_policy,
                 delivery=dependencies.delivery,
-                database_path=dependencies.snapshots.database_path,
+                database_path=dependencies.database_path,
                 cooldown_peer_feed_ids=dependencies.cooldown_peer_feed_ids,
             ),
         ),
