@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
+from rss2discord.price_amount import discount_percentage, format_mkd
 from rss2discord.providers.cccenter.bounds import CCCENTER_LABEL
 from rss2discord.providers.cccenter.catalog import CCCenterCatalogClient
 from rss2discord.providers.cccenter.models import CCCenterProduct
@@ -87,8 +87,4 @@ class CCCenterStrategy(ScraperStrategy):
 
 
 def format_cccenter_mkd(amount: Decimal) -> str:
-    canonical = canonicalize_price_amount(amount)
-    whole, _, fraction = canonical.partition(".")
-    grouped = f"{int(whole):,}".replace(",", ".")
-    fraction = fraction.rstrip("0") or "00"
-    return f"{grouped},{fraction} ден."
+    return format_mkd(amount, force_fraction=True)

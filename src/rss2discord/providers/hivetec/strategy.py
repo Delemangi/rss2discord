@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
+from rss2discord.price_amount import discount_percentage, format_mkd
 from rss2discord.providers.hivetec.bounds import HIVETEC_LABEL
 from rss2discord.providers.hivetec.catalog import HivetecCatalogClient
 from rss2discord.providers.hivetec.models import (
@@ -84,10 +84,4 @@ def hivetec_product_metrics(
 
 
 def format_hivetec_mkd(amount: Decimal) -> str:
-    canonical = canonicalize_price_amount(amount)
-    whole_digits, _, fractional_digits = canonical.partition(".")
-    grouped = f"{int(whole_digits):,}".replace(",", ".")
-    significant_fraction = fractional_digits.rstrip("0")
-    if significant_fraction:
-        return f"{grouped},{significant_fraction} ден."
-    return f"{grouped} ден."
+    return format_mkd(amount)

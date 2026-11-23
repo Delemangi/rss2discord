@@ -5,7 +5,7 @@ from typing import Final, final, override
 from zoneinfo import ZoneInfo
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
-from rss2discord.price_amount import canonicalize_price_amount, discount_percentage
+from rss2discord.price_amount import discount_percentage, format_mkd
 from rss2discord.providers.neptun.catalog import (
     NeptunCatalogClient,
 )
@@ -85,10 +85,4 @@ class NeptunStrategy(ScraperStrategy):
 
 
 def format_neptun_mkd(amount: int | Decimal) -> str:
-    canonical_amount = canonicalize_price_amount(Decimal(amount))
-    whole_digits, _, fractional_digits = canonical_amount.partition(".")
-    grouped_whole_digits = f"{int(whole_digits):,}".replace(",", ".")
-    significant_fractional_digits = fractional_digits.rstrip("0")
-    if significant_fractional_digits:
-        return f"{grouped_whole_digits},{significant_fractional_digits} ден."
-    return f"{grouped_whole_digits} ден."
+    return format_mkd(amount)
