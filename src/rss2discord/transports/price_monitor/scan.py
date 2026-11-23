@@ -6,6 +6,7 @@ import logging
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Final
 
 from rss2discord.configuration import FeedConfig
@@ -263,6 +264,13 @@ def _run_price_scan[ProductT](
         snapshot_limit=snapshot_limit,
         allow_currency_changes=allow_currency_changes,
         counters=counters,
+    )
+    dependencies.sqlite_retry_policy.execute(
+        partial(
+            dependencies.snapshots.touch_price_snapshots,
+            feed.id,
+            tuple(current),
+        ),
     )
     context = _ScanContext(
         feed=feed,

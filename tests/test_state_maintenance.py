@@ -1,13 +1,14 @@
 import logging
 import sqlite3
 import time
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from rss2discord.delivery_store import STATE_JOURNAL_SIZE_LIMIT_BYTES, DeliveryStore
 from rss2discord.main import _prune_state
-from rss2discord.models import HealthUpdate
+from rss2discord.models import HealthUpdate, PriceSnapshot
 from rss2discord.state_maintenance import StateRetentionReporter
 
 
@@ -61,6 +62,66 @@ def test_prune_state_removes_old_delivered_rows(
         assert not store.has_delivered("feed", "old")
 
     assert "Pruned state older than 90 days" in caplog.text
+
+
+def _snapshot(product_id: str) -> PriceSnapshot:
+    return PriceSnapshot(
+        feed_id="feed",
+        product_id=product_id,
+        amount=Decimal(90),
+        formatted="90 MKD",
+        currency="MKD",
+    )
+
+
+def test_prune_removes_idle_snapshots_only(tmp_path: Path) -> None:
+    old = int(time.time()) - 91 * 86_400
+    with DeliveryStore(tmp_path / "state.db") as store:
+        store.upsert_price_snapshots((_snapshot("old"), _snapshot("new")))
+        with store._connection:
+            store._connection.execute(
+                "UPDATE price_snapshots SET last_seen_at = ? WHERE product_id = 'old'",
+                (old,),
+            )
+
+        result = store.prune_old_records(retention_days=90)
+
+        remaining = {
+            str(row[0])
+            for row in store._connection.execute(
+                "SELECT product_id FROM price_snapshots",
+            )
+        }
+
+    assert result.price_snapshots == 1
+    assert remaining == {"new"}
+
+
+def test_snapshot_migration_backfills_last_seen_at(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE price_snapshots ("
+            "feed_id TEXT NOT NULL, product_id TEXT NOT NULL, "
+            "amount TEXT NOT NULL, formatted TEXT NOT NULL, "
+            "currency TEXT NOT NULL, "
+            "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+            "PRIMARY KEY (feed_id, product_id)) WITHOUT ROWID",
+        )
+        connection.execute(
+            "INSERT INTO price_snapshots "
+            "(feed_id, product_id, amount, formatted, currency) "
+            "VALUES ('feed', '1', '90', '90 MKD', 'MKD')",
+        )
+
+    with DeliveryStore(database) as store:
+        last_seen = store._connection.execute(
+            "SELECT last_seen_at FROM price_snapshots WHERE product_id = '1'",
+        ).fetchone()
+
+    assert last_seen is not None
+    assert last_seen[0] is not None
+    assert last_seen[0] > 0
 
 
 def test_periodic_retention_removes_rows_older_than_retention(

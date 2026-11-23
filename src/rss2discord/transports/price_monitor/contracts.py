@@ -35,6 +35,12 @@ class PriceSnapshotStore(Protocol):
 
     def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None: ...
 
+    def touch_price_snapshots(
+        self,
+        feed_id: str,
+        product_ids: Iterable[str],
+    ) -> None: ...
+
 
 class PriceRecoveryStore(PriceSnapshotStore, Protocol):
     def record_price_scan(

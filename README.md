@@ -101,7 +101,7 @@ Before any offline database operation, stop every writer and back up the databas
 
 ## Maintenance and retries
 
-`state_retention_days` prunes delivered entries, sent or dead-lettered price notifications, and all but each product's newest price-history row at startup and once per day while the process runs. The startup pass vacuums when rows were removed; periodic passes prune without a runtime VACUUM. A retention failure is logged and startup continues. Use `0` to disable retention. When `max_post_age_days` is `0` (no age filter), retention must also be `0`; otherwise retention must be at least `max_post_age_days`. Configuration validation enforces that pairing. Startup also removes health rows for feeds no longer in the configuration.
+`state_retention_days` prunes delivered entries, sent or dead-lettered price notifications, all but each product's newest price-history row, and price snapshots not observed within the window at startup and once per day while the process runs. The startup pass vacuums when rows were removed; periodic passes prune without a runtime VACUUM. A retention failure is logged and startup continues. Use `0` to disable retention. When `max_post_age_days` is `0` (no age filter), retention must also be `0`; otherwise retention must be at least `max_post_age_days`. Configuration validation enforces that pairing. Startup also removes health rows for feeds no longer in the configuration.
 
 Fetch jobs retry up to three times and honor `Retry-After` up to 300 seconds. Transient SQLite busy/locked errors retry up to 12 times at 5-second intervals; after that the job fails and the scheduler continues with the remaining feeds. Optional daily health reporting is configured with `health_webhook` and `health_summary_interval`.
 

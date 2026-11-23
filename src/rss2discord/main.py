@@ -109,11 +109,12 @@ def _prune_state(store: DeliveryStore, retention_days: int) -> None:
             return
         logger.info(
             "Pruned state older than %d days: delivered_entries=%d "
-            "price_notifications=%d price_history=%d",
+            "price_notifications=%d price_history=%d price_snapshots=%d",
             retention_days,
             result.delivered_entries,
             result.price_notifications,
             result.price_history,
+            result.price_snapshots,
         )
         store.vacuum()
     except sqlite3.Error as error:

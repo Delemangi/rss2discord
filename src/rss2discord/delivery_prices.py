@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Iterable
 from decimal import Decimal
 
-from rss2discord.delivery_rows import upsert_price_snapshots
+from rss2discord.delivery_rows import touch_price_snapshots, upsert_price_snapshots
 from rss2discord.models import PriceSnapshot
 
 
@@ -45,3 +45,11 @@ class PriceSnapshotRepository:
     def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
         with self._connection:
             upsert_price_snapshots(self._connection, snapshots)
+
+    def touch_price_snapshots(
+        self,
+        feed_id: str,
+        product_ids: Iterable[str],
+    ) -> None:
+        with self._connection:
+            touch_price_snapshots(self._connection, feed_id, product_ids)

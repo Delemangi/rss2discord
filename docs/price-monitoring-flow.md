@@ -72,6 +72,9 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   `notifications list --status dead_lettered` and are pruned by state retention.
 - A sent notification keeps its metadata but replaces the serialized entry
   payload with an empty object; delivered card bodies are not retained.
+- Price snapshots record `last_seen_at` on every scan. Retention removes
+  snapshots not observed within the state-retention window, so product turnover
+  cannot grow the baseline set without bound.
 - Reports contain every row: title, link, category, previous price, current
   price, currency, and observation time. Files are capped at 50,000 rows and
   4,000,000 characters (at most 16 MiB); overflow is marked explicitly in the
