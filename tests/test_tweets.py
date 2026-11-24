@@ -740,6 +740,40 @@ def test_tweets_raises_the_last_error_when_every_instance_fails(
     assert len(errors) > 1
 
 
+def test_tweets_fails_over_when_an_instance_forbids_the_crawler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given - a 403 is instance-local, not a profile-level failure
+    entries = feedparser.parse(FEED).entries
+    strategy = TweetsStrategy()
+    calls: list[str] = []
+
+    def fetch(url: str) -> tuple[list[object], str]:
+        calls.append(url)
+        if len(calls) == 1:
+            raise FeedFetchError("RSS", "HTTPError", status_code=403)
+        return entries, "OpenCode / @opencode"
+
+    monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
+
+    # When
+    filtered, title = strategy.fetch_entries(
+        "https://nitter.kareem.one/opencode/rss",
+    )
+
+    # Then - the next Nitter instance is tried instead of aborting the feed
+    assert title == "OpenCode / @opencode"
+    assert len(calls) == 2
+    assert calls[1] != calls[0]
+    assert [strategy.get_entry_id(entry) for entry in filtered] == [
+        "111",
+        "555",
+        "666",
+        "777",
+        "888",
+    ]
+
+
 def test_tweets_does_not_fail_over_on_non_retryable_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
