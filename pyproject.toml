@@ -11,7 +11,7 @@ dependencies = [
     "feedparser>=6.0.14",
     "forumscraper>=0.1.21",
     "pydantic>=2.14.4",
-    "pyyaml>=6.0.3",
+    "pyyaml>=6.0.4",
     "requests>=2.34.2",
     "tzdata>=2026.6",
 ]
