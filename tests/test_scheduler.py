@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from functools import partial
 from itertools import pairwise
 from math import nextafter
@@ -33,8 +34,9 @@ class FakeSchedulerClock:
         self._sleep_result = False
 
 
-def test_scheduler_runs_ordinary_and_price_jobs_immediately_and_by_deadline() -> None:
-    # Given
+def test_scheduler_runs_ordinary_and_price_jobs_immediately_and_by_deadline() -> (
+    None
+):  # Given
     clock = FakeSchedulerClock()
     events: list[tuple[str, float]] = []
 
@@ -710,3 +712,135 @@ def test_gap_preserves_overdue_feed_priority_despite_price_cursor_resets(
     for name in ("first", "second", "price"):
         starts = [at for kind, at in events if kind == name]
         assert starts[-1] >= horizon - 2 * (interval + first_duration + 61)
+
+
+def test_staggered_initial_deadlines_spread_each_job_class() -> None:
+    # Given
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def runner(name: str) -> Callable[[], None]:
+        return lambda: events.append((name, clock.now))
+
+    ordinary = tuple(
+        ScheduledJob(f"ordinary-{index}", "ordinary", 120, runner(f"ordinary-{index}"))
+        for index in range(4)
+    )
+    prices = tuple(
+        ScheduledJob(f"price-{index}", "price", 120, runner(f"price-{index}"))
+        for index in range(2)
+    )
+
+    def sleep(seconds: float) -> bool:
+        clock.sleep_calls.append(seconds)
+        clock.now += seconds
+        return clock.now < 120
+
+    scheduler = RuntimeScheduler(
+        SchedulerJobs(
+            ordinary,
+            prices,
+            stagger_initial=True,
+        ),
+        SchedulerControl(clock.monotonic, sleep, lambda: False),
+    )
+
+    # When
+    scheduler.run()
+
+    # Then - each class is phased across its own interval
+    assert [at for name, at in events if name.startswith("ordinary")][:4] == [
+        0,
+        30,
+        60,
+        90,
+    ]
+    assert [at for name, at in events if name.startswith("price")][:2] == [0, 60]
+
+
+def test_host_gap_delays_only_jobs_on_the_same_host() -> None:
+    # Given
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+    jobs = (
+        ScheduledJob(
+            "slow-a",
+            "ordinary",
+            100,
+            lambda: events.append(("slow-a", clock.now)),
+            host="slow.test",
+        ),
+        ScheduledJob(
+            "slow-b",
+            "ordinary",
+            100,
+            lambda: events.append(("slow-b", clock.now)),
+            host="slow.test",
+        ),
+        ScheduledJob(
+            "fast",
+            "ordinary",
+            100,
+            lambda: events.append(("fast", clock.now)),
+            host="fast.test",
+        ),
+    )
+
+    def sleep(seconds: float) -> bool:
+        clock.sleep_calls.append(seconds)
+        clock.now += seconds
+        return clock.now < 100
+
+    scheduler = RuntimeScheduler(
+        SchedulerJobs(
+            jobs,
+            (),
+            host_gaps={"slow.test": 30},
+        ),
+        SchedulerControl(clock.monotonic, sleep, lambda: False),
+    )
+
+    # When
+    scheduler.run()
+
+    # Then - the second slow-host job waits for that host only
+    assert events[:3] == [
+        ("slow-a", 0),
+        ("fast", 0),
+        ("slow-b", 30),
+    ]
+
+
+def test_default_host_gap_applies_to_every_host() -> None:
+    # Given
+    clock = FakeSchedulerClock()
+    events: list[tuple[str, float]] = []
+
+    def make_job(name: str, host: str) -> ScheduledJob:
+        return ScheduledJob(
+            name,
+            "ordinary",
+            100,
+            lambda: events.append((name, clock.now)),
+            host=host,
+        )
+
+    def sleep(seconds: float) -> bool:
+        clock.sleep_calls.append(seconds)
+        clock.now += seconds
+        return clock.now < 100
+
+    scheduler = RuntimeScheduler(
+        SchedulerJobs(
+            (make_job("first", "one.test"), make_job("second", "one.test")),
+            (),
+            default_host_gap=10,
+        ),
+        SchedulerControl(clock.monotonic, sleep, lambda: False),
+    )
+
+    # When
+    scheduler.run()
+
+    # Then
+    assert events[:2] == [("first", 0), ("second", 10)]

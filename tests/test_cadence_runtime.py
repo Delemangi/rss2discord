@@ -106,6 +106,62 @@ def test_per_feed_intervals_set_ordinary_jobs_and_capacity_warning(
     assert "cadence is best-effort" not in caplog.text
 
 
+def test_application_builds_host_paced_staggered_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given
+    feeds = tuple(
+        make_feed(f"feed-{index}").model_copy(
+            update={
+                "url": (
+                    "https://reklama5.com/Search?cat=584"
+                    if index < 4
+                    else "https://www.pazar3.mk/oglasi/elektronika/prodazba"
+                ),
+            },
+        )
+        for index in range(8)
+    )
+    captured: list[SchedulerJobs] = []
+
+    class CaptureScheduler:
+        def __init__(
+            self,
+            jobs: SchedulerJobs,
+            *_args: object,
+            **_kwargs: object,
+        ) -> None:
+            captured.append(jobs)
+
+        def run(self) -> None:
+            return
+
+    monkeypatch.setattr(
+        "rss2discord.runtime.application.RuntimeScheduler",
+        CaptureScheduler,
+    )
+    with DeliveryStore(tmp_path / "state.db") as store:
+        app = RSSToDiscord(
+            AppConfig(
+                feeds=feeds,
+                delay_between_feeds=1,
+                host_delays={"reklama5.com": 5, "www.pazar3.mk": 0},
+            ),
+            store,
+            FakeSender([]),
+        )
+        app.run()
+
+    # Then
+    jobs = captured[0]
+    assert jobs.default_host_gap == 1
+    assert dict(jobs.host_gaps) == {"reklama5.com": 5, "www.pazar3.mk": 0}
+    assert jobs.stagger_initial is True
+    assert jobs.ordinary[0].host == "reklama5.com"
+    assert jobs.ordinary[4].host == "www.pazar3.mk"
+
+
 def test_price_only_feed_has_no_ordinary_job(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

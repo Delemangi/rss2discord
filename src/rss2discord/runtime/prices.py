@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
 from rss2discord.configuration import AppConfig, FeedConfig
 from rss2discord.delivery_store import DeliveryStore
@@ -103,9 +104,14 @@ def build_price_jobs(
                     dependencies.store,
                 ),
                 close,
+                host=_feed_host(feed),
             ),
         )
     return tuple(jobs)
+
+
+def _feed_host(feed: FeedConfig) -> str:
+    return (urlsplit(feed.url).hostname or "").casefold()
 
 
 def _shared_monitor_dependencies(

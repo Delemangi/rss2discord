@@ -225,6 +225,43 @@ def test_load_config_rejects_negative_delay_between_feeds(tmp_path: Path) -> Non
         load_config(config_path)
 
 
+def test_load_config_normalizes_host_delays(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "host_delays:\n  Reklama5.COM: 5\n  www.pazar3.mk: 0\nfeeds: []\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert dict(config.host_delays) == {
+        "reklama5.com": 5,
+        "www.pazar3.mk": 0,
+    }
+
+
+def test_load_config_rejects_negative_host_delay(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("host_delays:\n  example.test: -1\nfeeds: []\n")
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
+def test_load_config_rejects_empty_host_delay_key(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text('host_delays:\n  " ": 1\nfeeds: []\n')
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_load_config_rejects_missing_feed_id(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"
