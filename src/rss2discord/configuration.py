@@ -188,12 +188,45 @@ class AppConfig(BaseModel):
         str,
         Annotated[float, Field(ge=0, allow_inf_nan=False)],
     ] = {}
+    webhooks: Mapping[NonEmptyString, NonEmptyString] = {}
     delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
     state_retention_days: Annotated[int, Field(ge=0)] = 90
     health_webhook: NonEmptyString | None = None
     health_summary_interval: Annotated[float, Field(ge=1, allow_inf_nan=False)] = 86_400
     feeds: tuple[FeedConfig, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_webhook_refs(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        webhooks = data.get("webhooks")
+        if not isinstance(webhooks, Mapping):
+            webhooks = {}
+        feeds = data.get("feeds")
+        if not isinstance(feeds, (list, tuple)):
+            return data
+        resolved: list[object] = []
+        for feed in feeds:
+            if not isinstance(feed, dict) or "webhook_ref" not in feed:
+                resolved.append(feed)
+                continue
+            feed_data = dict(feed)
+            ref = feed_data.pop("webhook_ref")
+            if "webhook" in feed_data:
+                msg = "feed must set only one of webhook or webhook_ref"
+                raise ValueError(msg)
+            if not isinstance(ref, str) or not ref:
+                msg = "feed webhook_ref must be a non-empty string"
+                raise ValueError(msg)
+            webhook = webhooks.get(ref)
+            if not isinstance(webhook, str) or not webhook:
+                msg = f"unknown webhook_ref: {ref}"
+                raise ValueError(msg)
+            feed_data["webhook"] = webhook
+            resolved.append(feed_data)
+        return {**data, "feeds": tuple(resolved)}
 
     @model_validator(mode="after")
     def require_unique_feed_ids(self) -> Self:
