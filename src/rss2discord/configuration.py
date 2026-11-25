@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, ClassVar, Final, Literal, Self
@@ -183,6 +184,10 @@ class AppConfig(BaseModel):
 
     refresh_interval: Annotated[float, Field(ge=1, allow_inf_nan=False)] = 300
     delay_between_feeds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0
+    host_delays: Mapping[
+        str,
+        Annotated[float, Field(ge=0, allow_inf_nan=False)],
+    ] = {}
     delay_between_posts: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 2
     max_post_age_days: Annotated[int, Field(ge=0)] = 7
     state_retention_days: Annotated[int, Field(ge=0)] = 90
@@ -197,6 +202,24 @@ class AppConfig(BaseModel):
             msg = "feed IDs must be unique"
             raise ValueError(msg)
         return self
+
+    @field_validator("host_delays")
+    @classmethod
+    def normalize_host_delays(
+        cls,
+        value: Mapping[str, float],
+    ) -> dict[str, float]:
+        normalized: dict[str, float] = {}
+        for host, gap in value.items():
+            key = host.strip().casefold()
+            if not key:
+                msg = "host_delays keys must be non-empty hostnames"
+                raise ValueError(msg)
+            if key in normalized:
+                msg = f"duplicate host_delays key: {key}"
+                raise ValueError(msg)
+            normalized[key] = gap
+        return normalized
 
     @model_validator(mode="after")
     def require_retention_covers_post_age(self) -> Self:

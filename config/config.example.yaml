@@ -6,9 +6,14 @@ refresh_interval: 300
 # Optional per-feed ordinary discovery interval; omit/null inherits refresh_interval.
 # It does not change posting delays or independent price_check_interval scans.
 
-# Delay between fetching separate feeds (in seconds)
-# Increase this when a source rate-limits consecutive requests
+# Default delay between consecutive fetches on the same host (in seconds).
+# Increase this when a source rate-limits consecutive requests.
 delay_between_feeds: 0
+
+# Optional per-host overrides for delay_between_feeds. Keys are hostnames.
+# host_delays:
+#   reklama5.com: 5
+#   www.pazar3.mk: 0
 
 # Delay between posting multiple updates (in seconds)
 # This prevents rate limiting and allows users to read posts
