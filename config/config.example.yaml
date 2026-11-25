@@ -15,6 +15,12 @@ delay_between_feeds: 0
 #   reklama5.com: 5
 #   www.pazar3.mk: 0
 
+# Optional named webhooks. A feed can use `webhook_ref: <name>` instead of
+# repeating the full webhook URL under `webhook:`.
+# webhooks:
+#   reklama5: "https://discord.com/api/webhooks/..."
+#   pazar3: "https://discord.com/api/webhooks/..."
+
 # Delay between posting multiple updates (in seconds)
 # This prevents rate limiting and allows users to read posts
 delay_between_posts: 2

@@ -55,7 +55,7 @@ feeds:
     strategy: rss
 ```
 
-`refresh_interval` is the ordinary discovery fallback; a feed's optional `ordinary_check_interval` overrides it without changing price scans. `price_check_interval` independently enables an immediate price scan and later periodic scans; its first scan silently establishes a baseline. `delay_between_feeds` is the default gap between jobs on the same host, and optional `host_delays` overrides it per hostname; neither spaces individual provider requests, and Pazar3 requests also share a 20-second host-wide pacer. `delay_between_posts` spaces Discord posts. Startup deadlines are phased across each job's interval so a restart does not queue every feed at once. Scheduling is best-effort, not a promise of exact scan times. Keep feed IDs stable. Treat webhook URLs as secrets.
+`refresh_interval` is the ordinary discovery fallback; a feed's optional `ordinary_check_interval` overrides it without changing price scans. `price_check_interval` independently enables an immediate price scan and later periodic scans; its first scan silently establishes a baseline. `delay_between_feeds` is the default gap between jobs on the same host, and optional `host_delays` overrides it per hostname; neither spaces individual provider requests, and Pazar3 requests also share a 20-second host-wide pacer. `delay_between_posts` spaces Discord posts. Named `webhooks` can be referenced from feeds with `webhook_ref` instead of repeating a webhook URL. Startup deadlines are phased across each job's interval so a restart does not queue every feed at once. Scheduling is best-effort, not a promise of exact scan times. Keep feed IDs stable. Treat webhook URLs as secrets.
 
 ## Code boundaries
 

@@ -262,6 +262,65 @@ def test_load_config_rejects_empty_host_delay_key(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+def test_load_config_resolves_webhook_refs(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "webhooks:\n"
+        "  pazar3: https://discord.test/pazar3\n"
+        "  reklama5: https://discord.test/reklama5\n"
+        "feeds:\n"
+        "  - id: pazar3-audio\n"
+        "    url: https://example.test/pazar3\n"
+        "    webhook_ref: pazar3\n"
+        "  - id: reklama5-audio\n"
+        "    url: https://example.test/reklama5\n"
+        "    webhook_ref: reklama5\n",
+    )
+
+    # When
+    config = load_config(config_path)
+
+    # Then
+    assert [feed.webhook for feed in config.feeds] == [
+        "https://discord.test/pazar3",
+        "https://discord.test/reklama5",
+    ]
+
+
+def test_load_config_rejects_unknown_webhook_ref(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "feeds:\n"
+        "  - id: pazar3-audio\n"
+        "    url: https://example.test/pazar3\n"
+        "    webhook_ref: missing\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
+def test_load_config_rejects_mixed_webhook_sources(tmp_path: Path) -> None:
+    # Given
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "webhooks:\n"
+        "  pazar3: https://discord.test/pazar3\n"
+        "feeds:\n"
+        "  - id: pazar3-audio\n"
+        "    url: https://example.test/pazar3\n"
+        "    webhook: https://discord.test/direct\n"
+        "    webhook_ref: pazar3\n",
+    )
+
+    # When / Then
+    with pytest.raises(ValidationError):
+        load_config(config_path)
+
+
 def test_load_config_rejects_missing_feed_id(tmp_path: Path) -> None:
     # Given
     config_path = tmp_path / "config.yaml"
