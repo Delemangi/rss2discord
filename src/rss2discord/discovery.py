@@ -631,7 +631,11 @@ class DiscoveryProcessor:
                 or strategy.require_entries_for_initialization
             ):
                 return True
-            if self._store.seed_feed(feed.id, entry_ids):
+            if self._store.seed_feed(
+                feed.id,
+                entry_ids,
+                entry_id_scheme=strategy.entry_id_scheme_version,
+            ):
                 logger.info("Initialized feed %s with existing entries", feed.id)
                 return True
         return False
@@ -651,7 +655,11 @@ class DiscoveryProcessor:
         entry_ids = strategy.get_initialization_entry_ids(entries)
         if len(entry_ids) != len(entries):
             raise FeedFetchError("Feed", "InvalidBaselineEntries")
-        if self._store.seed_feed(feed.id, entry_ids):
+        if self._store.seed_feed(
+            feed.id,
+            entry_ids,
+            entry_id_scheme=strategy.entry_id_scheme_version,
+        ):
             return "initialized"
         return "ready"
 

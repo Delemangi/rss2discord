@@ -67,7 +67,9 @@ feeds:
 
   # Hetzner server auction. Optional query filters control which listings match:
   # max_price_eur, min_ram_gb, require_ecc, disk_type (nvme/sata/hdd),
-  # min_disk_gb, location, cpu_search, include_fixed.
+  # min_disk_gb, location, cpu_search, include_fixed. Price reductions are
+  # announced only when the monthly price crosses a 5 EUR bucket, so Hetzner's
+  # automatic 1 EUR cuts do not create new cards.
   - id: "hetzner-auction"
     name: "Hetzner Server Auction"
     url: "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json?max_price_eur=150&min_ram_gb=64&disk_type=nvme&min_disk_gb=512"
