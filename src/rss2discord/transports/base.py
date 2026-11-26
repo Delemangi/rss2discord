@@ -20,6 +20,9 @@ class ScraperStrategy(ABC):
     # watermark to suppress older entries that resurface in an update-ordered
     # listing.
     uses_monotonic_entry_ids = False
+    # Bump when an entry-ID scheme changes so the current window is rebaselined
+    # silently instead of replaying every entry once.
+    entry_id_scheme_version = 1
 
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:

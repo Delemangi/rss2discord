@@ -169,13 +169,27 @@ def test_catalog_rejects_invalid_responses(content: bytes, cause: str) -> None:
     assert error.value.cause_type == cause
 
 
-def test_strategy_entry_id_changes_with_price() -> None:
+def test_strategy_entry_id_changes_when_price_crosses_a_bucket() -> None:
     strategy = HetznerAuctionStrategy(client=client_with())
     cheap = HetznerAuctionServer.model_validate(raw_server(price=79))
     pricier = HetznerAuctionServer.model_validate(raw_server(price=80))
+    five_euros_cheaper = HetznerAuctionServer.model_validate(raw_server(price=75))
 
-    assert strategy.get_entry_id(cheap) == "1:79"
+    assert strategy.get_entry_id(cheap) == "1:75"
     assert strategy.get_entry_id(pricier) == "1:80"
+    assert strategy.get_entry_id(five_euros_cheaper) == "1:75"
+    assert strategy.get_entry_id(pricier) != strategy.get_entry_id(five_euros_cheaper)
+
+
+def test_strategy_entry_id_ignores_one_euro_price_cuts() -> None:
+    strategy = HetznerAuctionStrategy(client=client_with())
+    first = HetznerAuctionServer.model_validate(raw_server(price=79))
+    one_euro_lower = HetznerAuctionServer.model_validate(raw_server(price=78))
+    expensive = HetznerAuctionServer.model_validate(raw_server(price=518))
+    expensive_lower = HetznerAuctionServer.model_validate(raw_server(price=517))
+
+    assert strategy.get_entry_id(first) == strategy.get_entry_id(one_euro_lower)
+    assert strategy.get_entry_id(expensive) == strategy.get_entry_id(expensive_lower)
 
 
 def test_strategy_builds_card_fields() -> None:

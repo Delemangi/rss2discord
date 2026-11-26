@@ -38,8 +38,18 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         )
         connection.execute(
             "CREATE TABLE IF NOT EXISTS initialized_feeds (feed_id TEXT NOT NULL PRIMARY KEY, "
-            "initialized_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
+            "initialized_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+            "entry_id_scheme INTEGER NOT NULL DEFAULT 1) WITHOUT ROWID",
         )
+        initialized_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(initialized_feeds)")
+        }
+        if "entry_id_scheme" not in initialized_columns:
+            connection.execute(
+                "ALTER TABLE initialized_feeds ADD COLUMN "
+                "entry_id_scheme INTEGER NOT NULL DEFAULT 1",
+            )
         connection.execute(
             "CREATE TABLE IF NOT EXISTS discovery_watermarks (feed_id TEXT NOT NULL PRIMARY KEY, "
             "max_entry_id INTEGER NOT NULL, "

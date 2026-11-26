@@ -54,3 +54,31 @@ def test_delivery_store_seeds_and_persists_feed_initialization(tmp_path: Path) -
     with DeliveryStore(database_path) as reopened_store:
         assert reopened_store.is_feed_initialized("anhoch")
         assert reopened_store.has_delivered("anhoch", "product-1")
+
+
+def test_delivery_store_reseeds_when_entry_id_scheme_changes(
+    tmp_path: Path,
+) -> None:
+    # Given a feed initialized with the original entry-ID scheme
+    database_path = tmp_path / "rss2discord.db"
+
+    with DeliveryStore(database_path) as store:
+        assert store.seed_feed("auction", ("server-1:100",), entry_id_scheme=1)
+        assert not store.seed_feed("auction", ("server-2:100",), entry_id_scheme=1)
+
+        # When the provider switches to a new scheme
+        reseeded = store.seed_feed(
+            "auction",
+            ("server-1:95", "server-2:95"),
+            entry_id_scheme=2,
+        )
+
+        # Then the current window is baselined silently once
+        assert reseeded
+        assert store.has_delivered("auction", "server-1:95")
+        assert store.has_delivered("auction", "server-2:95")
+        assert not store.seed_feed(
+            "auction",
+            ("server-3:95",),
+            entry_id_scheme=2,
+        )

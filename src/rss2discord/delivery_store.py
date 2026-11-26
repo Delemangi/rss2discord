@@ -177,15 +177,32 @@ class DeliveryStore:
         ).fetchone()
         return row is not None
 
-    def seed_feed(self, feed_id: str, entry_ids: Iterable[str]) -> bool:
-        """Atomically record existing entries on the first sync only."""
+    def seed_feed(
+        self,
+        feed_id: str,
+        entry_ids: Iterable[str],
+        *,
+        entry_id_scheme: int = 1,
+    ) -> bool:
+        """Record a baseline for a new feed or a changed entry-ID scheme."""
         with self._connection:
-            initialized = self._connection.execute(
-                "INSERT OR IGNORE INTO initialized_feeds (feed_id) VALUES (?)",
-                (feed_id,),
+            inserted = self._connection.execute(
+                "INSERT OR IGNORE INTO initialized_feeds "
+                "(feed_id, entry_id_scheme) VALUES (?, ?)",
+                (feed_id, entry_id_scheme),
             ).rowcount
-            if initialized == 0:
-                return False
+            if inserted == 0:
+                row = self._connection.execute(
+                    "SELECT entry_id_scheme FROM initialized_feeds WHERE feed_id = ?",
+                    (feed_id,),
+                ).fetchone()
+                if row is None or int(row[0]) == entry_id_scheme:
+                    return False
+                self._connection.execute(
+                    "UPDATE initialized_feeds SET entry_id_scheme = ? "
+                    "WHERE feed_id = ?",
+                    (entry_id_scheme, feed_id),
+                )
             self._connection.executemany(
                 "INSERT OR IGNORE INTO delivered_entries (feed_id, entry_id) "
                 "VALUES (?, ?)",

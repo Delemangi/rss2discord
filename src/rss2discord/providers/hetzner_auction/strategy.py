@@ -1,7 +1,7 @@
 """Hetzner server-auction discovery strategy."""
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from typing import final, override
 
 from rss2discord.models import EntryData, EntryId, SourceMetric
@@ -12,12 +12,17 @@ from rss2discord.providers.hetzner_auction.catalog import (
 from rss2discord.providers.hetzner_auction.models import HetznerAuctionServer
 from rss2discord.transports.base import ScraperStrategy
 
+HETZNER_AUCTION_PRICE_BUCKET_EUR = Decimal(5)
+
 
 @final
 class HetznerAuctionStrategy(ScraperStrategy):
     """Discover matching Hetzner auction servers."""
 
     seed_existing_on_first_fetch = True
+    # Version 2 quantizes prices to five-euro buckets, so the current window
+    # must be rebaselined instead of replaying every exact-price ID.
+    entry_id_scheme_version = 2
 
     def __init__(self, client: HetznerAuctionCatalogClient | None = None) -> None:
         self._client = client or HetznerAuctionCatalogClient()
@@ -28,13 +33,13 @@ class HetznerAuctionStrategy(ScraperStrategy):
 
     @override
     def get_entry_id(self, entry: HetznerAuctionServer) -> EntryId:
-        return EntryId(f"{entry.id}:{_price_key(entry.prices.monthly.eur)}")
+        return EntryId(f"{entry.id}:{_price_bucket(entry.prices.monthly.eur)}")
 
     @override
     def get_entry_data(self, entry: HetznerAuctionServer) -> EntryData:
         hardware = entry.hardware
         price = entry.prices.monthly.eur
-        price_text = _price_key(price)
+        price_text = _price_text(price)
         ram = f"{hardware.ram.size} GB"
         if hardware.ram.ecc:
             ram += " ECC"
@@ -63,8 +68,16 @@ class HetznerAuctionStrategy(ScraperStrategy):
         )
 
 
-def _price_key(price: Decimal) -> str:
+def _price_text(price: Decimal) -> str:
     return format(price.normalize(), "f")
+
+
+def _price_bucket(price: Decimal) -> str:
+    """Quantize a price so automatic one-euro cuts do not create new entries."""
+    bucket = (price / HETZNER_AUCTION_PRICE_BUCKET_EUR).to_integral_value(
+        rounding=ROUND_FLOOR,
+    ) * HETZNER_AUCTION_PRICE_BUCKET_EUR
+    return format(bucket.normalize(), "f")
 
 
 def _storage_summary(entry: HetznerAuctionServer) -> str:
