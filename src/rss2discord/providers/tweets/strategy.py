@@ -24,9 +24,10 @@ RETWEET_BY_PREFIX: Final = "RT by @"
 LEGACY_RETWEET_PREFIX: Final = "RT @"
 RETWEET_TITLE_PREFIXES: Final = (RETWEET_BY_PREFIX, LEGACY_RETWEET_PREFIX)
 QUOTE_TITLE_LABEL: Final = "Quoted @"
-# A Nitter instance can refuse the crawler while another instance still serves
-# the same profile. These statuses are instance-local, so try the next one.
-NITTER_FAILOVER_STATUS_CODES: Final = frozenset({403})
+# A Nitter instance can refuse the crawler or report an unknown profile while
+# another instance still serves it. These statuses are instance-local, so try
+# the next one. If every instance reports them, the feed still fails.
+NITTER_FAILOVER_STATUS_CODES: Final = frozenset({403, 404})
 EMPTY_TITLES: Final = frozenset({"", "...", "…", "No Title"})
 NITTER_STATUS_LINK: Final = re.compile(
     r"https?://[^\s/]+/[^\s/]+/status/\d+(?:#m)?\s*$",

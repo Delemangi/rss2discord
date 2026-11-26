@@ -740,10 +740,12 @@ def test_tweets_raises_the_last_error_when_every_instance_fails(
     assert len(errors) > 1
 
 
-def test_tweets_fails_over_when_an_instance_forbids_the_crawler(
+@pytest.mark.parametrize("status_code", [403, 404])
+def test_tweets_fails_over_when_an_instance_rejects_the_profile(
     monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
 ) -> None:
-    # Given - a 403 is instance-local, not a profile-level failure
+    # Given - a 403 or 404 can be instance-local, not a profile-level failure
     entries = feedparser.parse(FEED).entries
     strategy = TweetsStrategy()
     calls: list[str] = []
@@ -751,7 +753,7 @@ def test_tweets_fails_over_when_an_instance_forbids_the_crawler(
     def fetch(url: str) -> tuple[list[object], str]:
         calls.append(url)
         if len(calls) == 1:
-            raise FeedFetchError("RSS", "HTTPError", status_code=403)
+            raise FeedFetchError("RSS", "HTTPError", status_code=status_code)
         return entries, "OpenCode / @opencode"
 
     monkeypatch.setattr(strategy._rss, "fetch_entries", fetch)
@@ -774,13 +776,13 @@ def test_tweets_fails_over_when_an_instance_forbids_the_crawler(
     ]
 
 
-def test_tweets_does_not_fail_over_on_non_retryable_errors(
+def test_tweets_does_not_fail_over_on_profile_level_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given
+    # Given a non-instance-local 410 is a profile-level failure
     strategy = TweetsStrategy()
     calls: list[str] = []
-    error = FeedFetchError("RSS", "HTTPError", status_code=404)
+    error = FeedFetchError("RSS", "HTTPError", status_code=410)
 
     def fetch(url: str) -> tuple[list[object], str]:
         calls.append(url)
