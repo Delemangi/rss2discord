@@ -16,6 +16,10 @@ class ScraperStrategy(ABC):
     allow_missing_timestamp_after_complete_baseline = False
     seed_existing_on_first_fetch = False
     require_entries_for_initialization = False
+    # Providers whose entry IDs grow over time can use the persisted feed
+    # watermark to suppress older entries that resurface in an update-ordered
+    # listing.
+    uses_monotonic_entry_ids = False
 
     @abstractmethod
     def fetch_entries(self, url: str) -> tuple[list[Any], str]:

@@ -34,6 +34,10 @@ class AnhochStrategy(ScraperStrategy):
     """Discover newly listed products from the public Anhoch catalog."""
 
     seed_existing_on_first_fetch = True
+    # Anhoch's "latest" order includes products whose stock or price was
+    # updated, so the persisted watermark filters older catalog IDs that
+    # resurface in the discovery window.
+    uses_monotonic_entry_ids = True
 
     def __init__(self) -> None:
         self._client = AnhochCatalogClient()

@@ -41,6 +41,11 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             "initialized_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
         )
         connection.execute(
+            "CREATE TABLE IF NOT EXISTS discovery_watermarks (feed_id TEXT NOT NULL PRIMARY KEY, "
+            "max_entry_id INTEGER NOT NULL, "
+            "updated_at INTEGER NOT NULL DEFAULT (unixepoch())) WITHOUT ROWID",
+        )
+        connection.execute(
             "CREATE TABLE IF NOT EXISTS price_snapshots (feed_id TEXT NOT NULL, "
             "product_id TEXT NOT NULL, amount TEXT NOT NULL, formatted TEXT NOT NULL, "
             "currency TEXT NOT NULL, available INTEGER, "

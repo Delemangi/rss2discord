@@ -32,8 +32,8 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    currency changes produce change records. Missing products do not erase history.
 3. **Plan.** Currency mismatches raise `FeedFetchError("CurrencyChanged")`.
    Up to `price_inline_limit` changed products (100 by default) use individual
-   cards; a larger scan uses one digest. There is no approval or quarantine
-   state.
+   cards; a larger scan uses one digest. A scan with more than 25 restocks also
+   uses one digest. There is no approval or quarantine state.
 4. **Confirm where required.** Setec verifies variant identity, currency, and
    amount against product details. CCCenter verifies product details in bounded
    batches. Confirmed changes are reported; unconfirmed changes are excluded from

@@ -526,7 +526,8 @@ feeds:
 #   cards; above it, one digest with HTML/CSV attachments. The pending outbox
 #   uses the same limit, and decides by the pending group's size. CCCenter
 #   confirms at most 100 changes per scan, so values above 100 do not increase
-#   its card count.
+#   its card count. A scan with more than 25 restocks always uses one digest
+#   even when this limit is higher.
 # - price_min_change_percentage: Optional non-negative percentage, default 0
 #   (disabled), valid only for price strategies. A detected change below this
 #   percentage of the previous amount is not posted and only advances the stored
@@ -549,9 +550,9 @@ feeds:
 #   baseline). Restock alerts bypass price_min_change_percentage,
 #   price_min_change_amount, and price_ignore_increases; a restock that also
 #   moved in price carries the price-change percentage. Restocks with no price
-#   change are counted separately in bulk digests. When false, availability is
-#   still stored so a later scan can detect the change, but no restock is ever
-#   posted.
+#   change are counted separately in bulk digests. More than 25 restocks in one
+#   scan always use a digest. When false, availability is still stored so a
+#   later scan can detect the change, but no restock is ever posted.
 # - price_check_interval: Optional seconds between Ananas, Anhoch, CCCenter, DDStore, Gjirafa50, Hivetec, Neksio, Neptun, Pazar3, PROXNet, Reklama5, Setec, Technomarket, or WooCommerce
 #   price scans. Set to 3600 for hourly checks. Omit or set to null to
 #   disable; it is invalid for other feeds. The first scan runs immediately and

@@ -25,6 +25,14 @@ MAX_HACKER_NEWS_ENRICHMENTS_PER_FEED: Final = 5
 MAX_HACKER_NEWS_ENRICHMENTS_PER_FILTERED_FEED: Final = 50
 
 
+def _numeric_entry_id(entry_id: EntryId) -> int | None:
+    """Return a provider entry ID as an integer when it is numeric."""
+    try:
+        return int(entry_id)
+    except (TypeError, ValueError):
+        return None
+
+
 class EntryProcessingOutcome(StrEnum):
     """Whether discovery delivery completed, was interrupted, or failed."""
 
@@ -45,6 +53,7 @@ class DiscoveryScanCounters:
     too_old: int = 0
     below_score: int = 0
     duplicates: int = 0
+    watermark_skipped: int = 0
     missing_id: int = 0
     seeded: bool = False
     digest: bool = False
@@ -243,8 +252,8 @@ class DiscoveryProcessor:
         logger.info(
             "Discovery scan feed=%s strategy=%s entries=%d unhandled=%d "
             "pending=%d delivered=%d failed=%d too_old=%d below_score=%d "
-            "duplicates=%d missing_id=%d seeded=%s digest=%s state=%s "
-            "duration_ms=%d",
+            "duplicates=%d watermark_skipped=%d missing_id=%d seeded=%s "
+            "digest=%s state=%s duration_ms=%d",
             feed.id,
             feed.strategy,
             counters.entries,
@@ -255,6 +264,7 @@ class DiscoveryProcessor:
             counters.too_old,
             counters.below_score,
             counters.duplicates,
+            counters.watermark_skipped,
             counters.missing_id,
             str(counters.seeded).lower(),
             str(counters.digest).lower(),
@@ -273,15 +283,89 @@ class DiscoveryProcessor:
         """Process pending entries, reporting completion, interruption, or failure."""
         if self._seed_existing_entries(feed, strategy, entries):
             counters.seeded = True
+            self._store_watermark_for_entries(feed, strategy, entries)
+            return EntryProcessingOutcome.COMPLETED
+        watermark = self._load_watermark(feed, strategy)
+        if (
+            strategy.uses_monotonic_entry_ids
+            and watermark is None
+            and (initial_watermark := self._watermark_for_entries(strategy, entries))
+            is not None
+        ):
+            # An existing feed deploying the watermark for the first time must
+            # not replay its current update-ordered window as new products.
+            self._store.store_discovery_watermark(feed.id, initial_watermark)
+            counters.watermark_skipped = len(entries)
             return EntryProcessingOutcome.COMPLETED
         source_title = feed.name or fetched_source_title
-        pending = self._collect_pending_entries(feed, strategy, entries, counters)
+        pending = self._collect_pending_entries(
+            feed,
+            strategy,
+            entries,
+            counters,
+            watermark=watermark,
+        )
         if pending is None:
             return EntryProcessingOutcome.INTERRUPTED
         counters.pending = len(pending)
         if not pending:
             return EntryProcessingOutcome.COMPLETED
-        return self._deliver_pending_entries(feed, source_title, pending, counters)
+        outcome = self._deliver_pending_entries(feed, source_title, pending, counters)
+        self._advance_watermark_after_delivery(feed, strategy, pending, watermark)
+        return outcome
+
+    def _load_watermark(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+    ) -> int | None:
+        if not strategy.uses_monotonic_entry_ids:
+            return None
+        return self._store.load_discovery_watermark(feed.id)
+
+    def _watermark_for_entries(
+        self,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+    ) -> int | None:
+        if not strategy.uses_monotonic_entry_ids:
+            return None
+        numeric_ids = [
+            numeric_id
+            for entry in entries
+            if (entry_id := strategy.get_entry_id(entry)) is not None
+            and (numeric_id := _numeric_entry_id(entry_id)) is not None
+        ]
+        return max(numeric_ids, default=None)
+
+    def _store_watermark_for_entries(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        entries: list[Any],
+    ) -> None:
+        watermark = self._watermark_for_entries(strategy, entries)
+        if watermark is not None:
+            self._store.store_discovery_watermark(feed.id, watermark)
+
+    def _advance_watermark_after_delivery(
+        self,
+        feed: FeedConfig,
+        strategy: ScraperStrategy,
+        pending: list[tuple[EntryId, EntryData]],
+        watermark: int | None,
+    ) -> None:
+        if not strategy.uses_monotonic_entry_ids or watermark is None:
+            return
+        delivered_max = watermark
+        for entry_id, _ in pending:
+            numeric_id = _numeric_entry_id(entry_id)
+            if numeric_id is None:
+                continue
+            if self._store.has_delivered(feed.id, entry_id):
+                delivered_max = max(delivered_max, numeric_id)
+        if delivered_max > watermark:
+            self._store.store_discovery_watermark(feed.id, delivered_max)
 
     def _collect_pending_entries(
         self,
@@ -289,6 +373,8 @@ class DiscoveryProcessor:
         strategy: ScraperStrategy,
         entries: list[Any],
         counters: DiscoveryScanCounters,
+        *,
+        watermark: int | None = None,
     ) -> list[tuple[EntryId, EntryData]] | None:
         """Collect entries worth delivering, or None when shutdown interrupted the scan."""
         seen_entry_ids: set[EntryId] = set()
@@ -313,6 +399,7 @@ class DiscoveryProcessor:
                 entry,
                 seen_entry_ids,
                 counters,
+                watermark=watermark,
             )
             if entry_id is None:
                 continue
@@ -474,6 +561,8 @@ class DiscoveryProcessor:
         entry: EntryT,
         seen_entry_ids: set[EntryId],
         counters: DiscoveryScanCounters,
+        *,
+        watermark: int | None = None,
     ) -> EntryId | None:
         entry_id = strategy.get_entry_id(entry)
         if entry_id is None:
@@ -486,6 +575,12 @@ class DiscoveryProcessor:
         if is_seen or self._store.has_delivered(feed.id, entry_id):
             counters.duplicates += 1
             return None
+
+        if strategy.uses_monotonic_entry_ids and watermark is not None:
+            numeric_id = _numeric_entry_id(entry_id)
+            if numeric_id is not None and numeric_id <= watermark:
+                counters.watermark_skipped += 1
+                return None
 
         counters.unhandled += 1
         return entry_id
