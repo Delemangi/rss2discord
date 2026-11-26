@@ -151,6 +151,25 @@ class DeliveryStore:
                 ((feed_id, entry_id) for entry_id in entry_ids),
             )
 
+    def load_discovery_watermark(self, feed_id: str) -> int | None:
+        """Return the highest entry ID already handled by a monotonic feed."""
+        row = self._connection.execute(
+            "SELECT max_entry_id FROM discovery_watermarks WHERE feed_id = ?",
+            (feed_id,),
+        ).fetchone()
+        return int(row[0]) if row is not None else None
+
+    def store_discovery_watermark(self, feed_id: str, max_entry_id: int) -> None:
+        """Advance a monotonic feed's watermark without ever lowering it."""
+        with self._connection:
+            self._connection.execute(
+                "INSERT INTO discovery_watermarks (feed_id, max_entry_id) "
+                "VALUES (?, ?) ON CONFLICT(feed_id) DO UPDATE SET "
+                "max_entry_id = MAX(max_entry_id, excluded.max_entry_id), "
+                "updated_at = unixepoch()",
+                (feed_id, max_entry_id),
+            )
+
     def is_feed_initialized(self, feed_id: str) -> bool:
         row = self._connection.execute(
             "SELECT 1 FROM initialized_feeds WHERE feed_id = ?",
