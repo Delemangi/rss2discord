@@ -151,6 +151,24 @@ class DeliveryStore:
                 ((feed_id, entry_id) for entry_id in entry_ids),
             )
 
+    def touch_delivered_entries(
+        self,
+        feed_id: str,
+        entry_ids: Iterable[str],
+    ) -> None:
+        """Refresh retention age for entries still present in the source."""
+        materialized = tuple(entry_ids)
+        if not materialized:
+            return
+        now = int(time.time())
+        cutoff = now - 30 * 86_400
+        with self._connection:
+            self._connection.executemany(
+                "UPDATE delivered_entries SET delivered_at = ? "
+                "WHERE feed_id = ? AND entry_id = ? AND delivered_at < ?",
+                ((now, feed_id, entry_id, cutoff) for entry_id in materialized),
+            )
+
     def load_discovery_watermark(self, feed_id: str) -> int | None:
         """Return the highest entry ID already handled by a monotonic feed."""
         row = self._connection.execute(

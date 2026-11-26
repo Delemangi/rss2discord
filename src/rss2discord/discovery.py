@@ -388,24 +388,30 @@ class DiscoveryProcessor:
             )
         enrichment_limit_logged = False
         pending: list[tuple[EntryId, EntryData]] = []
+        seen_delivered: set[EntryId] = set()
 
-        for entry in entries:
-            if self.is_shutdown_requested():
-                return None
+        try:
+            for entry in entries:
+                if self.is_shutdown_requested():
+                    return None
 
-            entry_id = self._unhandled_entry_id(
-                feed,
-                strategy,
-                entry,
-                seen_entry_ids,
-                counters,
-                watermark=watermark,
-            )
-            if entry_id is None:
-                continue
-            entry_data = strategy.get_entry_data(entry)
-            entry_data, hacker_news_enrichments_remaining, enrichment_limit_logged = (
-                self._adapt_entry(
+                entry_id = self._unhandled_entry_id(
+                    feed,
+                    strategy,
+                    entry,
+                    seen_entry_ids,
+                    counters,
+                    watermark=watermark,
+                    delivered_entry_ids=seen_delivered,
+                )
+                if entry_id is None:
+                    continue
+                entry_data = strategy.get_entry_data(entry)
+                (
+                    entry_data,
+                    hacker_news_enrichments_remaining,
+                    enrichment_limit_logged,
+                ) = self._adapt_entry(
                     feed,
                     adapter,
                     entry,
@@ -413,17 +419,46 @@ class DiscoveryProcessor:
                     hacker_news_enrichments_remaining,
                     enrichment_limit_logged=enrichment_limit_logged,
                 )
-            )
-            # Fail open when enrichment could not provide a score.
-            if self._below_score(feed, entry_data):
-                counters.below_score += 1
-                continue
-            if self._entry_is_too_old(feed, strategy, entry_data):
-                counters.too_old += 1
-                continue
+                # Fail open when enrichment could not provide a score.
+                if self._below_score(feed, entry_data):
+                    counters.below_score += 1
+                    continue
+                if self._entry_is_too_old(feed, strategy, entry_data):
+                    counters.too_old += 1
+                    continue
 
-            pending.append((entry_id, entry_data))
-        return pending
+                pending.append((entry_id, entry_data))
+            return pending
+        finally:
+            self._refresh_delivered_entries(feed.id, seen_delivered)
+
+    def _refresh_delivered_entries(
+        self,
+        feed_id: str,
+        entry_ids: set[EntryId],
+    ) -> None:
+        """Keep delivered entries that are still in the source out of retention."""
+        if not entry_ids:
+            return
+        retry_policy = SQLiteRetryPolicy(
+            sleep=self._runtime.sleep,
+            on_retry=lambda error, delay: logger.warning(
+                "Could not refresh delivered entries for feed %s; "
+                "retrying in %.1f seconds (%s)",
+                feed_id,
+                delay,
+                type(error).__name__,
+            ),
+        )
+        try:
+            retry_policy.execute(
+                lambda: self._store.touch_delivered_entries(feed_id, entry_ids),
+            )
+        except SQLiteRetryInterruptedError:
+            logger.warning(
+                "Could not refresh delivered entries for feed %s during shutdown",
+                feed_id,
+            )
 
     @staticmethod
     def _below_score(feed: FeedConfig, entry_data: EntryData) -> bool:
@@ -563,6 +598,7 @@ class DiscoveryProcessor:
         counters: DiscoveryScanCounters,
         *,
         watermark: int | None = None,
+        delivered_entry_ids: set[EntryId] | None = None,
     ) -> EntryId | None:
         entry_id = strategy.get_entry_id(entry)
         if entry_id is None:
@@ -571,9 +607,12 @@ class DiscoveryProcessor:
             return None
         is_seen = entry_id in seen_entry_ids
         seen_entry_ids.add(entry_id)
+        has_delivered = self._store.has_delivered(feed.id, entry_id)
 
-        if is_seen or self._store.has_delivered(feed.id, entry_id):
+        if is_seen or has_delivered:
             counters.duplicates += 1
+            if has_delivered and delivered_entry_ids is not None:
+                delivered_entry_ids.add(entry_id)
             return None
 
         if strategy.uses_monotonic_entry_ids and watermark is not None:

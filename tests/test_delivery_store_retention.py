@@ -80,6 +80,23 @@ def test_prune_old_records_keeps_recent_and_pending(tmp_path: Path) -> None:
         assert {str(row["status"]) for row in remaining} == {"pending", "sent"}
 
 
+def test_touch_prevents_pruning_entries_still_in_source(tmp_path: Path) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        store.mark_delivered_many("feed", ("kept", "dropped"))
+        with store._connection:
+            store._connection.execute(
+                "UPDATE delivered_entries SET delivered_at = ?",
+                (OLD,),
+            )
+
+        store.touch_delivered_entries("feed", ("kept", "missing"))
+        result = store.prune_old_records(retention_days=RETENTION_DAYS)
+
+        assert store.has_delivered("feed", "kept")
+        assert not store.has_delivered("feed", "dropped")
+        assert result.delivered_entries == 1
+
+
 def test_prune_old_records_disabled_for_zero_days(tmp_path: Path) -> None:
     with DeliveryStore(tmp_path / "state.db") as store:
         store.mark_delivered_many("feed", ("old",))
