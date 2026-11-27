@@ -34,6 +34,7 @@ def feed(
     price_ignore_increases: bool = False,
     price_min_change_percentage: float = 0,
     price_min_change_amount: Decimal | None = None,
+    price_inline_limit: int = 100,
 ) -> FeedConfig:
     return FeedConfig(
         id="feed",
@@ -44,6 +45,7 @@ def feed(
         price_ignore_increases=price_ignore_increases,
         price_min_change_percentage=price_min_change_percentage,
         price_min_change_amount=price_min_change_amount,
+        price_inline_limit=price_inline_limit,
     )
 
 
@@ -107,6 +109,7 @@ def run(
     price_ignore_increases: bool = False,
     price_min_change_percentage: float = 0,
     price_min_change_amount: Decimal | None = None,
+    price_inline_limit: int = 100,
 ) -> None:
     run_price_scan(
         feed=feed(
@@ -114,6 +117,7 @@ def run(
             price_ignore_increases=price_ignore_increases,
             price_min_change_percentage=price_min_change_percentage,
             price_min_change_amount=price_min_change_amount,
+            price_inline_limit=price_inline_limit,
         ),
         dependencies=dependencies(store, sender),
         provider="test",
@@ -242,6 +246,31 @@ def test_restock_with_a_price_change_alerts_once_with_a_percentage(
         assert entry.price_change_percentage == "-10.0%"
         persisted = store.load_price_snapshots("feed")[0]
         assert (persisted.amount, persisted.available) == (Decimal(90), True)
+
+
+def test_restock_burst_uses_one_digest_below_a_high_inline_limit(
+    tmp_path: Path,
+) -> None:
+    with DeliveryStore(tmp_path / "state.db") as store:
+        ids = tuple(str(index) for index in range(30))
+        store.upsert_price_snapshots(
+            tuple(snapshot(product_id, available=False) for product_id in ids),
+        )
+        sender = RecordingSender([DiscordDeliveryResult.DELIVERED])
+
+        run(
+            store,
+            sender,
+            [
+                PriceObservation(product_id, snapshot(product_id, available=True))
+                for product_id in ids
+            ],
+            price_inline_limit=200,
+        )
+
+        assert len(sender.messages) == 1
+        assert sender.messages[0].entry.title == "Price changes"
+        assert len(sender.messages[0].files) == 2
 
 
 def test_out_of_stock_price_change_is_silent_and_persists_the_new_baseline(

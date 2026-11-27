@@ -526,10 +526,10 @@ feeds:
 # - price_inline_limit: Optional integer 1-1000, default 100, valid only for
 #   price strategies. Price scans with up to this many changes send individual
 #   cards; above it, one digest with HTML/CSV attachments. The pending outbox
-#   uses the same limit, and decides by the pending group's size. CCCenter
-#   confirms at most 100 changes per scan, so values above 100 do not increase
-#   its card count. A scan with more than 25 restocks always uses one digest
-#   even when this limit is higher.
+#   uses the same limit, and decides by the pending group's size and restock
+#   count. CCCenter confirms at most 100 changes per scan, so values above 100
+#   do not increase its card count. A scan with more than 25 restocks always
+#   uses one digest even when this limit is higher.
 # - price_min_change_percentage: Optional non-negative percentage, default 0
 #   (disabled), valid only for price strategies. A detected change below this
 #   percentage of the previous amount is not posted and only advances the stored

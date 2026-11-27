@@ -26,7 +26,11 @@ from .contracts import (
     PriceDeliveryPlan,
 )
 from .digest import build_digest_messages
-from .planning import finish_price_delivery, record_price_health
+from .planning import (
+    finish_price_delivery,
+    record_price_health,
+    requires_digest,
+)
 
 
 def deliver_price_changes[PriceChangeT: DeliverablePriceChange](
@@ -266,17 +270,23 @@ def deliver_price_notifications(
         if group is None:
             return PriceNotificationDeliveryResult.DRAINED
         _group_id, records = group
-        # Choose by the pending group's size, not by the scan that recorded it:
-        # rotated confirmation can record fewer rows than the scan found.
+        # Choose by the pending group itself, not by the scan that recorded it:
+        # rotated confirmation can record fewer rows than the scan found, while
+        # a restock burst must stay a digest even under a higher inline limit.
+        restock_count = sum(1 for record in records if record.entry.restocked)
         result = (
-            _deliver_inline_cards(dependencies, feed, records)
-            if len(records) <= feed.price_inline_limit
-            else _deliver_digest(
+            _deliver_digest(
                 dependencies,
                 feed,
                 records,
                 additional_pending=additional_pending,
             )
+            if requires_digest(
+                record_count=len(records),
+                restock_count=restock_count,
+                inline_limit=feed.price_inline_limit,
+            )
+            else _deliver_inline_cards(dependencies, feed, records)
         )
         if result is not PriceNotificationDeliveryResult.DRAINED:
             return result
