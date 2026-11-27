@@ -10,6 +10,7 @@ from .configuration import AppConfig, FeedConfig
 from .delivery_store import DeliveryStore
 from .discord.client import DiscordDeliveryResult, DiscordSender, WebhookMessage
 from .discord.discovery_digest import build_discovery_digest
+from .discovery_entries import DiscoveryEntryTracker
 from .models import EntryData, EntryId, HealthUpdate
 from .retries import (
     FetchRetryPolicy,
@@ -377,7 +378,6 @@ class DiscoveryProcessor:
         watermark: int | None = None,
     ) -> list[tuple[EntryId, EntryData]] | None:
         """Collect entries worth delivering, or None when shutdown interrupted the scan."""
-        seen_entry_ids: set[EntryId] = set()
         adapter = self._adapters[feed.adapter] if feed.adapter is not None else None
         hacker_news_enrichments_remaining: int | None = None
         if feed.adapter == "hackernews":
@@ -388,21 +388,22 @@ class DiscoveryProcessor:
             )
         enrichment_limit_logged = False
         pending: list[tuple[EntryId, EntryData]] = []
-        seen_delivered: set[EntryId] = set()
+        tracker = DiscoveryEntryTracker(
+            feed_id=feed.id,
+            delivered=self._store.load_delivered_entry_ids(feed.id),
+            watermark=watermark,
+            uses_monotonic_entry_ids=strategy.uses_monotonic_entry_ids,
+        )
 
         try:
             for entry in entries:
                 if self.is_shutdown_requested():
                     return None
 
-                entry_id = self._unhandled_entry_id(
-                    feed,
+                entry_id = tracker.unhandled_entry_id(
                     strategy,
                     entry,
-                    seen_entry_ids,
                     counters,
-                    watermark=watermark,
-                    delivered_entry_ids=seen_delivered,
                 )
                 if entry_id is None:
                     continue
@@ -430,7 +431,7 @@ class DiscoveryProcessor:
                 pending.append((entry_id, entry_data))
             return pending
         finally:
-            self._refresh_delivered_entries(feed.id, seen_delivered)
+            self._refresh_delivered_entries(feed.id, tracker.delivered_seen)
 
     def _refresh_delivered_entries(
         self,
@@ -588,41 +589,6 @@ class DiscoveryProcessor:
         if not self._runtime.sleep(self._config.delay_between_posts):
             return EntryProcessingOutcome.INTERRUPTED
         return EntryProcessingOutcome.COMPLETED
-
-    def _unhandled_entry_id[EntryT](
-        self,
-        feed: FeedConfig,
-        strategy: ScraperStrategy,
-        entry: EntryT,
-        seen_entry_ids: set[EntryId],
-        counters: DiscoveryScanCounters,
-        *,
-        watermark: int | None = None,
-        delivered_entry_ids: set[EntryId] | None = None,
-    ) -> EntryId | None:
-        entry_id = strategy.get_entry_id(entry)
-        if entry_id is None:
-            counters.missing_id += 1
-            logger.warning("Skipping entry without a stable ID in feed %s", feed.id)
-            return None
-        is_seen = entry_id in seen_entry_ids
-        seen_entry_ids.add(entry_id)
-        has_delivered = self._store.has_delivered(feed.id, entry_id)
-
-        if is_seen or has_delivered:
-            counters.duplicates += 1
-            if has_delivered and delivered_entry_ids is not None:
-                delivered_entry_ids.add(entry_id)
-            return None
-
-        if strategy.uses_monotonic_entry_ids and watermark is not None:
-            numeric_id = _numeric_entry_id(entry_id)
-            if numeric_id is not None and numeric_id <= watermark:
-                counters.watermark_skipped += 1
-                return None
-
-        counters.unhandled += 1
-        return entry_id
 
     @staticmethod
     def _adapt_entry[EntryT](

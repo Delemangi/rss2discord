@@ -17,6 +17,19 @@ def test_delivery_store_keeps_feed_namespaces_separate(tmp_path: Path) -> None:
         assert not store.has_delivered("feed-b", "entry-1")
 
 
+def test_delivery_store_loads_one_feeds_delivered_ids(tmp_path: Path) -> None:
+    # Given delivered entries in two feeds
+    database_path = tmp_path / "rss2discord.db"
+
+    with DeliveryStore(database_path) as store:
+        store.mark_delivered_many("feed-a", ("1", "2"))
+        store.mark_delivered("feed-b", "1")
+
+        # When / Then batch loading is scoped to one feed
+        assert store.load_delivered_entry_ids("feed-a") == {"1", "2"}
+        assert store.load_delivered_entry_ids("feed-b") == {"1"}
+
+
 def test_delivery_store_persists_after_reopen(tmp_path: Path) -> None:
     # Given
     database_path = tmp_path / "rss2discord.db"
