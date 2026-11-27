@@ -32,6 +32,17 @@ class SourceMetric:
 
 
 @dataclass(frozen=True, slots=True)
+class PriceHistoryWindow:
+    """Low and high observations for one price-history window."""
+
+    days: int | None
+    label: str
+    low: str
+    high: str
+    is_low: bool
+
+
+@dataclass(frozen=True, slots=True)
 class EntryData:
     title: str
     link: str
@@ -56,6 +67,9 @@ class EntryData:
     price_period_high: str | None = None
     price_period_days: int = PRICE_HISTORY_WINDOW_DAYS
     price_is_period_low: bool = False
+    # Multi-window history used by current renderers; the scalar fields above
+    # remain for outbox compatibility and older pending rows.
+    price_history: tuple[PriceHistoryWindow, ...] = ()
     # Marks a stock alert instead of a price move, so renderers do not title
     # the card as a change and digests can count it separately.
     restocked: bool = False
@@ -63,13 +77,14 @@ class EntryData:
 
 @dataclass(frozen=True, slots=True)
 class PriceHistoryContext:
-    """Observed price range for one product over a history window."""
+    """Observed price range for one product over one or more windows."""
 
     low: Decimal
     low_formatted: str
     high: Decimal
     high_formatted: str
     is_low: bool
+    windows: tuple[PriceHistoryWindow, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

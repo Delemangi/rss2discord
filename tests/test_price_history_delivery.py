@@ -10,7 +10,7 @@ from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
 from rss2discord.discord.message import WebhookMessage
-from rss2discord.models import EntryData, PriceSnapshot
+from rss2discord.models import EntryData, PriceHistoryWindow, PriceSnapshot
 from rss2discord.price_notifications import (
     PriceNotification,
     PriceNotificationDeliveryResult,
@@ -296,6 +296,11 @@ def test_history_fields_round_trip_through_the_outbox_json() -> None:
         price_period_high="250 MKD",
         price_period_days=30,
         price_is_period_low=True,
+        price_history=(
+            PriceHistoryWindow(30, "30-day", "90 MKD", "250 MKD", True),
+            PriceHistoryWindow(180, "6-month", "80 MKD", "250 MKD", False),
+            PriceHistoryWindow(None, "all-time", "75 MKD", "250 MKD", False),
+        ),
     )
 
     assert entry_from_json(entry_to_json(original)) == original

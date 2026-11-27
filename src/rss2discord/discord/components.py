@@ -11,7 +11,12 @@ from rss2discord.discord.pwn_watch import (
     severity_color,
 )
 from rss2discord.discord.source_labels import source_label
-from rss2discord.models import EntryData, PriceDirection, SourceMetric
+from rss2discord.models import (
+    EntryData,
+    PriceDirection,
+    PriceHistoryWindow,
+    SourceMetric,
+)
 from rss2discord.provider_metadata import STRATEGY_LABELS
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
@@ -394,10 +399,6 @@ def _metrics_with_price_details(
     if entry.restocked:
         _remove_restock_noise(entry, metrics)
         headline_badges.append("**Back in stock**")
-        if entry.price_is_period_low:
-            _append_period_low_badge(entry, headline_badges)
-        else:
-            _append_period_range_metric(entry, metrics)
 
     _insert_change_metric(entry, metrics)
     _insert_discount_metric(entry, metrics, headline_badges)
@@ -511,33 +512,76 @@ def _insert_discount_metric(
     metrics.insert(insert_at, SourceMetric("Discount", formatted))
 
 
+def _entry_price_windows(entry: EntryData) -> tuple[PriceHistoryWindow, ...]:
+    """Return multi-window history, falling back to the legacy 30-day fields."""
+    if entry.price_history:
+        return entry.price_history
+    if entry.price_period_low is None or entry.price_period_high is None:
+        return ()
+    return (
+        PriceHistoryWindow(
+            days=entry.price_period_days,
+            label=f"{entry.price_period_days}-day",
+            low=entry.price_period_low,
+            high=entry.price_period_high,
+            is_low=entry.price_is_period_low,
+        ),
+    )
+
+
 def _apply_period_history(
     entry: EntryData,
     metrics: list[SourceMetric],
     headline_badges: list[str],
 ) -> None:
-    if entry.price_change_percentage is None:
+    windows = _entry_price_windows(entry)
+    if not windows:
         return
-    if entry.price_is_period_low and _is_price_decrease(entry):
-        _append_period_low_badge(entry, headline_badges)
-    elif not entry.price_is_period_low:
-        _append_period_range_metric(entry, metrics)
+    if not entry.restocked and entry.price_change_percentage is None:
+        return
+    low_index = next(
+        (index for index in range(len(windows) - 1, -1, -1) if windows[index].is_low),
+        None,
+    )
+    if low_index is not None:
+        if not entry.restocked and not _is_price_decrease(entry):
+            return
+        _append_period_low_badge(windows[low_index], headline_badges)
+        for window in windows[low_index + 1 :]:
+            if not window.is_low:
+                _append_period_low_metric(window, metrics)
+        return
+    _append_period_range_metric(windows[0], metrics)
+    for window in windows[1:]:
+        _append_period_low_metric(window, metrics)
+
+
+def _period_label(window: PriceHistoryWindow) -> str:
+    return window.label.capitalize()
 
 
 def _append_period_low_badge(
-    entry: EntryData,
+    window: PriceHistoryWindow,
     headline_badges: list[str],
 ) -> None:
-    """Add the period-low headline badge once, even if both restock and price
-    change paths would qualify.
-    """
-    badge = f"**{entry.price_period_days}-day low**"
+    """Add the strongest price-history low badge once."""
+    badge = f"**{_period_label(window)} low**"
     if badge not in headline_badges:
         headline_badges.append(badge)
 
 
+def _append_period_low_metric(
+    window: PriceHistoryWindow,
+    metrics: list[SourceMetric],
+) -> None:
+    """Append a longer-window low so the current price can be compared to it."""
+    label = f"{_period_label(window)} low"
+    if not any(metric.label == label for metric in metrics):
+        metrics.append(SourceMetric(label, window.low))
+
+
 def _append_period_range_metric(
-    entry: EntryData,
+    window: PriceHistoryWindow,
     metrics: list[SourceMetric],
 ) -> None:
     """Append a compact price-history range when the values are usable.
@@ -546,16 +590,11 @@ def _append_period_range_metric(
     drops when metrics are crowded, leaving price, change, and restock badges
     intact.
     """
-    low = entry.price_period_low
-    high = entry.price_period_high
-    label = f"{entry.price_period_days}-day range"
-    if (
-        low is not None
-        and high is not None
-        and low != high
-        and not any(metric.label == label for metric in metrics)
+    label = f"{window.label} range"
+    if window.low != window.high and not any(
+        metric.label == label for metric in metrics
     ):
-        metrics.append(SourceMetric(label, f"{low} – {high}"))
+        metrics.append(SourceMetric(label, f"{window.low} – {window.high}"))
 
 
 def _is_price_decrease(entry: EntryData) -> bool:

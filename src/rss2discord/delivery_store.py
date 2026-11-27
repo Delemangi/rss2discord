@@ -334,7 +334,7 @@ class DeliveryStore:
         return self._health.prune_unconfigured(feed_ids)
 
     def prune_old_records(self, *, retention_days: int) -> RetentionResult:
-        """Delete delivered entries, sent notifications, and old price history."""
+        """Delete delivered entries, sent notifications, and idle products."""
         if retention_days <= 0:
             return RetentionResult()
         cutoff = int(time.time()) - retention_days * 86_400
@@ -349,16 +349,8 @@ class DeliveryStore:
                 "AND COALESCE(dead_lettered_at, sent_at, last_attempt_at, observed_at) < ?",
                 (cutoff,),
             ).rowcount
-            # Keep each product's newest observation so a long-unchanged price
-            # still has a baseline older than the retention window.
-            history = self._connection.execute(
-                "DELETE FROM price_history WHERE observed_at < ? AND EXISTS ("
-                "SELECT 1 FROM price_history AS newer "
-                "WHERE newer.feed_id = price_history.feed_id "
-                "AND newer.product_id = price_history.product_id "
-                "AND newer.observed_at > price_history.observed_at)",
-                (cutoff,),
-            ).rowcount
+            # Price history for a product that is still observed is kept even
+            # when it is old: multi-window lows need the full tracked range.
             evicted_history = self._connection.execute(
                 "DELETE FROM price_history WHERE EXISTS ("
                 "SELECT 1 FROM price_snapshots AS snapshot "
@@ -374,7 +366,7 @@ class DeliveryStore:
         return RetentionResult(
             delivered_entries=max(0, delivered),
             price_notifications=max(0, notifications),
-            price_history=max(0, history + evicted_history),
+            price_history=max(0, evicted_history),
             price_snapshots=max(0, snapshots),
         )
 

@@ -1,4 +1,4 @@
-"""Bounded price history and 30-day price-range queries for alerts."""
+"""Bounded price history and multi-window price-range queries for alerts."""
 
 from __future__ import annotations
 
@@ -8,8 +8,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
-from rss2discord.models import PriceHistoryContext, PriceSnapshot
+from rss2discord.defaults import (
+    PRICE_HISTORY_WINDOW_DAYS,
+    PRICE_HISTORY_WINDOWS,
+)
+from rss2discord.models import PriceHistoryContext, PriceHistoryWindow, PriceSnapshot
 
 _HISTORY_CHUNK_SIZE = 400
 _SECONDS_PER_DAY = 86_400
@@ -23,16 +26,25 @@ class _HistoryRow:
     observed_at: int
 
 
+@dataclass(frozen=True, slots=True)
+class _Range:
+    low: Decimal
+    low_formatted: str
+    high: Decimal
+    high_formatted: str
+    is_low: bool
+
+
 def _chunks(values: tuple[str, ...], size: int) -> Iterable[tuple[str, ...]]:
     for start in range(0, len(values), size):
         yield values[start : start + size]
 
 
-def _context_for(
+def _range_for(
     observation: PriceSnapshot,
     rows: Sequence[_HistoryRow],
     window_start: int,
-) -> PriceHistoryContext | None:
+) -> _Range | None:
     """Compute the window range for one observation from its history rows.
 
     Rows recorded for the observation itself are ignored inside the window so a
@@ -66,12 +78,26 @@ def _context_for(
         low_amount, low_formatted = observation.amount, observation.formatted
     if observation.amount >= high_amount:
         high_amount, high_formatted = observation.amount, observation.formatted
-    return PriceHistoryContext(
+    return _Range(
         low=low_amount,
         low_formatted=low_formatted,
         high=high_amount,
         high_formatted=high_formatted,
         is_low=observation.amount <= low_amount,
+    )
+
+
+def _window(
+    days: int | None,
+    label: str,
+    price_range: _Range,
+) -> PriceHistoryWindow:
+    return PriceHistoryWindow(
+        days=days,
+        label=label,
+        low=price_range.low_formatted,
+        high=price_range.high_formatted,
+        is_low=price_range.is_low,
     )
 
 
@@ -98,13 +124,50 @@ class PriceHistoryRepository:
         for chunk in _chunks(tuple(observations), _HISTORY_CHUNK_SIZE):
             rows_by_product = self._rows_by_product(feed_id, chunk, effective_now)
             for product_id in chunk:
-                context = _context_for(
+                rows = rows_by_product.get(product_id, ())
+                if not rows:
+                    continue
+                price_range = _range_for(
                     observations[product_id],
-                    rows_by_product.get(product_id, ()),
+                    rows,
                     window_start,
                 )
-                if context is not None:
-                    contexts[product_id] = context
+                if price_range is None:
+                    continue
+                currency_rows = [
+                    row
+                    for row in rows
+                    if row.currency == observations[product_id].currency
+                ]
+                tracked_days = max(
+                    0,
+                    (effective_now - min(row.observed_at for row in currency_rows))
+                    // _SECONDS_PER_DAY,
+                )
+                windows = [
+                    _window(window_days, f"{window_days}-day", price_range),
+                ]
+                for days, label in PRICE_HISTORY_WINDOWS[1:]:
+                    if days is not None and tracked_days < days:
+                        continue
+                    start = (
+                        0 if days is None else effective_now - days * _SECONDS_PER_DAY
+                    )
+                    window_range = _range_for(
+                        observations[product_id],
+                        rows,
+                        start,
+                    )
+                    if window_range is not None:
+                        windows.append(_window(days, label, window_range))
+                contexts[product_id] = PriceHistoryContext(
+                    low=price_range.low,
+                    low_formatted=price_range.low_formatted,
+                    high=price_range.high,
+                    high_formatted=price_range.high_formatted,
+                    is_low=price_range.is_low,
+                    windows=tuple(windows),
+                )
         return contexts
 
     def _rows_by_product(

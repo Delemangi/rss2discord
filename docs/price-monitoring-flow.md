@@ -55,6 +55,19 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    send records `failed` with cause `DeliveryRetryPending` and leaves the rows
    pending.
 
+## Price history
+
+Inline price and restock cards carry a range for each history window the
+product has actually covered: 30 days, 90 days, 6 months, 1 year, and all-time.
+The strongest low becomes the headline badge (`All-time low`, `6-month low`, and
+so on); older lows remain as supporting metrics. A normal move shows the 30-day
+range plus any older reference lows. Windows longer than the tracked history are
+omitted rather than mislabelled.
+
+History is append-only per product and retained while the product is still
+observed, so all-time comparisons survive ordinary state retention. When a
+product's snapshot is pruned as idle, its history is removed with it.
+
 ## Outbox semantics
 
 - A baseline advance and its notification commit atomically, so a crash cannot
