@@ -8,7 +8,13 @@ from decimal import Decimal
 from enum import StrEnum
 
 from rss2discord.defaults import PRICE_HISTORY_WINDOW_DAYS
-from rss2discord.models import EntryData, PriceDirection, PriceSnapshot, SourceMetric
+from rss2discord.models import (
+    EntryData,
+    PriceDirection,
+    PriceHistoryWindow,
+    PriceSnapshot,
+    SourceMetric,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +75,16 @@ def entry_to_json(entry: EntryData) -> str:
         "price_period_high": entry.price_period_high,
         "price_period_days": entry.price_period_days,
         "price_is_period_low": entry.price_is_period_low,
+        "price_history": [
+            {
+                "days": window.days,
+                "label": window.label,
+                "low": window.low,
+                "high": window.high,
+                "is_low": window.is_low,
+            }
+            for window in entry.price_history
+        ],
         "restocked": entry.restocked,
         "source_metrics": [
             {"label": metric.label, "prior": metric.prior, "value": metric.value}
@@ -133,5 +149,29 @@ def entry_from_json(value: str) -> EntryData:
             payload.get("price_period_days", PRICE_HISTORY_WINDOW_DAYS),
         ),
         price_is_period_low=bool(payload.get("price_is_period_low", False)),
+        price_history=_price_history_from_json(payload.get("price_history")),
         restocked=bool(payload.get("restocked", False)),
     )
+
+
+def _price_history_from_json(value: object) -> tuple[PriceHistoryWindow, ...]:
+    if not isinstance(value, list):
+        return ()
+    windows: list[PriceHistoryWindow] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        try:
+            days_value = item.get("days")
+            windows.append(
+                PriceHistoryWindow(
+                    days=None if days_value is None else int(days_value),
+                    label=str(item["label"]),
+                    low=str(item["low"]),
+                    high=str(item["high"]),
+                    is_low=bool(item.get("is_low", False)),
+                ),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return tuple(windows)

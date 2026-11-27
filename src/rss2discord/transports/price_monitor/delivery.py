@@ -399,20 +399,24 @@ def _with_price_history(
     context: PriceHistoryContext | None,
 ) -> WebhookMessage:
     """Attach range context to an inline change or restock card when one is known."""
-    if context is None:
+    if context is None or not context.windows:
         return message
     if message.entry.price_change_percentage is None and not message.entry.restocked:
         return message
+    first = context.windows[0]
     return cast(
         WebhookMessage,
         replace(
             message,
             entry=replace(
                 message.entry,
-                price_period_low=context.low_formatted,
-                price_period_high=context.high_formatted,
-                price_period_days=PRICE_HISTORY_WINDOW_DAYS,
-                price_is_period_low=context.is_low,
+                price_period_low=first.low,
+                price_period_high=first.high,
+                price_period_days=(
+                    first.days if first.days is not None else PRICE_HISTORY_WINDOW_DAYS
+                ),
+                price_is_period_low=first.is_low,
+                price_history=context.windows,
             ),
         ),
     )

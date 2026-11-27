@@ -6,7 +6,12 @@ from rss2discord.discord.components import (
     MAX_RENDERED_METRICS,
     METRICS_GAP,
 )
-from rss2discord.models import EntryData, PriceDirection, SourceMetric
+from rss2discord.models import (
+    EntryData,
+    PriceDirection,
+    PriceHistoryWindow,
+    SourceMetric,
+)
 from tests.discord_components_helpers import (
     get_child_contents,
     get_container_children,
@@ -796,6 +801,95 @@ def test_period_low_suppressed_by_positive_percentage_without_direction() -> Non
 
     # Then - the positive percentage keeps the badge off
     assert "**30-day low**" not in metrics
+
+
+def test_multi_window_history_badges_the_strongest_low_and_keeps_longer_lows() -> None:
+    # Given - the price is a 6-month low but not an all-time low
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "80 MKD"),),
+            price_change_percentage="-10.0%",
+            price_direction=PriceDirection.DECREASE,
+            price_history=(
+                PriceHistoryWindow(30, "30-day", "80 MKD", "120 MKD", True),
+                PriceHistoryWindow(90, "90-day", "75 MKD", "120 MKD", False),
+                PriceHistoryWindow(180, "6-month", "80 MKD", "140 MKD", True),
+                PriceHistoryWindow(None, "all-time", "70 MKD", "150 MKD", False),
+            ),
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - only the strongest low is a badge; older lows remain visible
+    assert "**6-month low**" in metrics
+    assert "30-day low" not in metrics
+    assert "90-day low" not in metrics
+    assert "All-time low: 70 MKD" in metrics
+
+
+def test_multi_window_history_shows_range_and_longer_lows_when_not_a_low() -> None:
+    # Given - a normal price move that is not a low in any window
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "120 MKD"),),
+            price_change_percentage="-5.0%",
+            price_direction=PriceDirection.DECREASE,
+            price_history=(
+                PriceHistoryWindow(30, "30-day", "100 MKD", "140 MKD", False),
+                PriceHistoryWindow(180, "6-month", "80 MKD", "150 MKD", False),
+                PriceHistoryWindow(None, "all-time", "70 MKD", "160 MKD", False),
+            ),
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the short range plus the older reference lows are all available
+    assert "30-day range: 100 MKD – 140 MKD" in metrics
+    assert "6-month low: 80 MKD" in metrics
+    assert "All-time low: 70 MKD" in metrics
+
+
+def test_multi_window_history_all_time_low_uses_one_badge() -> None:
+    # Given - the current price is the lowest ever recorded
+    message = make_message(
+        entry=EntryData(
+            title="Item",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(SourceMetric("Price", "70 MKD"),),
+            price_change_percentage="-12.5%",
+            price_direction=PriceDirection.DECREASE,
+            price_history=(
+                PriceHistoryWindow(30, "30-day", "70 MKD", "120 MKD", True),
+                PriceHistoryWindow(180, "6-month", "70 MKD", "140 MKD", True),
+                PriceHistoryWindow(None, "all-time", "70 MKD", "150 MKD", True),
+            ),
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the strongest possible badge is used and no low metric repeats it
+    assert "**All-time low**" in metrics
+    assert "6-month low:" not in metrics
+    assert "All-time low:" not in metrics
 
 
 def test_equal_price_restock_badges_without_redundant_previous_or_change() -> None:

@@ -367,3 +367,90 @@ def test_many_product_ids_are_queried_in_chunks(tmp_path: Path) -> None:
     assert len(contexts) == len(product_ids)
     assert all(context.is_low for context in contexts.values())
     assert all(context.high == Decimal(100) for context in contexts.values())
+
+
+def test_context_includes_each_covered_history_window_shortest_first(
+    tmp_path: Path,
+) -> None:
+    connection = sqlite3.connect(tmp_path / "state.db")
+    initialize_schema(connection)
+    insert_history(connection, "1", "50", NOW - 400 * DAY)
+    insert_history(connection, "1", "60", NOW - 200 * DAY)
+    insert_history(connection, "1", "120", NOW - 40 * DAY)
+    connection.commit()
+
+    context = PriceHistoryRepository(connection).load_price_history_context(
+        "feed",
+        {"1": snapshot("1", "90")},
+        now=NOW,
+    )["1"]
+
+    assert [window.label for window in context.windows] == [
+        "30-day",
+        "90-day",
+        "6-month",
+        "1-year",
+        "all-time",
+    ]
+    assert [window.low for window in context.windows] == [
+        "90 MKD",
+        "60 MKD",
+        "60 MKD",
+        "50 MKD",
+        "50 MKD",
+    ]
+    assert [window.is_low for window in context.windows] == [
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_windows_longer_than_the_tracked_history_are_omitted(
+    tmp_path: Path,
+) -> None:
+    connection = sqlite3.connect(tmp_path / "state.db")
+    initialize_schema(connection)
+    insert_history(connection, "1", "120", NOW - 120 * DAY)
+    insert_history(connection, "1", "100", NOW - 40 * DAY)
+    connection.commit()
+
+    context = PriceHistoryRepository(connection).load_price_history_context(
+        "feed",
+        {"1": snapshot("1", "90")},
+        now=NOW,
+    )["1"]
+
+    assert [window.label for window in context.windows] == [
+        "30-day",
+        "90-day",
+        "all-time",
+    ]
+    assert context.windows[-1].low == "90 MKD"
+    assert context.windows[-1].is_low is True
+
+
+def test_all_time_window_uses_history_older_than_every_finite_window(
+    tmp_path: Path,
+) -> None:
+    connection = sqlite3.connect(tmp_path / "state.db")
+    initialize_schema(connection)
+    insert_history(connection, "1", "40", NOW - 500 * DAY)
+    insert_history(connection, "1", "100", NOW - DAY)
+    connection.commit()
+
+    context = PriceHistoryRepository(connection).load_price_history_context(
+        "feed",
+        {"1": snapshot("1", "80")},
+        now=NOW,
+    )["1"]
+
+    all_time = context.windows[-1]
+    assert (all_time.label, all_time.low, all_time.high, all_time.is_low) == (
+        "all-time",
+        "40 MKD",
+        "100 MKD",
+        False,
+    )
