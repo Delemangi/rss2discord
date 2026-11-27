@@ -9,12 +9,7 @@ from rss2discord.delivery_store import DeliveryStore
 from rss2discord.models import EntryId
 from rss2discord.retries import SQLiteRetryPolicy
 from tests.app_helpers import FakeSender, FakeStrategy, make_app, make_entry, make_feed
-
-
-def busy_database_error() -> sqlite3.OperationalError:
-    error = sqlite3.OperationalError("database is locked")
-    error.sqlite_errorcode = sqlite3.SQLITE_BUSY
-    return error
+from tests.fakes import busy_database_error
 
 
 def test_delivery_persistence_characterizes_existing_immediate_marking(

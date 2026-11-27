@@ -1,4 +1,3 @@
-import sqlite3
 from collections.abc import Callable
 from decimal import Decimal
 
@@ -21,17 +20,17 @@ from rss2discord.providers.anhoch.prices import (
     AnhochCatalog,
     AnhochPriceMonitor,
 )
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
-    PriceMonitorDependencies,
-    PriceRecoveryStore,
+from rss2discord.retries import FetchRetryPolicy
+from rss2discord.transports.price_monitor import PriceRecoveryStore
+from tests.fakes import (
+    RecordingSender,
+    RetrySleepAdapter,
+    is_not_shutdown,
+    keep_running,
+    make_price_monitor_dependencies,
 )
-from tests.fakes import RecordingSender, RetrySleepAdapter
 
 __all__ = ("RecordingSender", "RetrySleepAdapter")
-
-AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
 
 class CatalogStub:
@@ -104,14 +103,6 @@ def make_product(
     )
 
 
-def keep_running(_seconds: float) -> bool:
-    return True
-
-
-def is_not_shutdown() -> bool:
-    return False
-
-
 def make_monitor(
     feed: FeedConfig,
     catalog: AnhochCatalog,
@@ -122,26 +113,15 @@ def make_monitor(
     delay_between_posts: float = 0,
     is_shutdown_requested: Callable[[], bool] = is_not_shutdown,
 ) -> AnhochPriceMonitor:
-    retry_sleep = RetrySleepAdapter(sleep)
     return AnhochPriceMonitor(
         feed,
-        AnhochPriceMonitorDependencies(
-            catalog=catalog,
-            snapshots=snapshots,
-            sender=sender,
-            fetch_retry_policy=FetchRetryPolicy(
-                sleep=retry_sleep,
-                on_retry=lambda error, delay: None,
-            ),
-            sqlite_retry_policy=SQLiteRetryPolicy(
-                sleep=retry_sleep,
-                on_retry=lambda error, delay: None,
-            ),
-            delivery=PriceAlertDelivery(
-                sleep=sleep,
-                delay_between_posts=delay_between_posts,
-                is_shutdown_requested=is_shutdown_requested,
-            ),
+        make_price_monitor_dependencies(
+            catalog,
+            snapshots,
+            sender,
+            sleep=sleep,
+            delay_between_posts=delay_between_posts,
+            is_shutdown_requested=is_shutdown_requested,
         ),
     )
 
@@ -151,9 +131,3 @@ def snapshots_by_product(store: DeliveryStore) -> dict[str, PriceSnapshot]:
         snapshot.product_id: snapshot
         for snapshot in store.load_price_snapshots("anhoch")
     }
-
-
-def busy_database_error() -> sqlite3.OperationalError:
-    error = sqlite3.OperationalError("database is locked")
-    error.sqlite_errorcode = sqlite3.SQLITE_BUSY
-    return error
