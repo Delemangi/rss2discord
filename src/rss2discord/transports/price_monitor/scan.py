@@ -29,15 +29,13 @@ from .planning import (
     finish_price_delivery,
     prepare_price_delivery,
     record_price_health,
+    requires_digest,
     validate_price_currencies,
 )
 from .presentation import with_price_change_percentage, with_restock
 from .timing import current_scan_started_at
 
 NO_SNAPSHOT_LIMIT: Final = 1_000_000
-# A large restock burst can otherwise flood a feed even when the feed's
-# general inline limit is high; send it as one digest instead.
-RESTOCK_INLINE_LIMIT: Final = 25
 logger = logging.getLogger(__name__)
 
 
@@ -77,16 +75,6 @@ def _dedupe_snapshots(
         seen.add(snapshot.product_id)
         unique.append(snapshot)
     return tuple(unique)
-
-
-def _requires_bulk_delivery(
-    *,
-    record_count: int,
-    restock_count: int,
-    inline_limit: int,
-) -> bool:
-    """Return whether a scan's records should use one digest instead of cards."""
-    return record_count > inline_limit or restock_count > RESTOCK_INLINE_LIMIT
 
 
 def _view_for[ProductT](
@@ -302,7 +290,7 @@ def _run_price_scan[ProductT](
     if dependencies.delivery.is_shutdown_requested():
         raise FeedFetchInterruptedError
 
-    bulk = _requires_bulk_delivery(
+    bulk = requires_digest(
         record_count=len(records),
         restock_count=len(diff.restock_records),
         inline_limit=feed.price_inline_limit,

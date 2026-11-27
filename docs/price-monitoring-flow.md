@@ -42,10 +42,11 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
    notification rows in one transaction. No network work happens inside that
    transaction.
 6. **Deliver.** Pending groups drain oldest-first. A group of at most
-   `price_inline_limit` rows (100 by default) sends one card per product. A
-   larger group sends one compact brief: header direction totals, up to five
-   largest drops and five largest rises with links and percentages, and a
-   category summary when categories exist. Extreme moves count toward the
+   `price_inline_limit` rows (100 by default) with at most 25 restocks sends one
+   card per product. A larger group, or one with more than 25 restocks, sends
+   one compact brief: header direction totals, up to five largest drops and five
+   largest rises with links and percentages, and a category summary when
+   categories exist. Extreme moves count toward the
    direction totals but are left out of the top lists and detailed in the
    report. The complete HTML and CSV reports attach to that brief. The HTML
    report is self-contained and searchable/sortable. Rows are marked sent only
@@ -60,10 +61,11 @@ quarantine, batch lifecycle, snapshot limits, diffing, or delivery loop.
   lose a change without also leaving the old baseline in place.
 - Failed or interrupted sends retain pending rows. The next scan drains them
   before sending new work.
-- The drain chooses by the pending group's row count, not by the scan that
-  recorded it. A scan over the limit whose confirmed subset fits the limit
-  (for example, CCCenter caps confirmation at 100 changes) drains as individual
-  cards; deferred changes are re-detected on a later scan.
+- The drain chooses by the pending group's row count and restock count, not by
+  the scan that recorded it. A scan over the limit whose confirmed subset fits
+  the limit (for example, CCCenter caps confirmation at 100 changes) drains as
+  individual cards; deferred changes are re-detected on a later scan. A pending
+  group with more than 25 restocks always drains as one digest.
 - Delivery is at-least-once. A crash after Discord accepts a message but before
   the local `sent` update can produce a duplicate.
 - After six consecutive failed delivery attempts, the group is dead-lettered:

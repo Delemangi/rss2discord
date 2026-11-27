@@ -3,6 +3,7 @@
 import logging
 import time
 from collections.abc import Mapping, Sequence
+from typing import Final
 
 from rss2discord.defaults import DEFAULT_PRICE_INLINE_LIMIT
 from rss2discord.fetch_errors import FeedFetchError
@@ -14,7 +15,21 @@ from rss2discord.models import (
 
 from .contracts import PriceDeliveryPlan, PriceRecoveryStore
 
+# A larger restock burst would flood a feed even when its general inline
+# limit is high, so it is summarized as one digest instead.
+RESTOCK_DIGEST_LIMIT: Final = 25
+
 logger = logging.getLogger("rss2discord.transports.price_monitor")
+
+
+def requires_digest(
+    *,
+    record_count: int,
+    restock_count: int,
+    inline_limit: int,
+) -> bool:
+    """Return whether a change set should be delivered as one digest."""
+    return record_count > inline_limit or restock_count > RESTOCK_DIGEST_LIMIT
 
 
 def record_price_health(
