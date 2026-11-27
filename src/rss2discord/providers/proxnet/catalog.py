@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import requests
 
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.proxnet.bounds import (
     MAX_PROXNET_LATEST_PAGES,
     MAX_PROXNET_PAGES,
@@ -124,7 +125,7 @@ class ProxnetCatalogClient:
         """Fetch up to two newest-first pages and deduplicate their products."""
         base_url = validate_proxnet_url(url)
         products: list[ProxnetProduct] = []
-        seen: set[str] = set()
+        seen: dict[str, ProxnetProduct] = {}
         title = ""
         consumed_bytes = 0
         for page_number in range(1, MAX_PROXNET_LATEST_PAGES + 1):
@@ -141,7 +142,14 @@ class ProxnetCatalogClient:
                 title = page.title
             if not page.products:
                 break
-            _append_unique(products, seen, page.products)
+            append_unique_products(
+                products,
+                seen,
+                page.products,
+                key=lambda product: product.product_id,
+                label=PROXNET_LABEL,
+                mode="keep_first",
+            )
             if len(products) > MAX_PROXNET_PRODUCTS:
                 raise FeedFetchError(PROXNET_LABEL, "ProductLimitExceeded")
         return ProxnetPage(products=tuple(products), title=title)
@@ -169,7 +177,7 @@ class ProxnetCatalogClient:
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[ProxnetProduct, ...]:
         products: list[ProxnetProduct] = []
-        seen: set[str] = set()
+        seen: dict[str, ProxnetProduct] = {}
         consumed_bytes = 0
         for page_number in range(1, MAX_PROXNET_PAGES + 1):
             if is_shutdown_requested():
@@ -181,7 +189,14 @@ class ProxnetCatalogClient:
                 remaining_bytes=MAX_PROXNET_SCAN_BYTES - consumed_bytes,
             )
             consumed_bytes += page_bytes
-            _append_unique(products, seen, page.products)
+            append_unique_products(
+                products,
+                seen,
+                page.products,
+                key=lambda product: product.product_id,
+                label=PROXNET_LABEL,
+                mode="keep_first",
+            )
             if len(products) > MAX_PROXNET_PRODUCTS:
                 raise FeedFetchError(PROXNET_LABEL, "ProductLimitExceeded")
             if not page.products:
@@ -254,18 +269,6 @@ class ProxnetCatalogClient:
                     raise FeedFetchError(PROXNET_LABEL, "InvalidResponse") from None
         finally:
             response.close()
-
-
-def _append_unique(
-    products: list[ProxnetProduct],
-    seen: set[str],
-    page_products: tuple[ProxnetProduct, ...],
-) -> None:
-    for product in page_products:
-        if product.product_id in seen:
-            continue
-        seen.add(product.product_id)
-        products.append(product)
 
 
 def _validate_final_url(url: str) -> None:

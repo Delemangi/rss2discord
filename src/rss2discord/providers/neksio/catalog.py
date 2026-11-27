@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.neksio.client import (
     NEKSIO_LABEL,
     NEKSIO_PAGE_SIZE,
@@ -113,16 +114,15 @@ class NeksioCatalogClient:
 
 
 def _append_page_products(scan: _CatalogScan, page: NeksioCatalogPage) -> None:
-    for product_card in page.product_cards:
-        product = product_card.observe(scan.observed_at)
-        existing_product = scan.seen_products.get(product.product_id)
-        if existing_product is None:
-            if len(scan.products) >= MAX_NEKSIO_PRODUCTS:
-                raise FeedFetchError(NEKSIO_LABEL, "ProductLimitExceeded")
-            scan.seen_products[product.product_id] = product
-            scan.products.append(product)
-        elif existing_product != product:
-            raise FeedFetchError(NEKSIO_LABEL, "DuplicateProductId")
+    append_unique_products(
+        scan.products,
+        scan.seen_products,
+        (card.observe(scan.observed_at) for card in page.product_cards),
+        key=lambda product: product.product_id,
+        label=NEKSIO_LABEL,
+        mode="error_if_different",
+        max_products=MAX_NEKSIO_PRODUCTS,
+    )
 
 
 def _catalog_request(category_id: int, page: int) -> NeksioCatalogRequest:

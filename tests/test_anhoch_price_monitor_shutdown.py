@@ -1,11 +1,6 @@
-from collections.abc import Iterable
-from pathlib import Path
-
 import pytest
 import requests
 
-from rss2discord.delivery_store import DeliveryStore
-from rss2discord.models import PriceSnapshot
 from rss2discord.providers.anhoch.catalog import AnhochCatalogClient
 from rss2discord.retries import FeedFetchInterruptedError
 from tests.anhoch_helpers import (
@@ -22,29 +17,7 @@ from tests.anhoch_price_monitor_helpers import (
     make_monitor,
     make_product,
 )
-
-
-class SnapshotStoreSpy(DeliveryStore):
-    def __init__(self) -> None:
-        super().__init__(Path(":memory:"))
-        self.load_calls = 0
-        self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
-
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]:
-        del feed_id, limit
-        self.load_calls += 1
-        return ()
-
-    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self.persisted_batches.append((snapshot,))
-
-    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
-        self.persisted_batches.append(tuple(snapshots))
+from tests.fakes import SnapshotStoreSpy
 
 
 def test_shutdown_during_catalog_scan_skips_snapshot_loading_and_baseline_persistence(

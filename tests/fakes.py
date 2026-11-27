@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, MutableMapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, MutableMapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import requests
 
+from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import (
     DiscordDeliveryResult,
     SleepCallback,
     WebhookMessage,
 )
+from rss2discord.models import PriceSnapshot
 
 
 @dataclass
@@ -92,3 +95,28 @@ class RetrySleepAdapter:
 
     def __call__(self, seconds: float) -> bool:
         return self._sleep(seconds)
+
+
+class SnapshotStoreSpy(DeliveryStore):
+    """Record baseline loads and persistence without returning snapshots."""
+
+    def __init__(self) -> None:
+        super().__init__(Path(":memory:"))
+        self.load_calls = 0
+        self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
+
+    def load_price_snapshots(
+        self,
+        feed_id: str,
+        *,
+        limit: int | None = None,
+    ) -> tuple[PriceSnapshot, ...]:
+        del feed_id, limit
+        self.load_calls += 1
+        return ()
+
+    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:
+        self.persisted_batches.append((snapshot,))
+
+    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
+        self.persisted_batches.append(tuple(snapshots))
