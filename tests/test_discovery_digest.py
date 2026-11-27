@@ -156,6 +156,18 @@ def test_discovery_count_placeholder_in_title_survives() -> None:
     assert '<span class="note">1 rows</span>' in html
 
 
+def test_digest_header_is_compact_and_names_the_source_once() -> None:
+    entries = [(str(index), make_entry(str(index)).data) for index in range(26)]
+
+    message = build_discovery_digest(make_feed("feed"), entries, "Example Shop")
+
+    lines = message.entry.description.splitlines()
+    assert lines[0] == "## 26 new items — Example Shop"
+    assert len(lines) == 2
+    assert "Observed" in lines[1]
+    assert "Full list attached (HTML + CSV)." in lines[1]
+
+
 def test_digest_does_not_download_images(tmp_path: Path) -> None:
     entries = [
         (
