@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 from typing import Final
 
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.neptun.http import (
     NEPTUN_LABEL,
     NEPTUN_RESPONSE_BYTES,
@@ -49,7 +50,14 @@ class NeptunCatalogClient:
         if len(products) != min(total_items, NEPTUN_WINDOW_SIZE):
             raise FeedFetchError(NEPTUN_LABEL, "InvalidCardinality")
         unique_products: list[NeptunProduct] = []
-        self._append_unique(unique_products, {}, products)
+        append_unique_products(
+            unique_products,
+            {},
+            products,
+            key=lambda product: product.id,
+            label=NEPTUN_LABEL,
+            retryable=True,
+        )
         return tuple(reversed(unique_products))
 
     def fetch_catalog(
@@ -109,27 +117,18 @@ class NeptunCatalogClient:
             scanned_count += len(batch.items)
             if scanned_count > MAX_NEPTUN_CATALOG_PRODUCTS:
                 raise FeedFetchError(NEPTUN_LABEL, "ProductLimitExceeded")
-            self._append_unique(products, seen, batch.items)
+            append_unique_products(
+                products,
+                seen,
+                batch.items,
+                key=lambda product: product.id,
+                label=NEPTUN_LABEL,
+                retryable=True,
+            )
             if scanned_count >= total:
                 _require_complete_catalog(len(products), total)
                 return tuple(products)
         raise FeedFetchError(NEPTUN_LABEL, "PageLimitExceeded")
-
-    @staticmethod
-    def _append_unique(
-        products: list[NeptunProduct],
-        seen: dict[int, NeptunProduct],
-        page_products: tuple[NeptunProduct, ...],
-    ) -> None:
-        for product in page_products:
-            if product.id in seen:
-                raise FeedFetchError(
-                    NEPTUN_LABEL,
-                    "DuplicateProductId",
-                    retryable=True,
-                )
-            seen[product.id] = product
-            products.append(product)
 
 
 def _validate_page_cardinality(item_count: int, total: int, scanned_count: int) -> None:

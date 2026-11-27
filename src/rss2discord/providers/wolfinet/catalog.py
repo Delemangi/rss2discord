@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import requests
 
 from rss2discord.fetch_errors import FeedFetchError
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.wolfinet.bounds import (
     MAX_WOLFINET_LATEST_PAGES,
     MAX_WOLFINET_PAGES,
@@ -86,7 +87,7 @@ class WolfinetCatalogClient:
         """Fetch up to two newest-first pages and deduplicate their products."""
         base_url = validate_wolfinet_url(url)
         products: list[WolfinetProduct] = []
-        seen: set[str] = set()
+        seen: dict[str, WolfinetProduct] = {}
         consumed_bytes = 0
         for page_number in range(1, MAX_WOLFINET_LATEST_PAGES + 1):
             if is_shutdown_requested():
@@ -100,7 +101,14 @@ class WolfinetCatalogClient:
             consumed_bytes += page_bytes
             if not page_products:
                 break
-            _append_unique(products, seen, page_products)
+            append_unique_products(
+                products,
+                seen,
+                page_products,
+                key=lambda product: product.product_id,
+                label=WOLFINET_LABEL,
+                mode="keep_first",
+            )
             if len(products) > MAX_WOLFINET_PRODUCTS:
                 raise FeedFetchError(WOLFINET_LABEL, "ProductLimitExceeded")
         return tuple(products)
@@ -128,7 +136,7 @@ class WolfinetCatalogClient:
         is_shutdown_requested: Callable[[], bool],
     ) -> tuple[WolfinetProduct, ...]:
         products: list[WolfinetProduct] = []
-        seen: set[str] = set()
+        seen: dict[str, WolfinetProduct] = {}
         consumed_bytes = 0
         for page_number in range(1, MAX_WOLFINET_PAGES + 1):
             if is_shutdown_requested():
@@ -140,7 +148,14 @@ class WolfinetCatalogClient:
                 remaining_bytes=MAX_WOLFINET_SCAN_BYTES - consumed_bytes,
             )
             consumed_bytes += page_bytes
-            _append_unique(products, seen, page_products)
+            append_unique_products(
+                products,
+                seen,
+                page_products,
+                key=lambda product: product.product_id,
+                label=WOLFINET_LABEL,
+                mode="keep_first",
+            )
             if len(products) > MAX_WOLFINET_PRODUCTS:
                 raise FeedFetchError(WOLFINET_LABEL, "ProductLimitExceeded")
             if not page_products:
@@ -213,18 +228,6 @@ class WolfinetCatalogClient:
                     raise FeedFetchError(WOLFINET_LABEL, "InvalidResponse") from None
         finally:
             response.close()
-
-
-def _append_unique(
-    products: list[WolfinetProduct],
-    seen: set[str],
-    page_products: tuple[WolfinetProduct, ...],
-) -> None:
-    for product in page_products:
-        if product.product_id in seen:
-            continue
-        seen.add(product.product_id)
-        products.append(product)
 
 
 def _validate_final_url(url: str) -> None:

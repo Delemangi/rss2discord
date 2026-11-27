@@ -8,7 +8,7 @@ from rss2discord.providers.anhoch.catalog_bounds import (
     CatalogScanTotals,
     FetchedCatalogPage,
 )
-from rss2discord.providers.anhoch.models import AnhochCatalogResponse, AnhochProduct
+from rss2discord.providers.anhoch.models import AnhochCatalogResponse
 from rss2discord.transports import FeedFetchError
 from tests.anhoch_helpers import (
     CATALOG_URL,
@@ -144,20 +144,16 @@ def test_anhoch_catalog_client_rejects_a_near_limit_oversized_page_before_retain
     assert 1_900_000 < len(payload) < anhoch_catalog.MAX_ANHOCH_CATALOG_RESPONSE_BYTES
     retained = False
 
-    def fail_if_retained(
-        target: list[AnhochProduct],
-        seen: dict[int, AnhochProduct],
-        page_products: tuple[AnhochProduct, ...],
-    ) -> None:
+    def fail_if_retained(*args: object, **kwargs: object) -> None:
         nonlocal retained
-        del target, seen, page_products
+        del args, kwargs
         retained = True
         raise AssertionError("oversized page must not be retained")
 
     monkeypatch.setattr(
-        AnhochCatalogClient,
-        "_append_unique_products",
-        staticmethod(fail_if_retained),
+        anhoch_catalog,
+        "append_unique_products",
+        fail_if_retained,
     )
     monkeypatch.setattr(requests, "get", RecordingGet([StubResponse(payload)]))
 

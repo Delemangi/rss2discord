@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.woocommerce.bounds import (
     MAX_WOOCOMMERCE_CATALOG_SCAN_BYTES,
     MAX_WOOCOMMERCE_DISCOVERY_SCAN_BYTES,
@@ -131,7 +132,13 @@ class WooCommerceCatalogClient:
                 )
             _require_first_party_products(fetched.products, shop)
             scanned += len(fetched.products)
-            _append_unique_products(products, seen, fetched.products)
+            append_unique_products(
+                products,
+                seen,
+                fetched.products,
+                key=lambda product: product.id,
+                label=WOOCOMMERCE_LABEL,
+            )
             if scanned >= expected_total:
                 _require_complete_catalog(len(products), expected_total)
                 return tuple(products)
@@ -141,18 +148,6 @@ class WooCommerceCatalogClient:
 def _require_scan_time(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise FeedFetchError(WOOCOMMERCE_LABEL, "ScanTimeLimitExceeded")
-
-
-def _append_unique_products(
-    products: list[WooCommerceProduct],
-    seen: dict[int, WooCommerceProduct],
-    page_products: tuple[WooCommerceProduct, ...],
-) -> None:
-    for product in page_products:
-        if product.id in seen:
-            raise FeedFetchError(WOOCOMMERCE_LABEL, "DuplicateProductId")
-        seen[product.id] = product
-        products.append(product)
 
 
 def _validate_catalog_size(total: int, pages: int) -> None:

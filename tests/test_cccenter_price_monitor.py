@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -8,7 +8,7 @@ import pytest
 from rss2discord.configuration import FeedConfig
 from rss2discord.delivery_store import DeliveryStore
 from rss2discord.discord.client import DiscordDeliveryResult
-from rss2discord.models import PriceDirection, PriceSnapshot
+from rss2discord.models import PriceDirection
 from rss2discord.providers.cccenter.models import CCCenterListing, CCCenterProduct
 from rss2discord.providers.cccenter.prices import (
     CCCenterCatalog,
@@ -24,6 +24,7 @@ from rss2discord.transports.price_monitor import (
     PriceMonitorDependencies,
     PriceObservation,
 )
+from tests.fakes import SnapshotStoreSpy
 from tests.setec_price_monitor_helpers import RecordingSender
 
 CCCenterPriceMonitorDependencies = PriceMonitorDependencies[CCCenterCatalog]
@@ -75,29 +76,6 @@ class ShutdownAfterFetchCatalog(CatalogStub):
         )
         self.shutdown = True
         return products
-
-
-class SnapshotStoreSpy(DeliveryStore):
-    def __init__(self) -> None:
-        super().__init__(Path(":memory:"))
-        self.load_calls = 0
-        self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
-
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]:
-        del feed_id, limit
-        self.load_calls += 1
-        return ()
-
-    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self.persisted_batches.append((snapshot,))
-
-    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
-        self.persisted_batches.append(tuple(snapshots))
 
 
 def product(

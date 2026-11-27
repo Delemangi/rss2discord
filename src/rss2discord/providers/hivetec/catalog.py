@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.hivetec import bounds
 from rss2discord.providers.hivetec.bounds import (
     HIVETEC_CATALOG_PAGE_SIZE,
@@ -130,27 +131,19 @@ class HivetecCatalogClient:
             scanned_images += sum(len(product.images) for product in fetched.products)
             _validate_metadata_size(scanned_categories, scanned_images)
             scanned_products += len(fetched.products)
-            self._append_unique_products(products, seen_products, fetched.products)
+            append_unique_products(
+                products,
+                seen_products,
+                fetched.products,
+                key=lambda product: product.id,
+                label=HIVETEC_LABEL,
+            )
             if expected_pages == 0 and expected_total == 0:
                 return ()
             if expected_pages is not None and page >= expected_pages:
                 _require_complete_catalog(scanned_products, expected_total)
                 return tuple(products)
         raise FeedFetchError(HIVETEC_LABEL, "PageLimitExceeded")
-
-    @staticmethod
-    def _append_unique_products(
-        products: list[HivetecProduct],
-        seen_products: dict[int, HivetecProduct],
-        page_products: tuple[HivetecProduct, ...],
-    ) -> None:
-        for product in page_products:
-            existing = seen_products.get(product.id)
-            if existing is None:
-                seen_products[product.id] = product
-                products.append(product)
-                continue
-            raise FeedFetchError(HIVETEC_LABEL, "DuplicateProductId")
 
 
 def _validate_catalog_size(total: int, pages: int) -> None:

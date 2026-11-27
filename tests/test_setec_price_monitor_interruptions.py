@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Iterable
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from rss2discord.retries import (
     FeedFetchInterruptedError,
     SQLiteRetryInterruptedError,
 )
+from tests.fakes import SnapshotStoreSpy
 from tests.setec_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
@@ -24,29 +24,6 @@ from tests.setec_price_monitor_helpers import (
     make_product,
     snapshots_by_product,
 )
-
-
-class SnapshotStoreSpy(DeliveryStore):
-    def __init__(self) -> None:
-        super().__init__(Path(":memory:"))
-        self.load_calls = 0
-        self.persisted_batches: list[tuple[PriceSnapshot, ...]] = []
-
-    def load_price_snapshots(
-        self,
-        feed_id: str,
-        *,
-        limit: int | None = None,
-    ) -> tuple[PriceSnapshot, ...]:
-        del feed_id, limit
-        self.load_calls += 1
-        return ()
-
-    def upsert_price_snapshot(self, snapshot: PriceSnapshot) -> None:
-        self.persisted_batches.append((snapshot,))
-
-    def upsert_price_snapshots(self, snapshots: Iterable[PriceSnapshot]) -> None:
-        self.persisted_batches.append(tuple(snapshots))
 
 
 def baseline_snapshot(product_id: str, amount: int, formatted: str) -> PriceSnapshot:

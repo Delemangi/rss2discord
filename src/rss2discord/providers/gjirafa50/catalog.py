@@ -6,10 +6,12 @@ from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
+from functools import partial
 from math import ceil
 from threading import Lock, local
 from typing import Final
 
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.gjirafa50.http import (
     Gjirafa50HttpClient,
     Gjirafa50PageRequest,
@@ -67,6 +69,19 @@ GJIRAFA50_TERMINAL_ERROR_CAUSES: Final = frozenset(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_duplicate_product(
+    product: Gjirafa50Product,
+    *,
+    page_number: int,
+) -> None:
+    logger.warning(
+        "Gjirafa50 duplicate product ID: phase=discovery "
+        "page=%d product_id=%d price_range=None; keeping first observation",
+        page_number,
+        product.id,
+    )
 
 
 class _OperationBudget:
@@ -232,7 +247,7 @@ class Gjirafa50CatalogClient:
         root_url = Gjirafa50HttpClient.normalize_root_url(url)
         observed_at = datetime.now(UTC)
         products: list[Gjirafa50Product] = []
-        seen: set[int] = set()
+        seen: dict[int, Gjirafa50Product] = {}
         seen_cards = 0
         expected_total: int | None = None
         budget = _OperationBudget(is_shutdown_requested)
@@ -271,12 +286,18 @@ class Gjirafa50CatalogClient:
                 observed_count = len(page.products) + page.skipped_products
                 if observed_count != expected_count:
                     raise FeedFetchError(GJIRAFA50_LABEL, "InvalidCardinality")
-                self._append_unique(
+                append_unique_products(
                     products,
                     seen,
                     page.products,
-                    phase="discovery",
-                    page_number=page_number,
+                    key=lambda product: product.id,
+                    label=GJIRAFA50_LABEL,
+                    mode="keep_first",
+                    max_products=MAX_GJIRAFA50_PRODUCTS,
+                    on_duplicate=partial(
+                        _log_duplicate_product,
+                        page_number=page_number,
+                    ),
                 )
                 seen_cards += observed_count
                 if seen_cards >= min(page.total_hits, GJIRAFA50_WINDOW_SIZE):
@@ -693,32 +714,6 @@ class Gjirafa50CatalogClient:
             if len(products) >= MAX_GJIRAFA50_PRODUCTS:
                 raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
             products[product.id] = product
-
-    @staticmethod
-    def _append_unique(
-        products: list[Gjirafa50Product],
-        seen: set[int],
-        page_products: tuple[Gjirafa50Product, ...],
-        *,
-        phase: str,
-        page_number: int,
-        price_range: Gjirafa50PriceRange | None = None,
-    ) -> None:
-        for product in page_products:
-            if product.id in seen:
-                logger.warning(
-                    "Gjirafa50 duplicate product ID: phase=%s page=%d "
-                    "product_id=%d price_range=%s; keeping first observation",
-                    phase,
-                    page_number,
-                    product.id,
-                    price_range,
-                )
-                continue
-            if len(seen) >= MAX_GJIRAFA50_PRODUCTS:
-                raise FeedFetchError(GJIRAFA50_LABEL, "ProductLimitExceeded")
-            seen.add(product.id)
-            products.append(product)
 
 
 def _probe_root_total(scan: _CatalogScan) -> int:

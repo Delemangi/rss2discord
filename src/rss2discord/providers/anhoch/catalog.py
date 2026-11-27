@@ -22,6 +22,7 @@ from rss2discord.providers.anhoch.models import (
     AnhochCatalogResponse,
     AnhochProduct,
 )
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.retries import FeedFetchInterruptedError, FetchRetryPolicy
 from rss2discord.transports.base import FeedFetchError
 from rss2discord.transports.bounded_http import read_bounded_content
@@ -119,31 +120,20 @@ class AnhochCatalogClient:
             )
             page = fetched_page.page
             if deduplicate:
-                self._append_unique_products(products, seen_products, page.data)
+                append_unique_products(
+                    products,
+                    seen_products,
+                    page.data,
+                    key=lambda product: product.id,
+                    label=ANHOCH_LABEL,
+                    mode="error_if_different",
+                    retryable=True,
+                )
             else:
                 products.extend(page.data)
             if page.current_page >= page.last_page or not page.data:
                 break
         return tuple(products)
-
-    @staticmethod
-    def _append_unique_products(
-        products: list[AnhochProduct],
-        seen_products: dict[int, AnhochProduct],
-        page_products: tuple[AnhochProduct, ...],
-    ) -> None:
-        for product in page_products:
-            existing_product = seen_products.get(product.id)
-            if existing_product is None:
-                seen_products[product.id] = product
-                products.append(product)
-                continue
-            if existing_product != product:
-                raise FeedFetchError(
-                    ANHOCH_LABEL,
-                    "DuplicateProductId",
-                    retryable=True,
-                )
 
     @classmethod
     def _fetch_page(

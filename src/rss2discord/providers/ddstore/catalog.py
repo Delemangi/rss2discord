@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from time import monotonic
 
+from rss2discord.providers.catalog_dedupe import append_unique_products
 from rss2discord.providers.ddstore.budget import DDStoreScanBudget, DDStoreScanLimits
 from rss2discord.providers.ddstore.client import (
     DDSTORE_LABEL,
@@ -130,7 +131,15 @@ class DDStoreCatalogClient:
                         retryable=True,
                     )
                 scanned_items += len(page.items)
-                self._append_unique_products(products, seen_products, page.items)
+                append_unique_products(
+                    products,
+                    seen_products,
+                    page.items,
+                    key=lambda product: product.uid,
+                    label=DDSTORE_LABEL,
+                    cause="PaginationDrift",
+                    retryable=True,
+                )
                 if current_page == page.page_info.total_pages:
                     _require_complete_catalog(
                         scanned_items,
@@ -161,23 +170,6 @@ class DDStoreCatalogClient:
             or total_pages > MAX_DDSTORE_CATALOG_PAGES
         ):
             raise FeedFetchError(DDSTORE_LABEL, "InvalidCatalogMetadata")
-
-    @staticmethod
-    def _append_unique_products(
-        products: list[DDStoreProduct],
-        seen_products: dict[str, DDStoreProduct],
-        page_products: tuple[DDStoreProduct, ...],
-    ) -> None:
-        for product in page_products:
-            if product.uid not in seen_products:
-                seen_products[product.uid] = product
-                products.append(product)
-                continue
-            raise FeedFetchError(
-                DDSTORE_LABEL,
-                "PaginationDrift",
-                retryable=True,
-            )
 
 
 def _require_complete_catalog(
