@@ -14,17 +14,16 @@ from rss2discord.providers.neksio.prices import (
     NeksioCatalog,
     NeksioPriceMonitor,
 )
-from rss2discord.retries import FetchRetryPolicy, SQLiteRetryPolicy
-from rss2discord.transports.price_monitor import (
-    PriceAlertDelivery,
-    PriceMonitorDependencies,
-    PriceRecoveryStore,
+from rss2discord.transports.price_monitor import PriceRecoveryStore
+from tests.fakes import (
+    RecordingSender,
+    RetrySleepAdapter,
+    is_not_shutdown,
+    keep_running,
+    make_price_monitor_dependencies,
 )
-from tests.fakes import RecordingSender, RetrySleepAdapter
 
 __all__ = ("RecordingSender", "RetrySleepAdapter")
-
-NeksioPriceMonitorDependencies = PriceMonitorDependencies[NeksioCatalog]
 
 
 class CatalogStub:
@@ -81,14 +80,6 @@ def make_product(
     )
 
 
-def keep_running(_seconds: float) -> bool:
-    return True
-
-
-def shutdown_never_requested() -> bool:
-    return False
-
-
 def make_monitor(
     feed: FeedConfig,
     catalog: NeksioCatalog,
@@ -97,28 +88,17 @@ def make_monitor(
     *,
     sleep: SleepCallback = keep_running,
     delay_between_posts: float = 0,
-    is_shutdown_requested: Callable[[], bool] = shutdown_never_requested,
+    is_shutdown_requested: Callable[[], bool] = is_not_shutdown,
 ) -> NeksioPriceMonitor:
-    retry_sleep = RetrySleepAdapter(sleep)
     return NeksioPriceMonitor(
         feed,
-        NeksioPriceMonitorDependencies(
-            catalog=catalog,
-            snapshots=snapshots,
-            sender=sender,
-            fetch_retry_policy=FetchRetryPolicy(
-                sleep=retry_sleep,
-                on_retry=lambda error, delay: None,
-            ),
-            sqlite_retry_policy=SQLiteRetryPolicy(
-                sleep=retry_sleep,
-                on_retry=lambda error, delay: None,
-            ),
-            delivery=PriceAlertDelivery(
-                sleep=sleep,
-                delay_between_posts=delay_between_posts,
-                is_shutdown_requested=is_shutdown_requested,
-            ),
+        make_price_monitor_dependencies(
+            catalog,
+            snapshots,
+            sender,
+            sleep=sleep,
+            delay_between_posts=delay_between_posts,
+            is_shutdown_requested=is_shutdown_requested,
         ),
     )
 

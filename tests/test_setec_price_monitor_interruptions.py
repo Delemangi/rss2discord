@@ -11,13 +11,12 @@ from rss2discord.retries import (
     FeedFetchInterruptedError,
     SQLiteRetryInterruptedError,
 )
-from tests.fakes import SnapshotStoreSpy
+from tests.fakes import SnapshotStoreSpy, busy_database_error
 from tests.setec_price_monitor_helpers import (
     CatalogStub,
     RecordingSender,
     RetryingFailureCatalog,
     RetryingProductFetchCatalog,
-    busy_database_error,
     make_feed,
     make_monitor,
     make_price_entry,

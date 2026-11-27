@@ -27,12 +27,12 @@ from tests.anhoch_price_monitor_helpers import (
     RecordingSender,
     RetryingFailureCatalog,
     RetrySleepAdapter,
-    busy_database_error,
     make_feed,
     make_monitor,
     make_product,
     snapshots_by_product,
 )
+from tests.fakes import busy_database_error
 
 AnhochPriceMonitorDependencies = PriceMonitorDependencies[AnhochCatalog]
 
