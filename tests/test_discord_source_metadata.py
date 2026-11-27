@@ -372,12 +372,10 @@ def test_components_v2_payload_renders_categories_without_discussion_link() -> N
     # When
     metadata = get_metadata_content(message)
 
-    # Then - categories join the single provenance line, led by the source
+    # Then - categories that only repeat the source identity are dropped
     assert "\n" not in metadata
-    assert metadata.startswith("-# News • ")
+    assert metadata == "-# News"
     assert "Discussion" not in metadata
-    assert "news" in metadata
-    assert "rss" in metadata
 
 
 def test_components_v2_payload_prompt_injection_remains_escaped() -> None:

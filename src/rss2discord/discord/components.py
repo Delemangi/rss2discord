@@ -17,7 +17,6 @@ from rss2discord.models import (
     PriceHistoryWindow,
     SourceMetric,
 )
-from rss2discord.provider_metadata import STRATEGY_LABELS
 from rss2discord.url_normalization import (
     MAX_HTTP_URL_LENGTH,
     normalize_http_url,
@@ -54,10 +53,10 @@ MAX_METRICS_CHARACTERS: Final = 512
 MAX_FOOTER_LINE_CHARACTERS: Final = 512
 MAX_METRIC_LABEL_CHARACTERS: Final = 48
 MAX_METRIC_VALUE_CHARACTERS: Final = 64
-# The densest producers (Neptun and Neksio price alerts) emit six metrics, so
-# this keeps headroom above them: a card overflowing the cap loses its tail
-# silently, and that is a worse failure than a slightly longer subtext line.
-MAX_RENDERED_METRICS: Final = 8
+# A hard input bound protects the renderer. Grouping keeps the visible output
+# to a few lines, so this sits above the densest producer metrics while still
+# stopping hostile or malformed lists.
+MAX_RENDERED_METRICS: Final = 16
 MAX_MEDIA_GALLERY_ITEMS: Final = 10
 # A well-formed <t:...:R> is tiny; this only bounds unparseable timestamps,
 # which fall back to being echoed verbatim.
@@ -401,6 +400,7 @@ def _metrics_with_price_details(
         headline_badges.append("**Back in stock**")
 
     _insert_change_metric(entry, metrics)
+    _promote_discovery_reference_price(entry, metrics)
     _insert_discount_metric(entry, metrics, headline_badges)
     _apply_period_history(entry, metrics, headline_badges)
 
@@ -483,6 +483,33 @@ def _insert_change_metric(entry: EntryData, metrics: list[SourceMetric]) -> None
     )
 
 
+def _promote_discovery_reference_price(
+    entry: EntryData,
+    metrics: list[SourceMetric],
+) -> None:
+    """Show the list price beside the current price on discounted discoveries."""
+    if (
+        entry.price_change_percentage is not None
+        or entry.discount_percentage is None
+        or entry.restocked
+    ):
+        return
+    original_index = next(
+        (
+            index
+            for index, metric in enumerate(metrics)
+            if metric.label in {"Original", "List price"} and not metric.prior
+        ),
+        None,
+    )
+    if original_index is None:
+        return
+    if any(metric.prior for metric in metrics[1:]):
+        return
+    original = metrics.pop(original_index)
+    metrics.insert(1, SourceMetric(original.label, original.value, prior=True))
+
+
 def _insert_discount_metric(
     entry: EntryData,
     metrics: list[SourceMetric],
@@ -547,17 +574,30 @@ def _apply_period_history(
         if not entry.restocked and not _is_price_decrease(entry):
             return
         _append_period_low_badge(windows[low_index], headline_badges)
-        for window in windows[low_index + 1 :]:
-            if not window.is_low:
-                _append_period_low_metric(window, metrics)
+        badge_low = windows[low_index].low
+        for window in _distinct_low_windows(windows[low_index + 1 :], badge_low):
+            _append_period_low_metric(window, metrics)
         return
     _append_period_range_metric(windows[0], metrics)
-    for window in windows[1:]:
+    for window in _distinct_low_windows(windows[1:], None):
         _append_period_low_metric(window, metrics)
 
 
 def _period_label(window: PriceHistoryWindow) -> str:
     return window.label.capitalize()
+
+
+def _distinct_low_windows(
+    windows: tuple[PriceHistoryWindow, ...],
+    skip_value: str | None,
+) -> tuple[PriceHistoryWindow, ...]:
+    """Keep one reference low per value, preferring the longest window."""
+    by_value: dict[str, PriceHistoryWindow] = {}
+    for window in windows:
+        if window.is_low or window.low == skip_value:
+            continue
+        by_value[window.low] = window
+    return tuple(by_value.values())
 
 
 def _append_period_low_badge(
@@ -625,17 +665,11 @@ def _build_metrics(
             headline = f"{headline}{HEADLINE_BADGE_SEPARATOR}{headline_suffix}"
         else:
             headline = headline_suffix
-    supporting = [
-        _render_metric(metric)
-        for index, metric in enumerate(rendered)
-        if index > 0 and index != prior_index
-    ]
+    supporting = _grouped_supporting_metrics(rendered, prior_index)
 
-    # One supporting metric per line: a run of values joined by separators reads
-    # as a sentence, where the reader has to parse it to find the one they want.
-    # Discord rejects an empty Text Display, and a blank headline must not leave
-    # the block opening on a bare newline, so only rendered lines are kept.
-    # Reserved up front so the gap can never be the reason a detail is dropped.
+    # Group related details rather than spending one line on every field. A
+    # dense product alert would otherwise turn into a wall of subtext lines.
+    # Reserved up front so the gap can never be the reason a group is dropped.
     gap_cost = len("\n") + len(METRICS_GAP) if headline else 0
     remaining = MAX_METRICS_CHARACTERS - len(headline) - gap_cost
     supporting_lines = _supporting_metric_lines(supporting, remaining, bool(headline))
@@ -650,24 +684,58 @@ def _build_metrics(
     return "\n".join(lines)
 
 
+def _grouped_supporting_metrics(
+    metrics: tuple[SourceMetric, ...],
+    prior_index: int | None,
+) -> tuple[tuple[SourceMetric, ...], ...]:
+    """Group supporting metrics into movement, history, and detail lines."""
+    deduped: list[SourceMetric] = []
+    seen: set[tuple[str, str]] = {(metrics[0].label, metrics[0].value)}
+    if prior_index is not None:
+        seen.add((metrics[prior_index].label, metrics[prior_index].value))
+    for index, metric in enumerate(metrics):
+        if index in (0, prior_index):
+            continue
+        key = (metric.label, metric.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(metric)
+
+    movement: list[SourceMetric] = []
+    history: list[SourceMetric] = []
+    details: list[SourceMetric] = []
+    for metric in deduped:
+        if metric.label in {"Change", "Discount"}:
+            movement.append(metric)
+        elif metric.label.endswith((" low", " range")):
+            history.append(metric)
+        else:
+            details.append(metric)
+    return tuple(
+        group for group in (tuple(movement), tuple(history), tuple(details)) if group
+    )
+
+
 def _supporting_metric_lines(
-    supporting: list[str],
+    groups: tuple[tuple[SourceMetric, ...], ...],
     remaining: int,
     has_headline: bool,
 ) -> list[str]:
     supporting_lines: list[str] = []
-    for text in supporting:
-        if not text:
+    for group in groups:
+        rendered = [_render_metric(metric) for metric in group]
+        rendered = [line for line in rendered if line]
+        if not rendered:
             continue
-        line = f"{SUBTEXT_PREFIX}{text}"
-        cost = len(line) + (len("\n") if supporting_lines or has_headline else 0)
-        if cost > remaining:
-            # Skip rather than stop: one overlong detail should not cost the
-            # reader every shorter one behind it.
+        newline_cost = len("\n") if supporting_lines or has_headline else 0
+        line_budget = remaining - len(SUBTEXT_PREFIX) - newline_cost
+        line = _bounded_join(rendered, line_budget, separator=HEADLINE_BADGE_SEPARATOR)
+        if line is None:
             continue
-        remaining -= cost
-        supporting_lines.append(line)
-
+        text = f"{SUBTEXT_PREFIX}{line}"
+        remaining -= len(text) + newline_cost
+        supporting_lines.append(text)
     return supporting_lines
 
 
@@ -718,23 +786,36 @@ def _build_footer(
 ) -> str:
     """Build the single provenance line, led by the source the entry came from.
 
-    A generic RSS feed leads with its own title instead of the transport label;
-    the timestamp closes the line, after the categories.
+    The feed's own title is preferred over a generic transport label. Repeated
+    author, location, and category values are dropped so the footer does not
+    repeat what the card body already says.
     """
     label = source_label(feed)
-    parts: list[str] = [label]
-    source_part: str | None = None
-    if source_title and source_title.strip().casefold() != label.casefold():
-        source_part = _escape_metadata_text(source_title)
-        parts.append(source_part)
-    if entry.author:
+    identity, identity_key = _footer_identity(label, source_title)
+    author_key = entry.author.strip().casefold()
+    parts: list[str] = [identity]
+    if entry.author and not _duplicates_footer_identity(
+        author_key,
+        identity_key,
+        label.casefold(),
+    ):
         parts.append(f"By {_escape_metadata_text(entry.author)}")
     safe_discussion_url = (
         _safe_markdown_url(entry.discussion_url) if entry.discussion_url else None
     )
     if safe_discussion_url is not None and safe_discussion_url != safe_primary_link:
         parts.append(f"[Discussion]({safe_discussion_url})")
-    parts.extend(_escape_metadata_text(category) for category in entry.categories)
+
+    known = {identity_key, label.casefold(), author_key}
+    known.update(metric.value.strip().casefold() for metric in entry.source_metrics)
+    include_categories = entry.price_change_percentage is None and not entry.restocked
+    if include_categories:
+        for category in entry.categories:
+            key = category.strip().casefold()
+            if not key or key in known:
+                continue
+            known.add(key)
+            parts.append(_escape_metadata_text(category))
 
     timestamp = (
         _truncate_rendered_text(
@@ -753,16 +834,41 @@ def _build_footer(
     line = _bounded_join(parts, line_budget)
     if line is None:
         line = _truncate_rendered_text(label, max(0, line_budget))
-    elif source_part is not None and label == STRATEGY_LABELS["rss"]:
-        # The transport name says nothing when the feed's own title follows it.
-        # Strip it only when the title survived the budget join, so an oversized
-        # title still leaves the transport label behind.
-        source_prefix = f"{label}{METADATA_SEPARATOR}{source_part}"
-        if line.startswith(source_prefix):
-            line = line[len(label) + len(METADATA_SEPARATOR) :]
     if timestamp is not None:
         line = f"{line}{METADATA_SEPARATOR}{timestamp}" if line else timestamp
     return f"{SUBTEXT_PREFIX}{line}"
+
+
+def _footer_identity(label: str, source_title: str) -> tuple[str, str]:
+    """Return the displayed source identity and its raw comparison key."""
+    title = source_title.strip()
+    if not title:
+        return label, label.casefold()
+    title_key = title.casefold()
+    label_key = label.casefold()
+    if label_key in (title_key, "rss"):
+        return _escape_metadata_text(title), title_key
+    if title_key.startswith(f"{label_key} "):
+        # "Pazar3 Laptops" already carries the provider name.
+        return _escape_metadata_text(title), title_key
+    return (
+        f"{label}{METADATA_SEPARATOR}{_escape_metadata_text(title)}",
+        f"{label_key}{METADATA_SEPARATOR}{title_key}",
+    )
+
+
+def _duplicates_footer_identity(
+    author_key: str,
+    identity_key: str,
+    label_key: str,
+) -> bool:
+    if not author_key:
+        return True
+    if author_key in {identity_key, label_key}:
+        return True
+    return identity_key.startswith(f"{author_key} ") or identity_key.endswith(
+        f" {author_key}",
+    )
 
 
 def _build_pwn_watch_footer(
@@ -800,13 +906,18 @@ def _build_pwn_watch_footer(
     return f"{SUBTEXT_PREFIX}{line}"
 
 
-def _bounded_join(parts: Sequence[str], budget: int) -> str | None:
+def _bounded_join(
+    parts: Sequence[str],
+    budget: int,
+    *,
+    separator: str = METADATA_SEPARATOR,
+) -> str | None:
     """Join what fits, dropping whole parts so Markdown is never cut mid-token."""
     if budget <= 0:
         return None
     kept: list[str] = []
     for part in parts:
-        candidate = METADATA_SEPARATOR.join([*kept, part])
+        candidate = separator.join([*kept, part])
         if len(candidate) > budget:
             # Skip rather than stop: one overlong category should not cost the
             # reader every shorter one behind it.
@@ -814,7 +925,7 @@ def _bounded_join(parts: Sequence[str], budget: int) -> str | None:
         kept.append(part)
     if not kept:
         return None
-    return METADATA_SEPARATOR.join(kept)
+    return separator.join(kept)
 
 
 def _escape_markdown_link_text(text: str) -> str:

@@ -113,5 +113,7 @@ def test_components_render_discount_percentage_as_headline_badge() -> None:
 
     contents = get_text_display_contents(make_message(entry=entry))
 
-    assert any("Price: **80 MKD** · **20% off**" in content for content in contents)
+    assert any(
+        "Price: **80 MKD** ~~100 MKD~~ · **20% off**" in content for content in contents
+    )
     assert not any("Discount:" in content for content in contents)

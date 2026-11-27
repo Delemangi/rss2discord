@@ -35,7 +35,7 @@ def _with_metrics(*metrics: SourceMetric) -> WebhookMessage:
     )
 
 
-def test_metrics_lead_with_headline_and_stack_supporting_values_one_per_line() -> None:
+def test_metrics_lead_with_headline_and_group_supporting_values() -> None:
     # Given
     message = _with_metrics(
         SourceMetric(label="Price", value="7.990 ден"),
@@ -46,14 +46,14 @@ def test_metrics_lead_with_headline_and_stack_supporting_values_one_per_line() -
     # When
     metrics = get_metrics_content(message)
 
-    # Then - first metric at body size, each of the rest on its own subtext line
+    # Then - first metric at body size, related details share one subtext line
     assert metrics == (
         f"Price: **7.990 ден**\n{METRICS_GAP}\n"
-        "-# Stock: 3\n-# Installments: 12 × 5.749 ден"
+        "-# Stock: 3 · Installments: 12 × 5.749 ден"
     )
 
 
-def test_dense_alert_stacks_every_supporting_metric_on_its_own_line() -> None:
+def test_dense_alert_groups_related_details_on_one_line() -> None:
     # Given - the shape a Neksio price alert actually emits
     message = _with_metrics(
         SourceMetric(label="Price", value="11.450 ден"),
@@ -67,14 +67,12 @@ def test_dense_alert_stacks_every_supporting_metric_on_its_own_line() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - one detail per line, so none has to be read out of a sentence
+    # Then - one detail line, so the card stays scannable
     assert metrics == (
         "Price: **11.450 ден** ~~9.990 ден~~\n"
         f"{METRICS_GAP}\n"
-        "-# List price: 13.990 ден\n"
-        "-# Product code: KF560C36-32\n"
-        "-# Manufacturer: Kingston\n"
-        "-# Stock: 7"
+        "-# List price: 13.990 ден · Product code: KF560C36-32 · "
+        "Manufacturer: Kingston · Stock: 7"
     )
 
 
@@ -115,7 +113,7 @@ def test_gap_is_not_charged_against_the_supporting_metrics() -> None:
 
     # Then - reserving the gap up front must not push a real detail out
     assert METRICS_GAP in metrics
-    assert "-# Stock: 7" in metrics
+    assert "Stock: 7" in metrics
     assert len(metrics) <= MAX_METRICS_CHARACTERS
 
 
@@ -265,7 +263,7 @@ def test_valueless_metric_renders_as_a_bare_label() -> None:
 
 
 def test_metrics_beyond_the_render_cap_are_dropped() -> None:
-    # Given - more metrics than the card will show
+    # Given - more metrics than the card will consider
     message = _with_metrics(
         *(
             SourceMetric(label=f"L{index}", value=str(index))
@@ -277,14 +275,14 @@ def test_metrics_beyond_the_render_cap_are_dropped() -> None:
     metrics = get_metrics_content(message)
 
     # Then - the cap holds and the overflow leaves no empty line behind
-    assert len(metrics.splitlines()) == MAX_RENDERED_METRICS + 1  # + the gap
-    assert f"L{MAX_RENDERED_METRICS}" not in metrics
+    assert len(metrics.splitlines()) == 3
+    assert f"L{MAX_RENDERED_METRICS - 1}" in metrics
+    assert f"L{MAX_RENDERED_METRICS + 3}" not in metrics
     assert all(metrics.splitlines())
 
 
-def test_metrics_budget_skips_an_overlong_detail_and_keeps_the_rest() -> None:
-    # Given - four details that nearly fill the block, then one too long for
-    # what remains, then a short one that still fits
+def test_metrics_budget_keeps_grouped_details_inside_the_block() -> None:
+    # Given - several long details grouped onto one line
     message = _with_metrics(
         SourceMetric(label="P", value="1"),
         *(SourceMetric(label="L" * 40, value="V" * 60) for _ in range(4)),
@@ -296,11 +294,10 @@ def test_metrics_budget_skips_an_overlong_detail_and_keeps_the_rest() -> None:
     metrics = get_metrics_content(message)
     lines = metrics.splitlines()
 
-    # Then - the overlong one drops out without taking the rest with it
+    # Then - the block stays inside its budget and the short detail survives
     assert len(metrics) <= MAX_METRICS_CHARACTERS
     assert lines[0] == "P: **1**"
-    assert lines[-1] == "-# Stock: 7"
-    assert not any(line.startswith("-# XXX") for line in lines)
+    assert "Stock: 7" in lines[-1]
 
 
 def test_render_cap_clears_the_densest_shipped_producer() -> None:
@@ -473,10 +470,9 @@ def test_discount_badges_headline_for_discovery_cards() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - the discount is prominent in the headline and not duplicated below
-    assert metrics == (
-        f"Price: **80 MKD** · **20% off**\n{METRICS_GAP}\n-# Original: 100 MKD"
-    )
+    # Then - the discount is prominent in the headline and the old price is
+    # struck through beside it instead of taking a supporting line
+    assert metrics == "Price: **80 MKD** ~~100 MKD~~ · **20% off**"
     assert "Discount:" not in metrics
 
 
@@ -688,10 +684,10 @@ def test_discount_stays_supporting_when_period_low_badges_headline() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - the low owns the headline; discount and change stay labeled below
+    # Then - the low owns the headline; discount and change share the next line
     assert "Price: **80 MKD** ~~90 MKD~~ · **30-day low**" in metrics
-    assert "-# Change: -11.1%" in metrics
-    assert "-# Discount: 20% off" in metrics
+    assert "Change: -11.1%" in metrics
+    assert "Discount: 20% off" in metrics
     assert "30-day range" not in metrics
 
 
@@ -718,10 +714,8 @@ def test_discovery_card_ignores_history_fields() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - discovery cards render exactly as before; history fields are ignored
-    assert metrics == (
-        f"Price: **80 MKD** · **20% off**\n{METRICS_GAP}\n-# Original: 100 MKD"
-    )
+    # Then - discovery cards keep the discount headline with the old price struck
+    assert metrics == "Price: **80 MKD** ~~100 MKD~~ · **20% off**"
     assert "30-day low" not in metrics
     assert "30-day range" not in metrics
 
@@ -801,6 +795,47 @@ def test_period_low_suppressed_by_positive_percentage_without_direction() -> Non
 
     # Then - the positive percentage keeps the badge off
     assert "**30-day low**" not in metrics
+
+
+def test_dense_producer_metrics_do_not_hide_the_oldest_low() -> None:
+    # Given - a real dense price card plus history windows appended after it
+    message = make_message(
+        entry=EntryData(
+            title="Kingston FURY Beast 32GB DDR5",
+            link="https://example.test/item",
+            description="",
+            author="",
+            timestamp=None,
+            source_metrics=(
+                SourceMetric("Price", "11.450 den"),
+                SourceMetric("Previous", "12.450 den", prior=True),
+                SourceMetric("Original", "13.990 den"),
+                SourceMetric("Product code", "KF560C36-32"),
+                SourceMetric("Manufacturer", "Kingston"),
+                SourceMetric("Stock", "7"),
+            ),
+            price_change_percentage="-8.0%",
+            price_direction=PriceDirection.DECREASE,
+            discount_percentage="18.2%",
+            price_history=(
+                PriceHistoryWindow(30, "30-day", "11.450 den", "13.990 den", True),
+                PriceHistoryWindow(90, "90-day", "10.990 den", "14.500 den", False),
+                PriceHistoryWindow(180, "6-month", "10.500 den", "15.000 den", False),
+                PriceHistoryWindow(None, "all-time", "10.500 den", "15.000 den", False),
+            ),
+        ),
+    )
+
+    # When
+    metrics = get_metrics_content(message)
+
+    # Then - the oldest reference low survives the catalog details
+    assert "**30-day low**" in metrics
+    assert "90-day low: 10.990 den" in metrics
+    assert "All-time low: 10.500 den" in metrics
+    assert "Change: -8.0% · Discount: 18.2% off" in metrics
+    assert "Product code: KF560C36-32" in metrics
+    assert len(metrics) <= MAX_METRICS_CHARACTERS
 
 
 def test_multi_window_history_badges_the_strongest_low_and_keeps_longer_lows() -> None:
@@ -1085,8 +1120,8 @@ def test_restock_without_history_fields_is_unchanged() -> None:
     )
 
 
-def test_period_range_skips_when_crowding_existing_metrics() -> None:
-    # Given - a dense price drop where the range would be the last line
+def test_period_range_precedes_catalog_details() -> None:
+    # Given - a dense price drop with a history range and catalog details
     message = make_message(
         entry=EntryData(
             title="Item",
@@ -1113,14 +1148,15 @@ def test_period_range_skips_when_crowding_existing_metrics() -> None:
     # When
     metrics = get_metrics_content(message)
 
-    # Then - the range is appended last and the existing order is preserved
+    # Then - the range is kept now that details share a line
     lines = metrics.splitlines()
     assert lines[0] == "Price: **11.450 ден** ~~12.450 ден~~"
-    assert "-# Change: -8.0%" in metrics
-    assert "-# List price: 13.990 ден" in metrics
-    assert "-# Product code: KF560C36-32" in metrics
-    assert "-# Manufacturer: Kingston" in metrics
-    assert "-# Stock: 7" in metrics
+    assert "Change: -8.0%" in metrics
+    assert "30-day range: 11.450 ден – 13.990 ден" in metrics
+    assert "List price: 13.990 ден" in metrics
+    assert "Product code: KF560C36-32" in metrics
+    assert "Manufacturer: Kingston" in metrics
+    assert "Stock: 7" in metrics
     assert "-# 30-day range: 11.450 ден – 13.990 ден" in metrics
-    # Range follows the existing supporting metrics
-    assert metrics.index("30-day range") > metrics.index("Stock: 7")
+    # History is more decision-relevant than catalog trivia
+    assert metrics.index("30-day range") < metrics.index("Stock: 7")

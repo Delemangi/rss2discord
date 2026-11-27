@@ -108,18 +108,18 @@ def _digest_header(
     source_title: str,
     observed_at: int,
 ) -> str:
-    lines = [
-        "## New items",
-        f"**{len(entries):,}** new items in {source_title}",
-        f"Observed <t:{observed_at}:f>",
-    ]
+    meta: list[str] = [f"Observed <t:{observed_at}:f>"]
     categories = _category_counts(entries)
     if categories:
-        lines.append(
+        meta.append(
             "Top categories: "
             + " · ".join(f"{name} ({count:,})" for name, count in categories),
         )
-    lines.append("The complete searchable list is attached (HTML and CSV).")
+    meta.append("Full list attached (HTML + CSV).")
+    lines = [
+        f"## {len(entries):,} new items — {source_title}",
+        f"-# {' • '.join(meta)}",
+    ]
     return _bounded("\n".join(lines), MAX_TEXT_DISPLAY_CHARACTERS)
 
 
@@ -128,8 +128,8 @@ def _category_counts(
 ) -> list[tuple[str, int]]:
     counter: Counter[str] = Counter()
     for _entry_id, entry in entries:
-        category = entry.categories[0] if entry.categories else "Uncategorized"
-        counter[category] += 1
+        if entry.categories:
+            counter[entry.categories[0]] += 1
     return counter.most_common(MAX_DIGEST_CATEGORIES)
 
 

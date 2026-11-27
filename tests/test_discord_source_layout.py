@@ -270,4 +270,4 @@ def test_components_v2_payload_renders_xenforo_forum_text_layout() -> None:
     assert children[2]["type"] == 14
     metadata = children[3]["content"]
     assert isinstance(metadata, str)
-    assert metadata.startswith("-# Forum • Forum Thread • By Poster •")
+    assert metadata.startswith("-# Forum Thread • By Poster •")
